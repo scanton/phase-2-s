@@ -1,45 +1,20 @@
-import { spawn, execSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { Config } from "../core/config.js";
 import type { Provider, Message, ToolCall } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
 
 /**
- * Save terminal state using `stty -g` so we can restore it after codex
- * exits. Codex opens /dev/tty directly for its UI and can leave the
- * terminal in a broken state that kills readline in the parent process.
- */
-function saveTerminalState(): string | null {
-  try {
-    return execSync("stty -g", { stdio: ["inherit", "pipe", "pipe"] })
-      .toString()
-      .trim();
-  } catch {
-    return null;
-  }
-}
-
-function restoreTerminalState(state: string | null): void {
-  if (!state) return;
-  try {
-    execSync(`stty ${state}`, { stdio: "inherit" });
-  } catch {
-    // Best-effort — if stty fails we can't do much
-  }
-}
-
-/**
  * Codex CLI provider.
  *
- * Uses `codex exec` for non-interactive execution.
- * Codex handles its own tool calling internally (file read/write, shell, etc.)
- * and returns the final text response on stdout.
+ * Uses `codex exec` in fully non-interactive scripting mode:
+ *   --json                   suppresses the terminal UI (outputs JSONL instead)
+ *   --output-last-message    writes the final response to a temp file
  *
- * Relevant flags:
- *   exec            — non-interactive mode
- *   -m <model>      — model to use
- *   --full-auto     — run without approval prompts (-a on-failure, --sandbox workspace-write)
- *   --json          — emit JSONL events (we use this to extract the final message)
- *   -C <dir>        — working directory
+ * This means codex never needs to open /dev/tty, so it cannot corrupt
+ * the parent process's terminal/readline session.
  */
 export class CodexProvider implements Provider {
   name = "codex-cli";
@@ -55,8 +30,7 @@ export class CodexProvider implements Provider {
     messages: Message[],
     _tools: OpenAIFunctionDef[],
   ): Promise<{ text: string; toolCalls: ToolCall[] }> {
-    // Build the full prompt: include system context + conversation history
-    // then pass the latest user message as the exec prompt.
+    // Build the full prompt: system context + conversation history
     const parts: string[] = [];
 
     const systemMessages = messages.filter((m) => m.role === "system");
@@ -65,7 +39,6 @@ export class CodexProvider implements Provider {
       parts.push("---");
     }
 
-    // Include prior conversation turns for context
     const nonSystem = messages.filter((m) => m.role !== "system");
     for (const msg of nonSystem) {
       if (msg.role === "user") {
@@ -77,61 +50,62 @@ export class CodexProvider implements Provider {
 
     const prompt = parts.join("\n\n");
 
-    // codex exec [OPTIONS] <PROMPT>
+    // Use a temp dir for the output file so we don't pollute the project
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-"));
+    const outputFile = join(tmpDir, "last-message.txt");
+
+    // codex exec --json suppresses the interactive UI (no /dev/tty access)
+    // --output-last-message writes the final response to a file we control
     const args = [
       "exec",
       "-m", this.model,
       "--full-auto",
       "-C", process.cwd(),
-      "--color", "never",
+      "--json",
+      "--output-last-message", outputFile,
       prompt,
     ];
 
-    // Save terminal state before spawning codex. Codex opens /dev/tty for
-    // its UI and can corrupt our terminal when it exits.
-    const termState = saveTerminalState();
-
     return new Promise((resolve, reject) => {
       const proc = spawn(this.codexPath, args, {
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
-          // Hint to codex not to do fancy terminal rendering
-          TERM: "dumb",
           NO_COLOR: "1",
           FORCE_COLOR: "0",
         },
       });
 
-      let stdout = "";
       let stderr = "";
-
-      proc.stdout.on("data", (data: Buffer) => {
-        stdout += data.toString();
-      });
 
       proc.stderr.on("data", (data: Buffer) => {
         stderr += data.toString();
       });
 
-      proc.on("close", (code) => {
-        // Restore terminal state before resolving so readline stays alive
-        restoreTerminalState(termState);
-        process.stdout.write("\r"); // ensure cursor is at column 0
+      proc.on("close", async (code) => {
+        // Try reading the output file first (most reliable)
+        try {
+          const text = await readFile(outputFile, "utf-8");
+          await rm(tmpDir, { recursive: true }).catch(() => {});
+          resolve({ text: text.trim(), toolCalls: [] });
+          return;
+        } catch {
+          // Output file missing — fall through to error handling
+        }
 
-        if (code !== 0 && !stdout) {
-          reject(new Error(`Codex exited with code ${code}: ${stderr}`));
+        await rm(tmpDir, { recursive: true }).catch(() => {});
+
+        if (code !== 0) {
+          reject(new Error(`Codex exited with code ${code}: ${stderr.trim()}`));
           return;
         }
-        // Codex exec outputs the final agent response on stdout
-        resolve({
-          text: stdout.trim() || stderr.trim(),
-          toolCalls: [],
-        });
+
+        // Unexpected: exited 0 but no output file
+        reject(new Error("Codex produced no output"));
       });
 
-      proc.on("error", (err) => {
-        restoreTerminalState(termState);
+      proc.on("error", async (err) => {
+        await rm(tmpDir, { recursive: true }).catch(() => {});
         reject(new Error(`Failed to spawn codex: ${err.message}`));
       });
     });
