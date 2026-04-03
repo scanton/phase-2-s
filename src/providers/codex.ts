@@ -1,7 +1,31 @@
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import type { Config } from "../core/config.js";
 import type { Provider, Message, ToolCall } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
+
+/**
+ * Save terminal state using `stty -g` so we can restore it after codex
+ * exits. Codex opens /dev/tty directly for its UI and can leave the
+ * terminal in a broken state that kills readline in the parent process.
+ */
+function saveTerminalState(): string | null {
+  try {
+    return execSync("stty -g", { stdio: ["inherit", "pipe", "pipe"] })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
+
+function restoreTerminalState(state: string | null): void {
+  if (!state) return;
+  try {
+    execSync(`stty ${state}`, { stdio: "inherit" });
+  } catch {
+    // Best-effort — if stty fails we can't do much
+  }
+}
 
 /**
  * Codex CLI provider.
@@ -63,10 +87,20 @@ export class CodexProvider implements Provider {
       prompt,
     ];
 
+    // Save terminal state before spawning codex. Codex opens /dev/tty for
+    // its UI and can corrupt our terminal when it exits.
+    const termState = saveTerminalState();
+
     return new Promise((resolve, reject) => {
       const proc = spawn(this.codexPath, args, {
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env },
+        env: {
+          ...process.env,
+          // Hint to codex not to do fancy terminal rendering
+          TERM: "dumb",
+          NO_COLOR: "1",
+          FORCE_COLOR: "0",
+        },
       });
 
       let stdout = "";
@@ -81,6 +115,10 @@ export class CodexProvider implements Provider {
       });
 
       proc.on("close", (code) => {
+        // Restore terminal state before resolving so readline stays alive
+        restoreTerminalState(termState);
+        process.stdout.write("\r"); // ensure cursor is at column 0
+
         if (code !== 0 && !stdout) {
           reject(new Error(`Codex exited with code ${code}: ${stderr}`));
           return;
@@ -93,6 +131,7 @@ export class CodexProvider implements Provider {
       });
 
       proc.on("error", (err) => {
+        restoreTerminalState(termState);
         reject(new Error(`Failed to spawn codex: ${err.message}`));
       });
     });
