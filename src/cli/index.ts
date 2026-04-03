@@ -164,9 +164,9 @@ async function interactiveMode(config: Config): Promise<void> {
       const skillName = trimmed.slice(1).split(" ")[0];
       const skill = skills.find((s) => s.name === skillName);
       if (skill) {
-        const rest = trimmed.slice(1 + skillName.length).trim();
-        const expanded = skill.promptTemplate + (rest ? `\n\nUser context: ${rest}` : "");
-        process.stdout.write(chalk.dim("Thinking...\n"));
+        const args = trimmed.slice(1 + skillName.length).trim();
+        const expanded = skill.promptTemplate + buildSkillContext(args);
+        process.stdout.write(chalk.dim(`Running /${skill.name}${args ? ` on: ${args}` : ""}...\n`));
         try {
           const response = await agent.run(expanded);
           console.log(chalk.bold("\nassistant > ") + response + "\n");
@@ -245,6 +245,47 @@ async function oneShotMode(config: Config, prompt: string): Promise<void> {
     log.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
+}
+
+/**
+ * Build context section to append to a skill's prompt template based on
+ * the arguments the user typed after the skill name.
+ *
+ * `/review` → no context appended
+ * `/review src/core/agent.ts` → "Focus on this file: src/core/agent.ts"
+ * `/review src/core/agent.ts src/cli/index.ts` → "Focus on these files: ..."
+ * `/investigate why does the REPL exit` → "Additional context: why does..."
+ */
+function buildSkillContext(args: string): string {
+  if (!args) return "";
+
+  // Split on whitespace and check if all tokens look like file paths
+  // (contain a / or . suggesting a path/extension, no special chars)
+  const tokens = args.split(/\s+/).filter(Boolean);
+  const looksLikeFilePath = (s: string) =>
+    /^[./~]/.test(s) || /\.\w{1,6}$/.test(s);
+
+  const filePaths = tokens.filter(looksLikeFilePath);
+  const rest = tokens.filter((t) => !looksLikeFilePath(t)).join(" ");
+
+  const parts: string[] = [];
+
+  if (filePaths.length === 1) {
+    parts.push(`\n\nFocus on this file: ${filePaths[0]}`);
+  } else if (filePaths.length > 1) {
+    parts.push(`\n\nFocus on these files:\n${filePaths.map((f) => `  - ${f}`).join("\n")}`);
+  }
+
+  if (rest) {
+    parts.push(`\n\nAdditional context: ${rest}`);
+  }
+
+  // If no file paths detected, treat whole thing as context
+  if (filePaths.length === 0) {
+    return `\n\nAdditional context: ${args}`;
+  }
+
+  return parts.join("");
 }
 
 function printHelp(skills: Array<{ name: string; description: string }>): void {
