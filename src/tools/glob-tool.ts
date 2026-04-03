@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { glob } from "glob";
+import { resolve, sep } from "node:path";
 import type { ToolDefinition, ToolResult } from "./types.js";
 
 const params = z.object({
@@ -15,9 +16,16 @@ export const globTool: ToolDefinition = {
   async execute(raw: unknown): Promise<ToolResult> {
     const args = params.parse(raw);
 
+    // Sandbox: validate the cwd parameter stays inside the project
+    const projectRoot = process.cwd();
+    const cwdPath = args.cwd ? resolve(args.cwd) : projectRoot;
+    if (!cwdPath.startsWith(projectRoot + sep) && cwdPath !== projectRoot) {
+      return { success: false, output: "", error: `cwd outside project directory: ${args.cwd}` };
+    }
+
     try {
       const files = await glob(args.pattern, {
-        cwd: args.cwd ?? process.cwd(),
+        cwd: cwdPath,
         ignore: args.ignore ?? ["node_modules/**", ".git/**"],
         nodir: true,
       });

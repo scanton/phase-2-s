@@ -33,8 +33,9 @@ export const fileWriteTool: ToolDefinition = {
       };
     }
 
-    // Guard: reject empty writes to existing files (silent truncation is data loss)
-    if (args.content === "") {
+    // Guard: reject near-empty writes to existing files (silent truncation is data loss).
+    // Trim check catches whitespace-only content that would also effectively destroy a file.
+    if (args.content.trim() === "") {
       try {
         await access(fullPath);
         // File exists — refuse the empty write

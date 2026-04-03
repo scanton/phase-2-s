@@ -33,9 +33,17 @@ export class Conversation {
     return this.messages.length;
   }
 
-  /** Rough token estimate for context management (4 chars ≈ 1 token). */
+  /** Rough token estimate for context management (4 chars ≈ 1 token).
+   * Includes toolCalls arguments in the estimate — they can be substantial
+   * and excluding them causes consistent undercounting that leads to 400 errors. */
   estimateTokens(): number {
-    return this.messages.reduce((sum, m) => sum + Math.ceil((m.content ?? "").length / 4), 0);
+    return this.messages.reduce((sum, m) => {
+      const contentLen = (m.content ?? "").length;
+      const toolCallsLen = m.toolCalls
+        ? m.toolCalls.reduce((s, tc) => s + tc.name.length + tc.arguments.length, 0)
+        : 0;
+      return sum + Math.ceil((contentLen + toolCallsLen) / 4);
+    }, 0);
   }
 
   /**

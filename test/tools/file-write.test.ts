@@ -75,6 +75,16 @@ describe("file_write", () => {
     expect(contents).toBe("valuable data");
   });
 
+  it("rejects whitespace-only content write to an existing file", async () => {
+    const r = rel("notempty-ws.txt");
+    await writeFile(join(process.cwd(), r), "precious data");
+    const result = await fileWriteTool.execute({ path: r, content: "   \n  " });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/truncate/);
+    const contents = await readFile(join(process.cwd(), r), "utf-8");
+    expect(contents).toBe("precious data");
+  });
+
   // --- Sandbox enforcement ---
 
   it("rejects absolute paths outside project directory", async () => {

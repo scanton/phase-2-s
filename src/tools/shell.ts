@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { resolve, sep } from "node:path";
 import type { ToolDefinition, ToolResult } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -41,11 +42,26 @@ export const shellTool: ToolDefinition = {
       }
     }
 
+    // Sandbox: reject cwd values that escape the project directory
+    const projectRoot = process.cwd();
+    let cwdPath = projectRoot;
+    if (args.cwd) {
+      const resolvedCwd = resolve(args.cwd);
+      if (!resolvedCwd.startsWith(projectRoot + sep) && resolvedCwd !== projectRoot) {
+        return {
+          success: false,
+          output: "",
+          error: `cwd outside project directory: ${args.cwd}`,
+        };
+      }
+      cwdPath = resolvedCwd;
+    }
+
     try {
       const { stdout, stderr } = await execFileAsync("/bin/sh", ["-c", args.command], {
         timeout,
         maxBuffer: 1024 * 1024 * 10, // 10MB
-        cwd: args.cwd ?? process.cwd(),
+        cwd: cwdPath,
       });
 
       // Return stdout and stderr separately so the LLM gets accurate signal
@@ -55,14 +71,17 @@ export const shellTool: ToolDefinition = {
       return { success: true, output: parts.join("\n") || "(no output)" };
     } catch (err: unknown) {
       if (err && typeof err === "object" && "stdout" in err) {
-        const execErr = err as { stdout: string; stderr: string; code: number };
+        const execErr = err as { stdout: string; stderr: string; code: number | null; killed: boolean; signal: string | null };
         const parts: string[] = [];
         if (execErr.stdout) parts.push(execErr.stdout);
         if (execErr.stderr) parts.push(`[stderr]\n${execErr.stderr}`);
+        const errorMsg = execErr.killed
+          ? `Command timed out after ${timeout}ms`
+          : `Command exited with code ${execErr.code}`;
         return {
           success: false,
           output: parts.join("\n"),
-          error: `Command exited with code ${execErr.code}`,
+          error: errorMsg,
         };
       }
       const msg = err instanceof Error ? err.message : String(err);

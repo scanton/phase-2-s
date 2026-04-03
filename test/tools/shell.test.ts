@@ -40,14 +40,20 @@ describe("shell", () => {
     expect(result.output).toBe("(no output)");
   });
 
-  it("respects the cwd option", async () => {
+  it("respects the cwd option (within project directory)", async () => {
+    // Use a subdirectory inside cwd so the sandbox allows it
     const result = await shellTool.execute({
       command: "pwd",
-      cwd: "/tmp",
+      cwd: "src",
     });
     expect(result.success).toBe(true);
-    // /tmp resolves to /private/tmp on macOS via symlink
-    expect(result.output.trim()).toMatch(/\/tmp$/);
+    expect(result.output.trim()).toMatch(/src$/);
+  });
+
+  it("rejects cwd outside project directory", async () => {
+    const result = await shellTool.execute({ command: "pwd", cwd: "/tmp" });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/outside project directory/);
   });
 
   // --- Timeout ---
