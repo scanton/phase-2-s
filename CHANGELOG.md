@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.3.0 — 2026-04-03
+
+Test suite, security hardening, and tool behavior improvements.
+
+### For contributors
+
+- `npm test` now works — 54 unit tests across tools and core modules (vitest)
+- Tests cover: `file_read`, `file_write`, `shell`, `Conversation`, `loadConfig`
+- Tests are deterministic on any machine (temp dir isolation, `HOME` override)
+
+### Security fixes
+
+- **File sandbox enforced** — `file_read` and `file_write` now reject any path outside the project directory. The LLM can no longer read `~/.ssh/id_rsa` or write outside your repo.
+- **Truncation guard** — `file_write` refuses to overwrite an existing file with empty content. Prevents silent data loss from an LLM that sends an empty string.
+- **Error sanitization** — `file_read` and `file_write` strip absolute filesystem paths from error messages before returning them to the LLM.
+- **YAML config errors surface** — a malformed `.phase2s.yaml` now shows you the parse error instead of silently ignoring it and using defaults.
+
+### Bug fixes
+
+- **Context trim was dropping tool results but leaving their paired assistant `tool_calls` references** — this would cause an OpenAI API 400 error on the next turn. Now the entire turn (assistant message + all its tool results) is dropped atomically.
+- **Codex temp dir cleanup was dead code** — the exit handler was calling `Set.delete` instead of `rmSync`. Temp dirs now actually get removed when the process exits or crashes.
+
+---
+
 ## v0.2.0 — 2026-04-03
 
 Added 5 built-in skills, fixed skill loader, added startup safety check.
