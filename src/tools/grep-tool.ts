@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { resolve, sep } from "node:path";
 import type { ToolDefinition, ToolResult } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -33,7 +34,14 @@ export const grepTool: ToolDefinition = {
     grepArgs.push("--exclude-dir=node_modules", "--exclude-dir=.git", "--exclude-dir=dist");
 
     grepArgs.push(args.pattern);
-    grepArgs.push(args.path ?? ".");
+
+    // Sandbox: resolve and validate the search path
+    const projectRoot = process.cwd();
+    const searchPath = args.path ? resolve(args.path) : projectRoot;
+    if (!searchPath.startsWith(projectRoot + sep) && searchPath !== projectRoot) {
+      return { success: false, output: "", error: `Path outside project directory: ${args.path}` };
+    }
+    grepArgs.push(searchPath);
 
     try {
       const { stdout } = await execFileAsync("grep", grepArgs, {

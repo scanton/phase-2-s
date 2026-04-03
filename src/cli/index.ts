@@ -9,7 +9,7 @@ import { Agent } from "../core/agent.js";
 import { loadAllSkills } from "../skills/index.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const program = new Command();
@@ -80,6 +80,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
  */
 async function interactiveMode(config: Config): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
+  if (!checkOpenAIKey(config)) process.exit(1);
 
   console.log(chalk.bold(`\nPhase2S v${VERSION}`));
   console.log(chalk.dim("Type your message and press Enter. Type /quit to exit.\n"));
@@ -230,8 +231,28 @@ async function checkCodexBinary(config: Config): Promise<boolean> {
   return false;
 }
 
+/**
+ * Pre-flight check for the openai-api provider: verify API key is set
+ * before opening the REPL, so the user gets a clear error at startup
+ * rather than mid-session.
+ */
+function checkOpenAIKey(config: Config): boolean {
+  if (config.provider !== "openai-api") return true;
+  if (config.apiKey) return true;
+
+  console.error(
+    chalk.red("\n✗ OpenAI API key not found.\n") +
+    chalk.dim(
+      "  Set it:  export OPENAI_API_KEY=sk-...\n" +
+      "  Or add:  apiKey: sk-... in .phase2s.yaml\n",
+    ),
+  );
+  return false;
+}
+
 async function oneShotMode(config: Config, prompt: string): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
+  if (!checkOpenAIKey(config)) process.exit(1);
 
   const agent = new Agent({ config });
   const spinner = ora("Thinking...").start();

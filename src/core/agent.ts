@@ -45,6 +45,9 @@ export class Agent {
     while (turns < this.maxTurns) {
       turns++;
 
+      // Trim context before each LLM call to prevent context_length_exceeded errors
+      this.conversation.trimToTokenBudget();
+
       const { text, toolCalls } = await this.provider.chat(
         this.conversation.getMessages(),
         this.tools.toOpenAI(),
@@ -71,17 +74,23 @@ export class Agent {
           continue;
         }
 
-        const result = await this.tools.execute(call.name, args);
-
-        if (result.success) {
-          log.tool(call.name, truncate(result.output, 200));
-        } else {
-          log.tool(call.name, `Error: ${result.error}`);
+        let resultContent: string;
+        try {
+          const result = await this.tools.execute(call.name, args);
+          if (result.success) {
+            log.tool(call.name, truncate(result.output, 200));
+            resultContent = result.output;
+          } else {
+            log.tool(call.name, `Error: ${result.error}`);
+            resultContent = `Error: ${result.error}`;
+          }
+        } catch (err: unknown) {
+          // Catch unexpected throws so the assistant message's tool_calls are always
+          // paired with a tool result — otherwise the OpenAI API returns a 400.
+          const msg = err instanceof Error ? err.message : String(err);
+          log.tool(call.name, `Unexpected error: ${msg}`);
+          resultContent = `Error: ${msg}`;
         }
-
-        const resultContent = result.success
-          ? result.output
-          : `Error: ${result.error}`;
         this.conversation.addToolResult(call.id, resultContent);
       }
     }

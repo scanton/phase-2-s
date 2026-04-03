@@ -1,10 +1,25 @@
 import { spawn } from "node:child_process";
+import { rmSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Config } from "../core/config.js";
 import type { Provider, Message, ToolCall } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
+
+/** Track all temp dirs created this process so we can clean up on crash/exit. */
+const activeTempDirs = new Set<string>();
+process.on("exit", () => {
+  // Synchronous cleanup — rmSync is available here (unlike the async rm).
+  // This runs on clean exit AND on uncaught exceptions, so temp dirs don't litter /tmp.
+  for (const dir of activeTempDirs) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // Best-effort — ignore errors (e.g. already deleted by normal path)
+    }
+  }
+});
 
 /**
  * Codex CLI provider.
@@ -52,6 +67,7 @@ export class CodexProvider implements Provider {
 
     // Use a temp dir for the output file so we don't pollute the project
     const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-"));
+    activeTempDirs.add(tmpDir);
     const outputFile = join(tmpDir, "last-message.txt");
 
     // codex exec --json suppresses the interactive UI (no /dev/tty access)
@@ -91,6 +107,7 @@ export class CodexProvider implements Provider {
         try {
           const text = await readFile(outputFile, "utf-8");
           await rm(tmpDir, { recursive: true }).catch(() => {});
+          activeTempDirs.delete(tmpDir);
           resolve({ text: text.trim(), toolCalls: [] });
           return;
         } catch {
@@ -98,6 +115,7 @@ export class CodexProvider implements Provider {
         }
 
         await rm(tmpDir, { recursive: true }).catch(() => {});
+        activeTempDirs.delete(tmpDir);
 
         if (code !== 0) {
           reject(new Error(`Codex exited with code ${code}: ${stderr.trim()}`));
@@ -110,6 +128,7 @@ export class CodexProvider implements Provider {
 
       proc.on("error", async (err) => {
         await rm(tmpDir, { recursive: true }).catch(() => {});
+        activeTempDirs.delete(tmpDir);
         reject(new Error(`Failed to spawn codex: ${err.message}`));
       });
     });

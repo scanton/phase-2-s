@@ -145,9 +145,9 @@ user input → skill prompt injection → Codex (or direct API) → tool calls �
 - `openai-api` — direct API with conversation history and full tool control. Coming in Approach B.
 
 **Tools** (available when using `openai-api` provider):
-- `file-read` — read file contents with line range support
-- `file-write` — write or create files
-- `shell` — run shell commands with timeout
+- `file-read` — read file contents with line range support; sandboxed to project directory
+- `file-write` — write or create files; sandboxed to project directory; refuses to truncate an existing file to empty
+- `shell` — run shell commands with configurable timeout; warns on destructive patterns (`rm -rf`, `sudo`, `curl | sh`, `git push --force`)
 - `glob` — find files by pattern
 - `grep` — search file contents with regex
 
@@ -187,6 +187,8 @@ Options:
 - [x] 5 built-in skills: review, investigate, plan, ship, qa
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
+- [x] File sandbox: tools reject paths outside the project directory
+- [x] Test suite: 54 unit tests covering all tools and core modules (`npm test`)
 - [ ] Direct OpenAI API provider with full tool control
 - [ ] Model-per-skill config via SKILL.md frontmatter
 - [ ] npm publish
