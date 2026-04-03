@@ -1,0 +1,22 @@
+# Phase2S configuration
+# Copy this to .phase2s.yaml and customize
+
+# LLM provider: "codex-cli" (wraps OpenAI Codex CLI) or "openai-api" (direct API)
+provider: codex-cli
+
+# Model to use
+model: o4-mini
+
+# Path to codex CLI binary (if using codex-cli provider)
+# codexPath: codex
+
+# OpenAI API key (if using openai-api provider)
+# Can also be set via OPENAI_API_KEY env var
+# apiKey: sk-...
+
+# Maximum agent loop turns before stopping
+maxTurns: 50
+
+# Custom system prompt (appended to the default)
+# systemPrompt: |
+#   Always prefer Python for scripting tasks.
