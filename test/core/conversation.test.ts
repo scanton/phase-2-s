@@ -91,6 +91,33 @@ describe("Conversation", () => {
     expect(c.length).toBeLessThan(beforeLen);
   });
 
+  it("drops entire assistant+tool turn atomically to avoid orphaned tool_call pairs", () => {
+    const c = new Conversation("system");
+    c.addUser("hello");
+    // Simulate a tool-calling turn: assistant issues calls, results follow
+    c.addAssistant("", [
+      { id: "c1", name: "shell", arguments: '{"command":"ls"}' },
+      { id: "c2", name: "file_read", arguments: '{"path":"foo.ts"}' },
+    ]);
+    c.addToolResult("c1", "x".repeat(100_000)); // big result
+    c.addToolResult("c2", "x".repeat(100_000)); // big result
+    c.addAssistant("Done."); // final response — no toolCalls
+
+    c.trimToTokenBudget(1_000);
+
+    const msgs = c.getMessages();
+    // The assistant+tool turn must be gone entirely — no orphaned tool results
+    const hasToolResult = msgs.some((m) => m.role === "tool");
+    const hasToolCallAssistant = msgs.some(
+      (m) => m.role === "assistant" && m.toolCalls?.length,
+    );
+    // Both must be absent or both must be present (never one without the other)
+    expect(hasToolResult).toBe(hasToolCallAssistant);
+    // System and user messages must survive
+    expect(msgs.some((m) => m.role === "system")).toBe(true);
+    expect(msgs.some((m) => m.role === "user")).toBe(true);
+  });
+
   it("preserves system and user messages when trimming", () => {
     const c = new Conversation("important system prompt");
     c.addUser("important user request");

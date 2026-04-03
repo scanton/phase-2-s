@@ -3,6 +3,12 @@ import { writeFile, mkdir, access } from "node:fs/promises";
 import { resolve, dirname, sep } from "node:path";
 import type { ToolDefinition, ToolResult } from "./types.js";
 
+/** Sanitize an error message before returning it to the LLM — strip absolute paths. */
+function sanitizeError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.replace(/,\s*open\s+'[^']*'/g, "").replace(/\/[^\s']*/g, "<path>");
+}
+
 const params = z.object({
   path: z.string().describe("Path to the file to write (relative to project directory)"),
   content: z.string().describe("Content to write to the file"),
@@ -64,8 +70,7 @@ export const fileWriteTool: ToolDefinition = {
       }
       return { success: true, output: `${verb} ${args.content.length} bytes to ${args.path}` };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, output: "", error: msg };
+      return { success: false, output: "", error: sanitizeError(err) };
     }
   },
 };

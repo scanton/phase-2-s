@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { shellTool } from "../../src/tools/shell.js";
 
 describe("shell", () => {
@@ -75,17 +75,38 @@ describe("shell", () => {
   });
 
   // --- Destructive pattern detection ---
-  // The tool warns but does NOT block. We verify the command still runs (returns a result).
-  // The warning is a stdout side-effect visible to the human user, not the LLM.
+  // The tool warns but does NOT block. Verify the warning fires AND the command still runs.
 
-  it("still executes when a potentially destructive pattern is present", async () => {
-    // Use a safe echo that contains the pattern string — the tool checks args.command itself
-    // so we pass a real command that matches but is harmless (echo doesn't destroy anything)
-    const result = await shellTool.execute({
-      command: "echo 'would run: sudo ls'",
+  it("emits a warning to stdout when a destructive pattern matches", async () => {
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
     });
-    // The command string contains "sudo" — warning fires, but command still runs
-    expect(result).toBeDefined();
-    expect(result.output).toContain("sudo ls");
+
+    try {
+      // "sudo" matches DESTRUCTIVE_PATTERNS — safe command but pattern triggers
+      await shellTool.execute({ command: "echo 'would run: sudo ls'" });
+    } finally {
+      spy.mockRestore();
+    }
+
+    const output = written.join("");
+    expect(output).toMatch(/Potentially destructive/);
+    expect(output).toMatch(/\[shell\]/);
+  });
+
+  it("still executes the command after emitting a destructive warning", async () => {
+    // Suppress the warning for this test
+    const spy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      const result = await shellTool.execute({
+        command: "echo 'would run: sudo ls'",
+      });
+      expect(result.success).toBe(true);
+      expect(result.output).toContain("sudo ls");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

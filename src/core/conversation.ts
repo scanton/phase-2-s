@@ -39,17 +39,38 @@ export class Conversation {
   }
 
   /**
-   * Trim oldest tool result messages to stay under the token budget.
+   * Trim oldest tool turns to stay under the token budget.
    * Called automatically before each LLM turn to prevent context overflow.
    *
-   * Preserves: system prompt, user messages, assistant messages.
-   * Drops: tool results (oldest first) — they're the noisiest and most redundant.
+   * Drops complete turns atomically: the assistant message that issued tool calls
+   * AND all its paired tool results are removed together. This is required because
+   * the OpenAI API rejects messages where a tool result exists without its paired
+   * assistant tool_call (or vice versa) — partial removal causes a 400 error.
+   *
+   * Preserves: system prompt, user messages, assistant text-only responses.
    */
   trimToTokenBudget(maxTokens: number = DEFAULT_TOKEN_BUDGET): void {
     while (this.estimateTokens() > maxTokens) {
-      const idx = this.messages.findIndex((m) => m.role === "tool");
-      if (idx === -1) break; // nothing left to trim
-      this.messages.splice(idx, 1);
+      // Find the oldest tool result message
+      const firstToolIdx = this.messages.findIndex((m) => m.role === "tool");
+      if (firstToolIdx === -1) break; // nothing left to trim
+
+      // The assistant message that issued these tool calls is immediately before
+      // the first tool result in this batch
+      const prevIdx = firstToolIdx - 1;
+      const prevMsg = prevIdx >= 0 ? this.messages[prevIdx] : null;
+
+      if (prevMsg?.role === "assistant" && prevMsg.toolCalls?.length) {
+        // Drop the entire turn: assistant message + all its consecutive tool results
+        let endIdx = firstToolIdx;
+        while (endIdx < this.messages.length && this.messages[endIdx].role === "tool") {
+          endIdx++;
+        }
+        this.messages.splice(prevIdx, endIdx - prevIdx);
+      } else {
+        // Orphaned tool result (no paired assistant message) — drop just the result
+        this.messages.splice(firstToolIdx, 1);
+      }
     }
   }
 }

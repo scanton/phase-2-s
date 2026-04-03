@@ -39,7 +39,10 @@ export async function loadConfig(overrides?: Partial<z.infer<typeof configSchema
       break;
     } catch (err) {
       if (err instanceof Error && err.message.includes("must be a YAML")) throw err;
-      // File not found or unreadable — continue to next name
+      // Swallow only filesystem "file not found / not readable" errors.
+      // Re-throw YAML parse errors so the user sees them (invalid config is not silent).
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "EACCES") throw err;
     }
   }
 

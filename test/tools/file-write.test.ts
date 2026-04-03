@@ -94,4 +94,17 @@ describe("file_write", () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/outside project directory/);
   });
+
+  // --- Error sanitization ---
+
+  it("does not leak absolute paths in error messages", async () => {
+    // Write to a deeply nested path without createDirs — will throw ENOENT for missing parent
+    const r = rel("nonexistent-parent/child.txt");
+    const result = await fileWriteTool.execute({ path: r, content: "hello" });
+    expect(result.success).toBe(false);
+    // Must not expose absolute filesystem paths to the LLM
+    expect(result.error).not.toMatch(/\/Users\//);
+    expect(result.error).not.toMatch(/\/home\//);
+    expect(result.error).not.toMatch(/\/private\//);
+  });
 });

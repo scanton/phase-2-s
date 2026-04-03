@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { rmSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,17 +7,16 @@ import type { Config } from "../core/config.js";
 import type { Provider, Message, ToolCall } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
 
-/** Track all temp dirs created this process so we can clean up on exit. */
+/** Track all temp dirs created this process so we can clean up on crash/exit. */
 const activeTempDirs = new Set<string>();
 process.on("exit", () => {
-  // Synchronous cleanup on exit (rm is async, use a sync approach)
+  // Synchronous cleanup — rmSync is available here (unlike the async rm).
+  // This runs on clean exit AND on uncaught exceptions, so temp dirs don't litter /tmp.
   for (const dir of activeTempDirs) {
     try {
-      // Best-effort: use the sync version of rm via child_process isn't available here,
-      // so we rely on the OS to clean /tmp eventually. The important thing is we tried.
-      activeTempDirs.delete(dir);
+      rmSync(dir, { recursive: true, force: true });
     } catch {
-      // ignore
+      // Best-effort — ignore errors (e.g. already deleted by normal path)
     }
   }
 });
