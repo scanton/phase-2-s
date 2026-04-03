@@ -1,5 +1,7 @@
 import { Command } from "commander";
 import { createInterface } from "node:readline";
+import { access, constants } from "node:fs/promises";
+import { resolve } from "node:path";
 import chalk from "chalk";
 import ora from "ora";
 import { loadConfig, type Config } from "../core/config.js";
@@ -77,6 +79,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
  * which is exactly what happens while codex is running.
  */
 async function interactiveMode(config: Config): Promise<void> {
+  if (!(await checkCodexBinary(config))) process.exit(1);
+
   console.log(chalk.bold(`\nPhase2S v${VERSION}`));
   console.log(chalk.dim("Type your message and press Enter. Type /quit to exit.\n"));
 
@@ -184,7 +188,51 @@ async function interactiveMode(config: Config): Promise<void> {
   }
 }
 
+/**
+ * Check that the configured codex binary is executable before starting.
+ * Prints a clear, actionable error message if not found — rather than letting
+ * the user hit a cryptic ENOENT from spawn() mid-session.
+ */
+async function checkCodexBinary(config: Config): Promise<boolean> {
+  if (config.provider !== "codex-cli") return true;
+
+  const codexPath = config.codexPath;
+
+  // If it looks like an absolute/relative path, check directly
+  if (codexPath.startsWith("/") || codexPath.startsWith(".")) {
+    try {
+      await access(resolve(codexPath), constants.X_OK);
+      return true;
+    } catch {
+      // fall through to error
+    }
+  } else {
+    // Search PATH entries
+    const pathDirs = (process.env.PATH ?? "").split(":");
+    for (const dir of pathDirs) {
+      try {
+        await access(resolve(dir, codexPath), constants.X_OK);
+        return true;
+      } catch {
+        // not in this dir
+      }
+    }
+  }
+
+  console.error(
+    chalk.red(`\n✗ "${codexPath}" not found or not executable.\n`) +
+    chalk.dim(
+      "  Install Codex CLI:  npm install -g @openai/codex\n" +
+      "  Or switch provider: PHASE2S_PROVIDER=openai-api phase2s\n" +
+      "  Or set path:        PHASE2S_CODEX_PATH=/path/to/codex phase2s\n",
+    ),
+  );
+  return false;
+}
+
 async function oneShotMode(config: Config, prompt: string): Promise<void> {
+  if (!(await checkCodexBinary(config))) process.exit(1);
+
   const agent = new Agent({ config });
   const spinner = ora("Thinking...").start();
 

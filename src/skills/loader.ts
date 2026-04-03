@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { parse as parseYaml } from "yaml";
 import type { Skill } from "./types.js";
 
 /**
@@ -7,6 +8,11 @@ import type { Skill } from "./types.js";
  *
  * Follows a convention similar to gstack: each skill is a directory
  * containing a SKILL.md file with YAML-like frontmatter.
+ *
+ * Compatible with the SKILL.md standard used by:
+ *   - phase2s (.phase2s/skills/)
+ *   - Codex CLI (~/.codex/skills/)
+ *   - gstack/Claude Code (~/.claude/skills/)
  */
 export async function loadSkillsFromDir(dir: string): Promise<Skill[]> {
   const skills: Skill[] = [];
@@ -52,8 +58,8 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
     return null;
   }
 
-  // Parse simple frontmatter (--- delimited)
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  // Parse YAML frontmatter (--- delimited, handles \r\n line endings)
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
 
   let name = "";
   let description = "";
@@ -61,18 +67,25 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
   let promptTemplate: string;
 
   if (frontmatterMatch) {
-    const meta = frontmatterMatch[1];
+    const rawMeta = frontmatterMatch[1];
     promptTemplate = frontmatterMatch[2].trim();
 
-    // Simple key-value parsing from frontmatter
-    for (const line of meta.split("\n")) {
-      const [key, ...rest] = line.split(":");
-      const value = rest.join(":").trim();
-      if (key.trim() === "name") name = value;
-      if (key.trim() === "description") description = value;
-      if (key.trim() === "triggers") {
-        triggerPhrases = value.split(",").map((s) => s.trim()).filter(Boolean);
-      }
+    // Parse frontmatter with the yaml library (handles multi-line, arrays, quoted strings)
+    let meta: Record<string, unknown> = {};
+    try {
+      meta = (parseYaml(rawMeta) as Record<string, unknown>) ?? {};
+    } catch {
+      // Malformed frontmatter — treat as no frontmatter
+    }
+
+    if (typeof meta.name === "string") name = meta.name;
+    if (typeof meta.description === "string") description = meta.description;
+
+    // triggers can be a YAML array or a comma-separated string
+    if (Array.isArray(meta.triggers)) {
+      triggerPhrases = meta.triggers.filter((t): t is string => typeof t === "string");
+    } else if (typeof meta.triggers === "string") {
+      triggerPhrases = meta.triggers.split(",").map((s) => s.trim()).filter(Boolean);
     }
   } else {
     promptTemplate = content.trim();
@@ -88,9 +101,12 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
 }
 
 /**
- * Load skills from all standard locations:
- * 1. .phase2s/skills/ in the current project
- * 2. ~/.phase2s/skills/ for global user skills
+ * Load skills from all standard locations (in priority order):
+ * 1. .phase2s/skills/ — current project skills (highest priority)
+ * 2. ~/.phase2s/skills/ — global user skills
+ * 3. ~/.codex/skills/ — Codex CLI's native skill directory (cross-tool compatibility)
+ *
+ * Deduplication: first skill found with a given name wins (project > global > codex).
  */
 export async function loadAllSkills(): Promise<Skill[]> {
   const skills: Skill[] = [];
@@ -99,11 +115,20 @@ export async function loadAllSkills(): Promise<Skill[]> {
   const dirs = [
     join(process.cwd(), ".phase2s", "skills"),
     join(home, ".phase2s", "skills"),
+    join(home, ".codex", "skills"),  // Codex CLI native skills — same SKILL.md format
   ];
+
+  const seen = new Set<string>();
 
   for (const dir of dirs) {
     const loaded = await loadSkillsFromDir(dir);
-    skills.push(...loaded);
+    for (const skill of loaded) {
+      // Deduplicate by name: project skills override global, global override codex defaults
+      if (!seen.has(skill.name)) {
+        seen.add(skill.name);
+        skills.push(skill);
+      }
+    }
   }
 
   return skills;
