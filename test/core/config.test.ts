@@ -1,10 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { loadConfig } from "../../src/core/config.js";
 
 /**
  * Config tests focus on override precedence and default values.
  * We don't test YAML file loading here (would require temp files) — that's
  * covered by integration tests. We test the config schema and env var wiring.
+ *
+ * HOME is overridden to /tmp so resolveDefaultModel() never reads the real
+ * ~/.codex/config.toml — results are deterministic on any machine.
  */
 describe("loadConfig", () => {
   // Snapshot the original env so we restore it cleanly
@@ -17,6 +20,9 @@ describe("loadConfig", () => {
     delete process.env.PHASE2S_PROVIDER;
     delete process.env.PHASE2S_MODEL;
     delete process.env.PHASE2S_CODEX_PATH;
+    // Isolate from ~/.codex/config.toml so model defaults are deterministic
+    process.env.HOME = "/tmp";
+    process.env.USERPROFILE = "/tmp";
   });
 
   afterEach(() => {
@@ -49,10 +55,10 @@ describe("loadConfig", () => {
     expect(config.timeout).toBe(120_000);
   });
 
-  it("returns a model string (never undefined)", async () => {
+  it("defaults to gpt-4o when no codex config exists (HOME=/tmp)", async () => {
+    // HOME is /tmp in beforeEach — no ~/.codex/config.toml there
     const config = await loadConfig({});
-    expect(typeof config.model).toBe("string");
-    expect(config.model.length).toBeGreaterThan(0);
+    expect(config.model).toBe("gpt-4o");
   });
 
   // --- Env var overrides ---
