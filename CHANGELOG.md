@@ -15,7 +15,7 @@ Sprint 2: test coverage expansion, CI, and the `/explain` skill.
 
 ### Added
 
-- **`/explain` skill** — explains code or a concept in plain language. Uses `{{target}}` to specify the subject. Built TDD-first: tests written before `SKILL.md` existed.
+- **`/explain` skill** — ask Phase2S to explain any piece of code or concept in plain language. Say "explain this", "what does this do", or "walk me through this" and it breaks it down clearly, following the code top-to-bottom and explaining intent, not just mechanics.
 
 ---
 

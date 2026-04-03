@@ -48,7 +48,7 @@ phase2s skills
 
 ## Built-in skills
 
-Phase2S ships with 5 skills in `.phase2s/skills/`. Type them in the REPL or pass a file argument:
+Phase2S ships with 6 skills in `.phase2s/skills/`. Type them in the REPL or pass a file argument:
 
 | Skill | What it does |
 |-------|-------------|
@@ -57,6 +57,7 @@ Phase2S ships with 5 skills in `.phase2s/skills/`. Type them in the REPL or pass
 | `/plan` | Phased implementation plan with verify steps per phase |
 | `/ship` | Commit prep: diff review, secret check, formatted commit message |
 | `/qa` | Functional QA: edge cases, empty inputs, error paths, bug report |
+| `/explain` | Explains code or a concept clearly — pass `{{target}}` to specify what |
 
 **With file arguments:**
 ```bash
@@ -184,11 +185,12 @@ Options:
 ## Roadmap
 
 - [x] Codex CLI provider (non-interactive, terminal-safe)
-- [x] 5 built-in skills: review, investigate, plan, ship, qa
+- [x] 6 built-in skills: review, investigate, plan, ship, qa, explain
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory
-- [x] Test suite: 54 unit tests covering all tools and core modules (`npm test`)
+- [x] Test suite: 96 unit tests covering all tools and core modules (`npm test`)
+- [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [ ] Direct OpenAI API provider with full tool control
 - [ ] Model-per-skill config via SKILL.md frontmatter
 - [ ] npm publish
