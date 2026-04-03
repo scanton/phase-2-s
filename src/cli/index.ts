@@ -74,24 +74,37 @@ async function interactiveMode(config: Config): Promise<void> {
 
   const agent = new Agent({ config });
 
+  // Use async iterator instead of rl.question — keeps stdin alive across
+  // the full session regardless of what the subprocess does to the TTY.
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
+    terminal: true,
   });
 
-  const prompt = (): Promise<string> =>
-    new Promise((resolve) => {
-      rl.question(chalk.green("you > "), (answer) => resolve(answer));
-    });
+  // Handle Ctrl+C gracefully
+  rl.on("SIGINT", () => {
+    log.info("\nGoodbye!");
+    rl.close();
+    process.exit(0);
+  });
 
   // Load skills for slash command handling
   const skills = await loadAllSkills();
 
-  while (true) {
-    const input = await prompt();
-    const trimmed = input.trim();
+  // Write the prompt manually; rl.asyncIterator handles the reads
+  const writePrompt = () => process.stdout.write(chalk.green("you > "));
 
-    if (!trimmed) continue;
+  writePrompt();
+
+  for await (const line of rl) {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      writePrompt();
+      continue;
+    }
+
     if (trimmed === "/quit" || trimmed === "/exit") {
       log.info("Goodbye!");
       rl.close();
@@ -100,6 +113,7 @@ async function interactiveMode(config: Config): Promise<void> {
 
     if (trimmed === "/help") {
       printHelp(skills);
+      writePrompt();
       continue;
     }
 
@@ -119,6 +133,7 @@ async function interactiveMode(config: Config): Promise<void> {
           spinner.stop();
           log.error(err instanceof Error ? err.message : String(err));
         }
+        writePrompt();
         continue;
       }
     }
@@ -132,6 +147,8 @@ async function interactiveMode(config: Config): Promise<void> {
       spinner.stop();
       log.error(err instanceof Error ? err.message : String(err));
     }
+
+    writePrompt();
   }
 }
 
