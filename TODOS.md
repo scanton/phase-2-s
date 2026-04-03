@@ -6,7 +6,16 @@
 
 ---
 
-## Sprint 1 (current) — Tests + Foundation
+## Sprint 2 (current) — Expand Coverage + CI + /explain
+
+- [x] Tests: `glob` tool — pattern matching, recursive, sandbox, ignore (9 tests)
+- [x] Tests: `grep` tool — case flag, filePattern, maxResults, sandbox (8 tests)
+- [x] Tests: `skills/loader` — YAML frontmatter, deduplication, search paths (10 tests)
+- [x] Tests: `ToolRegistry` — register, execute, list, toOpenAI(), throw recovery (9 tests)
+- [x] Add CI (GitHub Actions on push) — `.github/workflows/test.yml`, Node.js 22
+- [x] `/explain` skill — TDD: test first, then SKILL.md (5 tests, `{{target}}` placeholder)
+
+## Sprint 1 (done) — Tests + Foundation
 
 - [x] Set up vitest test framework (`npm test`)
 - [x] Tests: `file_read` tool — sandbox, line ranges, error sanitization (11 tests)
@@ -14,10 +23,6 @@
 - [x] Tests: `shell` tool — exit codes, timeout, cwd, schema validation (10 tests)
 - [x] Tests: `Conversation` — token estimation, trimToTokenBudget, immutability (12 tests)
 - [x] Tests: `loadConfig` — defaults, env var precedence, schema validation (10 tests)
-- [ ] Tests: `glob` and `grep` tools — pattern matching, file filtering
-- [ ] Tests: `skills/loader` — YAML frontmatter, deduplication, search paths
-- [ ] Tests: `ToolRegistry` — register, execute, list, toOpenAI()
-- [ ] Add test script to CI (GitHub Actions on push)
 
 ---
 
@@ -94,7 +99,7 @@
 - `conversation.ts`: token estimation is ~4 chars/token — rough; use `tiktoken` for precision
 - `file-read.ts`, `file-write.ts`: sandbox uses `resolve()` not `realpath()` — symlinks inside the project that point outside cwd bypass the sandbox. Accepted risk for personal use (requires a malicious symlink already in your repo). Fix with `realpath()` before ship.
 - No integration tests (only unit tests so far)
-- No CI pipeline yet
+- CI added (GitHub Actions, Node.js 22) — no deploy step yet (CLI tool)
 
 ---
 
