@@ -92,6 +92,7 @@
 - `shell.ts`: warns on destructive commands but doesn't block them
 - `openai.ts`: doesn't handle `finish_reason: "length"` (silently drops truncated responses)
 - `conversation.ts`: token estimation is ~4 chars/token — rough; use `tiktoken` for precision
+- `file-read.ts`, `file-write.ts`: sandbox uses `resolve()` not `realpath()` — symlinks inside the project that point outside cwd bypass the sandbox. Accepted risk for personal use (requires a malicious symlink already in your repo). Fix with `realpath()` before ship.
 - No integration tests (only unit tests so far)
 - No CI pipeline yet
 
