@@ -11,7 +11,13 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/bin/phase2s.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "vitest": {
+    "include": ["test/**/*.test.ts"],
+    "environment": "node"
   },
   "engines": {
     "node": ">=20"
@@ -37,6 +43,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.2"
   }
 }
