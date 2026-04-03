@@ -111,4 +111,21 @@ describe("ToolRegistry", () => {
     expect(result.error).toMatch(/Tool boom failed/);
     expect(result.error).toMatch(/something exploded/);
   });
+
+  it("passes parsed arguments through to tool.execute()", async () => {
+    const registry = new ToolRegistry();
+    let capturedArgs: unknown;
+    const tool: ToolDefinition = {
+      name: "capture-tool",
+      description: "captures its arguments",
+      parameters: z.object({ value: z.string() }),
+      async execute(args: unknown): Promise<ToolResult> {
+        capturedArgs = args;
+        return { success: true, output: "captured" };
+      },
+    };
+    registry.register(tool);
+    await registry.execute("capture-tool", { value: "test-input" });
+    expect(capturedArgs).toEqual({ value: "test-input" });
+  });
 });
