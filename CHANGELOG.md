@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.4.0 — 2026-04-03
+
+Sprint 2: test coverage expansion, CI, and the `/explain` skill.
+
+### For contributors
+
+- Test suite grows from 56 to 96 tests across 10 test files
+- **New: `test/tools/glob.test.ts`** — 9 tests: pattern matching, recursive `**` globs, `cwd` sandbox enforcement, custom ignore, node_modules default ignore
+- **New: `test/tools/grep.test.ts`** — 8 tests: case-insensitive search, `filePattern` filtering, `maxResults` truncation, sandbox enforcement
+- **New: `test/core/registry.test.ts`** — 9 tests: all `ToolRegistry` methods plus all three error paths in `execute()` (unknown tool, invalid args, thrown error)
+- **New: `test/skills/loader.test.ts`** — 10 tests: flat `.md` files, directory-based `SKILL.md`, YAML array triggers, malformed frontmatter, README skip, missing dirs, `sourcePath`, deduplication
+- **CI: `.github/workflows/test.yml`** — `npm test` runs on every push and pull request, Node.js 22, `npm ci`
+
+### Added
+
+- **`/explain` skill** — explains code or a concept in plain language. Uses `{{target}}` to specify the subject. Built TDD-first: tests written before `SKILL.md` existed.
+
+---
+
 ## v0.3.0 — 2026-04-03
 
 Test suite, security hardening, and tool behavior improvements.
