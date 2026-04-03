@@ -6,9 +6,16 @@ import type { OpenAIFunctionDef } from "../tools/types.js";
 /**
  * Codex CLI provider.
  *
- * Spawns the `codex` CLI as a subprocess and communicates via stdin/stdout.
- * This wraps the interactive Codex session, sending the user's prompt and
- * parsing the response.
+ * Uses `codex exec` for non-interactive execution.
+ * Codex handles its own tool calling internally (file read/write, shell, etc.)
+ * and returns the final text response on stdout.
+ *
+ * Relevant flags:
+ *   exec            — non-interactive mode
+ *   -m <model>      — model to use
+ *   --full-auto     — run without approval prompts (-a on-failure, --sandbox workspace-write)
+ *   --json          — emit JSONL events (we use this to extract the final message)
+ *   -C <dir>        — working directory
  */
 export class CodexProvider implements Provider {
   name = "codex-cli";
@@ -24,27 +31,42 @@ export class CodexProvider implements Provider {
     messages: Message[],
     _tools: OpenAIFunctionDef[],
   ): Promise<{ text: string; toolCalls: ToolCall[] }> {
-    // Build the prompt from messages
-    const userMessages = messages.filter((m) => m.role === "user");
-    const lastUserMessage = userMessages[userMessages.length - 1]?.content ?? "";
+    // Build the full prompt: include system context + conversation history
+    // then pass the latest user message as the exec prompt.
+    const parts: string[] = [];
 
-    // Build system prompt from system messages
     const systemMessages = messages.filter((m) => m.role === "system");
-    const systemPrompt = systemMessages.map((m) => m.content).join("\n");
-
-    const args = ["--quiet", "--model", this.model];
-    if (systemPrompt) {
-      args.push("--instructions", systemPrompt);
+    if (systemMessages.length > 0) {
+      parts.push(systemMessages.map((m) => m.content).join("\n"));
+      parts.push("---");
     }
-    // Full-auto mode so Codex handles tool execution internally
-    args.push("--approval-mode", "full-auto");
-    args.push(lastUserMessage);
+
+    // Include prior conversation turns for context
+    const nonSystem = messages.filter((m) => m.role !== "system");
+    for (const msg of nonSystem) {
+      if (msg.role === "user") {
+        parts.push(`User: ${msg.content}`);
+      } else if (msg.role === "assistant" && msg.content) {
+        parts.push(`Assistant: ${msg.content}`);
+      }
+    }
+
+    const prompt = parts.join("\n\n");
+
+    // codex exec [OPTIONS] <PROMPT>
+    const args = [
+      "exec",
+      "-m", this.model,
+      "--full-auto",
+      "-C", process.cwd(),
+      "--color", "never",
+      prompt,
+    ];
 
     return new Promise((resolve, reject) => {
       const proc = spawn(this.codexPath, args, {
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env },
-        cwd: process.cwd(),
       });
 
       let stdout = "";
@@ -63,8 +85,7 @@ export class CodexProvider implements Provider {
           reject(new Error(`Codex exited with code ${code}: ${stderr}`));
           return;
         }
-        // In full-auto mode, Codex handles tool calls internally
-        // and returns the final text output
+        // Codex exec outputs the final agent response on stdout
         resolve({
           text: stdout.trim() || stderr.trim(),
           toolCalls: [],
