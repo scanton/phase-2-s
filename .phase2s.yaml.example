@@ -4,8 +4,8 @@
 # LLM provider: "codex-cli" (wraps OpenAI Codex CLI) or "openai-api" (direct API)
 provider: codex-cli
 
-# Model to use
-model: o4-mini
+# Model to use — auto-detected from ~/.codex/config.toml if not set here
+# model: gpt-4o
 
 # Path to codex CLI binary (if using codex-cli provider)
 # codexPath: codex

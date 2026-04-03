@@ -9,7 +9,7 @@ import { Agent } from "../core/agent.js";
 import { loadAllSkills } from "../skills/index.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const program = new Command();
