@@ -78,6 +78,10 @@ export class CodexProvider implements Provider {
 
       let stderr = "";
 
+      // Consume stdout (JSONL events) so the pipe buffer never fills and
+      // blocks codex. We don't parse it — we use --output-last-message instead.
+      proc.stdout.resume();
+
       proc.stderr.on("data", (data: Buffer) => {
         stderr += data.toString();
       });

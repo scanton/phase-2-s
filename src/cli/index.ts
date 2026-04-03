@@ -68,42 +68,81 @@ export async function main(argv: string[] = process.argv): Promise<void> {
   await program.parseAsync(argv);
 }
 
+/**
+ * Interactive REPL.
+ *
+ * Uses a manual event-queue pattern (rl.on('line')) rather than the
+ * readline async iterator. The async iterator has a known issue where
+ * it terminates if the event loop drains while awaiting between turns —
+ * which is exactly what happens while codex is running.
+ */
 async function interactiveMode(config: Config): Promise<void> {
   console.log(chalk.bold(`\nPhase2S v${VERSION}`));
   console.log(chalk.dim("Type your message and press Enter. Type /quit to exit.\n"));
 
   const agent = new Agent({ config });
+  const skills = await loadAllSkills();
 
-  // Use async iterator instead of rl.question — keeps stdin alive across
-  // the full session regardless of what the subprocess does to the TTY.
+  // Ensure stdin is open and stays open for the full session
+  process.stdin.resume();
+  process.stdin.setEncoding("utf8");
+
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
     terminal: true,
   });
 
-  // Handle Ctrl+C gracefully
+  // Manual async queue: lines go in via rl.on('line'), come out via nextLine()
+  const lineQueue: string[] = [];
+  let pendingResolve: ((line: string | null) => void) | null = null;
+  let isOpen = true;
+
+  rl.on("line", (line) => {
+    if (pendingResolve) {
+      const resolve = pendingResolve;
+      pendingResolve = null;
+      resolve(line);
+    } else {
+      lineQueue.push(line);
+    }
+  });
+
+  rl.on("close", () => {
+    isOpen = false;
+    if (pendingResolve) {
+      pendingResolve(null);
+      pendingResolve = null;
+    }
+  });
+
   rl.on("SIGINT", () => {
-    log.info("\nGoodbye!");
+    process.stdout.write("\n");
+    log.info("Goodbye!");
     rl.close();
     process.exit(0);
   });
 
-  // Load skills for slash command handling
-  const skills = await loadAllSkills();
+  /** Wait for the next line of input. Returns null if stdin closes. */
+  const nextLine = (): Promise<string | null> => {
+    if (lineQueue.length > 0) return Promise.resolve(lineQueue.shift()!);
+    if (!isOpen) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      pendingResolve = resolve;
+    });
+  };
 
-  // Write the prompt manually; rl.asyncIterator handles the reads
   const writePrompt = () => process.stdout.write(chalk.green("you > "));
 
-  writePrompt();
+  // Main REPL loop
+  while (true) {
+    writePrompt();
 
-  for await (const line of rl) {
+    const line = await nextLine();
+    if (line === null) break; // stdin closed cleanly
+
     const trimmed = line.trim();
-
-    if (!trimmed) {
-      writePrompt();
-      continue;
-    }
+    if (!trimmed) continue;
 
     if (trimmed === "/quit" || trimmed === "/exit") {
       log.info("Goodbye!");
@@ -113,42 +152,35 @@ async function interactiveMode(config: Config): Promise<void> {
 
     if (trimmed === "/help") {
       printHelp(skills);
-      writePrompt();
       continue;
     }
 
-    // Handle skill invocation
+    // Skill invocation
     if (trimmed.startsWith("/")) {
       const skillName = trimmed.slice(1).split(" ")[0];
       const skill = skills.find((s) => s.name === skillName);
       if (skill) {
         const rest = trimmed.slice(1 + skillName.length).trim();
         const expanded = skill.promptTemplate + (rest ? `\n\nUser context: ${rest}` : "");
-        const spinner = ora("Thinking...").start();
+        process.stdout.write(chalk.dim("Thinking...\n"));
         try {
           const response = await agent.run(expanded);
-          spinner.stop();
           console.log(chalk.bold("\nassistant > ") + response + "\n");
         } catch (err) {
-          spinner.stop();
           log.error(err instanceof Error ? err.message : String(err));
         }
-        writePrompt();
         continue;
       }
     }
 
-    const spinner = ora("Thinking...").start();
+    // Normal message — no spinner (ora can interact with stdin state)
+    process.stdout.write(chalk.dim("Thinking...\n"));
     try {
       const response = await agent.run(trimmed);
-      spinner.stop();
       console.log(chalk.bold("\nassistant > ") + response + "\n");
     } catch (err) {
-      spinner.stop();
       log.error(err instanceof Error ? err.message : String(err));
     }
-
-    writePrompt();
   }
 }
 
