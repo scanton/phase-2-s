@@ -45,6 +45,9 @@ export class Agent {
     while (turns < this.maxTurns) {
       turns++;
 
+      // Trim context before each LLM call to prevent context_length_exceeded errors
+      this.conversation.trimToTokenBudget();
+
       const { text, toolCalls } = await this.provider.chat(
         this.conversation.getMessages(),
         this.tools.toOpenAI(),

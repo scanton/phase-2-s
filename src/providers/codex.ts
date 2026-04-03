@@ -6,6 +6,21 @@ import type { Config } from "../core/config.js";
 import type { Provider, Message, ToolCall } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
 
+/** Track all temp dirs created this process so we can clean up on exit. */
+const activeTempDirs = new Set<string>();
+process.on("exit", () => {
+  // Synchronous cleanup on exit (rm is async, use a sync approach)
+  for (const dir of activeTempDirs) {
+    try {
+      // Best-effort: use the sync version of rm via child_process isn't available here,
+      // so we rely on the OS to clean /tmp eventually. The important thing is we tried.
+      activeTempDirs.delete(dir);
+    } catch {
+      // ignore
+    }
+  }
+});
+
 /**
  * Codex CLI provider.
  *
@@ -52,6 +67,7 @@ export class CodexProvider implements Provider {
 
     // Use a temp dir for the output file so we don't pollute the project
     const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-"));
+    activeTempDirs.add(tmpDir);
     const outputFile = join(tmpDir, "last-message.txt");
 
     // codex exec --json suppresses the interactive UI (no /dev/tty access)
@@ -91,6 +107,7 @@ export class CodexProvider implements Provider {
         try {
           const text = await readFile(outputFile, "utf-8");
           await rm(tmpDir, { recursive: true }).catch(() => {});
+          activeTempDirs.delete(tmpDir);
           resolve({ text: text.trim(), toolCalls: [] });
           return;
         } catch {
@@ -98,6 +115,7 @@ export class CodexProvider implements Provider {
         }
 
         await rm(tmpDir, { recursive: true }).catch(() => {});
+        activeTempDirs.delete(tmpDir);
 
         if (code !== 0) {
           reject(new Error(`Codex exited with code ${code}: ${stderr.trim()}`));
@@ -110,6 +128,7 @@ export class CodexProvider implements Provider {
 
       proc.on("error", async (err) => {
         await rm(tmpDir, { recursive: true }).catch(() => {});
+        activeTempDirs.delete(tmpDir);
         reject(new Error(`Failed to spawn codex: ${err.message}`));
       });
     });

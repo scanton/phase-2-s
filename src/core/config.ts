@@ -28,10 +28,18 @@ export async function loadConfig(overrides?: Partial<z.infer<typeof configSchema
   for (const name of [".phase2s.yaml", ".phase2s.yml"]) {
     try {
       const raw = await readFile(resolve(name), "utf-8");
-      fileConfig = parseYaml(raw) ?? {};
+      const parsed = parseYaml(raw);
+      if (parsed === null || parsed === undefined) {
+        // Empty file — treat as no config
+      } else if (typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error(`${name} must be a YAML mapping (key: value), not a ${Array.isArray(parsed) ? "list" : typeof parsed}`);
+      } else {
+        fileConfig = parsed as Record<string, unknown>;
+      }
       break;
-    } catch {
-      // File not found, continue
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("must be a YAML")) throw err;
+      // File not found or unreadable — continue to next name
     }
   }
 

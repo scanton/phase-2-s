@@ -1,28 +1,45 @@
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 import type { ToolDefinition, ToolResult } from "./types.js";
 
 const params = z.object({
-  path: z.string().describe("Path to the file to read"),
-  startLine: z.number().optional().describe("Start reading from this line (1-based)"),
-  endLine: z.number().optional().describe("Stop reading at this line (inclusive)"),
+  path: z.string().describe("Path to the file to read (relative to project directory)"),
+  startLine: z.number().min(1).optional().describe("Start reading from this line (1-based)"),
+  endLine: z.number().min(1).optional().describe("Stop reading at this line (inclusive)"),
 });
+
+/** Sanitize an error message before returning it to the LLM — strip absolute paths. */
+function sanitizeError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  // Remove absolute paths from error strings (e.g. ENOENT: no such file or directory, open '/home/user/...')
+  return msg.replace(/,\s*open\s+'[^']*'/g, "").replace(/\/[^\s']*/g, "<path>");
+}
 
 export const fileReadTool: ToolDefinition = {
   name: "file_read",
-  description: "Read the contents of a file. Optionally specify a line range.",
+  description: "Read the contents of a file. Optionally specify a line range. Paths are relative to the project directory.",
   parameters: params,
   async execute(raw: unknown): Promise<ToolResult> {
     const args = params.parse(raw);
     const fullPath = resolve(args.path);
+    const projectRoot = process.cwd();
+
+    // Sandbox: reject paths outside the project directory
+    if (!fullPath.startsWith(projectRoot + sep) && fullPath !== projectRoot) {
+      return {
+        success: false,
+        output: "",
+        error: `Path outside project directory: ${args.path}`,
+      };
+    }
 
     try {
       const content = await readFile(fullPath, "utf-8");
 
-      if (args.startLine || args.endLine) {
+      if (args.startLine !== undefined || args.endLine !== undefined) {
         const lines = content.split("\n");
-        const start = (args.startLine ?? 1) - 1;
+        const start = (args.startLine ?? 1) - 1;  // already validated min(1), so min index is 0
         const end = args.endLine ?? lines.length;
         const slice = lines.slice(start, end);
         const numbered = slice.map((line, i) => `${start + i + 1}\t${line}`);
@@ -31,8 +48,7 @@ export const fileReadTool: ToolDefinition = {
 
       return { success: true, output: content };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, output: "", error: msg };
+      return { success: false, output: "", error: sanitizeError(err) };
     }
   },
 };

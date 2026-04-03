@@ -5,10 +5,24 @@ import type { ToolDefinition, ToolResult } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
+/** Patterns that suggest a destructive or exfiltration-risk command. */
+const DESTRUCTIVE_PATTERNS = [
+  /rm\s+-[a-zA-Z]*r[a-zA-Z]*f/,     // rm -rf variants
+  /rm\s+-[a-zA-Z]*f[a-zA-Z]*r/,     // rm -fr variants
+  /\bcurl\b.*\|\s*(ba)?sh/,         // curl | sh / curl | bash
+  /\bwget\b.*\|\s*(ba)?sh/,         // wget | sh
+  /git\s+push\s+.*--force/,         // git push --force
+  /git\s+push\s+-f\b/,              // git push -f
+  /:\s*>\s*\S+/,                    // : > file (truncate via colon)
+  /\bdd\b.*of=\/dev\//,             // dd to device files
+  /\bchmod\s+777\b/,                // world-writable permission
+  /\bsudo\b/,                       // sudo escalation
+];
+
 const params = z.object({
   command: z.string().describe("Shell command to execute"),
-  timeout: z.number().optional().describe("Timeout in milliseconds (default: 30000)"),
-  cwd: z.string().optional().describe("Working directory for the command"),
+  timeout: z.number().min(1_000).max(300_000).optional().describe("Timeout in milliseconds (default: 30000, max: 300000)"),
+  cwd: z.string().optional().describe("Working directory for the command (defaults to project directory)"),
 });
 
 export const shellTool: ToolDefinition = {
@@ -19,22 +33,35 @@ export const shellTool: ToolDefinition = {
     const args = params.parse(raw);
     const timeout = args.timeout ?? 30_000;
 
+    // Warn on destructive patterns — log to stdout so the user sees it
+    for (const pattern of DESTRUCTIVE_PATTERNS) {
+      if (pattern.test(args.command)) {
+        process.stdout.write(`  [shell] ⚠ Potentially destructive command: ${args.command}\n`);
+        break;
+      }
+    }
+
     try {
       const { stdout, stderr } = await execFileAsync("/bin/sh", ["-c", args.command], {
         timeout,
         maxBuffer: 1024 * 1024 * 10, // 10MB
-        cwd: args.cwd,
+        cwd: args.cwd ?? process.cwd(),
       });
 
-      const output = [stdout, stderr].filter(Boolean).join("\n");
-      return { success: true, output: output || "(no output)" };
+      // Return stdout and stderr separately so the LLM gets accurate signal
+      const parts: string[] = [];
+      if (stdout) parts.push(stdout);
+      if (stderr) parts.push(`[stderr]\n${stderr}`);
+      return { success: true, output: parts.join("\n") || "(no output)" };
     } catch (err: unknown) {
       if (err && typeof err === "object" && "stdout" in err) {
         const execErr = err as { stdout: string; stderr: string; code: number };
-        const output = [execErr.stdout, execErr.stderr].filter(Boolean).join("\n");
+        const parts: string[] = [];
+        if (execErr.stdout) parts.push(execErr.stdout);
+        if (execErr.stderr) parts.push(`[stderr]\n${execErr.stderr}`);
         return {
           success: false,
-          output,
+          output: parts.join("\n"),
           error: `Command exited with code ${execErr.code}`,
         };
       }
