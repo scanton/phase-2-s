@@ -5,16 +5,23 @@ import { parse as parseYaml } from "yaml";
 import { parse as parseToml } from "@iarna/toml";
 
 const configSchema = z.object({
-  provider: z.enum(["codex-cli", "openai-api"]).default("codex-cli"),
+  provider: z.enum(["codex-cli", "openai-api", "anthropic", "ollama"]).default("codex-cli"),
   /**
    * Model to use. For codex-cli provider, defaults to whatever is in
    * ~/.codex/config.toml so the user's existing Codex setup is respected.
    * For openai-api, defaults to "gpt-4o".
+   * For anthropic, defaults to "claude-3-5-sonnet-20241022".
+   * For ollama, defaults to "llama3.1:8b" (user must have it pulled).
    */
   model: z.string().optional(),
   fast_model: z.string().optional(),
   smart_model: z.string().optional(),
   apiKey: z.string().optional(),
+  anthropicApiKey: z.string().optional(),
+  /** Anthropic max_tokens (default 8192; raise for models with higher ceilings). */
+  anthropicMaxTokens: z.number().optional(),
+  /** Ollama base URL (default http://localhost:11434/v1). */
+  ollamaBaseUrl: z.string().optional(),
   codexPath: z.string().default("codex"),
   systemPrompt: z.string().optional(),
   maxTurns: z.number().default(50),
@@ -64,6 +71,7 @@ export async function loadConfig(overrides?: Partial<z.infer<typeof configSchema
   // Env vars override file config
   const envConfig: Record<string, unknown> = {};
   if (process.env.OPENAI_API_KEY) envConfig.apiKey = process.env.OPENAI_API_KEY;
+  if (process.env.ANTHROPIC_API_KEY) envConfig.anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   if (process.env.PHASE2S_PROVIDER) envConfig.provider = process.env.PHASE2S_PROVIDER;
   if (process.env.PHASE2S_MODEL) envConfig.model = process.env.PHASE2S_MODEL;
   if (process.env.PHASE2S_CODEX_PATH) envConfig.codexPath = process.env.PHASE2S_CODEX_PATH;
@@ -105,5 +113,7 @@ async function resolveDefaultModel(provider: string): Promise<string> {
     }
     return "gpt-4o"; // safe fallback for ChatGPT subscriptions
   }
-  return "gpt-4o"; // direct API default
+  if (provider === "anthropic") return "claude-3-5-sonnet-20241022";
+  if (provider === "ollama") return "llama3.1:8b"; // user must have this model pulled
+  return "gpt-4o"; // openai-api default
 }
