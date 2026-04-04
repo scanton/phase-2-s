@@ -2,7 +2,7 @@
 
 > **These features require `PHASE2S_PROVIDER=openai-api` and `OPENAI_API_KEY`.**
 >
-> If you're using a ChatGPT subscription (Option A / Codex CLI), you don't need this page. All 28 skills work without it. Come back when you want streaming output or model-per-skill routing.
+> If you're using a ChatGPT subscription (Option A / Codex CLI), you don't need this page. All 29 skills work without it. Come back when you want streaming output or model-per-skill routing.
 
 ---
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.13.0 — 2026-04-04
+
+Sprint 11: `/land-and-deploy` skill — push, PR, CI wait, merge.
+
+### What you can do now
+
+- **`/land-and-deploy`** — the missing link between `/ship` (commit) and production. Push the current branch, create or find the PR via `gh` CLI, wait for CI checks to pass, merge, delete the remote branch, and confirm the land. Handles the common failure paths cleanly: uncommitted changes, push conflicts, CI failures, merge conflicts — stops with a clear message at each, no silent failures, no force-push without instruction. Requires `gh` CLI installed and authenticated.
+
+### For contributors
+
+- **`.phase2s/skills/land-and-deploy/SKILL.md`** — new skill file. 7-step process covering state check, push, PR creation/discovery, CI wait, merge, and post-merge confirmation.
+- **`test/skills/built-in-skills.test.ts`** — 3 new tests (name/triggers, prompt coverage, total count ≥ 29). **208 tests total** (up from 205).
+- **`docs/skills.md`** — `/land-and-deploy` section added under Planning and shipping. Count updated to 29.
+- **`docs/workflows.md`** — Step 5 (land-and-deploy) added to the "Starting a new feature" workflow.
+- **`README.md`** — skill count updated to 29, `/land-and-deploy` added to highlights and roadmap.
+
 ## v0.12.0 — 2026-04-04
 
 Sprint 10: Persistent memory, meta-skill (/skill), session security hardening, and signal handler guard.

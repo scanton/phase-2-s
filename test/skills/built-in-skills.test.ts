@@ -345,4 +345,25 @@ describe("Built-in skills — Sprint 10", () => {
   it("loads all 28 built-in skills (26 prior + remember + skill)", () => {
     expect(skills.length).toBeGreaterThanOrEqual(28);
   });
+
+  // --- Sprint 11: /land-and-deploy ---
+  it("land-and-deploy: loads with correct name, description, and triggers", () => {
+    const skill = getSkill("land-and-deploy");
+    expect(skill.description).toMatch(/PR|merge|deploy/i);
+    expect(skill.triggerPhrases).toContain("land this");
+    expect(skill.triggerPhrases).toContain("merge and deploy");
+    expect(skill.triggerPhrases).toContain("land it");
+  });
+
+  it("land-and-deploy: prompt covers push, PR creation, CI wait, and merge", () => {
+    const skill = getSkill("land-and-deploy");
+    expect(skill.promptTemplate).toContain("git push");
+    expect(skill.promptTemplate).toContain("gh pr");
+    expect(skill.promptTemplate).toContain("CI");
+    expect(skill.promptTemplate).toContain("merge");
+  });
+
+  it("loads all 29 built-in skills (28 prior + land-and-deploy)", () => {
+    expect(skills.length).toBeGreaterThanOrEqual(29);
+  });
 });

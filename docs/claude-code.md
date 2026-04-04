@@ -10,7 +10,7 @@ The main use case is **cross-model adversarial review**. When Claude Code (runni
 
 Two different models, different training, different biases, working in concert on the same plan. You get a second opinion from a model with no stake in agreeing with the first.
 
-All other Phase2S skills are available too: `phase2s__health`, `phase2s__plan_review`, `phase2s__consensus_plan`, all 28.
+All other Phase2S skills are available too: `phase2s__health`, `phase2s__plan_review`, `phase2s__consensus_plan`, all 29.
 
 ---
 
@@ -64,7 +64,7 @@ Once configured, Claude Code gains a tool for every Phase2S skill:
 | `/scope-review` | `phase2s__scope_review` |
 | `/health` | `phase2s__health` |
 | `/retro` | `phase2s__retro` |
-| (all 28 skills) | `phase2s__<name>` |
+| (all 29 skills) | `phase2s__<name>` |
 
 Hyphens in skill names become underscores in tool names. `plan-review` → `phase2s__plan_review`.
 

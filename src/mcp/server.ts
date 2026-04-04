@@ -19,7 +19,7 @@ import { Agent } from "../core/agent.js";
 import { join } from "node:path";
 import type { Skill } from "../skills/types.js";
 
-export const MCP_SERVER_VERSION = "0.12.0";
+export const MCP_SERVER_VERSION = "0.13.0";
 
 // ---------------------------------------------------------------------------
 // Types

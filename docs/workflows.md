@@ -156,6 +156,27 @@ you > /ship
   feat: add rate limiting middleware (100/min auth, 20/min anon)
 ```
 
+**Step 5: Land it**
+
+```
+you > /land-and-deploy
+
+Pushing feat/rate-limiting to origin...
+PR #42 created: https://github.com/owner/repo/pull/42
+
+Waiting for CI checks...
+  ✓ test (Node.js 22) — 2m 18s
+  ✓ lint — 41s
+
+Merging PR #42...
+Merged: 9f3a2c1
+Branch deleted: origin/feat/rate-limiting
+
+Landed: feat/rate-limiting → main
+```
+
+`/ship` commits. `/land-and-deploy` lands. That's the full loop from ticket to main.
+
 ---
 
 ## Debugging a bug

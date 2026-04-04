@@ -13,7 +13,7 @@ import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { loadAllSkills } from "../skills/index.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.12.0";
+const VERSION = "0.13.0";
 
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");

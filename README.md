@@ -25,7 +25,7 @@ Requires [Node.js](https://nodejs.org) >= 20.
 
 **Option A: ChatGPT Plus or Pro subscription (recommended)**
 
-No API key, no per-token billing. All 28 skills work.
+No API key, no per-token billing. All 29 skills work.
 
 ```bash
 npm install -g @openai/codex phase2s
@@ -74,7 +74,7 @@ phase2s --resume
 
 ## What's included
 
-28 built-in skills across 6 categories. A few highlights:
+29 built-in skills across 6 categories. A few highlights:
 
 - `/satori` — implement a task, run `npm test`, retry on failure (up to 3 times). Stops when tests are green, not when the model thinks it's done.
 - `/consensus-plan` — planner + architect + critic passes before producing a plan. Catches the errors that only show up in implementation.
@@ -82,6 +82,7 @@ phase2s --resume
 - `/debug` — reproduce, isolate, fix, and verify a bug end-to-end.
 - `/remember` — save project conventions to persistent memory. Injected into every future session automatically.
 - `/skill` — create a new `/command` from inside Phase2S. Three questions, no YAML editing.
+- `/land-and-deploy` — push, open a PR, merge it, wait for CI, confirm the land. Picks up where `/ship` leaves off.
 
 List everything:
 
@@ -94,7 +95,7 @@ phase2s skills
 ## Docs
 
 - [Getting started](docs/getting-started.md) — full setup walkthrough, first session, first skill call
-- [Skills reference](docs/skills.md) — all 28 skills with examples and arguments
+- [Skills reference](docs/skills.md) — all 29 skills with examples and arguments
 - [Workflows](docs/workflows.md) — real development sessions: feature, debug, review, weekly rhythm
 - [Memory and persistence](docs/memory.md) — session resume, `/remember`, what Phase2S writes to disk
 - [Writing custom skills](docs/writing-skills.md) — SKILL.md format, frontmatter fields, examples
@@ -107,11 +108,11 @@ phase2s skills
 ## Roadmap
 
 - [x] Codex CLI provider (uses ChatGPT subscription, no API key required)
-- [x] 28 built-in skills across 6 categories
+- [x] 29 built-in skills across 6 categories
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 205 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 208 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Streaming output — responses stream token-by-token
@@ -125,6 +126,7 @@ phase2s skills
 - [x] Persistent memory — `/remember` saves learnings to `.phase2s/memory/learnings.jsonl`
 - [x] `/skill` meta-skill — create new skills from inside Phase2S
 - [x] Session file security — session files written with `mode: 0o600` (owner-only)
+- [x] `/land-and-deploy` skill — push, PR, CI wait, merge, deploy confirmation via `gh` CLI
 - [ ] Real Codex streaming (JSONL stdout parsing)
 - [ ] npm publish
 

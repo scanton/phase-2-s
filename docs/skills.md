@@ -1,6 +1,6 @@
 # Skills Reference
 
-Phase2S ships with 28 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). A few features within skills (model tier routing) require Option B (OpenAI API key). Those are noted.
+Phase2S ships with 29 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). A few features within skills (model tier routing) require Option B (OpenAI API key). Those are noted.
 
 Invoke any skill from the REPL:
 
@@ -361,11 +361,44 @@ you > /autoplan add a search endpoint to the API
 
 ### `/ship`
 
-Commit prep. Runs: diff review, secret scan, formatted commit message suggestion.
+Commit prep. Runs: diff review, secret scan, formatted commit message suggestion. Stops at the commit.
 
 ```
 you > /ship
 ```
+
+---
+
+### `/land-and-deploy`
+
+Push, open a PR, merge it, wait for CI, and confirm the land. Picks up where `/ship` leaves off.
+
+Requires the `gh` CLI installed and authenticated (`gh auth status`).
+
+```
+you > /land-and-deploy
+
+Pushing feat/rate-limiting to origin...
+PR #42 created: https://github.com/owner/repo/pull/42
+
+Waiting for CI checks...
+  ✓ test (Node.js 22) — 2m 14s
+  ✓ lint — 43s
+
+Merging PR #42...
+Merged: abc1234
+Branch deleted: origin/feat/rate-limiting
+
+Landed: feat/rate-limiting → main
+```
+
+Handles the common failure paths:
+- Uncommitted changes: stops and tells you to run `/ship` first
+- Push conflicts (non-fast-forward): stops, explains, does not force-push
+- CI failures: shows which check failed and the failure log, stops
+- Merge conflicts: stops and tells you to resolve locally
+
+Trigger phrases: `land this`, `merge and deploy`, `land it`, `ship to production`
 
 ---
 

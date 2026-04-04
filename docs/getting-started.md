@@ -15,7 +15,7 @@ This guide gets you running in under 5 minutes.
 
 ## Option A: ChatGPT subscription (recommended for most users)
 
-If you pay for ChatGPT at [chat.openai.com](https://chat.openai.com), you already have what you need. No separate API billing. All 28 skills work.
+If you pay for ChatGPT at [chat.openai.com](https://chat.openai.com), you already have what you need. No separate API billing. All 29 skills work.
 
 **Step 1: Install Codex CLI and Phase2S**
 
@@ -168,7 +168,7 @@ Everything else (`satori/`, `specs/`, `debug/`, `checkpoints/`) is created on-de
 
 ## Next steps
 
-- [Skills reference](skills.md) — all 28 built-in skills with examples
+- [Skills reference](skills.md) — all 29 built-in skills with examples
 - [Workflows](workflows.md) — what a real development day with Phase2S looks like
 - [Memory and persistence](memory.md) — session resume, `/remember`, `/skill`
 - [Writing custom skills](writing-skills.md) — create your own `/commands`
