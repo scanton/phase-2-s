@@ -53,6 +53,11 @@ export async function loadConfig(overrides?: Partial<z.infer<typeof configSchema
   if (process.env.PHASE2S_PROVIDER) envConfig.provider = process.env.PHASE2S_PROVIDER;
   if (process.env.PHASE2S_MODEL) envConfig.model = process.env.PHASE2S_MODEL;
   if (process.env.PHASE2S_CODEX_PATH) envConfig.codexPath = process.env.PHASE2S_CODEX_PATH;
+  // Accept "true", "1", "yes" (case-insensitive) for PHASE2S_ALLOW_DESTRUCTIVE.
+  const _destructive = process.env.PHASE2S_ALLOW_DESTRUCTIVE?.toLowerCase();
+  if (_destructive === "true" || _destructive === "1" || _destructive === "yes") {
+    envConfig.allowDestructive = true;
+  }
 
   const merged = { ...fileConfig, ...envConfig, ...overrides };
   const parsed = configSchema.parse(merged);

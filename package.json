@@ -1,8 +1,13 @@
 {
   "name": "phase2s",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "AI programming harness with multi-model support",
   "type": "module",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "main": "dist/cli/index.js",
   "bin": {
     "phase2s": "dist/bin/phase2s.js"
@@ -37,7 +42,6 @@
     "commander": "^12.1.0",
     "glob": "^11.0.0",
     "openai": "^4.73.0",
-    "ora": "^8.1.0",
     "yaml": "^2.6.0",
     "zod": "^3.23.0"
   },

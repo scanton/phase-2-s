@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Config } from "../core/config.js";
-import type { Provider, Message, ToolCall } from "./types.js";
+import type { Provider, Message, ToolCall, ProviderEvent } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
 
 /** Track all temp dirs created this process so we can clean up on crash/exit. */
@@ -30,6 +30,12 @@ process.on("exit", () => {
  *
  * This means codex never needs to open /dev/tty, so it cannot corrupt
  * the parent process's terminal/readline session.
+ *
+ * Real Codex streaming is deferred — the JSONL stdout format is undocumented.
+ * `chatStream()` wraps `_chat()` in a passthrough single-event generator
+ * (same batch UX as before, but through the Provider streaming interface).
+ * Tool calling is not supported via the --output-last-message mechanism;
+ * toolCalls is always [].
  */
 export class CodexProvider implements Provider {
   name = "codex-cli";
@@ -41,7 +47,25 @@ export class CodexProvider implements Provider {
     this.model = config.model;
   }
 
-  async chat(
+  async *chatStream(
+    messages: Message[],
+    tools: OpenAIFunctionDef[],
+  ): AsyncIterable<ProviderEvent> {
+    const result = await this._chat(messages, tools);
+    if (result.text) {
+      yield { type: "text", content: result.text };
+    }
+    // Codex provider currently always returns toolCalls: [] — tool calling
+    // is not supported via the --output-last-message mechanism.
+    if (result.toolCalls.length > 0) {
+      yield { type: "tool_calls", calls: result.toolCalls };
+      yield { type: "done", stopReason: "tool_calls" };
+    } else {
+      yield { type: "done", stopReason: "stop" };
+    }
+  }
+
+  private async _chat(
     messages: Message[],
     _tools: OpenAIFunctionDef[],
   ): Promise<{ text: string; toolCalls: ToolCall[] }> {

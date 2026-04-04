@@ -1,19 +1,24 @@
 import OpenAI from "openai";
-import type { ChatCompletion, ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions.js";
+import type { ChatCompletionChunk } from "openai/resources/chat/completions.js";
 import type { Config } from "../core/config.js";
-import type { Provider, Message, ToolCall } from "./types.js";
+import type { Provider, Message, ToolCall, ProviderEvent } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
 import { log } from "../utils/logger.js";
 
 /**
- * Structural interface for the OpenAI client's chat.completions.create method.
- * Exported so tests can import it and inject a typed stub without importing
- * the full OpenAI SDK class.
+ * Structural interface for the OpenAI client's streaming chat.completions.create.
+ * Exported so tests can inject a typed stub without importing the full OpenAI SDK class.
+ * We only use the streaming overload (stream: true) — non-streaming is no longer needed.
  */
 export interface OpenAIClientLike {
   chat: {
     completions: {
-      create(params: ChatCompletionCreateParamsNonStreaming): Promise<ChatCompletion>;
+      create(params: {
+        model: string;
+        messages: unknown[];
+        tools?: unknown[];
+        stream: true;
+      }): Promise<AsyncIterable<ChatCompletionChunk>>;
     };
   };
 }
@@ -21,8 +26,9 @@ export interface OpenAIClientLike {
 /**
  * Direct OpenAI API provider.
  *
- * Calls the OpenAI Chat Completions API directly using the user's API key.
- * This gives us full control over tool calling and the agent loop.
+ * Streams responses via chat completions with stream: true.
+ * Tool call fragments are accumulated per-index across chunks and emitted
+ * as a single tool_calls event after the stream ends.
  */
 export class OpenAIProvider implements Provider {
   name = "openai-api";
@@ -41,10 +47,10 @@ export class OpenAIProvider implements Provider {
     this.model = config.model;
   }
 
-  async chat(
+  async *chatStream(
     messages: Message[],
     tools: OpenAIFunctionDef[],
-  ): Promise<{ text: string; toolCalls: ToolCall[] }> {
+  ): AsyncIterable<ProviderEvent> {
     const openaiMessages = messages.map((m) => {
       if (m.role === "tool") {
         return {
@@ -73,41 +79,72 @@ export class OpenAIProvider implements Provider {
       };
     });
 
-    const response = await this.client.chat.completions.create({
+    const stream = await this.client.chat.completions.create({
       model: this.model,
       messages: openaiMessages,
       tools: tools.length > 0 ? tools : undefined,
+      stream: true,
     });
 
-    const choice = response.choices[0];
-    if (!choice) {
-      throw new Error("No response from OpenAI");
+    let lastFinishReason: string | null = null;
+    // Per-index accumulator for streaming tool call argument fragments.
+    // OpenAI sends tool call data split across multiple chunks, indexed by position.
+    const toolCallAccum: Array<{ id: string; name: string; arguments: string }> = [];
+
+    for await (const chunk of stream) {
+      const choice = chunk.choices[0];
+      if (!choice) continue;
+
+      const delta = choice.delta;
+      const finishReason = choice.finish_reason ?? null;
+      if (finishReason) lastFinishReason = finishReason;
+
+      // Early-exit for terminal finish reasons that block normal output.
+      // These come on the final chunk which has no content delta.
+      if (finishReason === "length") {
+        log.warn("Response truncated (finish_reason: length). Consider a shorter prompt.");
+        yield { type: "text", content: "\n\n[Note: response was truncated]" };
+        yield { type: "done", stopReason: "length" };
+        return;
+      }
+      if (finishReason === "content_filter") {
+        log.warn("Response blocked by OpenAI content filter (finish_reason: content_filter).");
+        yield { type: "text", content: "[Response blocked by content filter]" };
+        yield { type: "done", stopReason: "content_filter" };
+        return;
+      }
+
+      // Yield text delta if present
+      if (delta?.content) {
+        yield { type: "text", content: delta.content };
+      }
+
+      // Accumulate tool call fragments by chunk index.
+      // - The 'id' and 'function.name' arrive only in the first chunk for each index.
+      // - 'function.arguments' is split across multiple chunks and must be concatenated.
+      for (const tcDelta of delta?.tool_calls ?? []) {
+        const i = tcDelta.index;
+        if (!toolCallAccum[i]) {
+          toolCallAccum[i] = { id: "", name: "", arguments: "" };
+        }
+        if (tcDelta.id) toolCallAccum[i].id = tcDelta.id;
+        if (tcDelta.function?.name) toolCallAccum[i].name = tcDelta.function.name;
+        if (tcDelta.function?.arguments) toolCallAccum[i].arguments += tcDelta.function.arguments;
+      }
     }
 
-    const finishReason = choice.finish_reason;
-
-    // "stop" and "tool_calls" are the normal cases — handled by toolCalls.length check below.
-    // "null" can appear transiently; treat as "stop" (return whatever text/calls are present).
-    if (finishReason === "length") {
-      log.warn("Response truncated (finish_reason: length). Consider a shorter prompt.");
-      return {
-        text: (choice.message.content ?? "") + "\n\n[Note: response was truncated]",
-        toolCalls: [],
-      };
+    // Filter out any sparse-array holes (undefined slots from non-contiguous indices).
+    // Normally OpenAI sends tool call indices as 0, 1, 2... but guard against gaps.
+    const validCalls = toolCallAccum.filter((tc) => tc !== undefined && tc.id !== "");
+    if (validCalls.length > 0) {
+      const calls: ToolCall[] = validCalls.map((tc) => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: tc.arguments, // raw JSON string — parsed by tool executor
+      }));
+      yield { type: "tool_calls", calls };
     }
-    if (finishReason === "content_filter") {
-      log.warn("Response blocked by OpenAI content filter (finish_reason: content_filter).");
-      return { text: "[Response blocked by content filter]", toolCalls: [] };
-    }
-    // finishReason === "stop" | "tool_calls" | null: fall through to normal extraction
 
-    const text = choice.message.content ?? "";
-    const toolCalls: ToolCall[] = (choice.message.tool_calls ?? []).map((tc) => ({
-      id: tc.id,
-      name: tc.function.name,
-      arguments: tc.function.arguments,
-    }));
-
-    return { text, toolCalls };
+    yield { type: "done", stopReason: lastFinishReason ?? "stop" };
   }
 }

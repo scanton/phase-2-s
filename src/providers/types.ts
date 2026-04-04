@@ -22,9 +22,9 @@ export type ProviderEvent =
 export interface Provider {
   name: string;
 
-  /** Send messages and get a response, potentially with tool calls */
-  chat(
+  /** Stream response events: text deltas, tool_calls, done, or error. */
+  chatStream(
     messages: Message[],
     tools: OpenAIFunctionDef[],
-  ): Promise<{ text: string; toolCalls: ToolCall[] }>;
+  ): AsyncIterable<ProviderEvent>;
 }
