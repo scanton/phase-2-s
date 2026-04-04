@@ -126,7 +126,7 @@ phase2s skills
 
 ## Built-in skills
 
-Phase2S ships with 25 skills. Type any of them in the REPL:
+Phase2S ships with 26 skills. Type any of them in the REPL:
 
 **Persistent execution:**
 
@@ -134,6 +134,7 @@ Phase2S ships with 25 skills. Type any of them in the REPL:
 |-------|-------------|
 | `/satori` | Persistent execution — implements a task, runs `npm test`, injects failures into context, retries up to 3 times until the tests pass. Logs each attempt to `.phase2s/satori/`. |
 | `/consensus-plan` | Consensus-driven planning — runs a planner pass, an architect review, and a critic challenge in sequence. Loops up to 3 times until the plan is approved. |
+| `/adversarial` | Cross-model adversarial review — structured challenge of any plan or decision. Returns a machine-readable verdict: `APPROVED`, `CHALLENGED`, or `NEEDS_CLARIFICATION`. Designed for AI-to-AI invocation via Claude Code. |
 
 **Execution:**
 
@@ -198,6 +199,7 @@ Phase2S ships with 25 skills. Type any of them in the REPL:
 /retro                              — last 7 days of commits
 /satori add pagination to the API   — persistent execution until tests pass
 /consensus-plan add auth middleware — planner + architect + critic review
+/adversarial <paste plan here>      — challenge a plan before implementing
 ```
 
 ---
@@ -468,6 +470,7 @@ Commands:
   chat              Start an interactive REPL session (default)
   run <prompt>      Run a single prompt and exit
   skills            List available skills
+  mcp               Start Phase2S as an MCP server for Claude Code integration
 
 Options:
   -p, --provider <provider>  LLM provider (codex-cli | openai-api)
@@ -491,11 +494,11 @@ Options:
 ## Roadmap
 
 - [x] Codex CLI provider (uses ChatGPT subscription, no API key required)
-- [x] 25 built-in skills across 6 categories
+- [x] 26 built-in skills across 6 categories
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 175 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 186 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Streaming output — responses stream token-by-token, no spinner
@@ -504,8 +507,125 @@ Options:
 - [x] Model-per-skill routing — `fast_model` / `smart_model` tiers in `.phase2s.yaml`
 - [x] Satori persistent execution — retry loop with shell verification, context snapshots, attempt logs
 - [x] Consensus planning — planner + architect + critic passes
+- [x] Claude Code MCP integration — all skills available as Claude Code tools via `phase2s mcp`
+- [x] `/adversarial` skill — cross-model adversarial review with structured output
 - [ ] Real Codex streaming (JSONL stdout parsing)
 - [ ] npm publish
+
+---
+
+## Using Phase2S from Claude Code
+
+Phase2S can run as an MCP (Model Context Protocol) server, exposing every skill as a
+tool that Claude Code can invoke automatically. This is separate from the normal Phase2S
+workflow — you don't type skills in a Phase2S REPL, Claude Code calls them on your behalf
+in the background.
+
+The main use case: **cross-model adversarial review**. When Claude Code (running on Claude,
+Anthropic's model) is about to execute a plan, it can call `phase2s__adversarial` to get
+a structured challenge from Phase2S (running on GPT-4o via your ChatGPT subscription).
+Two different models, different training, different biases — working in concert on the
+same plan. You get a second opinion from a model with no stake in agreeing with the first.
+
+### What you need
+
+- `phase2s` installed and available in your PATH (`npm install -g phase2s`)
+- Claude Code with a project that has a `.claude/settings.json`
+- **No API key required** — Phase2S uses your ChatGPT subscription via Codex CLI by default
+
+### Setup
+
+**Step 1: Install Phase2S globally**
+
+```bash
+npm install -g phase2s
+```
+
+Verify it's in PATH:
+
+```bash
+phase2s --version
+```
+
+**Step 2: Install and authenticate Codex CLI** (if you haven't already)
+
+```bash
+npm install -g @openai/codex
+codex auth   # log in with your ChatGPT account
+```
+
+**Step 3: Add `.claude/settings.json` to your project root**
+
+```json
+{
+  "mcpServers": {
+    "phase2s": {
+      "command": "phase2s",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+That's it. Claude Code reads this file when you open the project and automatically starts
+`phase2s mcp` as a subprocess in the background. You don't need to run Phase2S manually
+in a separate terminal — Claude Code manages the subprocess lifecycle.
+
+**Important: working directory.** Claude Code spawns `phase2s mcp` from your project's
+root directory. This means Phase2S loads skills from `.phase2s/skills/` in that project,
+and file tools read and write relative to that same root. Everything works from the same
+directory Claude Code is already working in. No separate terminal session is needed.
+
+### How Claude Code uses Phase2S skills
+
+Once configured, Claude Code gains a tool for every Phase2S skill. The tools are named
+`phase2s__<skill_name>`, with hyphens converted to underscores:
+
+| Phase2S skill | Claude Code tool |
+|--------------|-----------------|
+| `/adversarial` | `phase2s__adversarial` |
+| `/plan-review` | `phase2s__plan_review` |
+| `/consensus-plan` | `phase2s__consensus_plan` |
+| `/scope-review` | `phase2s__scope_review` |
+| `/health` | `phase2s__health` |
+| `/retro` | `phase2s__retro` |
+| (all 26 skills) | `phase2s__<name>` |
+
+Adding a new SKILL.md to `.phase2s/skills/` automatically makes it available as a new
+Claude Code tool the next time the MCP server starts. No code changes required.
+
+### The `/adversarial` skill
+
+`/adversarial` is specifically designed for AI-to-AI invocation. Unlike most Phase2S
+skills (which are meant for humans to invoke interactively), it has no questions, no
+interactive steps, and produces machine-readable structured output:
+
+```
+VERDICT: CHALLENGED | APPROVED | NEEDS_CLARIFICATION
+STRONGEST_CONCERN: [one sentence, specific and citable]
+OBJECTIONS:
+1. [specific, falsifiable objection]
+2. [specific, falsifiable objection]
+3. [optional]
+APPROVE_IF: [what would need to change]
+```
+
+Claude Code can parse this output and act on it — for example, refusing to proceed with
+implementation if the verdict is `CHALLENGED`, or raising the objections with you before
+continuing.
+
+You can also invoke `/adversarial` manually from your Phase2S REPL:
+
+```
+you > /adversarial
+[paste the plan you want challenged]
+```
+
+### Routing rules
+
+The `CLAUDE.md` file at the project root tells Claude Code when to reach for Phase2S tools
+automatically. The repo includes a `CLAUDE.md` with routing rules that trigger adversarial
+review before significant plan execution. You can customize these rules to match your workflow.
 
 ---
 

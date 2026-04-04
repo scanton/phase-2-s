@@ -12,7 +12,7 @@ import { Conversation } from "../core/conversation.js";
 import { loadAllSkills } from "../skills/index.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
@@ -81,6 +81,15 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         systemPrompt: opts.system,
       });
       await oneShotMode(config, prompt);
+    });
+
+  // MCP server — exposes all Phase2S skills as Claude Code tools
+  program
+    .command("mcp")
+    .description("Start Phase2S as an MCP server for Claude Code integration")
+    .action(async () => {
+      const { runMCPServer } = await import("../mcp/server.js");
+      await runMCPServer(process.cwd());
     });
 
   // List available skills

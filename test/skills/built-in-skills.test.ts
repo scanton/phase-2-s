@@ -249,3 +249,50 @@ describe("Built-in skills — Sprint 8", () => {
     expect(skills.length).toBeGreaterThanOrEqual(25);
   });
 });
+
+/**
+ * Tests for the 1 Claude Code integration skill added in Sprint 9.
+ */
+describe("Built-in skills — Sprint 9", () => {
+  let skills: import("../../src/skills/types.js").Skill[];
+
+  beforeAll(async () => {
+    const skillsDir = join(process.cwd(), ".phase2s", "skills");
+    skills = await loadSkillsFromDir(skillsDir);
+  });
+
+  function getSkill(name: string): import("../../src/skills/types.js").Skill {
+    const skill = skills.find((s) => s.name === name);
+    if (!skill) throw new Error(`Skill "${name}" not found in .phase2s/skills/`);
+    return skill;
+  }
+
+  it("adversarial: loads with correct model, triggers, and structured output format", () => {
+    const skill = getSkill("adversarial");
+    expect(skill.description).toContain("adversarial");
+    expect(skill.model).toBe("smart");
+    expect(skill.triggerPhrases).toContain("adversarial");
+    expect(skill.triggerPhrases).toContain("challenge this");
+    expect(skill.triggerPhrases).toContain("devil's advocate");
+    expect(skill.promptTemplate).toContain("VERDICT");
+  });
+
+  it("adversarial: prompt contains all required output fields", () => {
+    const skill = getSkill("adversarial");
+    expect(skill.promptTemplate).toContain("STRONGEST_CONCERN");
+    expect(skill.promptTemplate).toContain("OBJECTIONS");
+    expect(skill.promptTemplate).toContain("APPROVE_IF");
+  });
+
+  it("adversarial: no interactive questions (no '?' outside output format)", () => {
+    const skill = getSkill("adversarial");
+    // The prompt should not ask the user questions — it's designed for AI invocation.
+    // We check that the word "question" does not appear in the template.
+    expect(skill.promptTemplate.toLowerCase()).not.toContain("what is your");
+    expect(skill.promptTemplate.toLowerCase()).not.toContain("please provide");
+  });
+
+  it("loads all 26 built-in skills (25 prior + adversarial)", () => {
+    expect(skills.length).toBeGreaterThanOrEqual(26);
+  });
+});

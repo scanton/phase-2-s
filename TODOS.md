@@ -6,6 +6,23 @@
 
 ---
 
+## Sprint 9 (done) — Claude Code MCP Integration (v0.11.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.11.0 |
+| Skills | 26 |
+| Tests | 186 |
+
+- [x] **`/adversarial` skill** — cross-model adversarial review with structured output (`VERDICT / STRONGEST_CONCERN / OBJECTIONS / APPROVE_IF`). `model: smart`. No interactive questions — designed for AI-to-AI invocation.
+- [x] **MCP server** (`src/mcp/server.ts`) — JSON-RPC 2.0 over stdio. Handles `initialize`, `tools/list`, `tools/call`. Dynamic tool generation: every SKILL.md becomes a `phase2s__<name>` Claude Code tool at startup.
+- [x] **`phase2s mcp` command** — added to `src/cli/index.ts`. Spawns the MCP server in the current working directory.
+- [x] **`.claude/settings.json`** — project-level MCP config. No API key, no env vars. Claude Code spawns `phase2s mcp` automatically.
+- [x] **`CLAUDE.md`** — routing rules telling Claude Code when to invoke Phase2S tools (adversarial review before plan execution, plan-review, scope-review, health, retro).
+- [x] Tests: MCP server protocol (5), adversarial skill (4 in built-in-skills.test.ts + 2 helper tests). 186 tests total.
+
+---
+
 ## Sprint 8 (done) — OMX Infrastructure (v0.10.0)
 
 | Metric | Value |

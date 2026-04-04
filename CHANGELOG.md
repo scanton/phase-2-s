@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.11.0 — 2026-04-04
+
+Sprint 9: Claude Code MCP integration — Phase2S skills as Claude Code tools, `/adversarial` skill, and cross-model review.
+
+### What you can do now
+
+- **`phase2s mcp`** — start Phase2S as an MCP server. Claude Code spawns it automatically when `.claude/settings.json` is present in your project root. Every Phase2S skill becomes a `phase2s__<name>` Claude Code tool, loaded dynamically at startup. Add a SKILL.md, get a new tool. No code changes required.
+- **`/adversarial`** — cross-model adversarial review designed for AI-to-AI invocation. Paste a plan or decision as input. Get back a structured verdict: `VERDICT: APPROVED | CHALLENGED | NEEDS_CLARIFICATION`, plus `STRONGEST_CONCERN`, `OBJECTIONS` (up to 3, specific and falsifiable), and `APPROVE_IF`. No interactive questions. Machine-readable output. When Claude Code (Claude, Anthropic) calls this via MCP, Phase2S (GPT-4o via Codex CLI) does the challenging. Different model, different training, no stake in agreeing.
+- **Claude Code routing** — `CLAUDE.md` in the project root tells Claude Code when to invoke Phase2S tools automatically: adversarial review before significant plans, plan-review on engineering specs, health checks after sprints, etc.
+
+### For contributors
+
+- **`src/mcp/server.ts`** — new file. Exports `runMCPServer(cwd)`, `handleRequest(request, skills, cwd)` (testable without stdio), `skillToTool(skill)`, `toolNameToSkillName(toolName)`, and `MCP_SERVER_VERSION`. Uses same manual event-queue pattern as the CLI REPL to avoid the readline async iterator issue.
+- **`src/cli/index.ts`** — `phase2s mcp` subcommand added. VERSION bumped to `"0.11.0"`.
+- **`.claude/settings.json`** — project-level MCP server config. `command: "phase2s", args: ["mcp"]`. No env vars.
+- **`CLAUDE.md`** — routing rules for Phase2S MCP tools added alongside existing gstack skill routing.
+- **`.phase2s/skills/adversarial/SKILL.md`** — `model: smart`, no retries, no interactive steps. Output format enforced in prompt: VERDICT / STRONGEST_CONCERN / OBJECTIONS / APPROVE_IF.
+- **11 new tests** — MCP server (7 in `test/mcp/server.test.ts`), adversarial skill (4 in `test/skills/built-in-skills.test.ts`). **186 tests total** (up from 175).
+
 ## v0.10.0 — 2026-04-04
 
 Sprint 8: OMX Infrastructure — satori persistent execution loop, consensus-plan, agent tier routing (fast_model/smart_model), context snapshots, and underspecification gate.

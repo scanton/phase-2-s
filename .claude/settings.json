@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "phase2s": {
+      "command": "phase2s",
+      "args": ["mcp"]
+    }
+  }
+}
