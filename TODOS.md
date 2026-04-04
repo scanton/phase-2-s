@@ -6,6 +6,80 @@
 
 ---
 
+## Sprint 13 (current) — Interactive Skills + Plan Output + Tool Control (v0.16.0)
+
+| Metric | Target |
+|--------|--------|
+| Version | v0.16.0 |
+| Skills | 29 (updated templates) |
+| Tests | ~240 |
+
+### Multi-turn skills — skill inputs protocol
+
+Skills can now declare structured inputs in SKILL.md frontmatter. In REPL mode, Phase2S prompts the user for each input before running. In MCP mode, inputs become typed tool parameters (Claude Code fills them in before calling the tool).
+
+**SKILL.md frontmatter addition:**
+```yaml
+inputs:
+  feature:
+    prompt: "What feature do you want to plan?"
+  scope:
+    prompt: "Any scope constraints or non-goals?"
+```
+
+**Body uses normal placeholders:** `Plan the {{feature}} feature. Constraints: {{scope}}.`
+
+- [ ] `src/skills/loader.ts` — add `inputs?: Record<string, { prompt: string }>` to `Skill` type; parse from YAML
+- [ ] `src/cli/index.ts` — before running a skill in REPL/one-shot mode, extract unfilled `{{...}}` placeholders, look up prompt from `skill.inputs`, prompt user for each, inject answers
+- [ ] `src/mcp/server.ts` — use `skill.inputs[name].prompt` as the parameter description in tool schema
+- [ ] Tests: loader parses inputs, CLI prompts for missing inputs, MCP schema uses input descriptions (target: +10 tests)
+- [ ] Update `/deep-specify` and `/plan` SKILL.md to use `inputs:` (dogfood the protocol)
+
+### `/plan` skill improvement
+
+- [ ] Rewrite `.phase2s/skills/plan/SKILL.md` — structured output: `## Goal`, `## Tasks` (checkboxes), `## Non-goals`, `## Risks`
+- [ ] Tell the model to write the plan to `.phase2s/plans/YYYY-MM-DD-HH-MM.md` via `file_write` tool
+- [ ] Offer at the end: "Append tasks to TODOS.md? (yes/no)" — uses `{{ASK: Append tasks to TODOS.md?}}` or skill inputs
+
+### Configurable tool allow/deny list
+
+- [ ] `src/core/config.ts` — add `tools?: string[]` and `deny?: string[]` to `Phase2SConfig` schema; validate in `loadConfig()`
+- [ ] `src/tools/registry.ts` — add `filter(allow?: string[], deny?: string[])` method; returns new registry with filtered tools
+- [ ] `src/core/agent.ts` — apply `registry.filter(config.tools, config.deny)` before passing tools to provider
+- [ ] Tests: config parses tools/deny, registry filters allow-list, registry filters deny-list, combined allow+deny, agent uses filtered list (target: +8 tests)
+- [ ] Docs: add `tools:` / `deny:` example to `.phase2s.yaml` in `docs/configuration.md`
+
+---
+
+## Sprint 12 (done) — MCP Hot-Reload + Session Persistence (v0.15.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.15.0 |
+| Skills | 29 |
+| Tests | 221 |
+
+- [x] **MCP skills hot-reload** — `fs.watch()` on `.phase2s/skills/` with 80ms debounce. Sends `notifications/tools/list_changed` when new skills are added during a session. `capabilities: { tools: { listChanged: true } }` in initialize response.
+- [x] **MCP session persistence** — `Map<string, Conversation>` keyed by skill name, scoped to MCP subprocess. Multi-turn skills (`/satori`, `/consensus-plan`) now maintain conversation history across calls within the same Claude Code session.
+- [x] **`/review` adversarial extension** — After delivering standard review, offers opt-in adversarial challenge (VERDICT / STRONGEST_CONCERN / OBJECTIONS / APPROVE_IF). Fast path unchanged; adversarial is opt-in.
+
+---
+
+## Sprint 11 (done) — npm Publish + Bundled Skills (v0.13.x–v0.14.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.14.0 |
+| Skills | 29 |
+| Tests | 221 |
+
+- [x] **`/land-and-deploy` skill** — 7-step workflow: check state, push, open/discover PR via `gh`, wait for CI (`gh pr checks --watch`), merge + delete branch, post-merge confirmation.
+- [x] **npm publish** — Published as `@scanton/phase2s` (unscoped `phase2s` blocked by npm similarity check). Token: Granular Access Token with 2FA bypass. Workflow triggers on `v*` tags.
+- [x] **Bundled skills** — Added `bundledSkillsDir()` using `import.meta.url` in `loader.ts` so skills ship inside the npm package. Added `.phase2s/` to `package.json` files array.
+- [x] **Renamed to `@scanton/phase2s`** — All docs, install commands updated.
+
+---
+
 ## Sprint 10 (done) — Memory, Meta-Skill, Security Hardening (v0.12.0)
 
 | Metric | Value |
@@ -23,8 +97,8 @@
 
 ### MCP backlog (discovered in Sprint 9, deferred)
 
-- [ ] **MCP skills reload** — skills added during a Claude Code session (e.g. via `/skill`) aren't visible to Claude Code until it restarts (MCP server loads skills at startup). Future: `tools/reload` method or session restart detection.
-- [ ] **MCP tool calls stateless** — each `tools/call` invocation creates a fresh `Agent` and `Conversation`. Multi-turn skills (`/satori`, `/consensus-plan`) invoked via MCP start cold every call. Future: per-session conversation persistence in MCP server.
+- [x] **MCP skills reload** — Done in Sprint 12 (v0.15.0). `fs.watch()` + `notifications/tools/list_changed`.
+- [x] **MCP tool calls stateless** — Done in Sprint 12 (v0.15.0). `Map<string, Conversation>` per-session persistence.
 
 ---
 
@@ -159,6 +233,8 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [x] **Conversation persistence** — done Sprint 5. `Conversation.save/load`, `--resume` flag, auto-save after each turn. v0.7.0.
 - [ ] **Multi-turn skills** — skills that ask follow-up questions mid-workflow
   - Today skills are static prompt templates; this makes them interactive
+  - Protocol: `{{ASK: question}}` placeholder in SKILL.md that Phase2S intercepts and prompts the user before continuing
+  - Required in both REPL mode (easy) and MCP mode (harder — needs round-trip)
 - [ ] **`/plan` skill improvement** — output structured task list, not just prose
   - Write plan to `.phase2s/plans/YYYY-MM-DD.md`
   - Integration with TODOS.md (append generated tasks)
@@ -166,6 +242,9 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [ ] **Configurable tool allow/deny list** — per-project `.phase2s.yaml`
   - `tools: [file_read, shell]` — only enable listed tools
   - `deny: [shell]` — disable specific tools
+- [ ] **Real Codex JSONL streaming** — Codex outputs JSONL on stdout; format is undocumented. Spike needed before committing. Would make long `/satori` runs feel faster.
+- [ ] **`glob` deprecation fix** — `glob@11.1.0` flagged as deprecated during npm install. Pinpoint which transitive dep pulls it in; update or pin to silence the warning.
+- [ ] **Anthropic Claude provider** — add `src/providers/anthropic.ts` implementing the Provider interface using `@anthropic-ai/sdk`. Config: `provider: anthropic` in `.phase2s.yaml`. Removes hard OpenAI dependency; unlocks Claude 3.5 Sonnet/Haiku as backends.
 
 ---
 
