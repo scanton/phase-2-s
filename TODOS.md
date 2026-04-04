@@ -133,7 +133,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [x] **`PHASE2S_ALLOW_DESTRUCTIVE` env var** — `if (process.env.PHASE2S_ALLOW_DESTRUCTIVE === "true") envConfig.allowDestructive = true` added to `loadConfig()` in `src/core/config.ts`. v0.6.0.
 - [x] **Streaming output** — `Provider.chat()` replaced by `chatStream(): AsyncIterable<ProviderEvent>`. OpenAI streams with `stream: true` + per-index tool call fragment accumulation. Codex passthrough wrapper. CLI streams via `onDelta?` callback on `Agent.run()`. v0.6.0.
 - [x] **README polish for npm publish** — install-first user-facing README rewrite. v0.6.0.
-- [ ] **npm publish** *(low priority — deferred until more features ship)* — Tarball and workflow ready. Set `NPM_TOKEN` repo secret, run `git tag v0.6.0 && git push origin v0.6.0` to trigger `.github/workflows/publish.yml`.
+- [x] **npm publish** — Published as `@scanton/phase2s` (unscoped `phase2s` blocked by npm similarity check against `phaser`). Token: Granular Access Token with 2FA bypass. Workflow: `.github/workflows/publish.yml` triggers on `v*` tags. Install: `npm install -g @scanton/phase2s`. v0.13.1.
 
 ---
 
@@ -149,7 +149,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [x] **Codex arg injection hardening** — `"--"` separator added to args array before prompt. Done Sprint 5. v0.7.0.
 - [x] **Shell tool hardening** — blocks destructive commands by default ← done Sprint 3
   - `allowDestructive: false` default; set `true` in `.phase2s.yaml` to unlock
-- [ ] **npm publish** *(low priority — deferred)* — See Sprint 4 section above. README done, license MIT, entry point verified. Pending: NPM_TOKEN secret + tag push.
+- [x] **npm publish** — Done. See Sprint 4 section. Published as `@scanton/phase2s` at v0.13.1.
 
 ---
 
