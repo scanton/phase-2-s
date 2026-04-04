@@ -8,16 +8,18 @@ const execFileAsync = promisify(execFile);
 
 /** Patterns that suggest a destructive or exfiltration-risk command. */
 const DESTRUCTIVE_PATTERNS = [
-  /rm\s+-[a-zA-Z]*r[a-zA-Z]*f/,     // rm -rf variants
-  /rm\s+-[a-zA-Z]*f[a-zA-Z]*r/,     // rm -fr variants
+  /rm\s+-[a-zA-Z]*r[a-zA-Z]*f/i,   // rm -rf variants (case-insensitive: -RF, -rF, etc.)
+  /rm\s+-[a-zA-Z]*f[a-zA-Z]*r/i,   // rm -fr variants (case-insensitive)
   /\bcurl\b.*\|\s*(ba)?sh/,         // curl | sh / curl | bash
   /\bwget\b.*\|\s*(ba)?sh/,         // wget | sh
   /git\s+push\s+.*--force/,         // git push --force
   /git\s+push\s+-f\b/,              // git push -f
   /:\s*>\s*\S+/,                    // : > file (truncate via colon)
-  /\bdd\b.*of=\/dev\//,             // dd to device files
-  /\bchmod\s+777\b/,                // world-writable permission
+  /\bdd\b.*of=/,                    // dd to any output file (device or otherwise)
+  /\bchmod\s+0?777\b/,              // world-writable permission (octal 777 or 0777)
   /\bsudo\b/,                       // sudo escalation
+  /\bmkfs\b/,                       // filesystem format (always destructive)
+  /:\s*\(\s*\)\s*\{.*\|.*&/,        // fork bomb :(){ :|:& };:
 ];
 
 const params = z.object({

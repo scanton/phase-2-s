@@ -96,6 +96,7 @@ export class OpenAIProvider implements Provider {
       };
     }
     if (finishReason === "content_filter") {
+      log.warn("Response blocked by OpenAI content filter (finish_reason: content_filter).");
       return { text: "[Response blocked by content filter]", toolCalls: [] };
     }
     // finishReason === "stop" | "tool_calls" | null: fall through to normal extraction
