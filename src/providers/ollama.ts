@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { Config } from "../core/config.js";
 import type { Provider } from "./types.js";
 import { OpenAIProvider, type OpenAIClientLike } from "./openai.js";
+import { log } from "../utils/logger.js";
 
 /**
  * Ollama provider — wraps OpenAIProvider with Ollama's OpenAI-compatible base URL.
@@ -18,8 +19,20 @@ import { OpenAIProvider, type OpenAIClientLike } from "./openai.js";
  *   qwen2.5-coder:7b or llama3.1:8b — both support function calling via Ollama.
  *   llama3.2 (3B) may drop tool calls on complex prompts.
  */
+function isLocalUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
 export function createOllamaProvider(config: Config): Provider {
   const baseURL = config.ollamaBaseUrl ?? "http://localhost:11434/v1";
+  if (!isLocalUrl(baseURL)) {
+    log.warn(`Ollama: remote server configured (${baseURL}) — prompts and tool results will be sent to that host. Ensure this is intentional.`);
+  }
   // Ollama accepts any non-empty string as API key — required by the OpenAI SDK
   const client = new OpenAI({ baseURL, apiKey: "ollama" }) as unknown as OpenAIClientLike;
 

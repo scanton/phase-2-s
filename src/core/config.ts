@@ -19,7 +19,7 @@ const configSchema = z.object({
   apiKey: z.string().optional(),
   anthropicApiKey: z.string().optional(),
   /** Anthropic max_tokens (default 8192; raise for models with higher ceilings). */
-  anthropicMaxTokens: z.number().optional(),
+  anthropicMaxTokens: z.number().int().min(1).optional(),
   /** Ollama base URL (default http://localhost:11434/v1). */
   ollamaBaseUrl: z.string().optional(),
   codexPath: z.string().default("codex"),

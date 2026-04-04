@@ -215,6 +215,7 @@ async function writeSatoriLog(
 async function interactiveMode(config: Config, opts: { resume?: boolean } = {}): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
   if (!checkOpenAIKey(config)) process.exit(1);
+  if (!checkAnthropicKey(config)) process.exit(1);
 
   // --resume: load most recent session
   let resumedConversation: Conversation | undefined;
@@ -481,9 +482,24 @@ function checkOpenAIKey(config: Config): boolean {
   return false;
 }
 
+function checkAnthropicKey(config: Config): boolean {
+  if (config.provider !== "anthropic") return true;
+  if (config.anthropicApiKey) return true;
+
+  console.error(
+    chalk.red("\n✗ Anthropic API key not found.\n") +
+    chalk.dim(
+      "  Set it:  export ANTHROPIC_API_KEY=sk-ant-...\n" +
+      "  Or add:  anthropicApiKey: sk-ant-... in .phase2s.yaml\n",
+    ),
+  );
+  return false;
+}
+
 async function oneShotMode(config: Config, prompt: string): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
   if (!checkOpenAIKey(config)) process.exit(1);
+  if (!checkAnthropicKey(config)) process.exit(1);
 
   // Load persistent memory learnings from .phase2s/memory/learnings.jsonl
   const learningsList = await loadLearnings(process.cwd());

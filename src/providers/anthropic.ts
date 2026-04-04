@@ -42,6 +42,11 @@ type AnthropicContentBlock =
 export function translateMessages(messages: Message[]): AnthropicMessage[] {
   const result: AnthropicMessage[] = [];
 
+  const systemCount = messages.filter((m) => m.role === "system").length;
+  if (systemCount > 1) {
+    log.warn(`translateMessages: ${systemCount} system messages found — only the first will be used. Anthropic takes a single system param.`);
+  }
+
   for (const msg of messages) {
     if (msg.role === "system") {
       // System messages are handled separately — skip here
@@ -81,6 +86,7 @@ export function translateMessages(messages: Message[]): AnthropicMessage[] {
         try {
           input = JSON.parse(tc.arguments);
         } catch {
+          log.warn(`AnthropicProvider: failed to parse tool arguments for '${tc.name}' — sending empty input. Raw: ${tc.arguments}`);
           input = {};
         }
         content.push({ type: "tool_use", id: tc.id, name: tc.name, input });
@@ -143,7 +149,10 @@ export class AnthropicProvider implements Provider {
     const anthropicTools = tools.map((t) => ({
       name: t.function.name,
       description: t.function.description ?? "",
-      input_schema: t.function.parameters as Record<string, unknown>,
+      input_schema: {
+        type: "object" as const,
+        ...(t.function.parameters as Record<string, unknown>),
+      },
     }));
 
     const model = options?.model ?? this.model;
@@ -160,31 +169,49 @@ export class AnthropicProvider implements Provider {
     // Flushed at message_stop (not content_block_stop) to handle multi-tool turns correctly.
     const pendingTools = new Map<number, ToolCall>();
     let stopReason = "stop";
+    let doneEmitted = false;
 
-    for await (const event of stream) {
-      if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
-        pendingTools.set(event.index, {
-          id: event.content_block.id,
-          name: event.content_block.name,
-          arguments: "",
-        });
-      } else if (event.type === "content_block_delta") {
-        if (event.delta.type === "input_json_delta") {
-          const tool = pendingTools.get(event.index);
-          if (tool) tool.arguments += event.delta.partial_json;
-        } else if (event.delta.type === "text_delta") {
-          yield { type: "text", content: event.delta.text };
+    try {
+      for await (const event of stream) {
+        if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+          pendingTools.set(event.index, {
+            id: event.content_block.id,
+            name: event.content_block.name,
+            arguments: "",
+          });
+        } else if (event.type === "content_block_delta") {
+          if (event.delta.type === "input_json_delta") {
+            const tool = pendingTools.get(event.index);
+            if (tool) tool.arguments += event.delta.partial_json;
+          } else if (event.delta.type === "text_delta") {
+            yield { type: "text", content: event.delta.text };
+          }
+        } else if (event.type === "message_delta") {
+          if (event.delta.stop_reason === "tool_use") {
+            stopReason = "tool_calls";
+          } else if (event.delta.stop_reason === "max_tokens") {
+            log.warn("Response truncated (stop_reason: max_tokens). Consider raising anthropicMaxTokens.");
+            yield { type: "text", content: "\n\n[Note: response was truncated]" };
+            stopReason = "length";
+          }
+        } else if (event.type === "message_stop") {
+          // Emit all accumulated tool calls after the full stream — never emit early.
+          if (pendingTools.size > 0) {
+            yield { type: "tool_calls", calls: [...pendingTools.values()] };
+          }
+          yield { type: "done", stopReason };
+          doneEmitted = true;
         }
-      } else if (event.type === "message_delta") {
-        if (event.delta.stop_reason === "tool_use") {
-          stopReason = "tool_calls";
-        } else if (event.delta.stop_reason === "max_tokens") {
-          log.warn("Response truncated (stop_reason: max_tokens). Consider raising anthropicMaxTokens.");
-          yield { type: "text", content: "\n\n[Note: response was truncated]" };
-          stopReason = "length";
-        }
-      } else if (event.type === "message_stop") {
-        // Emit all accumulated tool calls after the full stream — never emit early.
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      log.error(`AnthropicProvider: stream error — ${errMsg}`);
+      yield { type: "error", error: errMsg };
+      yield { type: "done", stopReason: "error" };
+      doneEmitted = true;
+    } finally {
+      // Guard against clean EOF without message_stop (SDK version changes, early termination).
+      if (!doneEmitted) {
         if (pendingTools.size > 0) {
           yield { type: "tool_calls", calls: [...pendingTools.values()] };
         }
