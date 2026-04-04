@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { writeFile, mkdir, access } from "node:fs/promises";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, sep } from "node:path";
 import type { ToolDefinition, ToolResult } from "./types.js";
 import { assertInSandbox } from "./sandbox.js";
 
@@ -31,7 +31,6 @@ export const fileWriteTool: ToolDefinition = {
     if (args.createDirs) {
       // Pre-check using lexical resolve before creating dirs (prevents creating
       // dirs outside the project before we can realpath-check them).
-      const { sep } = await import("node:path");
       const cwd = process.cwd();
       if (!lexicalFullPath.startsWith(cwd + sep) && lexicalFullPath !== cwd) {
         return {
