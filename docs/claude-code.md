@@ -16,7 +16,7 @@ All other Phase2S skills are available too: `phase2s__health`, `phase2s__plan_re
 
 ## What you need
 
-- `phase2s` installed globally: `npm install -g phase2s`
+- `phase2s` installed globally: `npm install -g @scanton/phase2s`
 - Codex CLI installed and authenticated: `npm install -g @openai/codex && codex auth`
 - Claude Code with a project open
 - **No API key required.** Phase2S uses your ChatGPT subscription by default.
@@ -31,7 +31,7 @@ All other Phase2S skills are available too: `phase2s__health`, `phase2s__plan_re
 phase2s --version
 ```
 
-If this doesn't work, `npm install -g phase2s` and try again.
+If this doesn't work, `npm install -g @scanton/phase2s` and try again.
 
 **Step 2: Add `.claude/settings.json` to your project root**
 

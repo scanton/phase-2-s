@@ -20,7 +20,7 @@ If you pay for ChatGPT at [chat.openai.com](https://chat.openai.com), you alread
 **Step 1: Install Codex CLI and Phase2S**
 
 ```bash
-npm install -g @openai/codex phase2s
+npm install -g @openai/codex @scanton/phase2s
 ```
 
 **Step 2: Authenticate Codex CLI with your ChatGPT account**
@@ -55,7 +55,7 @@ That's it. You're in.
 If you have an API key (`sk-...`) from [platform.openai.com](https://platform.openai.com):
 
 ```bash
-npm install -g phase2s
+npm install -g @scanton/phase2s
 export OPENAI_API_KEY=sk-your-key-here
 export PHASE2S_PROVIDER=openai-api
 phase2s

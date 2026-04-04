@@ -98,7 +98,7 @@ Phase2S reads this at startup. The model in `.phase2s.yaml` (or `PHASE2S_MODEL`)
 No config file needed. Install, authenticate, run:
 
 ```bash
-npm install -g @openai/codex phase2s
+npm install -g @openai/codex @scanton/phase2s
 codex auth
 phase2s
 ```

@@ -28,7 +28,7 @@ Requires [Node.js](https://nodejs.org) >= 20.
 No API key, no per-token billing. All 29 skills work.
 
 ```bash
-npm install -g @openai/codex phase2s
+npm install -g @openai/codex @scanton/phase2s
 codex auth
 phase2s
 ```
@@ -38,7 +38,7 @@ phase2s
 Unlocks token-by-token streaming and model-per-skill routing.
 
 ```bash
-npm install -g phase2s
+npm install -g @scanton/phase2s
 export OPENAI_API_KEY=sk-your-key-here
 export PHASE2S_PROVIDER=openai-api
 phase2s
@@ -116,7 +116,7 @@ phase2s skills
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Streaming output — responses stream token-by-token
-- [x] `npm install -g phase2s`
+- [x] `npm install -g @scanton/phase2s`
 - [x] Session persistence — auto-save after each turn, `--resume` to continue
 - [x] Model-per-skill routing — `fast_model` / `smart_model` tiers in `.phase2s.yaml`
 - [x] Satori persistent execution — retry loop with shell verification, context snapshots, attempt logs

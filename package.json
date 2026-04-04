@@ -1,5 +1,5 @@
 {
-  "name": "phase2s",
+  "name": "@scanton/phase2s",
   "version": "0.13.0",
   "description": "AI programming harness with multi-model support",
   "type": "module",
