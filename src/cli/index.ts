@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { createInterface } from "node:readline";
 import { access, constants, readdir } from "node:fs/promises";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import chalk from "chalk";
 import { loadConfig, type Config } from "../core/config.js";
@@ -32,8 +33,9 @@ async function findLatestSession(): Promise<string | null> {
   } catch {
     return null;
   }
+  // Only match YYYY-MM-DD.json filenames so stray .json files don't become sessions.
   const sessions = entries
-    .filter((e) => e.endsWith(".json"))
+    .filter((e) => /^\d{4}-\d{2}-\d{2}\.json$/.test(e))
     .sort()
     .reverse();
   return sessions.length > 0 ? join(SESSION_DIR, sessions[0]) : null;
@@ -171,6 +173,13 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
 
   rl.on("SIGINT", () => {
     process.stdout.write("\n");
+    // Synchronous save before exit — async saveSession() can't complete after process.exit().
+    try {
+      mkdirSync(resolve(sessionPath, ".."), { recursive: true });
+      writeFileSync(sessionPath, JSON.stringify(agent.getConversation().getMessages(), null, 2), "utf-8");
+    } catch {
+      // Best-effort — don't block exit on save failure
+    }
     log.info("Goodbye!");
     rl.close();
     process.exit(0);

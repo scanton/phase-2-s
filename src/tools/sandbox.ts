@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import { resolve, sep } from "node:path";
+import { resolve, sep, dirname, basename } from "node:path";
 
 /**
  * Shared sandbox enforcement helper.
@@ -54,8 +54,22 @@ export async function assertInSandbox(
     // block rather than risk leaking data or paths.
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      resolvedPath = resolve(cwd, filePath);
-      usedRealpath = false;
+      // File doesn't exist yet. Try realpath() on the parent directory to catch
+      // the case where the parent is a symlink pointing outside cwd.
+      // e.g. <project>/exfil -> /etc, then write to exfil/newfile.txt must be blocked.
+      const absFilePath = resolve(cwd, filePath);
+      const parentDir = dirname(absFilePath);
+      try {
+        const realParent = await realpath(parentDir);
+        // Parent exists and was realpath'd — compose the final path from the real parent.
+        resolvedPath = realParent + sep + basename(absFilePath);
+        // usedRealpath remains true — we have a realpath-based parent.
+      } catch {
+        // Parent also doesn't exist (multi-level new path) — lexical fallback.
+        // This is safe because lexical normalization prevents `../` escapes.
+        resolvedPath = absFilePath;
+        usedRealpath = false;
+      }
     } else {
       // Dangling symlink or other error — block without leaking the path.
       throw new Error(`Path outside project directory: ${filePath}`);

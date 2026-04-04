@@ -65,12 +65,29 @@ export class Conversation {
    */
   static async load(path: string): Promise<Conversation> {
     const raw = await readFile(path, "utf-8");
-    const messages: Message[] = JSON.parse(raw);
-    if (!Array.isArray(messages)) {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
       throw new Error("Invalid session file: expected a JSON array of messages");
     }
+    // Validate each message to prevent prompt injection via a crafted session file.
+    const validRoles = new Set(["system", "user", "assistant", "tool"]);
+    for (let i = 0; i < parsed.length; i++) {
+      const msg = parsed[i];
+      if (typeof msg !== "object" || msg === null) {
+        throw new Error(`Invalid session file: message at index ${i} is not an object`);
+      }
+      const { role, content } = msg as Record<string, unknown>;
+      if (typeof role !== "string" || !validRoles.has(role)) {
+        throw new Error(`Invalid session file: message at index ${i} has invalid role: ${String(role)}`);
+      }
+      if (content !== undefined && content !== null && typeof content !== "string") {
+        throw new Error(`Invalid session file: message at index ${i} has non-string content`);
+      }
+    }
+    const messages: Message[] = parsed as Message[];
     const conv = new Conversation();
-    conv.messages = messages;
+    // Copy the array to avoid sharing the reference with the parsed JSON object.
+    conv.messages = [...messages];
     return conv;
   }
 

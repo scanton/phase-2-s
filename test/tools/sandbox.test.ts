@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtemp, rm, writeFile, symlink } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, symlink, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { assertInSandbox } from "../../src/tools/sandbox.js";
 
 /**
  * Sandbox tests focus on the realpath()-based enforcement.
- * Key cases: symlinks inside project pointing outside, normal paths, ENOENT.
+ * Key cases: symlinks inside project pointing outside, normal paths, ENOENT,
+ * and the adversarially-discovered case of a new file inside a symlinked parent dir.
  */
 describe("assertInSandbox", () => {
   let tmpDir: string;
@@ -32,7 +33,7 @@ describe("assertInSandbox", () => {
     expect(result).toBe(absPath);
   });
 
-  it("accepts a path that doesn't exist yet (new file — ENOENT lexical fallback)", async () => {
+  it("accepts a path that doesn't exist yet (new file — ENOENT, parent exists)", async () => {
     const newFile = join(tmpDir, "not-yet.txt");
     const relPath = newFile.replace(process.cwd() + "/", "");
     const result = await assertInSandbox(relPath);
@@ -54,7 +55,7 @@ describe("assertInSandbox", () => {
     );
   });
 
-  // --- Symlink tests ---
+  // --- Symlink tests (file symlinks) ---
 
   it("blocks a symlink inside project pointing outside cwd", async () => {
     const linkPath = join(tmpDir, "escape-link");
@@ -84,5 +85,38 @@ describe("assertInSandbox", () => {
     // Should resolve to the real target, still inside cwd
     expect(result.startsWith(process.cwd())).toBe(true);
     await rm(linkPath).catch(() => {});
+  });
+
+  // --- Adversarial: new file inside a symlinked parent directory ---
+  // Attack: create a dir symlink <project>/exfil -> /tmp, then write to exfil/newfile.
+  // Without the parent-realpath fix, the ENOENT fallback would allow it.
+
+  it("blocks a new file whose parent directory is a symlink pointing outside cwd", async () => {
+    // Create a directory symlink: <tmpDir>/dirlink -> /tmp
+    const dirLinkPath = join(tmpDir, "dirlink");
+    try {
+      await symlink("/tmp", dirLinkPath);
+    } catch {
+      // symlink creation failed — skip
+      return;
+    }
+    // Try to access a new file inside the symlinked dir
+    const escapePath = join(dirLinkPath, "malicious-new-file.txt");
+    const relPath = escapePath.replace(process.cwd() + "/", "");
+    await expect(assertInSandbox(relPath)).rejects.toThrow(
+      "Path outside project directory",
+    );
+    await rm(dirLinkPath).catch(() => {});
+  });
+
+  it("allows a new file whose parent directory is inside cwd (normal new file)", async () => {
+    // Create a real subdirectory inside tmpDir
+    const subDir = join(tmpDir, "subdir");
+    await mkdir(subDir, { recursive: true });
+    const newFilePath = join(subDir, "brand-new.txt");
+    const relPath = newFilePath.replace(process.cwd() + "/", "");
+    const result = await assertInSandbox(relPath);
+    expect(result.startsWith(process.cwd())).toBe(true);
+    expect(result).toContain("brand-new.txt");
   });
 });

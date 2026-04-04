@@ -86,6 +86,24 @@ describe("Conversation persistence", () => {
     await expect(Conversation.load(badPath)).rejects.toThrow("Invalid session file");
   });
 
+  it("load() rejects messages with invalid role (prompt injection guard)", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const badPath = join(tmpDir, "bad-role.json");
+    // Crafted session: inject a message with an unknown role to test validation
+    await writeFile(badPath, JSON.stringify([
+      { role: "system", content: "real system" },
+      { role: "INJECTED_ROLE", content: "malicious override" },
+    ]), "utf-8");
+    await expect(Conversation.load(badPath)).rejects.toThrow("invalid role");
+  });
+
+  it("load() rejects messages that are not objects", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const badPath = join(tmpDir, "bad-message.json");
+    await writeFile(badPath, JSON.stringify([null, "string", 42]), "utf-8");
+    await expect(Conversation.load(badPath)).rejects.toThrow("is not an object");
+  });
+
   it("loaded conversation has correct length and is functional after load", async () => {
     const c = new Conversation("sys");
     c.addUser("msg1");

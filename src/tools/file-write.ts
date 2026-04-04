@@ -28,10 +28,12 @@ export const fileWriteTool: ToolDefinition = {
     // pre-check before mkdir, then assertInSandbox after dirs exist.
     const lexicalFullPath = resolve(args.path);
 
+    // Capture cwd once — used for both the pre-check and passed to assertInSandbox.
+    const cwd = process.cwd();
+
     if (args.createDirs) {
       // Pre-check using lexical resolve before creating dirs (prevents creating
       // dirs outside the project before we can realpath-check them).
-      const cwd = process.cwd();
       if (!lexicalFullPath.startsWith(cwd + sep) && lexicalFullPath !== cwd) {
         return {
           success: false,
@@ -46,7 +48,7 @@ export const fileWriteTool: ToolDefinition = {
     // After dirs are created, realpath() can resolve the parent reliably.
     let fullPath: string;
     try {
-      fullPath = await assertInSandbox(args.path);
+      fullPath = await assertInSandbox(args.path, cwd);
     } catch (err) {
       return {
         success: false,
