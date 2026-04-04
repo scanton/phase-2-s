@@ -26,66 +26,85 @@ const params = z.object({
   cwd: z.string().optional().describe("Working directory for the command (defaults to project directory)"),
 });
 
-export const shellTool: ToolDefinition = {
-  name: "shell",
-  description: "Execute a shell command and return its output. Use for running builds, tests, git commands, etc.",
-  parameters: params,
-  async execute(raw: unknown): Promise<ToolResult> {
-    const args = params.parse(raw);
-    const timeout = args.timeout ?? 30_000;
+/**
+ * Create a shell tool with configurable destructive command behavior.
+ *
+ * When allowDestructive is false (default), commands matching DESTRUCTIVE_PATTERNS
+ * are blocked and return success: false. When true, they are allowed with a warning.
+ */
+export function createShellTool(allowDestructive = false): ToolDefinition {
+  return {
+    name: "shell",
+    description: "Execute a shell command and return its output. Use for running builds, tests, git commands, etc.",
+    parameters: params,
+    async execute(raw: unknown): Promise<ToolResult> {
+      const args = params.parse(raw);
+      const timeout = args.timeout ?? 30_000;
 
-    // Warn on destructive patterns — log to stdout so the user sees it
-    for (const pattern of DESTRUCTIVE_PATTERNS) {
-      if (pattern.test(args.command)) {
-        process.stdout.write(`  [shell] ⚠ Potentially destructive command: ${args.command}\n`);
-        break;
+      // Check for destructive patterns
+      for (const pattern of DESTRUCTIVE_PATTERNS) {
+        if (pattern.test(args.command)) {
+          if (!allowDestructive) {
+            return {
+              success: false,
+              output: "",
+              error: "Blocked: destructive command detected. Set allowDestructive: true in .phase2s.yaml to enable.",
+            };
+          }
+          process.stdout.write(`  [shell] ⚠ Destructive command (allowDestructive: true): ${args.command}\n`);
+          break;
+        }
       }
-    }
 
-    // Sandbox: reject cwd values that escape the project directory
-    const projectRoot = process.cwd();
-    let cwdPath = projectRoot;
-    if (args.cwd) {
-      const resolvedCwd = resolve(args.cwd);
-      if (!resolvedCwd.startsWith(projectRoot + sep) && resolvedCwd !== projectRoot) {
-        return {
-          success: false,
-          output: "",
-          error: `cwd outside project directory: ${args.cwd}`,
-        };
+      // Sandbox: reject cwd values that escape the project directory
+      const projectRoot = process.cwd();
+      let cwdPath = projectRoot;
+      if (args.cwd) {
+        const resolvedCwd = resolve(args.cwd);
+        if (!resolvedCwd.startsWith(projectRoot + sep) && resolvedCwd !== projectRoot) {
+          return {
+            success: false,
+            output: "",
+            error: `cwd outside project directory: ${args.cwd}`,
+          };
+        }
+        cwdPath = resolvedCwd;
       }
-      cwdPath = resolvedCwd;
-    }
 
-    try {
-      const { stdout, stderr } = await execFileAsync("/bin/sh", ["-c", args.command], {
-        timeout,
-        maxBuffer: 1024 * 1024 * 10, // 10MB
-        cwd: cwdPath,
-      });
+      try {
+        const { stdout, stderr } = await execFileAsync("/bin/sh", ["-c", args.command], {
+          timeout,
+          maxBuffer: 1024 * 1024 * 10, // 10MB
+          cwd: cwdPath,
+        });
 
-      // Return stdout and stderr separately so the LLM gets accurate signal
-      const parts: string[] = [];
-      if (stdout) parts.push(stdout);
-      if (stderr) parts.push(`[stderr]\n${stderr}`);
-      return { success: true, output: parts.join("\n") || "(no output)" };
-    } catch (err: unknown) {
-      if (err && typeof err === "object" && "stdout" in err) {
-        const execErr = err as { stdout: string; stderr: string; code: number | null; killed: boolean; signal: string | null };
+        // Return stdout and stderr separately so the LLM gets accurate signal
         const parts: string[] = [];
-        if (execErr.stdout) parts.push(execErr.stdout);
-        if (execErr.stderr) parts.push(`[stderr]\n${execErr.stderr}`);
-        const errorMsg = execErr.killed
-          ? `Command timed out after ${timeout}ms`
-          : `Command exited with code ${execErr.code}`;
-        return {
-          success: false,
-          output: parts.join("\n"),
-          error: errorMsg,
-        };
+        if (stdout) parts.push(stdout);
+        if (stderr) parts.push(`[stderr]\n${stderr}`);
+        return { success: true, output: parts.join("\n") || "(no output)" };
+      } catch (err: unknown) {
+        if (err && typeof err === "object" && "stdout" in err) {
+          const execErr = err as { stdout: string; stderr: string; code: number | null; killed: boolean; signal: string | null };
+          const parts: string[] = [];
+          if (execErr.stdout) parts.push(execErr.stdout);
+          if (execErr.stderr) parts.push(`[stderr]\n${execErr.stderr}`);
+          const errorMsg = execErr.killed
+            ? `Command timed out after ${timeout}ms`
+            : `Command exited with code ${execErr.code}`;
+          return {
+            success: false,
+            output: parts.join("\n"),
+            error: errorMsg,
+          };
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, output: "", error: msg };
       }
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, output: "", error: msg };
-    }
-  },
-};
+    },
+  };
+}
+
+// Backward-compat export — blocks destructive commands (safe default).
+// All existing non-destructive shell tests use this directly and are unaffected.
+export const shellTool = createShellTool(false);

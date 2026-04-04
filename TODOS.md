@@ -26,6 +26,20 @@
 
 ---
 
+## Near-term (v0.4.x / Sprint 4) — Streaming + npm Publish
+
+- [ ] **`PHASE2S_ALLOW_DESTRUCTIVE` env var** — `allowDestructive` is the only security-relevant
+  config key without an env var equivalent. All other keys have `PHASE2S_*` env vars. Add
+  `if (process.env.PHASE2S_ALLOW_DESTRUCTIVE === "true") envConfig.allowDestructive = true`
+  in `loadConfig()`. Surfaced during Sprint 3 /plan-eng-review.
+- [ ] **Streaming output** — stream LLM responses as they arrive instead of buffering
+  - Provider interface change: `chat()` → `AsyncIterable<ProviderEvent>` (types already exist in `providers/types.ts`)
+  - Terminal UX: show partial response as it streams (remove spinner)
+- [ ] **README polish for npm publish** — user-facing docs, install instructions, basic usage
+- [ ] **npm publish** — `npm publish --access public` as `phase2s`
+
+---
+
 ## Near-term (v0.3.0) — OpenAI Provider + Polish
 
 - [ ] **Complete openai-api provider** — wire tool calling end-to-end
@@ -94,11 +108,11 @@
 ## Known Issues / Technical Debt
 
 - `codex.ts`: prompt is passed as a CLI argument — arg injection risk if prompt contains `--flags`
-- `shell.ts`: warns on destructive commands but doesn't block them
-- `openai.ts`: doesn't handle `finish_reason: "length"` (silently drops truncated responses)
+- `shell.ts`: warns on destructive commands but doesn't block them ← fixed in Sprint 3
+- `openai.ts`: doesn't handle `finish_reason: "length"` (silently drops truncated responses) ← fixed in Sprint 3
 - `conversation.ts`: token estimation is ~4 chars/token — rough; use `tiktoken` for precision
 - `file-read.ts`, `file-write.ts`: sandbox uses `resolve()` not `realpath()` — symlinks inside the project that point outside cwd bypass the sandbox. Accepted risk for personal use (requires a malicious symlink already in your repo). Fix with `realpath()` before ship.
-- No integration tests (only unit tests so far)
+- No integration tests (only unit tests so far) ← fixed in Sprint 3 (8 agent integration tests)
 - CI added (GitHub Actions, Node.js 22) — no deploy step yet (CLI tool)
 
 ---

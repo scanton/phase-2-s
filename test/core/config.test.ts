@@ -106,4 +106,16 @@ describe("loadConfig", () => {
   it("rejects an invalid provider string", async () => {
     await expect(loadConfig({ provider: "invalid-provider" as never })).rejects.toThrow();
   });
+
+  // --- allowDestructive ---
+
+  it("defaults allowDestructive to false", async () => {
+    const config = await loadConfig({});
+    expect(config.allowDestructive).toBe(false);
+  });
+
+  it("parses allowDestructive: true from overrides", async () => {
+    const config = await loadConfig({ allowDestructive: true });
+    expect(config.allowDestructive).toBe(true);
+  });
 });
