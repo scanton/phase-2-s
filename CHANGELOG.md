@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.5.0 — 2026-04-03
+
+Sprint 3: integration tests, shell hardening, and live API verification.
+
+### What you can do now
+
+- **`openai-api` provider works** — run `PHASE2S_PROVIDER=openai-api phase2s run "..."` with your OpenAI key and get real tool-calling responses. The full loop (user → LLM → tool call → execute → final answer) has been tested live against the API.
+- **Shell safety on by default** — destructive commands (`rm -rf`, `sudo`, `curl | sh`, `git push --force`, etc.) are blocked unless you explicitly set `allowDestructive: true` in `.phase2s.yaml`. Safe to share configs with your team without accidentally blowing up something.
+- **Truncation handling** — if the LLM hits its context limit mid-response, you get the partial text back with a clear `[Note: response was truncated]` notice instead of silence. Content-filtered responses return `[Response blocked by content filter]`.
+
+### For contributors
+
+- **8 agent integration tests** in `test/core/agent.test.ts` — covers no-tool-call, single tool call, multi-turn, tool error recovery, max turns sentinel, finish_reason length, finish_reason content_filter, and malformed JSON arguments. 107 tests total.
+- **`OpenAIClientLike` interface** exported from `src/providers/openai.ts` — typed DI stub for tests, no real API key needed in CI.
+- **`AgentOptions.provider?: Provider`** — inject a pre-constructed provider in tests without touching config.
+- **`createShellTool(allowDestructive)` factory** in `src/tools/shell.ts` — backward-compat `shellTool` export unchanged, all 10 existing non-destructive shell tests unaffected.
+- **`allowDestructive: boolean` (default `false`)** added to config schema in `src/core/config.ts`.
+
+---
+
 ## v0.4.0 — 2026-04-03
 
 Sprint 2: test coverage expansion, CI, and the `/explain` skill.

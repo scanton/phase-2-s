@@ -15,3 +15,4 @@ export function createProvider(config: Config): Provider {
 }
 
 export type { Provider, Message, ToolCall, ProviderEvent } from "./types.js";
+export type { OpenAIClientLike } from "./openai.js";

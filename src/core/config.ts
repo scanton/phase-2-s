@@ -17,6 +17,7 @@ const configSchema = z.object({
   systemPrompt: z.string().optional(),
   maxTurns: z.number().default(50),
   timeout: z.number().default(120_000),
+  allowDestructive: z.boolean().default(false),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };

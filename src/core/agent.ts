@@ -9,6 +9,7 @@ export interface AgentOptions {
   config: Config;
   tools?: ToolRegistry;
   systemPrompt?: string;
+  provider?: Provider;
 }
 
 export class Agent {
@@ -20,8 +21,8 @@ export class Agent {
 
   constructor(opts: AgentOptions) {
     this.config = opts.config;
-    this.tools = opts.tools ?? createDefaultRegistry();
-    this.provider = createProvider(opts.config);
+    this.tools = opts.tools ?? createDefaultRegistry(opts.config.allowDestructive);
+    this.provider = opts.provider ?? createProvider(opts.config);
     this.maxTurns = opts.config.maxTurns;
 
     const systemPrompt = buildSystemPrompt(

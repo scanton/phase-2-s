@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { shellTool } from "../../src/tools/shell.js";
+import { describe, it, expect } from "vitest";
+import { shellTool, createShellTool } from "../../src/tools/shell.js";
 
 describe("shell", () => {
   // --- Happy path ---
@@ -81,38 +81,22 @@ describe("shell", () => {
   });
 
   // --- Destructive pattern detection ---
-  // The tool warns but does NOT block. Verify the warning fires AND the command still runs.
+  // UPDATED Sprint 3: shell.ts now blocks destructive commands by default.
+  // Use echo trick — commands containing the keyword in the string match DESTRUCTIVE_PATTERNS
+  // but don't actually invoke the dangerous binary (CI-safe).
 
-  it("emits a warning to stdout when a destructive pattern matches", async () => {
-    const written: string[] = [];
-    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
-      written.push(String(chunk));
-      return true;
-    });
-
-    try {
-      // "sudo" matches DESTRUCTIVE_PATTERNS — safe command but pattern triggers
-      await shellTool.execute({ command: "echo 'would run: sudo ls'" });
-    } finally {
-      spy.mockRestore();
-    }
-
-    const output = written.join("");
-    expect(output).toMatch(/Potentially destructive/);
-    expect(output).toMatch(/\[shell\]/);
+  it("returns success: false for destructive commands when allowDestructive is false", async () => {
+    const tool = createShellTool(false);
+    // "sudo" inside an echo string matches /\bsudo\b/ in DESTRUCTIVE_PATTERNS
+    const result = await tool.execute({ command: "echo 'would run: sudo rm -rf /'" });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Blocked/);
   });
 
-  it("still executes the command after emitting a destructive warning", async () => {
-    // Suppress the warning for this test
-    const spy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    try {
-      const result = await shellTool.execute({
-        command: "echo 'would run: sudo ls'",
-      });
-      expect(result.success).toBe(true);
-      expect(result.output).toContain("sudo ls");
-    } finally {
-      spy.mockRestore();
-    }
+  it("executes when allowDestructive is true", async () => {
+    const tool = createShellTool(true);
+    const result = await tool.execute({ command: "echo 'would run: sudo ls'" });
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("sudo ls");
   });
 });
