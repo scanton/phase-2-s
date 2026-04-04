@@ -508,7 +508,6 @@ function checkAnthropicKey(config: Config): boolean {
 export function resolveSkillRouting(
   prompt: string,
   skills: import("../skills/types.js").Skill[],
-  configModel?: string,
 ): { effectivePrompt: string; modelOverride: string | undefined; routedSkillName: string | null; unknownSkillName: string | null } {
   if (!prompt.startsWith("/")) {
     return { effectivePrompt: prompt, modelOverride: undefined, routedSkillName: null, unknownSkillName: null };
@@ -549,7 +548,7 @@ async function oneShotMode(config: Config, prompt: string): Promise<void> {
 
   // Skill routing: if prompt starts with "/" look up and run the named skill
   const skills = await loadAllSkills();
-  const { effectivePrompt, modelOverride, routedSkillName, unknownSkillName } = resolveSkillRouting(prompt, skills, config.model);
+  const { effectivePrompt, modelOverride, routedSkillName, unknownSkillName } = resolveSkillRouting(prompt, skills);
 
   if (routedSkillName) {
     const resolvedModel = modelOverride ?? config.model ?? "default";
