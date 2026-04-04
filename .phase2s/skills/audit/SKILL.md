@@ -1,6 +1,7 @@
 ---
 name: audit
 description: Security audit — scans for secrets, injection risks, dependency vulnerabilities, and file access controls
+model: smart
 triggers:
   - security audit
   - audit

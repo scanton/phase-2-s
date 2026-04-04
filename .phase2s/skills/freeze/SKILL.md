@@ -1,6 +1,7 @@
 ---
 name: freeze
 description: Restrict file edits to a single directory for this session — useful when you want to limit scope of changes
+model: fast
 triggers:
   - freeze
   - restrict edits

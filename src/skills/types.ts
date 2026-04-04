@@ -2,6 +2,17 @@ export interface SkillInput {
   /** Human-readable prompt shown to the user in REPL mode, and used as the
    *  MCP tool parameter description in MCP mode. */
   prompt: string;
+  /**
+   * Optional type for the input. Controls the JSON Schema type emitted for MCP
+   * tool parameters. All values are stringified before template substitution.
+   * Defaults to "string" when absent or unrecognized.
+   */
+  type?: "string" | "boolean" | "enum" | "number";
+  /**
+   * Valid enum values. Only used when type === "enum". If absent or empty when
+   * type is "enum", the field falls back to type "string".
+   */
+  enum?: string[];
 }
 
 export interface Skill {

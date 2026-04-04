@@ -109,10 +109,20 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
       triggerPhrases = meta.triggers.split(",").map((s) => s.trim()).filter(Boolean);
     }
 
-    if (typeof meta.model === "string" && meta.model.length > 0) skill_model = meta.model;
+    if (typeof meta.model === "string" && meta.model.length > 0) {
+      const VALID_MODEL_TIERS = ["fast", "smart"];
+      // Allow "fast", "smart", and any literal model string (non-empty).
+      // Warn if it looks like a misspelled tier (short word, not a known model ID).
+      const isLiteralModel = meta.model.includes("-") || meta.model.includes("/") || meta.model.includes(".");
+      const isKnownTier = VALID_MODEL_TIERS.includes(meta.model);
+      if (!isKnownTier && !isLiteralModel && meta.model.length < 20) {
+        console.warn(`[phase2s] Warning: skill at ${path}: model: '${meta.model}' looks like a misspelled tier. Valid tiers: fast, smart. Treating as literal model name.`);
+      }
+      skill_model = meta.model;
+    }
     if (typeof meta.retries === "number" && meta.retries > 0) skill_retries = meta.retries;
 
-    // Parse inputs: key — must be an object mapping name → { prompt: string }
+    // Parse inputs: key — must be an object mapping name → { prompt: string, type?, enum? }
     if (
       meta.inputs !== null &&
       meta.inputs !== undefined &&
@@ -121,6 +131,9 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
     ) {
       const rawInputs = meta.inputs as Record<string, unknown>;
       const parsed: import("./types.js").Skill["inputs"] = {};
+      const VALID_INPUT_TYPES = ["string", "boolean", "enum", "number"] as const;
+      type ValidInputType = (typeof VALID_INPUT_TYPES)[number];
+
       for (const [key, val] of Object.entries(rawInputs)) {
         if (
           val !== null &&
@@ -128,7 +141,40 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
           !Array.isArray(val) &&
           typeof (val as Record<string, unknown>).prompt === "string"
         ) {
-          parsed[key] = { prompt: (val as Record<string, unknown>).prompt as string };
+          const rawVal = val as Record<string, unknown>;
+          const input: import("./types.js").SkillInput = {
+            prompt: rawVal.prompt as string,
+          };
+
+          // Parse type field
+          if (rawVal.type !== undefined) {
+            if (VALID_INPUT_TYPES.includes(rawVal.type as ValidInputType)) {
+              input.type = rawVal.type as ValidInputType;
+            } else {
+              console.warn(`[phase2s] Warning: skill at ${path}: input '${key}' has unrecognized type: '${rawVal.type}'. Valid types: string, boolean, enum, number. Falling back to 'string'.`);
+              input.type = "string";
+            }
+          }
+
+          // Parse enum field (only meaningful when type === "enum")
+          if (rawVal.enum !== undefined) {
+            if (Array.isArray(rawVal.enum)) {
+              input.enum = rawVal.enum.filter((e): e is string => typeof e === "string");
+            } else if (typeof rawVal.enum === "string") {
+              // YAML parsers coerce single-item arrays to strings — normalize gracefully
+              console.warn(`[phase2s] Warning: skill at ${path}: input '${key}' enum: is a string, not an array. Coercing to single-element array ['${rawVal.enum}'].`);
+              input.enum = [rawVal.enum];
+            }
+          }
+
+          // Validate enum completeness: type=enum with empty/absent enum array falls back to string
+          if (input.type === "enum" && (!input.enum || input.enum.length === 0)) {
+            console.warn(`[phase2s] Warning: skill at ${path}: input '${key}' has type: 'enum' but no valid enum values. Falling back to type: 'string'.`);
+            input.type = "string";
+            delete input.enum;
+          }
+
+          parsed[key] = input;
         }
       }
       if (Object.keys(parsed).length > 0) skill_inputs = parsed;

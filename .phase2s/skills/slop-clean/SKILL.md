@@ -1,6 +1,7 @@
 ---
 name: slop-clean
 description: Anti-slop refactor — targeted cleanup by smell category, one pass at a time, tests before and after
+model: smart
 triggers:
   - clean
   - refactor

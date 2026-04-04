@@ -1,6 +1,7 @@
 ---
 name: plan
 description: Create a concrete implementation plan for a feature or task
+model: smart
 triggers:
   - plan this
   - how should I build

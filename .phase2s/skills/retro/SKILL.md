@@ -1,6 +1,7 @@
 ---
 name: retro
 description: Weekly engineering retrospective — what shipped, velocity stats, patterns, one improvement to focus on next week
+model: smart
 triggers:
   - retro
   - weekly retro

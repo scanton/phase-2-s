@@ -1,6 +1,7 @@
 ---
 name: explain
 description: Explain code or a concept clearly and concisely
+model: fast
 triggers:
   - explain this
   - explain how this works

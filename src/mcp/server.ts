@@ -22,7 +22,7 @@ import { substituteInputs } from "../skills/template.js";
 import { join } from "node:path";
 import type { Skill } from "../skills/types.js";
 
-export const MCP_SERVER_VERSION = "0.16.0";
+export const MCP_SERVER_VERSION = "0.18.0";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,14 +81,23 @@ export function skillToTool(skill: Skill): MCPTool {
     },
   };
 
-  // Add declared inputs as named optional string parameters.
+  // Add declared inputs as named optional parameters with typed JSON Schema.
   // Claude Code will fill these in before calling the tool.
   if (skill.inputs) {
     for (const [key, input] of Object.entries(skill.inputs)) {
-      properties[key] = {
-        type: "string",
-        description: input.prompt,
-      };
+      switch (input.type) {
+        case "boolean":
+          properties[key] = { type: "boolean", description: input.prompt };
+          break;
+        case "number":
+          properties[key] = { type: "number", description: input.prompt };
+          break;
+        case "enum":
+          properties[key] = { type: "string", enum: input.enum, description: input.prompt };
+          break;
+        default:
+          properties[key] = { type: "string", description: input.prompt };
+      }
     }
   }
 
@@ -239,8 +248,9 @@ export async function handleRequest(
     if (skill.inputs) {
       const args = params?.arguments as Record<string, unknown> | undefined;
       for (const key of Object.keys(skill.inputs)) {
-        if (args && typeof args[key] === "string") {
-          inputValues[key] = args[key] as string;
+        if (args && args[key] !== undefined && args[key] !== null) {
+          // Stringify all input types before substitution — boolean, number, enum all become strings
+          inputValues[key] = String(args[key]);
         }
       }
     }

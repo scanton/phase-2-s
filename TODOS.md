@@ -6,6 +6,26 @@
 
 ---
 
+## Sprint 15 (in progress) — Model Tier Dogfooding + One-Shot Routing + Typed Inputs (v0.18.0)
+
+| Metric | Target |
+|--------|--------|
+| Version | v0.18.0 |
+| Skills | 29 (28 with model tier declared) |
+| Tests | 279 (+12) |
+
+_Plan reviewed by `/autoplan` (CEO + Eng + DX). Approved 2026-04-04._
+
+### Deferred from autoplan review (add to backlog)
+
+- [ ] **TODO-1: CLI completion hints for one-shot mode** — tab-complete skill names in `phase2s run "/ski<TAB>"`. (human: ~2h / CC: ~10min) P3
+- [ ] **TODO-2: `phase2s skills --json` output** — `--json` flag outputting skill list with name, model tier, inputs. Enables scripting. (human: ~1h / CC: ~5min) P3
+- [ ] **TODO-3: `--dry-run` flag for one-shot mode** — show skill + model without executing. (human: ~2h / CC: ~10min) P2
+- [ ] **TODO-4: Typed inputs REPL rendering** — show `(yes/no)` for boolean, `[a/b/c]` for enum in REPL prompts. (human: ~1h / CC: ~5min) P3
+- [ ] **TODO-5: Inline model tier in `phase2s skills` output** (TASTE) — `explain  [fast]  Explain what a file does`. (human: ~30min / CC: ~5min) P2
+
+---
+
 ## Sprint 13 (done) — Interactive Skills + Plan Output + Tool Control (v0.16.0)
 
 | Metric | Value |
@@ -36,24 +56,20 @@ inputs:
 - Substitution is v1 string-only; MCP input types beyond string are a known v1 limitation (add to backlog)
 - One-shot `phase2s run` mode is unaffected — skill routing only exists in REPL
 
-- [ ] `src/skills/template.ts` (new) — `substituteInputs(template, values, inputs)` only replaces keys declared in `inputs`; `getInputKeys(inputs)` returns declared key names. Tested in isolation.
-- [ ] `src/skills/types.ts` — add `inputs?: Record<string, { prompt: string }>` to `Skill` interface
-- [ ] `src/skills/loader.ts` — parse `inputs:` from YAML frontmatter; store in `Skill`
-- [ ] `src/cli/index.ts` — in skill invocation block: for each key in `skill.inputs`, if `{{key}}` appears in template, prompt user via `nextLine()`, collect answers, call `substituteInputs()` before running
-- [ ] `src/mcp/server.ts` — in `skillToTool`: add each `skill.inputs[name]` as a named optional string parameter in `inputSchema.properties` with `prompt` as description. In `handleRequest` > `tools/call`: extract input values from `params.arguments`, call `substituteInputs()` before building `fullPrompt`
-- [ ] Pre-implementation: grep bundled skills for existing `inputs:` key to confirm no collision
-- [ ] Tests in `test/skills/template.test.ts` (new): basic substitution, missing key passes through, same placeholder twice, empty values, extra values in map ignored, declared-but-absent in template is harmless — target: +6 tests
-- [ ] Tests in `test/skills/loader.test.ts`: parses `inputs` with prompt strings, malformed inputs ignored — target: +2 tests
-- [ ] Tests in `test/mcp/server.test.ts`: `skillToTool` adds input fields to schema, skill without inputs unchanged, `handleRequest` substitutes input values, missing input value leaves placeholder — target: +4 tests
-- [ ] Dogfood: update `/plan` SKILL.md to use `inputs:` for feature name (see `/plan` section below)
+- [x] `src/skills/template.ts` (new) — `substituteInputs(template, values, inputs)` only replaces keys declared in `inputs`; `getInputKeys(inputs)` returns declared key names. Tested in isolation.
+- [x] `src/skills/types.ts` — add `inputs?: Record<string, { prompt: string }>` to `Skill` interface
+- [x] `src/skills/loader.ts` — parse `inputs:` from YAML frontmatter; store in `Skill`
+- [x] `src/cli/index.ts` — in skill invocation block: for each key in `skill.inputs`, if `{{key}}` appears in template, prompt user via `nextLine()`, collect answers, call `substituteInputs()` before running
+- [x] `src/mcp/server.ts` — in `skillToTool`: add each `skill.inputs[name]` as a named optional string parameter in `inputSchema.properties` with `prompt` as description. In `handleRequest` > `tools/call`: extract input values from `params.arguments`, call `substituteInputs()` before building `fullPrompt`
+- [x] Pre-implementation: grep bundled skills for existing `inputs:` key to confirm no collision
+- [x] Tests in `test/skills/template.test.ts` (new): basic substitution, missing key passes through, same placeholder twice, empty values, extra values in map ignored, declared-but-absent in template is harmless — target: +6 tests
+- [x] Tests in `test/skills/loader.test.ts`: parses `inputs` with prompt strings, malformed inputs ignored — target: +2 tests
+- [x] Tests in `test/mcp/server.test.ts`: `skillToTool` adds input fields to schema, skill without inputs unchanged, `handleRequest` substitutes input values, missing input value leaves placeholder — target: +4 tests
+- [x] Dogfood: update `/plan` SKILL.md to use `inputs:` for feature name (see `/plan` section below)
 
 ### `/plan` skill improvement
 
-- [ ] Update `.phase2s/skills/plan/SKILL.md`:
-  - Add `inputs: { feature: { prompt: "What are you planning?" } }` frontmatter
-  - Instruction to use `file_write` to save plan to `.phase2s/plans/YYYY-MM-DD-HH-MM.md`
-  - Instruction to offer: "Append tasks to TODOS.md? Reply yes to append, no to skip."
-  - **Note:** If `file_write` is in a `deny:` list, the plan prints to chat only — acceptable degradation
+- [ ] Update `.phase2s/skills/plan/SKILL.md`: write plan to `.phase2s/plans/YYYY-MM-DD-HH-MM.md`, offer TODOS.md append (deferred — needs design on when to write vs show in chat)
 
 ### Configurable tool allow/deny list
 
@@ -63,13 +79,13 @@ inputs:
 - v1: exact name matching only; glob/prefix patterns (`file_*`) deferred to backlog
 - Method name: `ToolRegistry.allowed(allow?, deny?)` returning a new `ToolRegistry`
 
-- [ ] `src/core/config.ts` — add `tools?: string[]` and `deny?: string[]` to configSchema (zod optional arrays)
-- [ ] `src/tools/registry.ts` — add `allowed(allow?: string[], deny?: string[]): ToolRegistry` method; deny overrides allow; warn on unrecognized names
-- [ ] `src/core/agent.ts` — apply `this.tools = this.tools.allowed(config.tools, config.deny)` in constructor
-- [ ] Tests in `test/core/config.test.ts`: parses `tools:`, parses `deny:` — target: +2 tests
-- [ ] Tests in `test/tools/registry.test.ts`: allow-list filters, deny-list filters, deny overrides allow, no filter returns all, unknown name emits warning — target: +5 tests
-- [ ] Tests in `test/core/agent.test.ts`: agent uses filtered registry when config has `tools`/`deny` — target: +1 test
-- [ ] Docs: add `tools:` / `deny:` YAML example with deny-overrides note in `docs/configuration.md`
+- [x] `src/core/config.ts` — add `tools?: string[]` and `deny?: string[]` to configSchema (zod optional arrays)
+- [x] `src/tools/registry.ts` — add `allowed(allow?: string[], deny?: string[]): ToolRegistry` method; deny overrides allow; warn on unrecognized names
+- [x] `src/core/agent.ts` — apply `this.tools = this.tools.allowed(config.tools, config.deny)` in constructor
+- [x] Tests in `test/core/config.test.ts`: parses `tools:`, parses `deny:` — target: +2 tests
+- [x] Tests in `test/tools/registry.test.ts`: allow-list filters, deny-list filters, deny overrides allow, no filter returns all, unknown name emits warning — target: +5 tests
+- [x] Tests in `test/core/agent.test.ts`: agent uses filtered registry when config has `tools`/`deny` — target: +1 test
+- [x] Docs: add `tools:` / `deny:` YAML example with deny-overrides note in `docs/configuration.md`
 
 ### NOT in scope (Sprint 13)
 - Real Codex JSONL streaming (spike needed — format undocumented)
@@ -273,9 +289,9 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [ ] **Real Codex JSONL streaming** — Codex outputs JSONL on stdout; format is undocumented. Spike needed before committing. Would make long `/satori` runs feel faster.
 - [ ] **`glob` deprecation fix** — `glob@11.1.0` flagged as deprecated during npm install. Pinpoint which transitive dep pulls it in; update or pin to silence the warning.
 - [x] **Anthropic Claude provider** — `src/providers/anthropic.ts` shipped in Sprint 14. `provider: anthropic` in `.phase2s.yaml`. Uses `@anthropic-ai/sdk@0.82.0`. All 29 skills work on Claude 3.5 Sonnet.
-- [ ] **Skill inputs v2: typed parameters** — v1 inputs are string-only. Add optional `type: "boolean" | "enum" | "number"` and `enum:` to the inputs schema so MCP tool parameters can be typed. Deferred from Sprint 13.
+- [x] **Skill inputs v2: typed parameters** — Add optional `type: "boolean" | "enum" | "number"` and `enum:` to inputs schema so MCP tool parameters can be typed. Shipping in Sprint 15 (v0.18.0).
 - [ ] **Skill inputs v2: glob/prefix matching in allow/deny** — `tools: ["file_*"]` pattern matching. v1 is exact-name only. Deferred from Sprint 13.
-- [ ] **Skill inputs v2: one-shot skill routing** — `phase2s run "/plan build auth"` could detect the skill prefix and route through skill-inputs prompting in non-interactive mode. Currently one-shot mode ignores skill routing entirely.
+- [x] **Skill inputs v2: one-shot skill routing** — `phase2s run "/plan build auth"` detects skill prefix and routes through skill system. Shipping in Sprint 15 (v0.18.0).
 
 ---
 

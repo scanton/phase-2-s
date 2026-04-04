@@ -172,10 +172,19 @@ Full context restored. Every message, every tool result.
 
 ## One-shot mode
 
-Run a single prompt and exit (useful for scripts):
+Run a skill and exit (useful for scripts and CI):
 
 ```bash
-phase2s run "explain what src/core/agent.ts does"
+phase2s run "/explain src/core/agent.ts"
+phase2s run "/review src/api/middleware.ts"
+```
+
+Phase2S routes `/skillname` syntax through the skill system — same behavior as the REPL. The skill's model tier applies: `fast` uses your `fast_model`, `smart` uses your `smart_model`.
+
+Plain prompts also work if you don't want a specific skill:
+
+```bash
+phase2s run "what does src/core/agent.ts do?"
 ```
 
 ---

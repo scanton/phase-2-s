@@ -14,7 +14,7 @@ import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, getUnfilledInputKeys } from "../skills/template.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.16.0";
+const VERSION = "0.18.0";
 
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
@@ -496,6 +496,42 @@ function checkAnthropicKey(config: Config): boolean {
   return false;
 }
 
+/**
+ * Resolve a one-shot prompt against a skill list.
+ *
+ * If `prompt` starts with "/" and the skill name matches, returns the expanded
+ * prompt (template + context) and model override. Otherwise returns the prompt
+ * unchanged with no model override.
+ *
+ * Exported for unit testing — not part of the public API.
+ */
+export function resolveSkillRouting(
+  prompt: string,
+  skills: import("../skills/types.js").Skill[],
+  configModel?: string,
+): { effectivePrompt: string; modelOverride: string | undefined; routedSkillName: string | null; unknownSkillName: string | null } {
+  if (!prompt.startsWith("/")) {
+    return { effectivePrompt: prompt, modelOverride: undefined, routedSkillName: null, unknownSkillName: null };
+  }
+
+  const rest = prompt.slice(1);
+  const [skillName, ...argParts] = rest.split(" ");
+  const args = argParts.join(" ");
+
+  if (!skillName) {
+    return { effectivePrompt: prompt, modelOverride: undefined, routedSkillName: null, unknownSkillName: null };
+  }
+
+  const skill = skills.find((s) => s.name === skillName);
+  if (skill) {
+    const substitutedTemplate = substituteInputs(skill.promptTemplate, {}, skill.inputs);
+    const effectivePrompt = substitutedTemplate + buildSkillContext(args);
+    return { effectivePrompt, modelOverride: skill.model, routedSkillName: skill.name, unknownSkillName: null };
+  }
+
+  return { effectivePrompt: prompt, modelOverride: undefined, routedSkillName: null, unknownSkillName: skillName };
+}
+
 async function oneShotMode(config: Config, prompt: string): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
   if (!checkOpenAIKey(config)) process.exit(1);
@@ -511,8 +547,22 @@ async function oneShotMode(config: Config, prompt: string): Promise<void> {
   const agent = new Agent({ config, learnings: learningsStr });
   let hasOutput = false;
 
+  // Skill routing: if prompt starts with "/" look up and run the named skill
+  const skills = await loadAllSkills();
+  const { effectivePrompt, modelOverride, routedSkillName, unknownSkillName } = resolveSkillRouting(prompt, skills, config.model);
+
+  if (routedSkillName) {
+    const resolvedModel = modelOverride ?? config.model ?? "default";
+    process.stderr.write(`Routing to skill: ${routedSkillName} (model: ${resolvedModel})\n`);
+  } else if (unknownSkillName) {
+    process.stderr.write(`No skill named '${unknownSkillName}'. Running as plain prompt. Use 'phase2s skills' to list available skills.\n`);
+  }
+
   try {
-    const result = await agent.run(prompt, { onDelta: (chunk) => { process.stdout.write(chunk); hasOutput = true; } });
+    const result = await agent.run(effectivePrompt, {
+      modelOverride,
+      onDelta: (chunk) => { process.stdout.write(chunk); hasOutput = true; },
+    });
     if (!hasOutput) {
       // Fallback: tool-only path with no final text (rare in practice)
       process.stdout.write(result);

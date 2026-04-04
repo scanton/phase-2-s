@@ -1,6 +1,7 @@
 ---
 name: scope-review
 description: Scope and ambition review — challenges whether the plan is doing the right thing at the right scale
+model: smart
 triggers:
   - think bigger
   - expand scope

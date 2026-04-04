@@ -1,6 +1,7 @@
 ---
 name: unfreeze
 description: Clear the active edit directory restriction set by /freeze or /guard
+model: fast
 triggers:
   - unfreeze
   - unlock edits

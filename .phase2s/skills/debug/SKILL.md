@@ -1,6 +1,7 @@
 ---
 name: debug
 description: Systematic debugging — reproduce, isolate, fix, and verify a bug end-to-end
+model: smart
 triggers:
   - debug
   - fix this bug

@@ -1,6 +1,7 @@
 ---
 name: investigate
 description: Debug an error or unexpected behavior — trace it to the root cause with evidence
+model: smart
 triggers:
   - why is this broken
   - debug this

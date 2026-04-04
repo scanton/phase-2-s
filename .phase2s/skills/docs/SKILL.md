@@ -1,6 +1,7 @@
 ---
 name: docs
 description: Inline documentation — generate JSDoc/TSDoc comments, type annotations, and module headers for undocumented code
+model: smart
 triggers:
   - docs
   - document

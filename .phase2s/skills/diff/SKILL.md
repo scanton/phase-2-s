@@ -1,6 +1,7 @@
 ---
 name: diff
 description: Review uncommitted changes or the last commit with structured feedback
+model: fast
 triggers:
   - review this diff
   - review my diff
