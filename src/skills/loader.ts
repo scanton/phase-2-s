@@ -65,6 +65,8 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
   let description = "";
   let triggerPhrases: string[] = [];
   let promptTemplate: string;
+  let skill_model: string | undefined;
+  let skill_retries: number | undefined;
 
   if (frontmatterMatch) {
     const rawMeta = frontmatterMatch[1];
@@ -87,17 +89,23 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
     } else if (typeof meta.triggers === "string") {
       triggerPhrases = meta.triggers.split(",").map((s) => s.trim()).filter(Boolean);
     }
+
+    if (typeof meta.model === "string" && meta.model.length > 0) skill_model = meta.model;
+    if (typeof meta.retries === "number" && meta.retries > 0) skill_retries = meta.retries;
   } else {
     promptTemplate = content.trim();
   }
 
-  return {
+  const skill: import("./types.js").Skill = {
     name,
     description,
     triggerPhrases,
     promptTemplate,
     sourcePath: path,
   };
+  if (skill_model !== undefined) skill.model = skill_model;
+  if (skill_retries !== undefined) skill.retries = skill_retries;
+  return skill;
 }
 
 /**

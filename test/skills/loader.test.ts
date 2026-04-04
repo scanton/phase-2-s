@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { loadSkillsFromDir } from "../../src/skills/loader.js";
 
 describe("loadSkillsFromDir", () => {
@@ -166,5 +167,64 @@ describe("loadSkillsFromDir", () => {
     const shared = merged.find((s) => s.name === "shared");
     expect(shared).toBeDefined();
     expect(shared!.description).toBe("from A");
+  });
+});
+
+describe("loadSkillsFromDir — Sprint 8 frontmatter fields", () => {
+  it("model: fast is parsed into skill.model", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "my-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: my-skill",
+      "description: test",
+      "model: fast",
+      "triggers:",
+      "  - test",
+      "---",
+      "prompt content",
+    ].join("\n"), "utf-8");
+    const skills = await loadSkillsFromDir(tmpDir);
+    expect(skills[0].model).toBe("fast");
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("model: gpt-4o-mini is parsed as literal model string", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "my-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: my-skill",
+      "description: test",
+      "model: gpt-4o-mini",
+      "triggers:",
+      "  - test",
+      "---",
+      "prompt content",
+    ].join("\n"), "utf-8");
+    const skills = await loadSkillsFromDir(tmpDir);
+    expect(skills[0].model).toBe("gpt-4o-mini");
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("retries: 3 is parsed into skill.retries", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "my-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: my-skill",
+      "description: test",
+      "retries: 3",
+      "triggers:",
+      "  - test",
+      "---",
+      "prompt content",
+    ].join("\n"), "utf-8");
+    const skills = await loadSkillsFromDir(tmpDir);
+    expect(skills[0].retries).toBe(3);
+    await rm(tmpDir, { recursive: true });
   });
 });

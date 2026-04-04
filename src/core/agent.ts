@@ -1,3 +1,5 @@
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import type { Config } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { createProvider, type Provider } from "../providers/index.js";
@@ -5,12 +7,31 @@ import { createDefaultRegistry, type ToolRegistry } from "../tools/index.js";
 import { buildSystemPrompt } from "../utils/prompt.js";
 import { log } from "../utils/logger.js";
 
+const execAsync = promisify(exec);
+
+export interface SatoriResult {
+  attempt: number;
+  passed: boolean;
+  verifyOutput: string;
+  text: string;
+}
+
+export interface AgentRunOptions {
+  onDelta?: (text: string) => void;
+  modelOverride?: string;
+  // Satori options:
+  maxRetries?: number;
+  verifyCommand?: string;
+  verifyFn?: (command: string) => Promise<{ exitCode: number; output: string }>;
+  preRun?: () => Promise<void>;
+  postRun?: (result: SatoriResult) => Promise<void>;
+}
+
 export interface AgentOptions {
   config: Config;
   tools?: ToolRegistry;
   systemPrompt?: string;
   provider?: Provider;
-  /** Inject an existing conversation (e.g. loaded from a saved session via --resume). */
   conversation?: Conversation;
 }
 
@@ -28,7 +49,6 @@ export class Agent {
     this.maxTurns = opts.config.maxTurns;
 
     if (opts.conversation) {
-      // Resume from an injected conversation (loaded from a saved session).
       this.conversation = opts.conversation;
     } else {
       const systemPrompt = buildSystemPrompt(
@@ -41,40 +61,68 @@ export class Agent {
     log.dim(`Provider: ${this.provider.name} | Model: ${this.config.model}`);
   }
 
-  /**
-   * Expose the current conversation for external save/inspect (e.g. session persistence).
-   */
   getConversation(): Conversation {
     return this.conversation;
   }
 
   /**
-   * Run one turn of the agent loop:
-   * user message -> LLM stream -> (tool calls -> execute -> LLM stream)* -> final text
-   *
-   * @param userMessage - The user's input
-   * @param onDelta - Optional callback invoked with each text chunk as it arrives.
-   *   Fires on every text event across all turns (including intermediate tool-call
-   *   reasoning text if the LLM produces any). Skills call run() without onDelta
-   *   (batch semantics); the CLI uses onDelta to stream to stdout.
+   * Resolve a model alias ("fast" | "smart") to an actual model ID using config.
+   * Falls back to config.model if alias not configured.
    */
-  async run(userMessage: string, onDelta?: (text: string) => void): Promise<string> {
-    this.conversation.addUser(userMessage);
+  private resolveModel(model: string): string {
+    if (model === "fast") return this.config.fast_model ?? this.config.model;
+    if (model === "smart") return this.config.smart_model ?? this.config.model;
+    return model; // literal model string
+  }
 
+  /**
+   * Run the shell verify command. Uses verifyFn if provided (for testing),
+   * otherwise execs the command directly.
+   */
+  private async runVerify(
+    command: string,
+    verifyFn?: (cmd: string) => Promise<{ exitCode: number; output: string }>,
+  ): Promise<{ exitCode: number; output: string }> {
+    if (verifyFn) return verifyFn(command);
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: process.cwd(),
+        timeout: 120_000,
+      });
+      return { exitCode: 0, output: stdout + stderr };
+    } catch (err: unknown) {
+      const e = err as { code?: number; stdout?: string; stderr?: string };
+      return {
+        exitCode: e.code ?? 1,
+        output: (e.stdout ?? "") + (e.stderr ?? ""),
+      };
+    }
+  }
+
+  /**
+   * Run one pass of the agent loop (inner loop — does NOT add userMessage to conversation).
+   * Called by run() after the user message is already added.
+   */
+  private async runOnce(
+    onDelta?: (text: string) => void,
+    modelOverride?: string,
+  ): Promise<string> {
     let turns = 0;
 
     while (turns < this.maxTurns) {
       turns++;
 
-      // Trim context before each LLM call to prevent context_length_exceeded errors
       this.conversation.trimToTokenBudget();
 
       let text = "";
       const toolCalls: import("../providers/types.js").ToolCall[] = [];
 
+      const resolvedModel = modelOverride ? this.resolveModel(modelOverride) : undefined;
+
       for await (const event of this.provider.chatStream(
         this.conversation.getMessages(),
         this.tools.toOpenAI(),
+        resolvedModel ? { model: resolvedModel } : undefined,
       )) {
         if (event.type === "text") {
           text += event.content;
@@ -89,15 +137,12 @@ export class Agent {
       }
 
       if (toolCalls.length === 0) {
-        // No tool calls — final response
         this.conversation.addAssistant(text);
         return text;
       }
 
-      // Record assistant message with tool calls
       this.conversation.addAssistant(text, toolCalls);
 
-      // Execute each tool call
       for (const call of toolCalls) {
         log.tool(call.name, truncate(call.arguments, 100));
 
@@ -120,8 +165,6 @@ export class Agent {
             resultContent = `Error: ${result.error}`;
           }
         } catch (err: unknown) {
-          // Catch unexpected throws so the assistant message's tool_calls are always
-          // paired with a tool result — otherwise the OpenAI API returns a 400.
           const msg = err instanceof Error ? err.message : String(err);
           log.tool(call.name, `Unexpected error: ${msg}`);
           resultContent = `Error: ${msg}`;
@@ -131,6 +174,61 @@ export class Agent {
     }
 
     return "(Agent reached maximum turns without a final response)";
+  }
+
+  /**
+   * Run the agent with an optional satori retry loop.
+   *
+   * If options.maxRetries is set, runs the task, verifies with verifyCommand,
+   * retries on failure (injecting failure context), stops when passing or exhausted.
+   */
+  async run(userMessage: string, options?: AgentRunOptions | ((text: string) => void)): Promise<string> {
+    // Backward compat: if called as run(message, onDelta) (old signature), wrap in options
+    const opts: AgentRunOptions = typeof options === "function"
+      ? { onDelta: options }
+      : (options ?? {});
+
+    this.conversation.addUser(userMessage);
+
+    // Satori mode: retry loop with shell verification
+    if (opts.maxRetries && opts.maxRetries > 0) {
+      const verifyCommand = opts.verifyCommand ?? this.config.verifyCommand ?? "npm test";
+
+      if (opts.preRun) await opts.preRun();
+
+      let lastText = "";
+      for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
+        lastText = await this.runOnce(opts.onDelta, opts.modelOverride);
+
+        const { exitCode, output } = await this.runVerify(verifyCommand, opts.verifyFn);
+        const passed = exitCode === 0;
+
+        const satoriResult: SatoriResult = {
+          attempt,
+          passed,
+          verifyOutput: output,
+          text: lastText,
+        };
+
+        if (opts.postRun) await opts.postRun(satoriResult);
+
+        if (passed) {
+          return lastText;
+        }
+
+        if (attempt < opts.maxRetries) {
+          // Inject failure context for next attempt
+          this.conversation.addUser(
+            `Verification failed on attempt ${attempt}/${opts.maxRetries}:\n${output.slice(0, 2000)}\nPlease address these failures.`,
+          );
+        }
+      }
+
+      return `${lastText}\n\n[Satori: verification did not pass after ${opts.maxRetries} attempts]`;
+    }
+
+    // Normal single-pass mode
+    return this.runOnce(opts.onDelta, opts.modelOverride);
   }
 }
 

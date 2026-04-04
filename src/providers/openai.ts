@@ -50,6 +50,7 @@ export class OpenAIProvider implements Provider {
   async *chatStream(
     messages: Message[],
     tools: OpenAIFunctionDef[],
+    options?: import("./types.js").ChatStreamOptions,
   ): AsyncIterable<ProviderEvent> {
     const openaiMessages = messages.map((m) => {
       if (m.role === "tool") {
@@ -80,7 +81,7 @@ export class OpenAIProvider implements Provider {
     });
 
     const stream = await this.client.chat.completions.create({
-      model: this.model,
+      model: options?.model ?? this.model,
       messages: openaiMessages,
       tools: tools.length > 0 ? tools : undefined,
       stream: true,

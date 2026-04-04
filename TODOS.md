@@ -6,6 +6,32 @@
 
 ---
 
+## Sprint 8 (done) — OMX Infrastructure (v0.10.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.10.0 |
+| Skills | 25 |
+| Tests | 175 |
+
+- [x] **Agent tier routing** — `fast_model` / `smart_model` config fields + `PHASE2S_FAST_MODEL` / `PHASE2S_SMART_MODEL` env vars. `model: fast` / `model: smart` in SKILL.md frontmatter resolved via `Agent.resolveModel()`.
+- [x] **Persistent execution loop (satori)** — `agent.run()` accepts `maxRetries`, `verifyFn`, `preRun`, `postRun`. Satori loop injects failure context on retry. `addUser()` stays in outer `run()` — inner `runOnce()` does not re-add the user message.
+- [x] **`/satori` skill** — SKILL.md with `retries: 3`, `model: smart`. Triggers: "satori", "run until tests pass", etc.
+- [x] **Consensus planning** — `/consensus-plan` skill with Planner/Architect/Critic passes. APPROVED / APPROVED WITH CHANGES / REVISE output.
+- [x] **Context snapshots** — `writeContextSnapshot()` in CLI writes git state + task to `.phase2s/context/` before satori runs.
+- [x] **Underspecification gate** — `isUnderspecified()` with `UNDERSPEC_WORD_THRESHOLD = 15`. Gated by `requireSpecification: true` in config. Override with `force:` prefix.
+- [x] **Satori log** — `writeSatoriLog()` writes `.phase2s/satori/<slug>.json` after each attempt with attempt count, pass/fail, failure lines.
+- [x] Tests: config Sprint 8 (4), loader Sprint 8 (3), agent satori loop (7), built-in skills Sprint 8 (4). 175 tests total.
+
+### OMX Infrastructure backlog (not yet implemented)
+
+- [ ] **MCP state server** — shared state across agent turns via MCP protocol
+- [ ] **Parallel teams** — multiple agents working in parallel on subtasks (tmux-style workers)
+- [ ] **Notification gateway** — post-task notifications (Slack, email, webhook)
+- [ ] **`/skill` meta-skill** — create and modify SKILL.md files via the CLI
+
+---
+
 ## Sprint 7 (done) — Execution Skills (5 new skills)
 
 Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleaner` → `/slop-clean`). Added original execution workflows for debug and TDD. Added documentation generation.

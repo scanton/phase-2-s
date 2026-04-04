@@ -62,8 +62,9 @@ export class CodexProvider implements Provider {
   async *chatStream(
     messages: Message[],
     tools: OpenAIFunctionDef[],
+    options?: import("./types.js").ChatStreamOptions,
   ): AsyncIterable<ProviderEvent> {
-    const result = await this._chat(messages, tools);
+    const result = await this._chat(messages, tools, options?.model);
     if (result.text) {
       yield { type: "text", content: result.text };
     }
@@ -80,6 +81,7 @@ export class CodexProvider implements Provider {
   private async _chat(
     messages: Message[],
     _tools: OpenAIFunctionDef[],
+    modelOverride?: string,
   ): Promise<{ text: string; toolCalls: ToolCall[] }> {
     // Build the full prompt: system context + conversation history
     const parts: string[] = [];
@@ -115,7 +117,7 @@ export class CodexProvider implements Provider {
     // spawn() with an array is NOT shell-injected, so this is the only risk.
     const args = [
       "exec",
-      "-m", this.model,
+      "-m", modelOverride ?? this.model,
       "--full-auto",
       "-C", process.cwd(),
       "--json",

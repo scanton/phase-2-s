@@ -19,6 +19,10 @@ export type ProviderEvent =
   | { type: "done"; stopReason: string }
   | { type: "error"; error: string };
 
+export interface ChatStreamOptions {
+  model?: string;
+}
+
 export interface Provider {
   name: string;
 
@@ -26,5 +30,6 @@ export interface Provider {
   chatStream(
     messages: Message[],
     tools: OpenAIFunctionDef[],
+    options?: ChatStreamOptions,
   ): AsyncIterable<ProviderEvent>;
 }

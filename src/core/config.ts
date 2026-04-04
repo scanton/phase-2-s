@@ -12,12 +12,16 @@ const configSchema = z.object({
    * For openai-api, defaults to "gpt-4o".
    */
   model: z.string().optional(),
+  fast_model: z.string().optional(),
+  smart_model: z.string().optional(),
   apiKey: z.string().optional(),
   codexPath: z.string().default("codex"),
   systemPrompt: z.string().optional(),
   maxTurns: z.number().default(50),
   timeout: z.number().default(120_000),
   allowDestructive: z.boolean().default(false),
+  verifyCommand: z.string().default("npm test"),
+  requireSpecification: z.boolean().default(false),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };
@@ -53,6 +57,9 @@ export async function loadConfig(overrides?: Partial<z.infer<typeof configSchema
   if (process.env.PHASE2S_PROVIDER) envConfig.provider = process.env.PHASE2S_PROVIDER;
   if (process.env.PHASE2S_MODEL) envConfig.model = process.env.PHASE2S_MODEL;
   if (process.env.PHASE2S_CODEX_PATH) envConfig.codexPath = process.env.PHASE2S_CODEX_PATH;
+  if (process.env.PHASE2S_FAST_MODEL) envConfig.fast_model = process.env.PHASE2S_FAST_MODEL;
+  if (process.env.PHASE2S_SMART_MODEL) envConfig.smart_model = process.env.PHASE2S_SMART_MODEL;
+  if (process.env.PHASE2S_VERIFY_COMMAND) envConfig.verifyCommand = process.env.PHASE2S_VERIFY_COMMAND;
   // Accept "true", "1", "yes" (case-insensitive) for PHASE2S_ALLOW_DESTRUCTIVE.
   const _destructive = process.env.PHASE2S_ALLOW_DESTRUCTIVE?.toLowerCase();
   if (_destructive === "true" || _destructive === "1" || _destructive === "yes") {

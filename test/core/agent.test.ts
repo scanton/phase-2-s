@@ -10,7 +10,7 @@
  * instead of chat(). The fake client stubs create() to return an async iterable of
  * ChatCompletionChunk arrays — one sequence per call, consumed in order.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, type Mock } from "vitest";
 import type { ChatCompletionChunk } from "openai/resources/chat/completions.js";
 import { Agent } from "../../src/core/agent.js";
 import { OpenAIProvider, type OpenAIClientLike } from "../../src/providers/openai.js";
@@ -28,6 +28,8 @@ const minimalConfig: Config = {
   maxTurns: 5,
   timeout: 120_000,
   allowDestructive: false,
+  verifyCommand: "npm test",
+  requireSpecification: false,
 };
 
 /**
@@ -446,5 +448,128 @@ describe("Agent integration", () => {
       { type: "text", content: "Codex says hello" },
       { type: "done", stopReason: "stop" },
     ]);
+  });
+});
+
+describe("Agent — satori retry loop", () => {
+  it("passes on first attempt when verifyFn exits 0", async () => {
+    const client = makeStreamingFakeClient([
+      makeTextChunks("Done!"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, client);
+    const agent = new Agent({ config: minimalConfig, provider });
+
+    const result = await agent.run("fix the bug", {
+      maxRetries: 3,
+      verifyFn: async () => ({ exitCode: 0, output: "1 passing" }),
+    });
+
+    expect(result).toBe("Done!");
+  });
+
+  it("retries on non-zero exit and injects failure context", async () => {
+    const client = makeStreamingFakeClient([
+      makeTextChunks("First attempt"),
+      makeTextChunks("Second attempt — fixed"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, client);
+    const agent = new Agent({ config: minimalConfig, provider });
+
+    let verifyCallCount = 0;
+    const result = await agent.run("fix the bug", {
+      maxRetries: 3,
+      verifyFn: async () => {
+        verifyCallCount++;
+        if (verifyCallCount === 1) return { exitCode: 1, output: "1 failing" };
+        return { exitCode: 0, output: "all passing" };
+      },
+    });
+
+    expect(verifyCallCount).toBe(2);
+    expect(result).toBe("Second attempt — fixed");
+  });
+
+  it("stops at maxRetries if never passes, returns failed note", async () => {
+    const client = makeStreamingFakeClient([
+      makeTextChunks("Attempt 1"),
+      makeTextChunks("Attempt 2"),
+      makeTextChunks("Attempt 3"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, client);
+    const agent = new Agent({ config: minimalConfig, provider });
+
+    const result = await agent.run("fix the bug", {
+      maxRetries: 3,
+      verifyFn: async () => ({ exitCode: 1, output: "still failing" }),
+    });
+
+    expect(result).toContain("[Satori: verification did not pass after 3 attempts]");
+  });
+
+  it("calls preRun once before first attempt", async () => {
+    const client = makeStreamingFakeClient([makeTextChunks("Done")]);
+    const provider = new OpenAIProvider(minimalConfig, client);
+    const agent = new Agent({ config: minimalConfig, provider });
+
+    let preRunCalls = 0;
+    await agent.run("fix the bug", {
+      maxRetries: 2,
+      verifyFn: async () => ({ exitCode: 0, output: "" }),
+      preRun: async () => { preRunCalls++; },
+    });
+
+    expect(preRunCalls).toBe(1);
+  });
+
+  it("calls postRun after each attempt", async () => {
+    const client = makeStreamingFakeClient([
+      makeTextChunks("Attempt 1"),
+      makeTextChunks("Attempt 2"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, client);
+    const agent = new Agent({ config: minimalConfig, provider });
+
+    const postRunResults: import("../../src/core/agent.js").SatoriResult[] = [];
+    await agent.run("fix the bug", {
+      maxRetries: 3,
+      verifyFn: async () => {
+        const idx = postRunResults.length;
+        return idx === 0 ? { exitCode: 1, output: "failing" } : { exitCode: 0, output: "passing" };
+      },
+      postRun: async (result) => { postRunResults.push(result); },
+    });
+
+    expect(postRunResults).toHaveLength(2);
+    expect(postRunResults[0].passed).toBe(false);
+    expect(postRunResults[1].passed).toBe(true);
+  });
+
+  it("model override: resolves 'fast' to config.fast_model", async () => {
+    const configWithTiers: Config = {
+      ...minimalConfig,
+      fast_model: "gpt-4o-mini",
+      smart_model: "o3",
+    };
+    const client = makeStreamingFakeClient([makeTextChunks("done")]);
+    const provider = new OpenAIProvider(configWithTiers, client);
+    const agent = new Agent({ config: configWithTiers, provider });
+
+    await agent.run("hello", { modelOverride: "fast" });
+
+    // The provider was called — confirm it didn't throw (model resolved)
+    expect((client.chat.completions.create as Mock)).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-4o-mini" }),
+    );
+  });
+
+  it("backward compat: run(message, onDelta) still works", async () => {
+    const client = makeStreamingFakeClient([makeTextChunks("hello world")]);
+    const provider = new OpenAIProvider(minimalConfig, client);
+    const agent = new Agent({ config: minimalConfig, provider });
+
+    const chunks: string[] = [];
+    const result = await agent.run("hi", (chunk) => chunks.push(chunk));
+    expect(result).toBe("hello world");
+    expect(chunks.join("")).toBe("hello world");
   });
 });

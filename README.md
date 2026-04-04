@@ -28,7 +28,7 @@ assistant > Reviewing src/core/agent.ts...
 If you pay for ChatGPT at [chat.openai.com](https://chat.openai.com), you already have what you need. The [OpenAI Codex CLI](https://github.com/openai/codex) uses your ChatGPT subscription — no API key, no usage billing on top of what you already pay.
 
 **What works with your ChatGPT subscription:**
-- All 18 built-in skills: `/review`, `/investigate`, `/plan`, `/ship`, `/qa`, `/explain`, `/diff`, `/retro`, `/health`, `/audit`, `/plan-review`, `/scope-review`, `/autoplan`, `/checkpoint`, `/careful`, `/freeze`, `/guard`, `/unfreeze`
+- All 25 built-in skills
 - One-shot mode: `phase2s run "explain this file"`
 - Interactive REPL with skill invocation
 - Custom skills you write yourself
@@ -53,8 +53,10 @@ If you have an OpenAI API key (`sk-...` from [platform.openai.com](https://platf
 **What you get on top of Option A:**
 - **Token-by-token streaming** — responses appear word-by-word as the model thinks, instead of waiting for a complete response
 - **Phase2S-managed tool loop** — Phase2S directly controls which tools run (file reads, file writes, shell commands, search). You can see each tool call in your terminal as it happens.
-- **Symlink-safe file sandbox** — Phase2S checks real file paths before any read or write. A symlink inside your project that points outside it gets blocked at the path level, not just the name level.
-- **Conversation context management** — Phase2S trims old tool turns automatically when the context fills up, keeping long debugging sessions alive without hitting API limits.
+- **Model-per-skill routing** — use a cheaper model for quick skills and a smarter model for deep review. Configure `fast_model` and `smart_model` in `.phase2s.yaml`. Skills declare which tier they need.
+- **Satori persistent execution** — the `/satori` skill runs your task, runs `npm test`, injects failures back into context, and retries until the tests pass. Enforced by infrastructure, not by hoping the model follows instructions.
+- **Symlink-safe file sandbox** — Phase2S checks real file paths before any read or write. A symlink inside your project that points outside it gets blocked at the path level.
+- **Conversation context management** — Phase2S trims old tool turns automatically when the context fills up.
 
 **Setup:**
 ```bash
@@ -90,7 +92,7 @@ phase2s
 
 You'll see a prompt:
 ```
-Phase2S v0.9.0
+Phase2S v0.10.0
 Type your message and press Enter. Type /quit to exit.
 
 you >
@@ -101,6 +103,7 @@ Type a question or invoke a skill:
 you > /review src/core/agent.ts
 you > why is the REPL sometimes dropping my last message?
 you > /diff
+you > /satori add rate limiting to the API middleware
 ```
 
 **One-shot mode** (run one prompt and exit):
@@ -123,7 +126,14 @@ phase2s skills
 
 ## Built-in skills
 
-Phase2S ships with 23 skills. Type any of them in the REPL:
+Phase2S ships with 25 skills. Type any of them in the REPL:
+
+**Persistent execution:**
+
+| Skill | What it does |
+|-------|-------------|
+| `/satori` | Persistent execution — implements a task, runs `npm test`, injects failures into context, retries up to 3 times until the tests pass. Logs each attempt to `.phase2s/satori/`. |
+| `/consensus-plan` | Consensus-driven planning — runs a planner pass, an architect review, and a critic challenge in sequence. Loops up to 3 times until the plan is approved. |
 
 **Execution:**
 
@@ -186,6 +196,98 @@ Phase2S ships with 23 skills. Type any of them in the REPL:
 /diff                               — review all uncommitted changes
 /freeze src/tools/                  — restrict edits to the tools directory
 /retro                              — last 7 days of commits
+/satori add pagination to the API   — persistent execution until tests pass
+/consensus-plan add auth middleware — planner + architect + critic review
+```
+
+---
+
+## Satori: persistent execution
+
+The hardest coding tasks aren't hard to start — they're hard to finish correctly. You write code, you check it looks right, you ship it. Then three tests fail at 2am.
+
+`/satori` changes the loop. It runs your task, then immediately runs `npm test` (or your configured `verifyCommand`). If tests fail, it injects the exact failure output back into the conversation and tries again. It does this up to 3 times. It stops when the tests are green, not when the model thinks it's done.
+
+```
+you > /satori add rate limiting to the API middleware
+
+Running /satori on: add rate limiting to the API middleware...
+[Context snapshot written to .phase2s/context/]
+
+-- Attempt 1 --
+[agent implements rate limiting]
+Verification: npm test
+  FAIL api.test.ts
+    ✗ rate limiter: allows burst then throttles (expected 429, got 200)
+
+-- Attempt 2 --
+[agent reads failure, identifies the bug, fixes the window logic]
+Verification: npm test
+  PASS (12 tests)
+
+assistant > Rate limiting implemented. 2 attempts. First attempt missed the
+           sliding window reset logic — the bucket wasn't cleared between
+           requests in the same window. Fixed in attempt 2.
+```
+
+**What gets written to disk:**
+
+- `.phase2s/context/YYYY-MM-DD-HH-MM-<slug>.md` — a context snapshot before the run starts: git branch, recent commits, diff stat, task description, and success criteria. The agent reads this to recover state across attempts.
+- `.phase2s/satori/<slug>.json` — a log of every attempt with pass/fail, exit code, and the failure lines that triggered each retry.
+
+**Satori uses your `smart_model`** if configured (the model declared `model: smart` in its frontmatter). For long retry loops on complex tasks, this matters — you want the model that will actually fix the problem, not the cheap one.
+
+**Configure the verify command:**
+```yaml
+# .phase2s.yaml
+verifyCommand: "npm test -- --run"  # vitest one-shot, no watch mode
+# verifyCommand: "pytest tests/"
+# verifyCommand: "go test ./..."
+```
+
+---
+
+## Consensus planning
+
+`/consensus-plan` runs three internal passes before producing a plan:
+
+1. **Planner pass** — what should we build and how? Produces a concrete, ordered implementation plan with dependencies.
+2. **Architect pass** — reviews the plan for structural soundness, edge cases, test coverage. Flags concerns and suggestions per step.
+3. **Critic pass** — challenges the plan aggressively. What assumptions are wrong? What will break in production? What's deferred that shouldn't be?
+
+If the Critic finds real objections, the loop restarts with the objections as new constraints (up to 3 total iterations). When consensus is reached, the plan is output as:
+
+- **APPROVED** — ready to implement
+- **APPROVED WITH CHANGES** — ready with listed modifications
+- **REVISE** — unresolved disagreements, needs your input
+
+Use this before starting any non-trivial feature. It catches the plan errors that only show up in implementation.
+
+---
+
+## Model-per-skill routing
+
+Phase2S v0.10.0 adds model tier routing. Configure two tiers in `.phase2s.yaml`:
+
+```yaml
+fast_model: gpt-4o-mini   # cheap and fast — for quick operations
+smart_model: o3            # deep reasoning — for review, planning, satori
+```
+
+Skills declare which tier they need in their SKILL.md frontmatter:
+```yaml
+model: smart   # use config.smart_model
+model: fast    # use config.fast_model
+model: gpt-4o  # literal model name (always this, ignores tier config)
+```
+
+Built-in skills that use `model: smart`: `/satori`, `/consensus-plan`.
+All other built-in skills use the default model.
+
+**Environment variables:**
+```bash
+export PHASE2S_FAST_MODEL=gpt-4o-mini
+export PHASE2S_SMART_MODEL=o3
 ```
 
 ---
@@ -197,7 +299,7 @@ Every conversation is automatically saved to `.phase2s/sessions/YYYY-MM-DD.json`
 Start a debugging session in the morning, go to lunch, come back:
 ```bash
 phase2s --resume
-Resuming session from .phase2s/sessions/2026-04-03.json (14 messages)
+Resuming session from .phase2s/sessions/2026-04-04.json (14 messages)
 
 you >
 ```
@@ -222,6 +324,8 @@ Drop a Markdown file in `.phase2s/skills/` and it becomes a `/command` immediate
 ---
 name: my-skill
 description: One line describing what this skill does
+model: fast        # optional: fast | smart | literal model string
+retries: 3         # optional: enables satori retry loop (0 = off)
 triggers:
   - phrase that triggers this skill
   - another trigger phrase
@@ -234,6 +338,8 @@ The user's arguments are appended automatically:
 - /my-skill src/auth.ts → "Focus on this file: src/auth.ts"
 - /my-skill why is login slow → "Additional context: why is login slow"
 ```
+
+**To make your own satori skill** — add `retries: 3` and `model: smart` to the frontmatter. Phase2S will automatically handle the retry loop, context snapshot, and log writing. You just write the prompt for what the agent should implement.
 
 **Skill search order** (first match wins):
 1. `.phase2s/skills/` in your current project
@@ -256,8 +362,19 @@ provider: codex-cli       # uses your ChatGPT subscription via Codex CLI (defaul
 # Model — auto-detected from ~/.codex/config.toml if not set
 # model: gpt-4o
 
+# Model tier routing (openai-api provider)
+# fast_model: gpt-4o-mini    # used by skills that declare model: fast
+# smart_model: o3             # used by skills that declare model: smart
+
 # Max agent loop turns before stopping
 maxTurns: 50
+
+# Satori verify command — run after each attempt to check if the task succeeded
+# Default: npm test
+# verifyCommand: npm test
+
+# Underspecification gate — warn when prompts are too vague (requires force: prefix to bypass)
+# requireSpecification: false
 
 # Allow destructive shell commands (rm -rf, sudo, curl | sh, etc.)
 # Default: false — these are blocked for safety
@@ -270,6 +387,9 @@ maxTurns: 50
 |----------|-------------|
 | `PHASE2S_PROVIDER` | Override provider (`codex-cli` or `openai-api`) |
 | `PHASE2S_MODEL` | Override model |
+| `PHASE2S_FAST_MODEL` | Override fast model tier |
+| `PHASE2S_SMART_MODEL` | Override smart model tier |
+| `PHASE2S_VERIFY_COMMAND` | Override satori verify command |
 | `PHASE2S_CODEX_PATH` | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | API key for `openai-api` provider |
 | `PHASE2S_ALLOW_DESTRUCTIVE` | Set to `true` to allow destructive shell commands |
@@ -282,15 +402,27 @@ maxTurns: 50
 
 ```
 you type a message or /skill
-         ↓
+         |
 Phase2S injects the skill prompt (if any)
-         ↓
+         |
+underspecification check (if requireSpecification: true)
+         |
+model-per-skill routing resolves fast/smart tier
+         |
 Codex CLI or OpenAI API (your choice)
-         ↓
+         |
 tool calls run (file reads, shell commands, search)
-         ↓
+         |
 response streams to your terminal
-         ↓
+         |
+-- satori mode only --
+npm test (or verifyCommand) runs
+  tests pass? done
+  tests fail? inject failures, retry (up to maxRetries)
+         |
+-- end satori --
+context snapshot + satori log written to .phase2s/
+         |
 conversation auto-saved to .phase2s/sessions/
 ```
 
@@ -311,6 +443,19 @@ conversation auto-saved to .phase2s/sessions/
 | `grep` | Search file contents with regex. |
 
 The file sandbox rejects any read or write outside your project directory — including symlinks that point outside. If a skill tries to read `/etc/hosts`, it gets an error, not the file.
+
+---
+
+## What Phase2S writes to disk
+
+| Path | What's there | When |
+|------|-------------|------|
+| `.phase2s/sessions/YYYY-MM-DD.json` | Full conversation history | After every turn |
+| `.phase2s/context/<ts>-<slug>.md` | Task context snapshot: branch, commits, diff, success criteria | Before every satori run |
+| `.phase2s/satori/<slug>.json` | Attempt log: attempt number, pass/fail, failure lines, final status | After every satori run |
+| `.phase2s/specs/<date>-<slug>.md` | Structured spec from `/deep-specify` | After /deep-specify completes |
+| `.phase2s/debug/<slug>.md` | Debug session log | After /debug completes |
+| `.phase2s/checkpoints/<ts>.md` | Session state snapshot | After /checkpoint runs |
 
 ---
 
@@ -338,7 +483,7 @@ Options:
 /help          Show available skills and commands
 /quit          Exit (session auto-saved)
 /exit          Exit (session auto-saved)
-/<skill-name>  Invoke a skill (e.g. /review, /diff, /investigate)
+/<skill-name>  Invoke a skill (e.g. /review, /diff, /satori, /consensus-plan)
 ```
 
 ---
@@ -346,18 +491,21 @@ Options:
 ## Roadmap
 
 - [x] Codex CLI provider (uses ChatGPT subscription, no API key required)
-- [x] 23 built-in skills: review, investigate, plan, ship, qa, explain, diff, retro, health, audit, plan-review, scope-review, autoplan, checkpoint, careful, freeze, guard, unfreeze, debug, tdd, slop-clean, deep-specify, docs
+- [x] 25 built-in skills across 6 categories
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 157 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 175 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Streaming output — responses stream token-by-token, no spinner
 - [x] `npm install -g phase2s`
 - [x] Session persistence — auto-save after each turn, `--resume` to continue
-- [ ] Model-per-skill config (faster model for quick skills, smarter model for review)
+- [x] Model-per-skill routing — `fast_model` / `smart_model` tiers in `.phase2s.yaml`
+- [x] Satori persistent execution — retry loop with shell verification, context snapshots, attempt logs
+- [x] Consensus planning — planner + architect + critic passes
 - [ ] Real Codex streaming (JSONL stdout parsing)
+- [ ] npm publish
 
 ---
 

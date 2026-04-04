@@ -203,3 +203,49 @@ describe("Built-in skills — Sprint 7", () => {
     expect(skills.length).toBeGreaterThanOrEqual(23);
   });
 });
+
+/**
+ * Tests for the 2 OMX infrastructure skills added in Sprint 8.
+ */
+describe("Built-in skills — Sprint 8", () => {
+  let skills: import("../../src/skills/types.js").Skill[];
+
+  beforeAll(async () => {
+    const skillsDir = join(process.cwd(), ".phase2s", "skills");
+    skills = await loadSkillsFromDir(skillsDir);
+  });
+
+  function getSkill(name: string): import("../../src/skills/types.js").Skill {
+    const skill = skills.find((s) => s.name === name);
+    if (!skill) throw new Error(`Skill "${name}" not found in .phase2s/skills/`);
+    return skill;
+  }
+
+  it("satori: loads with correct retries, model, and triggers", () => {
+    const skill = getSkill("satori");
+    expect(skill.description).toContain("Persistent execution");
+    expect(skill.retries).toBe(3);
+    expect(skill.model).toBe("smart");
+    expect(skill.triggerPhrases).toContain("satori");
+    expect(skill.triggerPhrases).toContain("run until tests pass");
+    expect(skill.promptTemplate).toContain("verification");
+  });
+
+  it("consensus-plan: loads with correct model and triggers", () => {
+    const skill = getSkill("consensus-plan");
+    expect(skill.description).toContain("Consensus");
+    expect(skill.model).toBe("smart");
+    expect(skill.triggerPhrases).toContain("consensus plan");
+    expect(skill.triggerPhrases).toContain("challenge this plan");
+    expect(skill.promptTemplate).toContain("Critic");
+  });
+
+  it("satori: prompt contains satori state tracking reference", () => {
+    const skill = getSkill("satori");
+    expect(skill.promptTemplate).toContain(".phase2s/satori");
+  });
+
+  it("loads all 25 built-in skills (23 prior + satori + consensus-plan)", () => {
+    expect(skills.length).toBeGreaterThanOrEqual(25);
+  });
+});

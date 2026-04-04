@@ -145,3 +145,47 @@ describe("loadConfig", () => {
     else process.env.PHASE2S_ALLOW_DESTRUCTIVE = orig;
   });
 });
+
+describe("loadConfig — Sprint 8 fields", () => {
+  let origEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    origEnv = { ...process.env };
+    delete process.env.PHASE2S_FAST_MODEL;
+    delete process.env.PHASE2S_SMART_MODEL;
+    delete process.env.PHASE2S_VERIFY_COMMAND;
+    process.env.HOME = "/tmp";
+    process.env.USERPROFILE = "/tmp";
+  });
+
+  afterEach(() => {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in origEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, origEnv);
+  });
+
+  it("fast_model and smart_model parse from env vars", async () => {
+    process.env.PHASE2S_FAST_MODEL = "gpt-4o-mini";
+    process.env.PHASE2S_SMART_MODEL = "o3";
+    const config = await loadConfig();
+    expect(config.fast_model).toBe("gpt-4o-mini");
+    expect(config.smart_model).toBe("o3");
+  });
+
+  it("verifyCommand defaults to 'npm test'", async () => {
+    const config = await loadConfig();
+    expect(config.verifyCommand).toBe("npm test");
+  });
+
+  it("requireSpecification defaults to false", async () => {
+    const config = await loadConfig();
+    expect(config.requireSpecification).toBe(false);
+  });
+
+  it("PHASE2S_VERIFY_COMMAND env var overrides verifyCommand", async () => {
+    process.env.PHASE2S_VERIFY_COMMAND = "vitest run";
+    const config = await loadConfig();
+    expect(config.verifyCommand).toBe("vitest run");
+  });
+});

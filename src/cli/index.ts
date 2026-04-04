@@ -2,6 +2,8 @@ import { Command } from "commander";
 import { createInterface } from "node:readline";
 import { access, constants, readdir } from "node:fs/promises";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFile, mkdir } from "node:fs/promises";
+import { execSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import chalk from "chalk";
 import { loadConfig, type Config } from "../core/config.js";
@@ -10,7 +12,7 @@ import { Conversation } from "../core/conversation.js";
 import { loadAllSkills } from "../skills/index.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.7.0";
+const VERSION = "0.10.0";
 
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
@@ -99,6 +101,96 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     });
 
   await program.parseAsync(argv);
+}
+
+const UNDERSPEC_WORD_THRESHOLD = 15;
+
+function isUnderspecified(prompt: string): boolean {
+  const words = prompt.trim().split(/\s+/).filter(Boolean);
+  const hasFilePath = /[./]/.test(prompt);
+  return words.length < UNDERSPEC_WORD_THRESHOLD && !hasFilePath;
+}
+
+function makeSlug(prompt: string): string {
+  return prompt
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 40);
+}
+
+async function writeContextSnapshot(prompt: string, config: Config): Promise<void> {
+  const dir = resolve(".phase2s", "context");
+  await mkdir(dir, { recursive: true });
+  const slug = makeSlug(prompt);
+  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 16);
+  const filename = `${ts}-${slug}.md`;
+  const filePath = resolve(dir, filename);
+
+  let gitLog = "";
+  let gitDiff = "";
+  let branch = "unknown";
+  try {
+    branch = execSync("git branch --show-current", { encoding: "utf-8" }).trim();
+    gitLog = execSync("git log --oneline -5", { encoding: "utf-8" }).trim();
+    gitDiff = execSync("git diff --stat HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    // Not a git repo or git not available
+  }
+
+  const content = [
+    `# Context Snapshot: ${slug}`,
+    `Date: ${new Date().toISOString()}`,
+    `Branch: ${branch}`,
+    `Task: ${prompt.slice(0, 200)}`,
+    "",
+    "## Codebase Context",
+    gitLog || "(no git log)",
+    "",
+    gitDiff || "(no uncommitted changes)",
+    "",
+    "## Success Criteria",
+    `Passes: ${config.verifyCommand ?? "npm test"}`,
+    "",
+    "## Unknowns",
+    "[to be filled by agent during first pass]",
+  ].join("\n");
+
+  await writeFile(filePath, content, "utf-8");
+  log.dim(`Context snapshot: .phase2s/context/${filename}`);
+}
+
+async function writeSatoriLog(
+  slug: string,
+  startedAt: string,
+  result: import("../core/agent.js").SatoriResult,
+  config: Config,
+  allAttempts: import("../core/agent.js").SatoriResult[],
+): Promise<void> {
+  const dir = resolve(".phase2s", "satori");
+  await mkdir(dir, { recursive: true });
+  const filePath = resolve(dir, `${slug}.json`);
+
+  const log_data = {
+    taskSlug: slug,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    maxRetries: allAttempts.length,
+    verifyCommand: config.verifyCommand ?? "npm test",
+    attempts: allAttempts.map((a) => ({
+      attempt: a.attempt,
+      passed: a.passed,
+      exitCode: a.passed ? 0 : 1,
+      failureLines: a.verifyOutput
+        .split("\n")
+        .filter((l) => /fail|error|assert/i.test(l))
+        .slice(0, 5),
+    })),
+    finalStatus: result.passed ? "passed" : "failed",
+  };
+
+  await writeFile(filePath, JSON.stringify(log_data, null, 2), "utf-8");
 }
 
 /**
@@ -233,13 +325,52 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
       if (skill) {
         const args = trimmed.slice(1 + skillName.length).trim();
         const expanded = skill.promptTemplate + buildSkillContext(args);
-        process.stdout.write(chalk.dim(`Running /${skill.name}${args ? ` on: ${args}` : ""}...\n`));
-        try {
-          const response = await agent.run(expanded);
-          console.log(chalk.bold("\nassistant > ") + response + "\n");
-          await saveSession();
-        } catch (err) {
-          log.error(err instanceof Error ? err.message : String(err));
+
+        // Underspecification gate
+        if (config.requireSpecification && !args.startsWith("force:")) {
+          const checkPrompt = args || trimmed;
+          if (isUnderspecified(checkPrompt)) {
+            console.log(chalk.yellow("⚠  This prompt seems underspecified. Add more detail, or prefix with 'force:' to proceed."));
+            continue;
+          }
+        }
+
+        const safeArgs = args.startsWith("force:") ? args.slice("force:".length).trim() : args;
+        const finalExpanded = skill.promptTemplate + buildSkillContext(safeArgs);
+
+        process.stdout.write(chalk.dim(`Running /${skill.name}${safeArgs ? ` on: ${safeArgs}` : ""}...\n`));
+
+        // Satori mode: skill declares retries > 0
+        if (skill.retries && skill.retries > 0) {
+          const slug = makeSlug(expanded.slice(0, 100));
+          const startedAt = new Date().toISOString();
+          const attempts: import("../core/agent.js").SatoriResult[] = [];
+
+          try {
+            const response = await agent.run(finalExpanded, {
+              modelOverride: skill.model,
+              maxRetries: skill.retries,
+              verifyCommand: config.verifyCommand,
+              preRun: () => writeContextSnapshot(expanded, config),
+              postRun: async (result) => {
+                attempts.push(result);
+                await writeSatoriLog(slug, startedAt, result, config, attempts);
+              },
+            });
+            console.log(chalk.bold("\nassistant > ") + response + "\n");
+            await saveSession();
+          } catch (err) {
+            log.error(err instanceof Error ? err.message : String(err));
+          }
+        } else {
+          // Normal skill run
+          try {
+            const response = await agent.run(finalExpanded, { modelOverride: skill.model });
+            console.log(chalk.bold("\nassistant > ") + response + "\n");
+            await saveSession();
+          } catch (err) {
+            log.error(err instanceof Error ? err.message : String(err));
+          }
         }
         continue;
       }
@@ -248,9 +379,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     // Normal message — stream deltas as they arrive
     process.stdout.write(chalk.bold("\nassistant > "));
     try {
-      await agent.run(trimmed, (chunk) => {
-        process.stdout.write(chunk);
-      });
+      await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk) });
       process.stdout.write("\n\n");
       await saveSession();
     } catch (err) {
@@ -329,10 +458,7 @@ async function oneShotMode(config: Config, prompt: string): Promise<void> {
   let hasOutput = false;
 
   try {
-    const result = await agent.run(prompt, (chunk) => {
-      process.stdout.write(chunk);
-      hasOutput = true;
-    });
+    const result = await agent.run(prompt, { onDelta: (chunk) => { process.stdout.write(chunk); hasOutput = true; } });
     if (!hasOutput) {
       // Fallback: tool-only path with no final text (rare in practice)
       process.stdout.write(result);
