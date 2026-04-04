@@ -25,6 +25,7 @@ Sprint 14: Multi-provider support — Anthropic and Ollama.
 - **`src/providers/index.ts`** — `createProvider()` extended for `"anthropic"` and `"ollama"` cases.
 - **`src/core/config.ts`** — Provider enum extended to 4 values. New optional fields: `anthropicApiKey`, `anthropicMaxTokens`, `ollamaBaseUrl`. `ANTHROPIC_API_KEY` env var wired. `resolveDefaultModel()` returns correct defaults per provider.
 - **267 tests** (up from 249). New: `test/providers/anthropic.test.ts` (12 tests), `test/providers/ollama.test.ts` (4 tests), +2 config tests.
+- **Review hardening** (follow-up commit): stream error safety (`try/catch/finally` with `doneEmitted` guard), Anthropic preflight check in CLI, `anthropicMaxTokens` integer validation, `isLocalUrl()` SSRF warning for remote Ollama URLs, multi-system-message warning in `translateMessages()`.
 
 ## v0.15.0 — 2026-04-04
 

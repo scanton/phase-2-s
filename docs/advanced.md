@@ -1,12 +1,14 @@
 # Advanced Features
 
-> **These features require `PHASE2S_PROVIDER=openai-api` and `OPENAI_API_KEY`.**
+> **Streaming and tool-loop visibility require a direct API provider: `openai-api`, `anthropic`, or `ollama`.**
 >
 > If you're using a ChatGPT subscription (Option A / Codex CLI), you don't need this page. All 29 skills work without it. Come back when you want streaming output or model-per-skill routing.
 
 ---
 
-## Enabling Option B
+## Enabling a direct API provider
+
+**Option B: OpenAI API**
 
 ```bash
 export OPENAI_API_KEY=sk-your-key-here
@@ -14,13 +16,27 @@ export PHASE2S_PROVIDER=openai-api
 phase2s
 ```
 
-Or set it permanently in `.phase2s.yaml`:
+You'll be billed per-token on your OpenAI account.
 
-```yaml
-provider: openai-api
+**Option C: Anthropic API**
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-your-key-here
+export PHASE2S_PROVIDER=anthropic
+phase2s
 ```
 
-You'll be billed per-token on your OpenAI account. Check [platform.openai.com/usage](https://platform.openai.com/usage) to monitor.
+Defaults to `claude-3-5-sonnet-20241022`. Set `model` in `.phase2s.yaml` to use a different model.
+
+**Option D: Ollama (local)**
+
+```bash
+ollama pull llama3.1:8b
+export PHASE2S_PROVIDER=ollama
+phase2s
+```
+
+Ollama uses the same OpenAI-compatible API — the full tool loop works. `ollama serve` must be running.
 
 ---
 

@@ -75,7 +75,7 @@ inputs:
 - Real Codex JSONL streaming (spike needed — format undocumented)
 - MCP input types beyond string (boolean, enum) — v1 is string-only
 - Glob/prefix matching in allow/deny (`tools: ["file_*"]`) — v1 is exact names only
-- Anthropic Claude provider
+- Anthropic Claude provider (shipped Sprint 14)
 
 ---
 
@@ -272,7 +272,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
   - `deny: [shell]` — disable specific tools
 - [ ] **Real Codex JSONL streaming** — Codex outputs JSONL on stdout; format is undocumented. Spike needed before committing. Would make long `/satori` runs feel faster.
 - [ ] **`glob` deprecation fix** — `glob@11.1.0` flagged as deprecated during npm install. Pinpoint which transitive dep pulls it in; update or pin to silence the warning.
-- [ ] **Anthropic Claude provider** — add `src/providers/anthropic.ts` implementing the Provider interface using `@anthropic-ai/sdk`. Config: `provider: anthropic` in `.phase2s.yaml`. Removes hard OpenAI dependency; unlocks Claude 3.5 Sonnet/Haiku as backends.
+- [x] **Anthropic Claude provider** — `src/providers/anthropic.ts` shipped in Sprint 14. `provider: anthropic` in `.phase2s.yaml`. Uses `@anthropic-ai/sdk@0.82.0`. All 29 skills work on Claude 3.5 Sonnet.
 - [ ] **Skill inputs v2: typed parameters** — v1 inputs are string-only. Add optional `type: "boolean" | "enum" | "number"` and `enum:` to the inputs schema so MCP tool parameters can be typed. Deferred from Sprint 13.
 - [ ] **Skill inputs v2: glob/prefix matching in allow/deny** — `tools: ["file_*"]` pattern matching. v1 is exact-name only. Deferred from Sprint 13.
 - [ ] **Skill inputs v2: one-shot skill routing** — `phase2s run "/plan build auth"` could detect the skill prefix and route through skill-inputs prompting in non-interactive mode. Currently one-shot mode ignores skill routing entirely.
@@ -309,8 +309,8 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [x] **Persistent memory across sessions** — done in Sprint 10. `loadLearnings()` + `formatLearningsForPrompt()` in `src/core/memory.ts`. Injected into system prompt via `AgentOptions.learnings`. CLI loads automatically from `.phase2s/memory/learnings.jsonl`. `/remember` skill writes new learnings.
 - [ ] **Browser tool** — headless browser via Playwright for web research
   - Used by `/qa` skill (test sites), `/browse` skill (research), `/investigate` (docs lookup)
-- [ ] **More provider support** — Anthropic Claude, local Ollama, Gemini
-  - Provider interface already abstracted; just implement `chat()`
+- [x] **More provider support** — Anthropic Claude + local Ollama shipped in Sprint 14. Gemini deferred.
+  - Provider interface already abstracted; just implement `chatStream()`
 - [ ] **GitHub Actions integration** — run phase2s as a CI step
   - `/review` on every PR, `/qa` on every deploy, `/investigate` on test failures
 - [ ] **VS Code extension** — run skills from the editor sidebar

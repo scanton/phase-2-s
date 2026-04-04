@@ -9,7 +9,7 @@ This guide gets you running in under 5 minutes.
 ## Prerequisites
 
 - Node.js >= 20. Check: `node --version`
-- A ChatGPT Plus or Pro subscription, OR an OpenAI API key
+- One of: ChatGPT Plus or Pro subscription, OpenAI API key, Anthropic API key, or local Ollama
 
 ---
 
@@ -62,6 +62,34 @@ phase2s
 ```
 
 Option B unlocks token-by-token streaming and model-per-skill routing. See [docs/advanced.md](advanced.md) for what that means and when it matters.
+
+---
+
+## Option C: Anthropic API key (Claude)
+
+Run all 29 skills on Claude 3.5 Sonnet (or any Anthropic model):
+
+```bash
+npm install -g @scanton/phase2s
+export ANTHROPIC_API_KEY=sk-ant-your-key-here
+export PHASE2S_PROVIDER=anthropic
+phase2s
+```
+
+---
+
+## Option D: Local Ollama (free, private, offline)
+
+No API keys. Runs entirely on your machine after the initial model pull:
+
+```bash
+npm install -g @scanton/phase2s
+ollama pull llama3.1:8b
+export PHASE2S_PROVIDER=ollama
+phase2s
+```
+
+`ollama serve` must be running. `qwen2.5-coder:7b` is a good alternative if you want stronger tool-calling support on complex tasks.
 
 ---
 

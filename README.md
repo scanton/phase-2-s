@@ -1,6 +1,6 @@
 # Phase2S
 
-Phase2S is a personal AI coding assistant you run in your terminal. You type questions about your code, ask it to review files, debug problems, or implement a feature — and it answers using your existing ChatGPT subscription or OpenAI API key.
+Phase2S is a personal AI coding assistant you run in your terminal. You type questions about your code, ask it to review files, debug problems, or implement a feature — and it answers using your ChatGPT subscription, OpenAI API key, Anthropic API key, or a local Ollama model.
 
 Think of it as a slash-command layer on top of AI. Instead of typing "please review this file for security issues and flag each problem with a severity level", you type `/review src/core/auth.ts` and get a structured, consistent answer every time.
 
@@ -41,6 +41,28 @@ Unlocks token-by-token streaming and model-per-skill routing.
 npm install -g @scanton/phase2s
 export OPENAI_API_KEY=sk-your-key-here
 export PHASE2S_PROVIDER=openai-api
+phase2s
+```
+
+**Option C: Anthropic API key**
+
+Run all 29 skills on Claude 3.5 Sonnet (or any Anthropic model).
+
+```bash
+npm install -g @scanton/phase2s
+export ANTHROPIC_API_KEY=sk-ant-your-key-here
+export PHASE2S_PROVIDER=anthropic
+phase2s
+```
+
+**Option D: Local Ollama (free, private, offline)**
+
+No API keys. Runs entirely on your machine after the initial model pull.
+
+```bash
+npm install -g @scanton/phase2s
+ollama pull llama3.1:8b
+export PHASE2S_PROVIDER=ollama
 phase2s
 ```
 
@@ -112,9 +134,11 @@ phase2s skills
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 208 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 267 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
+- [x] Anthropic API provider — Claude 3.5 Sonnet and family, all 29 skills
+- [x] Ollama provider — local models, offline, no API keys required
 - [x] Streaming output — responses stream token-by-token
 - [x] `npm install -g @scanton/phase2s`
 - [x] Session persistence — auto-save after each turn, `--resume` to continue

@@ -18,19 +18,36 @@ Full reference with all fields:
 # LLM provider
 # codex-cli: uses your ChatGPT subscription via Codex CLI (default, no API key needed)
 # openai-api: direct OpenAI API access (requires OPENAI_API_KEY, per-token billing)
+# anthropic: Anthropic API (requires ANTHROPIC_API_KEY, defaults to claude-3-5-sonnet-20241022)
+# ollama: local Ollama server (no API key, defaults to llama3.1:8b, requires ollama serve)
 provider: codex-cli
 
 # Model to use
-# If not set: auto-detected from ~/.codex/config.toml (Codex CLI provider)
-# or defaults to gpt-4o (openai-api provider)
+# If not set: auto-detected from ~/.codex/config.toml (codex-cli provider)
+# or defaults to gpt-4o (openai-api), claude-3-5-sonnet-20241022 (anthropic), llama3.1:8b (ollama)
 # model: gpt-4o
+# model: claude-3-5-sonnet-20241022
+# model: qwen2.5-coder:7b
 
-# Model tier routing (openai-api provider only)
+# Model tier routing (openai-api and anthropic providers)
 # Skills declare 'model: fast' or 'model: smart' in their SKILL.md frontmatter.
 # Phase2S resolves the tier to the model configured here.
 # If not set, all skills use the default model above.
 # fast_model: gpt-4o-mini
 # smart_model: o3
+
+# Anthropic API key (anthropic provider only)
+# Falls back to ANTHROPIC_API_KEY environment variable.
+# anthropicApiKey: sk-ant-your-key-here
+
+# Anthropic max tokens (anthropic provider only, default 8192)
+# Raise for models with higher ceilings (claude-3-opus supports up to 4096 output).
+# anthropicMaxTokens: 8192
+
+# Ollama base URL (ollama provider only, default http://localhost:11434/v1)
+# Change this if your Ollama server runs on a different host or port.
+# Warning: remote URLs will send prompts and tool results to that host.
+# ollamaBaseUrl: http://localhost:11434/v1
 
 # Max agent loop turns before stopping
 # The agent loop runs tool calls and feeds results back until no more tool calls.
@@ -66,14 +83,15 @@ All config file settings can be overridden with environment variables. Environme
 
 | Variable | Equivalent config field | Description |
 |----------|------------------------|-------------|
-| `PHASE2S_PROVIDER` | `provider` | `codex-cli` or `openai-api` |
-| `PHASE2S_MODEL` | `model` | Model name (e.g., `gpt-4o`, `o3`) |
+| `PHASE2S_PROVIDER` | `provider` | `codex-cli`, `openai-api`, `anthropic`, or `ollama` |
+| `PHASE2S_MODEL` | `model` | Model name (e.g., `gpt-4o`, `o3`, `claude-3-5-sonnet-20241022`) |
 | `PHASE2S_FAST_MODEL` | `fast_model` | Fast tier model name |
 | `PHASE2S_SMART_MODEL` | `smart_model` | Smart tier model name |
 | `PHASE2S_VERIFY_COMMAND` | `verifyCommand` | Satori verify command |
 | `PHASE2S_ALLOW_DESTRUCTIVE` | `allowDestructive` | `true`, `1`, or `yes` to allow |
 | `PHASE2S_CODEX_PATH` | — | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | — | API key for `openai-api` provider |
+| `ANTHROPIC_API_KEY` | — | API key for `anthropic` provider |
 
 ---
 
@@ -140,6 +158,41 @@ verifyCommand: "pytest tests/ -x"
 
 `-x` stops on first failure, so satori gets fast feedback instead of running all tests after a broken implementation.
 
+**Option C: Anthropic API (Claude)**
+
+```yaml
+# .phase2s.yaml
+provider: anthropic
+# model: claude-3-5-sonnet-20241022  # default
+# anthropicMaxTokens: 8192           # default
+```
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-your-key-here
+phase2s
+```
+
+All 29 skills work on Claude 3.5 Sonnet. Raise `anthropicMaxTokens` if you hit truncation on long `/satori` runs — Claude 3.5 Sonnet supports up to 8192 output tokens by default.
+
+**Option D: Local Ollama (free, private, offline)**
+
+```yaml
+# .phase2s.yaml
+provider: ollama
+model: qwen2.5-coder:7b   # or llama3.1:8b
+```
+
+```bash
+ollama pull qwen2.5-coder:7b
+phase2s
+```
+
+No API keys. Everything runs on your machine after the initial model pull. `qwen2.5-coder:7b` and `llama3.1:8b` both support function calling. `llama3.2` (3B) may drop tool calls on complex prompts.
+
+If your Ollama server is on a different host, set `ollamaBaseUrl`. Note: remote URLs will send prompts and tool results to that host.
+
+---
+
 **Safety mode for shared repos**
 
 ```yaml
@@ -187,7 +240,7 @@ Commands:
   mcp               Start as an MCP server for Claude Code
 
 Options:
-  -p, --provider <provider>  LLM provider (codex-cli | openai-api)
+  -p, --provider <provider>  LLM provider (codex-cli | openai-api | anthropic | ollama)
   -m, --model <model>        Model to use
   --system <prompt>          Custom system prompt
   --resume                   Resume the most recent saved session
