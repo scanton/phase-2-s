@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Conversation } from "../../src/core/conversation.js";
 
@@ -118,5 +118,30 @@ describe("Conversation persistence", () => {
     // Should be usable — can add more messages
     loaded.addAssistant("reply");
     expect(loaded.length).toBe(4);
+  });
+
+  it("save() with mode: 0o600 writes file with owner-only permissions", async () => {
+    const c = new Conversation("sys");
+    c.addUser("sensitive data");
+
+    const path = join(tmpDir, "session-secure.json");
+    await c.save(path, 0o600);
+
+    const info = await stat(path);
+    // Mask with 0o777 to extract only the permission bits
+    const perms = info.mode & 0o777;
+    expect(perms).toBe(0o600);
+  });
+
+  it("save() without mode uses default (world-readable) permissions", async () => {
+    const c = new Conversation("sys");
+    c.addUser("data");
+
+    const path = join(tmpDir, "session-default.json");
+    await c.save(path);
+
+    // File should exist and be readable — the default mode is not constrained
+    const info = await stat(path);
+    expect(info.size).toBeGreaterThan(0);
   });
 });

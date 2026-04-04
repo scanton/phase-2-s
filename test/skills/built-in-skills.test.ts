@@ -296,3 +296,53 @@ describe("Built-in skills — Sprint 9", () => {
     expect(skills.length).toBeGreaterThanOrEqual(26);
   });
 });
+
+/**
+ * Tests for the 2 meta-skills added in Sprint 10: /remember and /skill.
+ */
+describe("Built-in skills — Sprint 10", () => {
+  let skills: import("../../src/skills/types.js").Skill[];
+
+  beforeAll(async () => {
+    const skillsDir = join(process.cwd(), ".phase2s", "skills");
+    skills = await loadSkillsFromDir(skillsDir);
+  });
+
+  function getSkill(name: string): import("../../src/skills/types.js").Skill {
+    const skill = skills.find((s) => s.name === name);
+    if (!skill) throw new Error(`Skill "${name}" not found in .phase2s/skills/`);
+    return skill;
+  }
+
+  it("remember: loads with correct name, description, and triggers", () => {
+    const skill = getSkill("remember");
+    expect(skill.description).toContain("memory");
+    expect(skill.triggerPhrases).toContain("remember this");
+    expect(skill.triggerPhrases).toContain("save this learning");
+    expect(skill.triggerPhrases).toContain("remember for next time");
+  });
+
+  it("remember: prompt references learnings.jsonl write path", () => {
+    const skill = getSkill("remember");
+    expect(skill.promptTemplate).toContain("learnings.jsonl");
+  });
+
+  it("skill: loads with correct name, description, and triggers", () => {
+    const skill = getSkill("skill");
+    expect(skill.description).toContain("skill");
+    expect(skill.triggerPhrases).toContain("create a skill");
+    expect(skill.triggerPhrases).toContain("new skill");
+    expect(skill.triggerPhrases).toContain("add a skill");
+  });
+
+  it("skill: prompt contains SKILL.md template structure", () => {
+    const skill = getSkill("skill");
+    expect(skill.promptTemplate).toContain("SKILL.md");
+    expect(skill.promptTemplate).toContain("triggers");
+    expect(skill.promptTemplate).toContain("description");
+  });
+
+  it("loads all 28 built-in skills (26 prior + remember + skill)", () => {
+    expect(skills.length).toBeGreaterThanOrEqual(28);
+  });
+});

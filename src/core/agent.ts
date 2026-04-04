@@ -33,6 +33,8 @@ export interface AgentOptions {
   systemPrompt?: string;
   provider?: Provider;
   conversation?: Conversation;
+  /** Pre-formatted learnings string from formatLearningsForPrompt(). Injected into the system prompt. */
+  learnings?: string;
 }
 
 export class Agent {
@@ -54,6 +56,7 @@ export class Agent {
       const systemPrompt = buildSystemPrompt(
         this.tools.list(),
         opts.systemPrompt ?? opts.config.systemPrompt,
+        opts.learnings,
       );
       this.conversation = new Conversation(systemPrompt);
     }

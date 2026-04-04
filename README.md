@@ -28,7 +28,7 @@ assistant > Reviewing src/core/agent.ts...
 If you pay for ChatGPT at [chat.openai.com](https://chat.openai.com), you already have what you need. The [OpenAI Codex CLI](https://github.com/openai/codex) uses your ChatGPT subscription — no API key, no usage billing on top of what you already pay.
 
 **What works with your ChatGPT subscription:**
-- All 25 built-in skills
+- All 28 built-in skills
 - One-shot mode: `phase2s run "explain this file"`
 - Interactive REPL with skill invocation
 - Custom skills you write yourself
@@ -126,7 +126,7 @@ phase2s skills
 
 ## Built-in skills
 
-Phase2S ships with 26 skills. Type any of them in the REPL:
+Phase2S ships with 28 skills. Type any of them in the REPL:
 
 **Persistent execution:**
 
@@ -167,6 +167,13 @@ Phase2S ships with 26 skills. Type any of them in the REPL:
 | `/autoplan` | Runs scope-review + plan-review sequentially with auto-decision principles |
 | `/ship` | Commit prep: diff review, secret scan, formatted commit message |
 
+**Memory and meta:**
+
+| Skill | What it does |
+|-------|-------------|
+| `/remember` | Save a project learning to persistent memory. Gets stored in `.phase2s/memory/learnings.jsonl` and injected into every future session automatically. |
+| `/skill` | Create a new Phase2S skill from inside Phase2S. Three-question interview generates a SKILL.md file. No manual YAML editing. |
+
 **Session and workflow:**
 
 | Skill | What it does |
@@ -200,6 +207,8 @@ Phase2S ships with 26 skills. Type any of them in the REPL:
 /satori add pagination to the API   — persistent execution until tests pass
 /consensus-plan add auth middleware — planner + architect + critic review
 /adversarial <paste plan here>      — challenge a plan before implementing
+/remember                           — save a learning to persistent memory
+/skill                              — create a new skill from inside Phase2S
 ```
 
 ---
@@ -307,6 +316,64 @@ you >
 ```
 
 The full conversation is there — everything the model saw, everything it said, every tool result. Hit Ctrl+C mid-session and Phase2S saves before exiting so you don't lose the turn.
+
+---
+
+## Persistent memory
+
+Phase2S remembers your project preferences and decisions across sessions. Memory is explicit — you decide what gets saved. There's no auto-capture noise.
+
+### How it works
+
+1. You tell Phase2S to remember something: `/remember`
+2. Phase2S asks what to remember and what type (preference, decision, pattern, constraint, tool)
+3. It appends a JSON line to `.phase2s/memory/learnings.jsonl`
+4. Next session: Phase2S loads the file at startup and injects the learnings into the system prompt
+
+The agent reads `.phase2s/memory/learnings.jsonl` before your first message. It knows your project's conventions without you re-explaining them.
+
+### What to remember
+
+- **Preferences**: "This project uses vitest not jest"
+- **Decisions**: "We chose Zod over Yup because we need TypeScript strict mode compatibility"
+- **Patterns**: "Always run `npm run build` before running tests in this repo"
+- **Constraints**: "The codex binary is at /opt/homebrew/bin/codex on this machine"
+- **Tools**: "Use `fd` not `find` — it respects .gitignore"
+
+### Example
+
+```
+you > /remember
+assistant > What should I remember? Give me one specific insight.
+you > This project uses vitest, not jest. The test command is npm test.
+assistant > What type is this? preference, decision, pattern, constraint, or tool?
+you > preference
+assistant > Saved learning 'test-framework' to .phase2s/memory/learnings.jsonl.
+           It will be loaded at the start of every future session.
+```
+
+Next session startup:
+
+```
+Phase2S v0.12.0
+Learnings: 1 entry from .phase2s/memory/
+```
+
+### Creating new skills from memory
+
+The `/skill` meta-skill lets you create new Phase2S skills from inside Phase2S. No YAML editing required.
+
+```
+you > /skill
+assistant > What should this skill do? Describe it in one sentence.
+you > Summarize the current git diff in plain English for a non-technical reviewer.
+assistant > What phrases should trigger this skill? Give me 3 to 5 examples.
+you > summarize changes, explain the diff, PR summary, what changed in plain english, summarize for review
+assistant > Does this skill need extra intelligence? default, fast, or smart?
+you > smart
+assistant > Skill '/diff-summary' created at .phase2s/skills/diff-summary/SKILL.md.
+           Run `phase2s skills` to verify it loaded.
+```
 
 ---
 
@@ -498,7 +565,7 @@ Options:
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 186 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 205 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Streaming output — responses stream token-by-token, no spinner
@@ -509,6 +576,9 @@ Options:
 - [x] Consensus planning — planner + architect + critic passes
 - [x] Claude Code MCP integration — all skills available as Claude Code tools via `phase2s mcp`
 - [x] `/adversarial` skill — cross-model adversarial review with structured output
+- [x] Persistent memory — `/remember` saves learnings to `.phase2s/memory/learnings.jsonl`, injected on every startup
+- [x] `/skill` meta-skill — create new skills from inside Phase2S
+- [x] Session file security — session files written with `mode: 0o600` (owner-only)
 - [ ] Real Codex streaming (JSONL stdout parsing)
 - [ ] npm publish
 
@@ -589,7 +659,7 @@ Once configured, Claude Code gains a tool for every Phase2S skill. The tools are
 | `/scope-review` | `phase2s__scope_review` |
 | `/health` | `phase2s__health` |
 | `/retro` | `phase2s__retro` |
-| (all 26 skills) | `phase2s__<name>` |
+| (all 28 skills) | `phase2s__<name>` |
 
 Adding a new SKILL.md to `.phase2s/skills/` automatically makes it available as a new
 Claude Code tool the next time the MCP server starts. No code changes required.

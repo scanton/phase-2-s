@@ -51,10 +51,20 @@ export class Conversation {
   /**
    * Serialize the conversation history to a JSON file.
    * Creates parent directories if they don't exist.
+   *
+   * @param mode  Optional file permission mode (e.g. 0o600 for owner-only).
+   *              Defaults to umask-controlled permissions if not specified.
+   *              Pass 0o600 from the CLI to prevent session files (which may
+   *              contain code, file paths, or secrets) from being world-readable.
    */
-  async save(path: string): Promise<void> {
+  async save(path: string, mode?: number): Promise<void> {
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, JSON.stringify(this.messages, null, 2), "utf-8");
+    const content = JSON.stringify(this.messages, null, 2);
+    if (mode !== undefined) {
+      await writeFile(path, content, { encoding: "utf-8", mode });
+    } else {
+      await writeFile(path, content, "utf-8");
+    }
   }
 
   /**

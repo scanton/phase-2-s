@@ -47,4 +47,17 @@ describe("Codex arg injection hardening", () => {
     expect(sigtermHandler).toBeGreaterThan(-1);
     expect(sigintHandler).toBeGreaterThan(-1);
   });
+
+  it("codex.ts has signal handler guard flag to prevent double-registration", async () => {
+    const source = await readFile("src/providers/codex.ts", "utf-8");
+    // Should declare a guard variable
+    expect(source).toContain("_signalHandlersRegistered");
+    // The guard check should wrap the handler registration
+    const guardIdx = source.indexOf("_signalHandlersRegistered");
+    const ifIdx = source.indexOf("if (!_signalHandlersRegistered)", guardIdx - 5);
+    expect(ifIdx).toBeGreaterThan(-1);
+    // The process.on calls should appear after the guard check
+    const exitIdx = source.indexOf('process.on("exit"', ifIdx);
+    expect(exitIdx).toBeGreaterThan(ifIdx);
+  });
 });

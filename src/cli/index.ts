@@ -9,10 +9,11 @@ import chalk from "chalk";
 import { loadConfig, type Config } from "../core/config.js";
 import { Agent } from "../core/agent.js";
 import { Conversation } from "../core/conversation.js";
+import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { loadAllSkills } from "../skills/index.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.11.0";
+const VERSION = "0.12.0";
 
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
@@ -233,7 +234,14 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   console.log(chalk.bold(`\nPhase2S v${VERSION}`));
   console.log(chalk.dim("Type your message and press Enter. Type /quit to exit.\n"));
 
-  const agent = new Agent({ config, conversation: resumedConversation });
+  // Load persistent memory learnings from .phase2s/memory/learnings.jsonl
+  const learningsList = await loadLearnings(process.cwd());
+  const learningsStr = formatLearningsForPrompt(learningsList);
+  if (learningsList.length > 0) {
+    log.dim(`Learnings: ${learningsList.length} ${learningsList.length === 1 ? "entry" : "entries"} from .phase2s/memory/`);
+  }
+
+  const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr });
   const skills = await loadAllSkills();
 
   // Session auto-save path — today's file
@@ -277,7 +285,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     // Synchronous save before exit — async saveSession() can't complete after process.exit().
     try {
       mkdirSync(resolve(sessionPath, ".."), { recursive: true });
-      writeFileSync(sessionPath, JSON.stringify(agent.getConversation().getMessages(), null, 2), "utf-8");
+      writeFileSync(sessionPath, JSON.stringify(agent.getConversation().getMessages(), null, 2), { encoding: "utf-8", mode: 0o600 });
     } catch {
       // Best-effort — don't block exit on save failure
     }
@@ -298,7 +306,9 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   /** Save the current conversation to today's session file (best-effort). */
   const saveSession = async (): Promise<void> => {
     try {
-      await agent.getConversation().save(sessionPath);
+      // mode 0o600: session files may contain code, file paths, or secrets —
+      // restrict to owner-only to prevent world-readable exposure on multi-user systems.
+      await agent.getConversation().save(sessionPath, 0o600);
     } catch {
       // Best-effort — session save failures don't interrupt the user
     }
@@ -463,7 +473,14 @@ async function oneShotMode(config: Config, prompt: string): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
   if (!checkOpenAIKey(config)) process.exit(1);
 
-  const agent = new Agent({ config });
+  // Load persistent memory learnings from .phase2s/memory/learnings.jsonl
+  const learningsList = await loadLearnings(process.cwd());
+  const learningsStr = formatLearningsForPrompt(learningsList);
+  if (learningsList.length > 0) {
+    log.dim(`Learnings: ${learningsList.length} ${learningsList.length === 1 ? "entry" : "entries"} from .phase2s/memory/`);
+  }
+
+  const agent = new Agent({ config, learnings: learningsStr });
   let hasOutput = false;
 
   try {

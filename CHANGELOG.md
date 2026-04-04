@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.12.0 — 2026-04-04
+
+Sprint 10: Persistent memory, meta-skill (/skill), session security hardening, and signal handler guard.
+
+### What you can do now
+
+- **Persistent memory** — Phase2S now remembers your project preferences, decisions, and lessons across sessions. On startup, it loads `.phase2s/memory/learnings.jsonl` and injects up to 2000 characters of learnings into the system prompt. The agent knows your project's conventions without you having to re-explain them every session.
+- **`/remember`** — save a learning to memory with one command. Ask Phase2S to remember anything: "remember this: we use vitest not jest", "remember that the codex binary is at /opt/homebrew/bin/codex". Two follow-up questions (what to remember, what type), then it appends a JSON line to `.phase2s/memory/learnings.jsonl`. The next session picks it up automatically.
+- **`/skill`** — create a new Phase2S skill from inside Phase2S. Three questions (what it does, what phrases trigger it, which model tier), then Phase2S writes the SKILL.md to `.phase2s/skills/<name>/SKILL.md`. No manual YAML editing required. Phase2S can now extend itself.
+- **Session file security** — session files (`.phase2s/sessions/*.json`) are now written with `mode: 0o600` (owner-read/write only). On shared or multi-user systems, conversation history is no longer world-readable. Both write paths (normal save after each turn + SIGINT emergency save) are fixed.
+
+### For contributors
+
+- **`src/core/memory.ts`** — new file. `loadLearnings(cwd)`: reads JSONL, skips invalid lines silently, returns `Learning[]`. `formatLearningsForPrompt(learnings)`: formats for system prompt injection, trims oldest first if over 2000 chars.
+- **`src/utils/prompt.ts`** — `buildSystemPrompt()` gains optional `learnings?: string` third parameter. Appended after custom prompt if non-empty.
+- **`src/core/agent.ts`** — `AgentOptions` gains `learnings?: string`. Passed to `buildSystemPrompt()` in constructor.
+- **`src/core/conversation.ts`** — `save()` gains optional `mode?: number` parameter. Passed to `writeFile()` options when specified.
+- **`src/cli/index.ts`** — `interactiveMode()` and `oneShotMode()` both call `loadLearnings(process.cwd())` and pass formatted string to `new Agent(...)`. Async save uses `mode: 0o600`. Sync SIGINT save uses `{ encoding: "utf-8", mode: 0o600 }`. VERSION bumped to `"0.12.0"`.
+- **`src/providers/codex.ts`** — `_signalHandlersRegistered` guard flag wraps all three signal handler registrations (`exit`, `SIGTERM`, `SIGINT`). Prevents `MaxListenersExceededWarning` when vitest re-evaluates the module across test files.
+- **2 new SKILL.md files** — `.phase2s/skills/remember/SKILL.md`, `.phase2s/skills/skill/SKILL.md`.
+- **5 new test files/sections** — `test/core/memory.test.ts` (9 tests), `test/utils/prompt.test.ts` (3 tests), built-in skills Sprint 10 section (5 tests), conversation persistence mode tests (2 tests), codex hardening guard test (1 test). **205 tests total** (up from 186).
+
+### MCP backlog (deferred to Sprint 11)
+
+- **MCP skills reload** — skills added mid-session via `/skill` aren't visible to Claude Code until restart. Future: `tools/reload` method.
+- **MCP tool calls stateless** — each `tools/call` creates a fresh agent. Multi-turn MCP skills start cold every call. Future: per-session conversation persistence in MCP server.
+
 ## v0.11.0 — 2026-04-04
 
 Sprint 9: Claude Code MCP integration — Phase2S skills as Claude Code tools, `/adversarial` skill, and cross-model review.

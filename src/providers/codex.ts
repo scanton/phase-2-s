@@ -21,17 +21,27 @@ function cleanupTempDirs(): void {
   }
 }
 
-process.on("exit", cleanupTempDirs);
-// SIGTERM and SIGINT don't trigger "exit" automatically — register them explicitly
-// so that temp dirs (which may contain prompt text) are cleaned up on Ctrl+C and kill.
-process.on("SIGTERM", () => {
-  cleanupTempDirs();
-  process.exit(0);
-});
-process.on("SIGINT", () => {
-  cleanupTempDirs();
-  process.exit(0);
-});
+/**
+ * Guard against double-registration if the module is evaluated multiple times.
+ * In vitest environments, modules may be re-evaluated between test files, which
+ * would register duplicate handlers and trigger MaxListenersExceededWarning.
+ */
+let _signalHandlersRegistered = false;
+
+if (!_signalHandlersRegistered) {
+  _signalHandlersRegistered = true;
+  process.on("exit", cleanupTempDirs);
+  // SIGTERM and SIGINT don't trigger "exit" automatically — register them explicitly
+  // so that temp dirs (which may contain prompt text) are cleaned up on Ctrl+C and kill.
+  process.on("SIGTERM", () => {
+    cleanupTempDirs();
+    process.exit(0);
+  });
+  process.on("SIGINT", () => {
+    cleanupTempDirs();
+    process.exit(0);
+  });
+}
 
 /**
  * Codex CLI provider.

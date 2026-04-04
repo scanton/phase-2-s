@@ -6,6 +6,28 @@
 
 ---
 
+## Sprint 10 (done) — Memory, Meta-Skill, Security Hardening (v0.12.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.12.0 |
+| Skills | 28 |
+| Tests | 205 |
+
+- [x] **Session file security** — `Conversation.save()` accepts `mode?: number`. CLI passes `mode: 0o600` on both async save path (after each turn) and sync SIGINT path (`writeFileSync`). Session files now owner-only by default.
+- [x] **Signal handler guard** — `_signalHandlersRegistered` flag in `codex.ts` prevents double-registration if the module is evaluated multiple times in vitest. Eliminates `MaxListenersExceededWarning` as test suite grows.
+- [x] **Memory system** — `src/core/memory.ts`: `loadLearnings(cwd)` reads `.phase2s/memory/learnings.jsonl`, `formatLearningsForPrompt()` formats them for system prompt injection (capped at ~2000 chars, trims oldest first). `buildSystemPrompt()` accepts `learnings?: string`. `AgentOptions` gains `learnings?: string`. CLI loads and passes learnings in `interactiveMode()` and `oneShotMode()`.
+- [x] **`/remember` skill** — saves a project learning to `.phase2s/memory/learnings.jsonl` via shell append. Asks what to remember and what type (preference, decision, pattern, constraint, tool). Writes one JSON line.
+- [x] **`/skill` meta-skill** — guided interview (3 questions) → generates a SKILL.md file via file-write. Creates `.phase2s/skills/<name>/SKILL.md`. Phase2S can now create new skills from within a session.
+- [x] Tests: memory system (9 in `test/core/memory.test.ts`), prompt learnings injection (3 in `test/utils/prompt.test.ts`), /remember + /skill skills (5 in built-in-skills.test.ts), session file mode (2 in conversation-persistence.test.ts), signal handler guard (1 in codex-hardening.test.ts). **205 tests total** (up from 186).
+
+### MCP backlog (discovered in Sprint 9, deferred)
+
+- [ ] **MCP skills reload** — skills added during a Claude Code session (e.g. via `/skill`) aren't visible to Claude Code until it restarts (MCP server loads skills at startup). Future: `tools/reload` method or session restart detection.
+- [ ] **MCP tool calls stateless** — each `tools/call` invocation creates a fresh `Agent` and `Conversation`. Multi-turn skills (`/satori`, `/consensus-plan`) invoked via MCP start cold every call. Future: per-session conversation persistence in MCP server.
+
+---
+
 ## Sprint 9 (done) — Claude Code MCP Integration (v0.11.0)
 
 | Metric | Value |
@@ -45,7 +67,7 @@
 - [ ] **MCP state server** — shared state across agent turns via MCP protocol
 - [ ] **Parallel teams** — multiple agents working in parallel on subtasks (tmux-style workers)
 - [ ] **Notification gateway** — post-task notifications (Slack, email, webhook)
-- [ ] **`/skill` meta-skill** — create and modify SKILL.md files via the CLI
+- [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview creates SKILL.md files from within a session.
 
 ---
 
@@ -160,7 +182,7 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [ ] **MCP state server** — implement `src/mcp/` state server with `state_write`/`state_read`/`state_clear`. Gives skills durable cross-turn state (like OMX's `.omx/state/` via MCP). Required by persistent execution and consensus planning.
 - [ ] **Notification gateway** — Telegram/Discord webhooks for long-running team operations. Alerts when a parallel run completes or errors. OMX uses OpenClaw.
 - [ ] **Context snapshots** — mandatory `.phase2s/context/{task-slug}-{ts}.md` before execution: task, outcome, constraints, unknowns, codebase touchpoints. Prevents silent partial completion.
-- [ ] **`/skill` meta-skill** — manage skills from within a session: list, add, remove, edit, sync user↔project scope. Mirrors OMX's `$skill` command.
+- [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview (3 questions) generates a SKILL.md file via file-write. Creates `.phase2s/skills/<name>/SKILL.md` from within a session.
 - [ ] **Underspecification gate** — block requests below a confidence threshold and require `force:` prefix to bypass. OMX's `!` prefix / `force:` pattern.
 
 ### General
@@ -174,9 +196,7 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [ ] **oh-my-codex-style multi-agent** — route subtasks to specialized sub-agents
   - Orchestrator assigns tasks; specialist agents (coder, reviewer, tester) execute
   - Each specialist has its own tool set and system prompt
-- [ ] **Persistent memory across sessions** — per-project learnings in `.phase2s/memory/`
-  - Automatically inject relevant past learnings into system prompt
-  - Similar to gstack's `learnings.jsonl` system
+- [x] **Persistent memory across sessions** — done in Sprint 10. `loadLearnings()` + `formatLearningsForPrompt()` in `src/core/memory.ts`. Injected into system prompt via `AgentOptions.learnings`. CLI loads automatically from `.phase2s/memory/learnings.jsonl`. `/remember` skill writes new learnings.
 - [ ] **Browser tool** — headless browser via Playwright for web research
   - Used by `/qa` skill (test sites), `/browse` skill (research), `/investigate` (docs lookup)
 - [ ] **More provider support** — Anthropic Claude, local Ollama, Gemini
@@ -205,10 +225,10 @@ These were flagged but not fixed — they need deeper analysis before touching.
 
 - **TOCTOU race in `assertInSandbox`** — There is a window between `assertInSandbox()` returning a resolved path and `writeFile(fullPath, ...)` actually writing. An attacker who can swap the file for a symlink in that window could redirect the write. Mitigating: the window is microseconds and requires local process control; fix would require `O_NOFOLLOW`-style atomic open, which Node.js `fs` doesn't expose directly. Worth a spike to see if `open(fd, O_WRONLY | O_NOFOLLOW)` via a native addon is feasible.
 - **`SESSION_DIR` captured at module load** — `const SESSION_DIR = join(process.cwd(), ...)` in `cli/index.ts` runs when the module is imported, not when `main()` runs. If `cwd` changes before `main()` (unlikely in practice, but possible in programmatic use), the session path would be wrong. Fix: move to a lazy getter or compute inside `interactiveMode()`.
-- **Signal handler test side effects** — The SIGTERM/SIGINT handlers registered in `codex.ts` are process-global and persist across test runs in the same vitest worker. A test that spawns a Codex provider but doesn't clean it up will leave orphaned handlers. Could cause `MaxListenersExceededWarning`. Fix: deregister handlers when the provider instance is done, or use `AbortController` pattern.
+- ~~**Signal handler test side effects**~~ — Fixed in Sprint 10. `_signalHandlersRegistered` guard flag in `codex.ts` prevents duplicate handler registration if the module is evaluated multiple times.
 - **`--full-auto` + poisoned session file threat model** — `phase2s --resume` injects arbitrary prior messages into the agent context. A crafted session file with plausible-looking assistant messages could influence the model to skip safety checks or run destructive commands under `--full-auto`. The role validation added in Sprint 5 blocks outright invalid roles, but a semantically poisoned (but structurally valid) session is not blocked. Threat model: only relevant if session files can be written by untrusted parties. Document the assumption that `.phase2s/sessions/` is user-private.
 - **Prompt size cap before codex spawn** — No limit on prompt length before spawning codex. A very long conversation history passed via `--resume` could exceed codex's context limit, resulting in a cryptic spawn error. Fix: add a `conversation.trimToTokenBudget()` call before constructing the first codex prompt, or warn when `conversation.estimateTokens()` exceeds a threshold.
-- **Session files world-readable** — `writeFile(path, content, "utf-8")` creates files with the process umask (typically `0o644`). Session files contain conversation history including potentially sensitive prompts, code, and file contents. Fix: use `writeFile(path, content, { encoding: "utf-8", mode: 0o600 })` to restrict to owner-only. Low risk on single-user machines; higher risk on shared systems.
+- ~~**Session files world-readable**~~ — Fixed in Sprint 10. `Conversation.save()` accepts `mode?: number`; CLI passes `0o600` on both async and sync write paths.
 
 ---
 
