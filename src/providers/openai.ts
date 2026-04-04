@@ -128,7 +128,7 @@ export class OpenAIProvider implements Provider {
           toolCallAccum[i] = { id: "", name: "", arguments: "" };
         }
         if (tcDelta.id) toolCallAccum[i].id = tcDelta.id;
-        if (tcDelta.function?.name) toolCallAccum[i].name += tcDelta.function.name;
+        if (tcDelta.function?.name) toolCallAccum[i].name = tcDelta.function.name;
         if (tcDelta.function?.arguments) toolCallAccum[i].arguments += tcDelta.function.arguments;
       }
     }

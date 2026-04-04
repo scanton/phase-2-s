@@ -118,4 +118,16 @@ describe("loadConfig", () => {
     const config = await loadConfig({ allowDestructive: true });
     expect(config.allowDestructive).toBe(true);
   });
+
+  it("PHASE2S_ALLOW_DESTRUCTIVE=true env var sets allowDestructive", async () => {
+    const orig = process.env.PHASE2S_ALLOW_DESTRUCTIVE;
+    process.env.PHASE2S_ALLOW_DESTRUCTIVE = "true";
+    try {
+      const config = await loadConfig({});
+      expect(config.allowDestructive).toBe(true);
+    } finally {
+      if (orig === undefined) delete process.env.PHASE2S_ALLOW_DESTRUCTIVE;
+      else process.env.PHASE2S_ALLOW_DESTRUCTIVE = orig;
+    }
+  });
 });
