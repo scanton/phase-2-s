@@ -226,6 +226,10 @@ export async function runMCPServer(cwd: string): Promise<void> {
       pendingResolve(null);
       pendingResolve = null;
     }
+    // Force exit so any in-flight codex subprocess doesn't keep us alive after
+    // Claude Code has closed the connection. The "exit" event still fires on
+    // process.exit(), so codex.ts cleanupTempDirs() runs before we die.
+    process.exit(0);
   });
 
   const nextLine = (): Promise<string | null> => {
