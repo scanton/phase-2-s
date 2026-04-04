@@ -28,7 +28,7 @@ assistant > Reviewing src/core/agent.ts...
 If you pay for ChatGPT at [chat.openai.com](https://chat.openai.com), you already have what you need. The [OpenAI Codex CLI](https://github.com/openai/codex) uses your ChatGPT subscription — no API key, no usage billing on top of what you already pay.
 
 **What works with your ChatGPT subscription:**
-- All 7 built-in skills: `/review`, `/investigate`, `/plan`, `/ship`, `/qa`, `/explain`, `/diff`
+- All 18 built-in skills: `/review`, `/investigate`, `/plan`, `/ship`, `/qa`, `/explain`, `/diff`, `/retro`, `/health`, `/audit`, `/plan-review`, `/scope-review`, `/autoplan`, `/checkpoint`, `/careful`, `/freeze`, `/guard`, `/unfreeze`
 - One-shot mode: `phase2s run "explain this file"`
 - Interactive REPL with skill invocation
 - Custom skills you write yourself
@@ -90,7 +90,7 @@ phase2s
 
 You'll see a prompt:
 ```
-Phase2S v0.7.0
+Phase2S v0.8.0
 Type your message and press Enter. Type /quit to exit.
 
 you >
@@ -123,17 +123,45 @@ phase2s skills
 
 ## Built-in skills
 
-Phase2S ships with 7 skills. Type any of them in the REPL:
+Phase2S ships with 18 skills. Type any of them in the REPL:
+
+**Code review and analysis:**
 
 | Skill | What it does |
 |-------|-------------|
 | `/review` | Code review with CRIT / WARN / NIT severity tagging |
 | `/investigate` | Root cause debugging — traces evidence to the exact line |
-| `/plan` | Phased implementation plan with verify steps per phase |
-| `/ship` | Commit prep: diff review, secret scan, formatted commit message |
-| `/qa` | Functional QA: edge cases, empty inputs, error paths, bug report |
-| `/explain` | Explains code or a concept in plain language |
 | `/diff` | Reviews your uncommitted changes — what changed, what's risky, what's missing from tests. Ends with LOOKS GOOD / NEEDS REVIEW / RISKY. |
+| `/audit` | Security audit — secrets scan, dependency vulns, input validation, file sandbox review |
+| `/health` | Code quality dashboard — runs tests, type check, lint; weighted score 0–10; tracks history |
+| `/explain` | Explains code or a concept in plain language |
+
+**Planning and shipping:**
+
+| Skill | What it does |
+|-------|-------------|
+| `/plan` | Phased implementation plan with verify steps per phase |
+| `/plan-review` | Engineering plan review — scope validation, architecture critique, test coverage map |
+| `/scope-review` | Scope and ambition challenge — Expand / Hold / Reduce / Challenge modes |
+| `/autoplan` | Runs scope-review + plan-review sequentially with auto-decision principles |
+| `/ship` | Commit prep: diff review, secret scan, formatted commit message |
+
+**Session and workflow:**
+
+| Skill | What it does |
+|-------|-------------|
+| `/qa` | Functional QA: edge cases, empty inputs, error paths, bug report |
+| `/retro` | Weekly retrospective — git commit analysis, velocity stats, one improvement focus |
+| `/checkpoint` | Saves a structured snapshot of current session state to `.phase2s/checkpoints/` |
+
+**Safety:**
+
+| Skill | What it does |
+|-------|-------------|
+| `/careful` | Safety mode — pauses before destructive shell commands and asks for confirmation |
+| `/freeze` | Restricts file edits to a single directory for the session |
+| `/guard` | Full safety mode — combines `/careful` and `/freeze` |
+| `/unfreeze` | Clears the edit directory restriction set by `/freeze` or `/guard` |
 
 **Skills accept file and context arguments:**
 ```
@@ -141,6 +169,8 @@ Phase2S ships with 7 skills. Type any of them in the REPL:
 /review src/core/ src/cli/          — focus on multiple paths
 /investigate why does the REPL exit — describe the problem in words
 /diff                               — review all uncommitted changes
+/freeze src/tools/                  — restrict edits to the tools directory
+/retro                              — last 7 days of commits
 ```
 
 ---
@@ -301,11 +331,11 @@ Options:
 ## Roadmap
 
 - [x] Codex CLI provider (uses ChatGPT subscription, no API key required)
-- [x] 7 built-in skills: review, investigate, plan, ship, qa, explain, diff
+- [x] 18 built-in skills: review, investigate, plan, ship, qa, explain, diff, retro, health, audit, plan-review, scope-review, autoplan, checkpoint, careful, freeze, guard, unfreeze
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 139 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 151 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Streaming output — responses stream token-by-token, no spinner

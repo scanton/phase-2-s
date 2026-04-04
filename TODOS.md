@@ -6,6 +6,21 @@
 
 ---
 
+## Sprint 6 (done) — Skill Expansion (11 new skills)
+
+- [x] `/retro` — weekly engineering retrospective: git commit analysis, velocity stats, one improvement focus
+- [x] `/health` — code quality dashboard: runs tests, type check, lint; weighted score 0–10; persists history
+- [x] `/audit` — security audit: secrets scan, dependency vulns, input validation, file sandbox, session security
+- [x] `/plan-review` — engineering plan review: scope validation, architecture critique, test coverage map, perf analysis
+- [x] `/checkpoint` — session state snapshot: infers git state + decisions, saves to `.phase2s/checkpoints/`
+- [x] `/scope-review` — scope and ambition challenge: Expand / Hold / Reduce / Challenge modes
+- [x] `/careful` — prompt-only safety mode: pauses before destructive shell commands, requires confirmation
+- [x] `/freeze` — prompt-only edit restriction: limits file edits to a user-specified directory
+- [x] `/guard` — combines careful + freeze: full safety mode
+- [x] `/unfreeze` — clears the freeze/guard edit restriction
+- [x] `/autoplan` — orchestrated review pipeline: runs scope-review + plan-review sequentially with auto-decision principles
+- [x] Tests: `built-in-skills` — 12 tests across all 11 new skills + total count sanity check. 151 tests total.
+
 ## Sprint 2 (done) — Expand Coverage + CI + /explain
 
 - [x] Tests: `glob` tool — pattern matching, recursive, sandbox, ignore (9 tests)
