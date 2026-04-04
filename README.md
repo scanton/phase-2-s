@@ -1,31 +1,80 @@
 # Phase2S
 
-A CLI AI programming harness with streaming output and a skill system. Phase2S runs an agent loop against OpenAI — responses stream to your terminal word-by-word as the model thinks. Type `/review`, `/investigate`, `/plan`, and watch the output appear live.
+Phase2S is a personal AI coding assistant you run in your terminal. You type questions about your code, ask it to review files, debug problems, or write a commit message — and it answers using your existing AI subscription or API key.
+
+Think of it as adding a slash-command layer on top of AI: instead of typing "please review this file for security issues and flag each problem with a severity level", you type `/review src/core/auth.ts` and get a structured, consistent answer every time.
 
 ```
-you > explain how the agent loop works
-assistant > The agent loop in src/core/agent.ts works like this...
+you > /review src/core/agent.ts
+assistant > Reviewing src/core/agent.ts...
+
+  CRIT: The `maxTurns` check runs after tool execution, not before.
+        An LLM that loops tool calls can exceed the limit by one turn.
+
+  WARN: `getConversation()` returns the live object, not a copy.
+        Callers that mutate it will corrupt the conversation state.
+
+  NIT:  Inline comment on line 47 is stale — describes old batch behavior.
 ```
 
-Install it globally and run it anywhere:
+---
 
+## Do I need a paid subscription or API key?
+
+**Both work. They give you different things.**
+
+### Option A: ChatGPT Plus or Pro subscription (via Codex CLI)
+
+If you pay for ChatGPT at [chat.openai.com](https://chat.openai.com), you already have what you need. The [OpenAI Codex CLI](https://github.com/openai/codex) uses your ChatGPT subscription — no API key, no usage billing on top of what you already pay.
+
+**What works with your ChatGPT subscription:**
+- All 7 built-in skills: `/review`, `/investigate`, `/plan`, `/ship`, `/qa`, `/explain`, `/diff`
+- One-shot mode: `phase2s run "explain this file"`
+- Interactive REPL with skill invocation
+- Custom skills you write yourself
+- Session auto-save (your conversation saves after every reply)
+- `--resume` to continue right where you left off
+
+How it works under the hood: Codex CLI runs its own agent loop that can read your files, run shell commands, and search your codebase. Phase2S adds the skill system, the REPL, and the session persistence on top of that. You get a real coding assistant — you just don't need to manage API billing separately.
+
+**Setup:**
+```bash
+npm install -g @openai/codex phase2s
+codex auth    # log in with your ChatGPT account
+phase2s       # start the REPL
+```
+
+---
+
+### Option B: OpenAI API key (direct API access)
+
+If you have an OpenAI API key (`sk-...` from [platform.openai.com](https://platform.openai.com)), you get Phase2S's full feature set with Phase2S driving the agent loop directly. You pay per-token usage on top of whatever API plan you're on.
+
+**What you get on top of Option A:**
+- **Token-by-token streaming** — responses appear word-by-word as the model thinks, instead of waiting for a complete response
+- **Phase2S-managed tool loop** — Phase2S directly controls which tools run (file reads, file writes, shell commands, search). You can see each tool call in your terminal as it happens.
+- **Symlink-safe file sandbox** — Phase2S checks real file paths before any read or write. A symlink inside your project that points outside it gets blocked at the path level, not just the name level.
+- **Conversation context management** — Phase2S trims old tool turns automatically when the context fills up, keeping long debugging sessions alive without hitting API limits.
+
+**Setup:**
 ```bash
 npm install -g phase2s
-OPENAI_API_KEY=sk-... phase2s run "list my TypeScript files"
+export OPENAI_API_KEY=sk-your-key-here
+export PHASE2S_PROVIDER=openai-api
+phase2s
 ```
 
 ---
 
 ## Install
 
-Requires [Node.js](https://nodejs.org) >= 20 and [OpenAI Codex CLI](https://github.com/openai/codex).
+Requires [Node.js](https://nodejs.org) >= 20.
 
 ```bash
 npm install -g phase2s
 ```
 
-Check it works:
-
+Verify:
 ```bash
 phase2s --help
 ```
@@ -34,15 +83,36 @@ phase2s --help
 
 ## Quick start
 
-**Interactive REPL** (default):
+**Interactive REPL (most useful mode):**
 ```bash
 phase2s
 ```
 
-**One-shot mode:**
+You'll see a prompt:
+```
+Phase2S v0.7.0
+Type your message and press Enter. Type /quit to exit.
+
+you >
+```
+
+Type a question or invoke a skill:
+```
+you > /review src/core/agent.ts
+you > why is the REPL sometimes dropping my last message?
+you > /diff
+```
+
+**One-shot mode** (run one prompt and exit):
 ```bash
 phase2s run "explain what src/core/agent.ts does"
 ```
+
+**Resume your last session:**
+```bash
+phase2s --resume
+```
+This loads your most recent conversation from `.phase2s/sessions/` and picks up where you left off — full context, all prior messages, every tool result.
 
 **List available skills:**
 ```bash
@@ -53,29 +123,47 @@ phase2s skills
 
 ## Built-in skills
 
-Phase2S ships with 6 skills in `.phase2s/skills/`. Type them in the REPL or pass a file argument:
+Phase2S ships with 7 skills. Type any of them in the REPL:
 
 | Skill | What it does |
 |-------|-------------|
-| `/review` | Code review with critical/warn/nit severity tagging |
-| `/investigate` | Root cause debugging — traces evidence chain to the actual line |
+| `/review` | Code review with CRIT / WARN / NIT severity tagging |
+| `/investigate` | Root cause debugging — traces evidence to the exact line |
 | `/plan` | Phased implementation plan with verify steps per phase |
-| `/ship` | Commit prep: diff review, secret check, formatted commit message |
+| `/ship` | Commit prep: diff review, secret scan, formatted commit message |
 | `/qa` | Functional QA: edge cases, empty inputs, error paths, bug report |
-| `/explain` | Explains code or a concept clearly — pass `{{target}}` to specify what |
+| `/explain` | Explains code or a concept in plain language |
+| `/diff` | Reviews your uncommitted changes — what changed, what's risky, what's missing from tests. Ends with LOOKS GOOD / NEEDS REVIEW / RISKY. |
 
-**With file arguments:**
-```bash
-/review src/core/agent.ts           # focus review on one file
-/review src/core/ src/cli/          # focus on multiple paths
-/investigate why does the REPL exit # pass a description instead
+**Skills accept file and context arguments:**
 ```
+/review src/core/agent.ts           — focus review on one file
+/review src/core/ src/cli/          — focus on multiple paths
+/investigate why does the REPL exit — describe the problem in words
+/diff                               — review all uncommitted changes
+```
+
+---
+
+## Session persistence
+
+Every conversation is automatically saved to `.phase2s/sessions/YYYY-MM-DD.json`.
+
+Start a debugging session in the morning, go to lunch, come back:
+```bash
+phase2s --resume
+Resuming session from .phase2s/sessions/2026-04-03.json (14 messages)
+
+you >
+```
+
+The full conversation is there — everything the model saw, everything it said, every tool result. Hit Ctrl+C mid-session and Phase2S saves before exiting so you don't lose the turn.
 
 ---
 
 ## Writing your own skills
 
-Skills are Markdown files with YAML frontmatter. Drop one in `.phase2s/skills/` and it becomes a `/command` immediately — no restart needed.
+Drop a Markdown file in `.phase2s/skills/` and it becomes a `/command` immediately. No restart needed.
 
 ```
 .phase2s/
@@ -90,76 +178,94 @@ Skills are Markdown files with YAML frontmatter. Drop one in `.phase2s/skills/` 
 name: my-skill
 description: One line describing what this skill does
 triggers:
-  - phrase that should invoke this skill
-  - another phrase
+  - phrase that triggers this skill
+  - another trigger phrase
 ---
 
-Your prompt template goes here. Codex will receive this as its instruction,
-with any user-provided arguments appended as "Focus on this file: X" or
-"Additional context: Y".
+Your prompt template goes here. Write exactly what you want the model to do,
+in the format you want it to respond in. Be specific.
 
-Be specific. Tell Codex exactly what format to respond in.
+The user's arguments are appended automatically:
+- /my-skill src/auth.ts → "Focus on this file: src/auth.ts"
+- /my-skill why is login slow → "Additional context: why is login slow"
 ```
 
 **Skill search order** (first match wins):
-1. `.phase2s/skills/` in the current project
-2. `~/.phase2s/skills/` for global user skills
+1. `.phase2s/skills/` in your current project
+2. `~/.phase2s/skills/` for skills you want available everywhere
 3. `~/.codex/skills/` — Codex CLI's native skill directory
 
-Any skill you've already written for Codex CLI works in Phase2S automatically.
+Anything you've already written for Codex CLI works in Phase2S automatically.
 
 ---
 
 ## Configuration
 
-Copy `.phase2s.yaml.example` to `.phase2s.yaml` and customize:
+Copy `.phase2s.yaml.example` to `.phase2s.yaml` in your project root:
 
 ```yaml
-# LLM provider
-provider: codex-cli       # wraps Codex CLI (default)
-# provider: openai-api   # direct OpenAI API
+# LLM provider — which AI to use
+provider: codex-cli       # uses your ChatGPT subscription via Codex CLI (default)
+# provider: openai-api   # direct OpenAI API (requires OPENAI_API_KEY)
 
 # Model — auto-detected from ~/.codex/config.toml if not set
 # model: gpt-4o
 
-# Max agent loop turns
+# Max agent loop turns before stopping
 maxTurns: 50
 
 # Allow destructive shell commands (rm -rf, sudo, curl | sh, etc.)
+# Default: false — these are blocked for safety
 # allowDestructive: false
 ```
 
 **Environment variables:**
+
 | Variable | Description |
 |----------|-------------|
 | `PHASE2S_PROVIDER` | Override provider (`codex-cli` or `openai-api`) |
 | `PHASE2S_MODEL` | Override model |
 | `PHASE2S_CODEX_PATH` | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | API key for `openai-api` provider |
-| `PHASE2S_ALLOW_DESTRUCTIVE` | Set to `true` to allow destructive shell commands (`rm -rf`, `sudo`, etc.) |
+| `PHASE2S_ALLOW_DESTRUCTIVE` | Set to `true` to allow destructive shell commands |
 
-**Model auto-detection:** If you've set a model in `~/.codex/config.toml`, Phase2S picks it up automatically. No need to configure twice.
+**Model auto-detection:** If you've configured a model in `~/.codex/config.toml`, Phase2S picks it up automatically. No need to configure it twice.
 
 ---
 
 ## How it works
 
-Phase2S runs a provider-abstracted agent loop:
-
 ```
-user input → skill prompt injection → Codex (or direct API) → tool calls → response
+you type a message or /skill
+         ↓
+Phase2S injects the skill prompt (if any)
+         ↓
+Codex CLI or OpenAI API (your choice)
+         ↓
+tool calls run (file reads, shell commands, search)
+         ↓
+response streams to your terminal
+         ↓
+conversation auto-saved to .phase2s/sessions/
 ```
 
 **Providers:**
-- `codex-cli` — spawns `codex exec` in non-interactive mode (`--json --full-auto`). Each call is a fresh Codex process.
-- `openai-api` — direct OpenAI API with streaming output, conversation history, and full tool control. Set `PHASE2S_PROVIDER=openai-api` and `OPENAI_API_KEY=sk-...` to use it. Responses stream to your terminal in real time — no spinner, no wait.
 
-**Tools** (available when using `openai-api` provider):
-- `file-read` — read file contents with line range support; sandboxed to project directory
-- `file-write` — write or create files; sandboxed to project directory; refuses to truncate an existing file to empty
-- `shell` — run shell commands with configurable timeout; blocks destructive patterns by default (`rm -rf`, `sudo`, `curl | sh`, `git push --force`); set `allowDestructive: true` in `.phase2s.yaml` to unlock
-- `glob` — find files by pattern
-- `grep` — search file contents with regex
+- `codex-cli` — spawns `codex exec` in non-interactive mode. Your ChatGPT subscription covers it. Codex handles its own tool loop (reads files, runs shell commands). Phase2S adds the skill system, REPL, and session persistence on top.
+
+- `openai-api` — Phase2S calls the OpenAI API directly with streaming enabled. Phase2S manages the full agent loop: sends tool definitions to the model, executes the calls, feeds results back. Set `PHASE2S_PROVIDER=openai-api` and `OPENAI_API_KEY=sk-...` to use it.
+
+**Tools** (when using `openai-api` provider, Phase2S controls these directly):
+
+| Tool | What it does |
+|------|-------------|
+| `file_read` | Read file contents with optional line ranges. Sandboxed to project directory. |
+| `file_write` | Write or create files. Refuses to truncate an existing file to empty. Sandboxed. |
+| `shell` | Run shell commands. Blocks destructive patterns by default (`rm -rf`, `sudo`, `git push --force`). |
+| `glob` | Find files by pattern (`**/*.ts`, `src/**/*.test.*`). |
+| `grep` | Search file contents with regex. |
+
+The file sandbox rejects any read or write outside your project directory — including symlinks that point outside. If a skill tries to read `/etc/hosts`, it gets an error, not the file.
 
 ---
 
@@ -169,14 +275,15 @@ user input → skill prompt injection → Codex (or direct API) → tool calls �
 phase2s [options] [command]
 
 Commands:
-  chat        Start an interactive REPL session (default)
-  run <prompt> Run a single prompt and exit
-  skills       List available skills
+  chat              Start an interactive REPL session (default)
+  run <prompt>      Run a single prompt and exit
+  skills            List available skills
 
 Options:
   -p, --provider <provider>  LLM provider (codex-cli | openai-api)
   -m, --model <model>        Model to use
   --system <prompt>          Custom system prompt
+  --resume                   Resume the most recent saved session
   -V, --version              Show version
   -h, --help                 Show help
 ```
@@ -184,26 +291,27 @@ Options:
 **REPL commands:**
 ```
 /help          Show available skills and commands
-/quit          Exit
-/exit          Exit
-/<skill-name>  Invoke a skill (e.g. /review, /plan)
+/quit          Exit (session auto-saved)
+/exit          Exit (session auto-saved)
+/<skill-name>  Invoke a skill (e.g. /review, /diff, /investigate)
 ```
 
 ---
 
 ## Roadmap
 
-- [x] Codex CLI provider (non-interactive, terminal-safe)
-- [x] 6 built-in skills: review, investigate, plan, ship, qa, explain
+- [x] Codex CLI provider (uses ChatGPT subscription, no API key required)
+- [x] 7 built-in skills: review, investigate, plan, ship, qa, explain, diff
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
-- [x] File sandbox: tools reject paths outside the project directory
-- [x] Test suite: 111 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
+- [x] 139 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
-- [x] Direct OpenAI API provider — live-verified with tool calling (Sprint 3)
-- [x] Streaming output — responses stream token-by-token, no spinner (Sprint 4)
-- [x] npm publish — `npm install -g phase2s` (Sprint 4)
-- [ ] Model-per-skill config via SKILL.md frontmatter
+- [x] Direct OpenAI API provider with live tool calling
+- [x] Streaming output — responses stream token-by-token, no spinner
+- [x] `npm install -g phase2s`
+- [x] Session persistence — auto-save after each turn, `--resume` to continue
+- [ ] Model-per-skill config (faster model for quick skills, smarter model for review)
 - [ ] Real Codex streaming (JSONL stdout parsing)
 
 ---

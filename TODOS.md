@@ -26,6 +26,15 @@
 
 ---
 
+## Sprint 5 (done) — Security Hardening + Persistence + /diff
+
+- [x] **Sandbox `realpath()` fix** — extracted `src/tools/sandbox.ts` with `assertInSandbox()`. Both `file-read` and `file-write` now use `realpath()` before sandbox check. Symlinks inside project pointing outside cwd are blocked. v0.7.0.
+- [x] **Codex arg injection hardening** — added `"--"` separator in args array before prompt in `codex.ts`. Prompts starting with `--` are no longer misread by codex's arg parser. Also added SIGTERM/SIGINT handlers for temp dir cleanup. v0.7.0.
+- [x] **Conversation persistence** — `Conversation.save(path)` and `Conversation.load(path)` added. CLI auto-saves to `.phase2s/sessions/<date>.json` after each turn. `phase2s --resume` loads the most recent session. v0.7.0.
+- [x] **`/diff` skill** — review uncommitted or last-commit changes with structured feedback. Triggers: "what changed", "review this diff", "check my diff". LOOKS GOOD / NEEDS REVIEW / RISKY verdict. v0.7.0.
+
+---
+
 ## Sprint 4 (done) — Streaming + npm Publish
 
 - [x] **`PHASE2S_ALLOW_DESTRUCTIVE` env var** — `if (process.env.PHASE2S_ALLOW_DESTRUCTIVE === "true") envConfig.allowDestructive = true` added to `loadConfig()` in `src/core/config.ts`. v0.6.0.
@@ -42,9 +51,9 @@
   - Test with `file_read`, `shell`, and `glob` tools via direct API
 - [ ] **Model-per-skill config** — `model: o3-mini` in SKILL.md frontmatter overrides default
   - Cheap model for fast skills (investigate, grep), smart model for complex ones (plan, review)
-- [ ] **Codex arg injection hardening** — prompt is passed as a CLI arg; investigate `--prompt-file`
-  - Risk: prompt content containing `--flags` could be parsed by codex as its own flags
-  - Mitigation: use `--` separator or write prompt to a temp file
+  - Deferred from Sprint 5 (no current consumers; implement when a skill actually needs it)
+  - Future: consider model-tier config (`fast_model`, `smart_model` in `.phase2s.yaml`) instead of per-skill strings
+- [x] **Codex arg injection hardening** — `"--"` separator added to args array before prompt. Done Sprint 5. v0.7.0.
 - [x] **Shell tool hardening** — blocks destructive commands by default ← done Sprint 3
   - `allowDestructive: false` default; set `true` in `.phase2s.yaml` to unlock
 - [ ] **npm publish** *(low priority — deferred)* — See Sprint 4 section above. README done, license MIT, entry point verified. Pending: NPM_TOKEN secret + tag push.
@@ -54,16 +63,13 @@
 ## Medium-term (v0.4.0–v0.5.0) — Power Features
 
 - [x] **Streaming output** — done in Sprint 4 (v0.6.0). OpenAI streams; Codex passthrough wrapper. Real Codex JSONL streaming still deferred (format undocumented).
-- [ ] **Conversation persistence** — save/restore session history to `.phase2s/sessions/`
-  - Resume a previous session: `phase2s --resume`
-  - Useful for long debugging sessions or code review workflows
+- [x] **Conversation persistence** — done Sprint 5. `Conversation.save/load`, `--resume` flag, auto-save after each turn. v0.7.0.
 - [ ] **Multi-turn skills** — skills that ask follow-up questions mid-workflow
   - Today skills are static prompt templates; this makes them interactive
 - [ ] **`/plan` skill improvement** — output structured task list, not just prose
   - Write plan to `.phase2s/plans/YYYY-MM-DD.md`
   - Integration with TODOS.md (append generated tasks)
-- [ ] **`/diff` skill** — review a git diff with structured feedback
-  - Useful post-commit or pre-PR
+- [x] **`/diff` skill** — done Sprint 5. Structured diff review with LOOKS GOOD / NEEDS REVIEW / RISKY verdict. v0.7.0.
 - [ ] **Configurable tool allow/deny list** — per-project `.phase2s.yaml`
   - `tools: [file_read, shell]` — only enable listed tools
   - `deny: [shell]` — disable specific tools
@@ -97,14 +103,25 @@
 
 ## Known Issues / Technical Debt
 
-- `codex.ts`: prompt is passed as a CLI argument — arg injection risk if prompt contains `--flags`
+- `codex.ts`: prompt is passed as a CLI argument — arg injection risk if prompt contains `--flags` ← fixed in Sprint 5 (`"--"` separator)
 - `shell.ts`: warns on destructive commands but doesn't block them ← fixed in Sprint 3
 - `openai.ts`: doesn't handle `finish_reason: "length"` (silently drops truncated responses) ← fixed in Sprint 3
 - `conversation.ts`: token estimation is ~4 chars/token — rough; use `tiktoken` for precision
-- `file-read.ts`, `file-write.ts`: sandbox uses `resolve()` not `realpath()` — symlinks inside the project that point outside cwd bypass the sandbox. Accepted risk for personal use (requires a malicious symlink already in your repo). Fix with `realpath()` before ship.
+- `file-read.ts`, `file-write.ts`: sandbox uses `resolve()` not `realpath()` — symlinks inside the project that point outside cwd bypass the sandbox. ← fixed in Sprint 5 (`assertInSandbox()` with `realpath()`)
 - No integration tests (only unit tests so far) ← fixed in Sprint 3 (8 agent integration tests)
 - CI added (GitHub Actions, Node.js 22) — no deploy step yet (CLI tool)
 - `agent.ts`: provider display log showed "codex-cli" even when `PHASE2S_PROVIDER=openai-api` — fixed in Sprint 4 (now reads `this.provider.name`).
+
+### INVESTIGATE (deferred from Sprint 5 adversarial review)
+
+These were flagged but not fixed — they need deeper analysis before touching.
+
+- **TOCTOU race in `assertInSandbox`** — There is a window between `assertInSandbox()` returning a resolved path and `writeFile(fullPath, ...)` actually writing. An attacker who can swap the file for a symlink in that window could redirect the write. Mitigating: the window is microseconds and requires local process control; fix would require `O_NOFOLLOW`-style atomic open, which Node.js `fs` doesn't expose directly. Worth a spike to see if `open(fd, O_WRONLY | O_NOFOLLOW)` via a native addon is feasible.
+- **`SESSION_DIR` captured at module load** — `const SESSION_DIR = join(process.cwd(), ...)` in `cli/index.ts` runs when the module is imported, not when `main()` runs. If `cwd` changes before `main()` (unlikely in practice, but possible in programmatic use), the session path would be wrong. Fix: move to a lazy getter or compute inside `interactiveMode()`.
+- **Signal handler test side effects** — The SIGTERM/SIGINT handlers registered in `codex.ts` are process-global and persist across test runs in the same vitest worker. A test that spawns a Codex provider but doesn't clean it up will leave orphaned handlers. Could cause `MaxListenersExceededWarning`. Fix: deregister handlers when the provider instance is done, or use `AbortController` pattern.
+- **`--full-auto` + poisoned session file threat model** — `phase2s --resume` injects arbitrary prior messages into the agent context. A crafted session file with plausible-looking assistant messages could influence the model to skip safety checks or run destructive commands under `--full-auto`. The role validation added in Sprint 5 blocks outright invalid roles, but a semantically poisoned (but structurally valid) session is not blocked. Threat model: only relevant if session files can be written by untrusted parties. Document the assumption that `.phase2s/sessions/` is user-private.
+- **Prompt size cap before codex spawn** — No limit on prompt length before spawning codex. A very long conversation history passed via `--resume` could exceed codex's context limit, resulting in a cryptic spawn error. Fix: add a `conversation.trimToTokenBudget()` call before constructing the first codex prompt, or warn when `conversation.estimateTokens()` exceeds a threshold.
+- **Session files world-readable** — `writeFile(path, content, "utf-8")` creates files with the process umask (typically `0o644`). Session files contain conversation history including potentially sensitive prompts, code, and file contents. Fix: use `writeFile(path, content, { encoding: "utf-8", mode: 0o600 })` to restrict to owner-only. Low risk on single-user machines; higher risk on shared systems.
 
 ---
 

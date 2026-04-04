@@ -9,9 +9,9 @@ import type { OpenAIFunctionDef } from "../tools/types.js";
 
 /** Track all temp dirs created this process so we can clean up on crash/exit. */
 const activeTempDirs = new Set<string>();
-process.on("exit", () => {
+
+function cleanupTempDirs(): void {
   // Synchronous cleanup — rmSync is available here (unlike the async rm).
-  // This runs on clean exit AND on uncaught exceptions, so temp dirs don't litter /tmp.
   for (const dir of activeTempDirs) {
     try {
       rmSync(dir, { recursive: true, force: true });
@@ -19,6 +19,18 @@ process.on("exit", () => {
       // Best-effort — ignore errors (e.g. already deleted by normal path)
     }
   }
+}
+
+process.on("exit", cleanupTempDirs);
+// SIGTERM and SIGINT don't trigger "exit" automatically — register them explicitly
+// so that temp dirs (which may contain prompt text) are cleaned up on Ctrl+C and kill.
+process.on("SIGTERM", () => {
+  cleanupTempDirs();
+  process.exit(0);
+});
+process.on("SIGINT", () => {
+  cleanupTempDirs();
+  process.exit(0);
 });
 
 /**
@@ -96,6 +108,11 @@ export class CodexProvider implements Provider {
 
     // codex exec --json suppresses the interactive UI (no /dev/tty access)
     // --output-last-message writes the final response to a file we control
+    //
+    // The "--" separator signals end-of-flags to codex's own arg parser.
+    // Without it, a prompt beginning with "--" (e.g. "--help" or "--flags")
+    // would be misinterpreted as a codex CLI flag rather than as the prompt.
+    // spawn() with an array is NOT shell-injected, so this is the only risk.
     const args = [
       "exec",
       "-m", this.model,
@@ -103,6 +120,7 @@ export class CodexProvider implements Provider {
       "-C", process.cwd(),
       "--json",
       "--output-last-message", outputFile,
+      "--",
       prompt,
     ];
 

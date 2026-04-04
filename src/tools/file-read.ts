@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
-import { resolve, sep } from "node:path";
 import type { ToolDefinition, ToolResult } from "./types.js";
+import { assertInSandbox } from "./sandbox.js";
 
 const params = z.object({
   path: z.string().describe("Path to the file to read (relative to project directory)"),
@@ -22,15 +22,16 @@ export const fileReadTool: ToolDefinition = {
   parameters: params,
   async execute(raw: unknown): Promise<ToolResult> {
     const args = params.parse(raw);
-    const fullPath = resolve(args.path);
-    const projectRoot = process.cwd();
 
-    // Sandbox: reject paths outside the project directory
-    if (!fullPath.startsWith(projectRoot + sep) && fullPath !== projectRoot) {
+    // Sandbox: reject paths outside the project directory (realpath-based, blocks symlink escapes)
+    let fullPath: string;
+    try {
+      fullPath = await assertInSandbox(args.path);
+    } catch (err) {
       return {
         success: false,
         output: "",
-        error: `Path outside project directory: ${args.path}`,
+        error: err instanceof Error ? err.message : `Path outside project directory: ${args.path}`,
       };
     }
 

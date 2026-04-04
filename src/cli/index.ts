@@ -1,14 +1,45 @@
 import { Command } from "commander";
 import { createInterface } from "node:readline";
-import { access, constants } from "node:fs/promises";
-import { resolve } from "node:path";
+import { access, constants, readdir } from "node:fs/promises";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import chalk from "chalk";
 import { loadConfig, type Config } from "../core/config.js";
 import { Agent } from "../core/agent.js";
+import { Conversation } from "../core/conversation.js";
 import { loadAllSkills } from "../skills/index.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.6.0";
+const VERSION = "0.7.0";
+
+/** Directory for session auto-saves. */
+const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
+
+/** Path for today's session file. */
+function todaySessionPath(): string {
+  const d = new Date();
+  const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return join(SESSION_DIR, `${datePart}.json`);
+}
+
+/**
+ * Find the most recent session file in SESSION_DIR.
+ * Returns null if no session files exist.
+ */
+async function findLatestSession(): Promise<string | null> {
+  let entries: string[];
+  try {
+    entries = await readdir(SESSION_DIR);
+  } catch {
+    return null;
+  }
+  // Only match YYYY-MM-DD.json filenames so stray .json files don't become sessions.
+  const sessions = entries
+    .filter((e) => /^\d{4}-\d{2}-\d{2}\.json$/.test(e))
+    .sort()
+    .reverse();
+  return sessions.length > 0 ? join(SESSION_DIR, sessions[0]) : null;
+}
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const program = new Command();
@@ -19,7 +50,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .version(VERSION)
     .option("-p, --provider <provider>", "LLM provider (codex-cli | openai-api)")
     .option("-m, --model <model>", "Model to use")
-    .option("--system <prompt>", "Custom system prompt");
+    .option("--system <prompt>", "Custom system prompt")
+    .option("--resume", "Resume the most recent session");
 
   // Default command: interactive REPL
   program
@@ -32,7 +64,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         model: opts.model,
         systemPrompt: opts.system,
       });
-      await interactiveMode(config);
+      await interactiveMode(config, { resume: !!opts.resume });
     });
 
   // One-shot mode
@@ -77,15 +109,34 @@ export async function main(argv: string[] = process.argv): Promise<void> {
  * it terminates if the event loop drains while awaiting between turns —
  * which is exactly what happens while the LLM is streaming.
  */
-async function interactiveMode(config: Config): Promise<void> {
+async function interactiveMode(config: Config, opts: { resume?: boolean } = {}): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
   if (!checkOpenAIKey(config)) process.exit(1);
+
+  // --resume: load most recent session
+  let resumedConversation: Conversation | undefined;
+  if (opts.resume) {
+    const sessionPath = await findLatestSession();
+    if (sessionPath) {
+      try {
+        resumedConversation = await Conversation.load(sessionPath);
+        console.log(chalk.dim(`Resuming session from ${sessionPath} (${resumedConversation.length} messages)\n`));
+      } catch {
+        console.log(chalk.yellow("Warning: Could not load previous session. Starting fresh.\n"));
+      }
+    } else {
+      console.log(chalk.yellow("No previous session found. Starting fresh.\n"));
+    }
+  }
 
   console.log(chalk.bold(`\nPhase2S v${VERSION}`));
   console.log(chalk.dim("Type your message and press Enter. Type /quit to exit.\n"));
 
-  const agent = new Agent({ config });
+  const agent = new Agent({ config, conversation: resumedConversation });
   const skills = await loadAllSkills();
+
+  // Session auto-save path — today's file
+  const sessionPath = todaySessionPath();
 
   // Ensure stdin is open and stays open for the full session
   process.stdin.resume();
@@ -122,6 +173,13 @@ async function interactiveMode(config: Config): Promise<void> {
 
   rl.on("SIGINT", () => {
     process.stdout.write("\n");
+    // Synchronous save before exit — async saveSession() can't complete after process.exit().
+    try {
+      mkdirSync(resolve(sessionPath, ".."), { recursive: true });
+      writeFileSync(sessionPath, JSON.stringify(agent.getConversation().getMessages(), null, 2), "utf-8");
+    } catch {
+      // Best-effort — don't block exit on save failure
+    }
     log.info("Goodbye!");
     rl.close();
     process.exit(0);
@@ -134,6 +192,15 @@ async function interactiveMode(config: Config): Promise<void> {
     return new Promise((resolve) => {
       pendingResolve = resolve;
     });
+  };
+
+  /** Save the current conversation to today's session file (best-effort). */
+  const saveSession = async (): Promise<void> => {
+    try {
+      await agent.getConversation().save(sessionPath);
+    } catch {
+      // Best-effort — session save failures don't interrupt the user
+    }
   };
 
   const writePrompt = () => process.stdout.write(chalk.green("you > "));
@@ -170,6 +237,7 @@ async function interactiveMode(config: Config): Promise<void> {
         try {
           const response = await agent.run(expanded);
           console.log(chalk.bold("\nassistant > ") + response + "\n");
+          await saveSession();
         } catch (err) {
           log.error(err instanceof Error ? err.message : String(err));
         }
@@ -184,6 +252,7 @@ async function interactiveMode(config: Config): Promise<void> {
         process.stdout.write(chunk);
       });
       process.stdout.write("\n\n");
+      await saveSession();
     } catch (err) {
       process.stdout.write("\n");
       log.error(err instanceof Error ? err.message : String(err));
