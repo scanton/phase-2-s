@@ -2,6 +2,8 @@ import type { Config } from "../core/config.js";
 import type { Provider } from "./types.js";
 import { CodexProvider } from "./codex.js";
 import { OpenAIProvider } from "./openai.js";
+import { AnthropicProvider } from "./anthropic.js";
+import { createOllamaProvider } from "./ollama.js";
 
 export function createProvider(config: Config): Provider {
   switch (config.provider) {
@@ -9,6 +11,10 @@ export function createProvider(config: Config): Provider {
       return new CodexProvider(config);
     case "openai-api":
       return new OpenAIProvider(config);
+    case "anthropic":
+      return new AnthropicProvider(config);
+    case "ollama":
+      return createOllamaProvider(config);
     default:
       throw new Error(`Unknown provider: ${config.provider}`);
   }
