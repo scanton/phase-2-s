@@ -6,7 +6,7 @@
 
 ---
 
-## Sprint 2 (current) — Expand Coverage + CI + /explain
+## Sprint 2 (done) — Expand Coverage + CI + /explain
 
 - [x] Tests: `glob` tool — pattern matching, recursive, sandbox, ignore (9 tests)
 - [x] Tests: `grep` tool — case flag, filePattern, maxResults, sandbox (8 tests)
@@ -26,17 +26,12 @@
 
 ---
 
-## Near-term (v0.4.x / Sprint 4) — Streaming + npm Publish
+## Sprint 4 (done) — Streaming + npm Publish
 
-- [ ] **`PHASE2S_ALLOW_DESTRUCTIVE` env var** — `allowDestructive` is the only security-relevant
-  config key without an env var equivalent. All other keys have `PHASE2S_*` env vars. Add
-  `if (process.env.PHASE2S_ALLOW_DESTRUCTIVE === "true") envConfig.allowDestructive = true`
-  in `loadConfig()`. Surfaced during Sprint 3 /plan-eng-review.
-- [ ] **Streaming output** — stream LLM responses as they arrive instead of buffering
-  - Provider interface change: `chat()` → `AsyncIterable<ProviderEvent>` (types already exist in `providers/types.ts`)
-  - Terminal UX: show partial response as it streams (remove spinner)
-- [ ] **README polish for npm publish** — user-facing docs, install instructions, basic usage
-- [ ] **npm publish** — `npm publish --access public` as `phase2s`
+- [x] **`PHASE2S_ALLOW_DESTRUCTIVE` env var** — `if (process.env.PHASE2S_ALLOW_DESTRUCTIVE === "true") envConfig.allowDestructive = true` added to `loadConfig()` in `src/core/config.ts`. v0.6.0.
+- [x] **Streaming output** — `Provider.chat()` replaced by `chatStream(): AsyncIterable<ProviderEvent>`. OpenAI streams with `stream: true` + per-index tool call fragment accumulation. Codex passthrough wrapper. CLI streams via `onDelta?` callback on `Agent.run()`. v0.6.0.
+- [x] **README polish for npm publish** — install-first user-facing README rewrite. v0.6.0.
+- [ ] **npm publish** — `npm publish --access public` as `phase2s`. Tarball and workflow ready. Pending: set `NPM_TOKEN` repo secret, run `git tag v0.6.0 && git push origin v0.6.0`.
 
 ---
 
@@ -52,17 +47,13 @@
   - Mitigation: use `--` separator or write prompt to a temp file
 - [x] **Shell tool hardening** — blocks destructive commands by default ← done Sprint 3
   - `allowDestructive: false` default; set `true` in `.phase2s.yaml` to unlock
-- [ ] **npm publish** — `npm publish --access public` as `phase2s`
-  - Needs: README polish, license check, entry point verification
+- [ ] **npm publish** — see Sprint 4 section above. README done, license MIT, entry point verified. Pending: NPM_TOKEN secret + tag push.
 
 ---
 
 ## Medium-term (v0.4.0–v0.5.0) — Power Features
 
-- [ ] **Streaming output** — stream LLM responses as they arrive instead of buffering
-  - OpenAI provider: use `stream: true` with async iterator
-  - Codex provider: parse JSONL events from stdout in real-time
-  - UX: show partial response in terminal as it streams
+- [x] **Streaming output** — done in Sprint 4 (v0.6.0). OpenAI streams; Codex passthrough wrapper. Real Codex JSONL streaming still deferred (format undocumented).
 - [ ] **Conversation persistence** — save/restore session history to `.phase2s/sessions/`
   - Resume a previous session: `phase2s --resume`
   - Useful for long debugging sessions or code review workflows
@@ -113,7 +104,7 @@
 - `file-read.ts`, `file-write.ts`: sandbox uses `resolve()` not `realpath()` — symlinks inside the project that point outside cwd bypass the sandbox. Accepted risk for personal use (requires a malicious symlink already in your repo). Fix with `realpath()` before ship.
 - No integration tests (only unit tests so far) ← fixed in Sprint 3 (8 agent integration tests)
 - CI added (GitHub Actions, Node.js 22) — no deploy step yet (CLI tool)
-- `agent.ts`: provider display log shows "codex-cli" even when `PHASE2S_PROVIDER=openai-api` is set — cosmetic only, API calls route correctly. Fix in Sprint 4.
+- `agent.ts`: provider display log showed "codex-cli" even when `PHASE2S_PROVIDER=openai-api` — fixed in Sprint 4 (now reads `this.provider.name`).
 
 ---
 
