@@ -215,4 +215,22 @@ describe("loadConfig — tools and deny (Sprint 13)", () => {
     const config = await loadConfig({ deny: ["shell"] });
     expect(config.deny).toEqual(["shell"]);
   });
+
+  // --- New providers (Sprint 14) ---
+
+  it("accepts provider: 'anthropic' and resolves default model", async () => {
+    const config = await loadConfig({ provider: "anthropic" });
+    expect(config.provider).toBe("anthropic");
+    expect(config.model).toBe("claude-3-5-sonnet-20241022");
+  });
+
+  it("accepts provider: 'ollama' with custom ollamaBaseUrl", async () => {
+    const config = await loadConfig({
+      provider: "ollama",
+      ollamaBaseUrl: "http://192.168.1.50:11434/v1",
+    });
+    expect(config.provider).toBe("ollama");
+    expect(config.ollamaBaseUrl).toBe("http://192.168.1.50:11434/v1");
+    expect(config.model).toBe("llama3.1:8b");
+  });
 });
