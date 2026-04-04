@@ -61,6 +61,18 @@ describe("Built-in skills — Sprint 6", () => {
 
   // --- Plan Review Pipeline ---
 
+  it("review: offers adversarial challenge after standard review", () => {
+    const skill = getSkill("review");
+    expect(skill.triggerPhrases).toContain("code review");
+    expect(skill.triggerPhrases).toContain("review this");
+    // Standard review output format
+    expect(skill.promptTemplate).toContain("critical");
+    expect(skill.promptTemplate).toContain("warn");
+    // Adversarial opt-in offered at the end
+    expect(skill.promptTemplate).toContain("adversarial");
+    expect(skill.promptTemplate).toContain("VERDICT");
+  });
+
   it("plan-review: loads with correct triggers", () => {
     const skill = getSkill("plan-review");
     expect(skill.description).toContain("plan");
