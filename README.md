@@ -112,13 +112,16 @@ Copy `.phase2s.yaml.example` to `.phase2s.yaml` and customize:
 ```yaml
 # LLM provider
 provider: codex-cli       # wraps Codex CLI (default)
-# provider: openai-api   # direct OpenAI API (coming soon)
+# provider: openai-api   # direct OpenAI API
 
 # Model — auto-detected from ~/.codex/config.toml if not set
 # model: gpt-4o
 
 # Max agent loop turns
 maxTurns: 50
+
+# Allow destructive shell commands (rm -rf, sudo, curl | sh, etc.)
+# allowDestructive: false
 ```
 
 **Environment variables:**
@@ -143,12 +146,12 @@ user input → skill prompt injection → Codex (or direct API) → tool calls �
 
 **Providers:**
 - `codex-cli` — spawns `codex exec` in non-interactive mode (`--json --full-auto`). Each call is a fresh Codex process. Best for one-shot skill invocations.
-- `openai-api` — direct API with conversation history and full tool control. Coming in Approach B.
+- `openai-api` — direct OpenAI API with conversation history and full tool control. Set `PHASE2S_PROVIDER=openai-api` and `OPENAI_API_KEY=sk-...` to use it.
 
 **Tools** (available when using `openai-api` provider):
 - `file-read` — read file contents with line range support; sandboxed to project directory
 - `file-write` — write or create files; sandboxed to project directory; refuses to truncate an existing file to empty
-- `shell` — run shell commands with configurable timeout; warns on destructive patterns (`rm -rf`, `sudo`, `curl | sh`, `git push --force`)
+- `shell` — run shell commands with configurable timeout; blocks destructive patterns by default (`rm -rf`, `sudo`, `curl | sh`, `git push --force`); set `allowDestructive: true` in `.phase2s.yaml` to unlock
 - `glob` — find files by pattern
 - `grep` — search file contents with regex
 
@@ -189,9 +192,9 @@ Options:
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory
-- [x] Test suite: 96 unit tests covering all tools and core modules (`npm test`)
+- [x] Test suite: 107 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
-- [ ] Direct OpenAI API provider with full tool control
+- [x] Direct OpenAI API provider — live-verified with tool calling (Sprint 3)
 - [ ] Model-per-skill config via SKILL.md frontmatter
 - [ ] npm publish
 

@@ -42,7 +42,7 @@
 
 ## Near-term (v0.3.0) — OpenAI Provider + Polish
 
-- [ ] **Complete openai-api provider** — wire tool calling end-to-end
+- [x] **Complete openai-api provider** — wire tool calling end-to-end ← done Sprint 3
   - Handle `finish_reason: "length"` and `"content_filter"` gracefully
   - Test with `file_read`, `shell`, and `glob` tools via direct API
 - [ ] **Model-per-skill config** — `model: o3-mini` in SKILL.md frontmatter overrides default
@@ -50,9 +50,8 @@
 - [ ] **Codex arg injection hardening** — prompt is passed as a CLI arg; investigate `--prompt-file`
   - Risk: prompt content containing `--flags` could be parsed by codex as its own flags
   - Mitigation: use `--` separator or write prompt to a temp file
-- [ ] **Shell tool hardening** — currently warns but does not block destructive commands
-  - Decision needed before npm publish: block or keep warn-only?
-  - Options: (a) hard block on explicit list, (b) require confirmation flag in config, (c) warn-only
+- [x] **Shell tool hardening** — blocks destructive commands by default ← done Sprint 3
+  - `allowDestructive: false` default; set `true` in `.phase2s.yaml` to unlock
 - [ ] **npm publish** — `npm publish --access public` as `phase2s`
   - Needs: README polish, license check, entry point verification
 
@@ -114,6 +113,7 @@
 - `file-read.ts`, `file-write.ts`: sandbox uses `resolve()` not `realpath()` — symlinks inside the project that point outside cwd bypass the sandbox. Accepted risk for personal use (requires a malicious symlink already in your repo). Fix with `realpath()` before ship.
 - No integration tests (only unit tests so far) ← fixed in Sprint 3 (8 agent integration tests)
 - CI added (GitHub Actions, Node.js 22) — no deploy step yet (CLI tool)
+- `agent.ts`: provider display log shows "codex-cli" even when `PHASE2S_PROVIDER=openai-api` is set — cosmetic only, API calls route correctly. Fix in Sprint 4.
 
 ---
 
