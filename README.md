@@ -131,7 +131,7 @@ Phase2S ships with 23 skills. Type any of them in the REPL:
 |-------|-------------|
 | `/debug` | Systematic debugging — reproduce, isolate, fix, and verify a bug end-to-end. Saves a log to `.phase2s/debug/`. |
 | `/tdd` | Test-driven development — write failing tests first (Red), implement to pass (Green), then refactor. Reports coverage delta. |
-| `/clean` | Anti-slop refactor — 5-smell taxonomy (dead code, duplication, needless abstraction, boundary violations, missing tests). One category at a time, tests after each pass. |
+| `/slop-clean` | Anti-slop refactor — 5-smell taxonomy (dead code, duplication, needless abstraction, boundary violations, missing tests). One category at a time, tests after each pass. |
 | `/deep-specify` | Structured spec interview — Socratic questions resolve ambiguity before any code is written. Outputs Intent / Boundaries / Non-goals / Success criteria to `.phase2s/specs/`. |
 | `/docs` | Inline documentation — generates JSDoc/TSDoc, type annotations, and module headers for undocumented code. |
 
@@ -177,7 +177,7 @@ Phase2S ships with 23 skills. Type any of them in the REPL:
 ```
 /debug src/core/agent.ts            — debug a specific file
 /tdd src/auth.ts "reject expired tokens" — TDD a specific behavior
-/clean src/tools/                   — anti-slop pass on one directory
+/slop-clean src/tools/              — anti-slop pass on one directory
 /deep-specify                       — interview before starting work
 /docs src/core/agent.ts             — document a specific file
 /review src/core/agent.ts           — focus review on one file
@@ -346,7 +346,7 @@ Options:
 ## Roadmap
 
 - [x] Codex CLI provider (uses ChatGPT subscription, no API key required)
-- [x] 23 built-in skills: review, investigate, plan, ship, qa, explain, diff, retro, health, audit, plan-review, scope-review, autoplan, checkpoint, careful, freeze, guard, unfreeze, debug, tdd, clean, deep-specify, docs
+- [x] 23 built-in skills: review, investigate, plan, ship, qa, explain, diff, retro, health, audit, plan-review, scope-review, autoplan, checkpoint, careful, freeze, guard, unfreeze, debug, tdd, slop-clean, deep-specify, docs
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes

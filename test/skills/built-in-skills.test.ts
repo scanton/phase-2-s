@@ -166,8 +166,8 @@ describe("Built-in skills — Sprint 7", () => {
     expect(skill.promptTemplate).toContain("Green");
   });
 
-  it("clean: loads with correct triggers", () => {
-    const skill = getSkill("clean");
+  it("slop-clean: loads with correct triggers", () => {
+    const skill = getSkill("slop-clean");
     expect(skill.description.toLowerCase()).toMatch(/refactor|clean/);
     expect(skill.triggerPhrases).toContain("clean");
     expect(skill.triggerPhrases).toContain("refactor");

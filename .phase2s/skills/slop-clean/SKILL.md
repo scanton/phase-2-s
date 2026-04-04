@@ -1,5 +1,5 @@
 ---
-name: clean
+name: slop-clean
 description: Anti-slop refactor — targeted cleanup by smell category, one pass at a time, tests before and after
 triggers:
   - clean
