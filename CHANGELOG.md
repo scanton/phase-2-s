@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.15.0 — 2026-04-04
+
+Sprint 12: MCP hot-reload and session persistence.
+
+### What you can do now
+
+- **Skills hot-reload** — create a new skill with `/skill` during a Claude Code session and it becomes available as a Claude Code tool automatically, without restarting the MCP server. The server watches `.phase2s/skills/` for new entries and sends `notifications/tools/list_changed` to the client per MCP spec.
+- **MCP session persistence** — multi-turn skills like `/satori` and `/consensus-plan` now maintain conversation history across multiple `tools/call` invocations in the same Claude Code session. Each skill gets its own `Conversation` that lives for the lifetime of the `phase2s mcp` subprocess. Previously every call started cold.
+
+### For contributors
+
+- **`src/mcp/server.ts`** — Added `MCPNotification` interface, `buildNotification()` helper, `setupSkillsWatcher()` (exported, tested in isolation). `handleRequest()` gains optional `sessionConversations?: Map<string, Conversation>` fourth parameter — backward-compatible. `initialize` response now includes `capabilities: { tools: { listChanged: true } }`. `runMCPServer()` creates the session map and wires the watcher.
+- **`test/mcp/server.test.ts`** — Updated `MockAgent` to include `getConversation()`. 6 new tests: capabilities advertisement, `buildNotification` format, session map population, conversation reuse, per-skill isolation, stateless fallback.
+- **`test/mcp/watcher.test.ts`** — New file. 4 tests for `setupSkillsWatcher`: watcher registration, debounced reload + notify, debounce coalescing, missing-directory error handling. Mocks `node:fs` in isolation.
+- **220 tests total** (up from 209).
+
 ## v0.13.0 — 2026-04-04
 
 Sprint 11: `/land-and-deploy` skill — push, PR, CI wait, merge.

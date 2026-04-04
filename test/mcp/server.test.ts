@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { handleRequest, skillToTool, toolNameToSkillName, MCP_SERVER_VERSION } from "../../src/mcp/server.js";
+import {
+  handleRequest,
+  skillToTool,
+  toolNameToSkillName,
+  buildNotification,
+  MCP_SERVER_VERSION,
+} from "../../src/mcp/server.js";
+import { Conversation } from "../../src/core/conversation.js";
 import type { Skill } from "../../src/skills/types.js";
 
 // ---------------------------------------------------------------------------
@@ -7,12 +14,21 @@ import type { Skill } from "../../src/skills/types.js";
 // ---------------------------------------------------------------------------
 
 // Mock Agent so tools/call tests don't spin up a real LLM.
-// Must use a class (not an arrow function) because Agent is used with `new`.
+// Includes getConversation() so session persistence tests can verify the
+// conversation is threaded through correctly.
 vi.mock("../../src/core/agent.js", () => {
   class MockAgent {
+    private _conversation: unknown;
+    constructor(opts: { config: unknown; conversation?: unknown }) {
+      // Reuse the injected conversation if provided; otherwise create a stub.
+      this._conversation = opts.conversation ?? { _stub: true, _id: Math.random() };
+    }
     run = vi.fn().mockResolvedValue(
       "VERDICT: APPROVED\nSTRONGEST_CONCERN: None identified.\nOBJECTIONS:\n(none)\nAPPROVE_IF: N/A",
     );
+    getConversation() {
+      return this._conversation;
+    }
   }
   return { Agent: MockAgent };
 });
@@ -59,7 +75,7 @@ const FIXTURE_SKILLS: Skill[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Tests
+// Tests — protocol compliance
 // ---------------------------------------------------------------------------
 
 describe("MCP server — protocol compliance", () => {
@@ -178,7 +194,7 @@ describe("MCP server — protocol compliance", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Helper function tests
+// Tests — helper functions
 // ---------------------------------------------------------------------------
 
 describe("MCP server — skillToTool", () => {
@@ -199,5 +215,114 @@ describe("MCP server — skillToTool", () => {
     expect(toolNameToSkillName("phase2s__adversarial")).toBe("adversarial");
     expect(toolNameToSkillName("phase2s__consensus_plan")).toBe("consensus-plan");
     expect(toolNameToSkillName("phase2s__plan_review")).toBe("plan-review");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 12: capabilities advertisement
+// ---------------------------------------------------------------------------
+
+describe("MCP server — capabilities (Sprint 12)", () => {
+  it("initialize: capabilities.tools.listChanged is true", async () => {
+    const response = await handleRequest(
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+      FIXTURE_SKILLS,
+      process.cwd(),
+    );
+    const result = response.result as { capabilities: { tools: { listChanged: boolean } } };
+    expect(result.capabilities.tools.listChanged).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 12: buildNotification
+// ---------------------------------------------------------------------------
+
+describe("MCP server — buildNotification (Sprint 12)", () => {
+  it("returns a valid JSON-RPC notification with no id field", () => {
+    const n = buildNotification("notifications/tools/list_changed");
+    expect(n.jsonrpc).toBe("2.0");
+    expect(n.method).toBe("notifications/tools/list_changed");
+    expect("id" in n).toBe(false);
+  });
+
+  it("includes params when provided", () => {
+    const n = buildNotification("some/method", { key: "value" });
+    expect(n.params).toEqual({ key: "value" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 12: session persistence
+// ---------------------------------------------------------------------------
+
+describe("MCP server — session persistence (Sprint 12)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const callAdversarial = (sessions?: Map<string, Conversation>) =>
+    handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "phase2s__adversarial", arguments: { prompt: "test input" } },
+      },
+      FIXTURE_SKILLS,
+      process.cwd(),
+      sessions,
+    );
+
+  it("first call populates the session map with a conversation", async () => {
+    const sessions = new Map<string, Conversation>();
+    await callAdversarial(sessions);
+    expect(sessions.has("adversarial")).toBe(true);
+    expect(sessions.get("adversarial")).toBeDefined();
+  });
+
+  it("second call receives the same conversation instance (not a fresh one)", async () => {
+    const sessions = new Map<string, Conversation>();
+
+    // First call — creates and stores a conversation
+    await callAdversarial(sessions);
+    const firstConversation = sessions.get("adversarial");
+    expect(firstConversation).toBeDefined();
+
+    // Second call — should reuse the stored conversation
+    await callAdversarial(sessions);
+    const secondConversation = sessions.get("adversarial");
+
+    // MockAgent returns this._conversation which equals opts.conversation when
+    // provided. So the map entry should be the same object reference.
+    expect(secondConversation).toBe(firstConversation);
+  });
+
+  it("different skills get independent conversations", async () => {
+    const sessions = new Map<string, Conversation>();
+
+    await callAdversarial(sessions);
+    await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "phase2s__consensus_plan", arguments: { prompt: "plan something" } },
+      },
+      FIXTURE_SKILLS,
+      process.cwd(),
+      sessions,
+    );
+
+    expect(sessions.has("adversarial")).toBe(true);
+    expect(sessions.has("consensus-plan")).toBe(true);
+    expect(sessions.get("adversarial")).not.toBe(sessions.get("consensus-plan"));
+  });
+
+  it("omitting sessionConversations gives stateless behavior (no error)", async () => {
+    // No session map — original stateless behavior, should succeed normally
+    const response = await callAdversarial(undefined);
+    expect(response.error).toBeUndefined();
+    expect(response.result).toBeDefined();
   });
 });

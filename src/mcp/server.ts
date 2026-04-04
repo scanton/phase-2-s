@@ -13,13 +13,15 @@
  */
 
 import { createInterface } from "node:readline";
+import { watch } from "node:fs";
 import { loadSkillsFromDir } from "../skills/loader.js";
 import { loadConfig } from "../core/config.js";
 import { Agent } from "../core/agent.js";
+import { Conversation } from "../core/conversation.js";
 import { join } from "node:path";
 import type { Skill } from "../skills/types.js";
 
-export const MCP_SERVER_VERSION = "0.14.0";
+export const MCP_SERVER_VERSION = "0.15.0";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,6 +49,16 @@ export interface MCPTool {
     properties: Record<string, unknown>;
     required: string[];
   };
+}
+
+/**
+ * A JSON-RPC notification — like a response but with no `id`.
+ * Used for server-to-client push events (e.g. tools list changed).
+ */
+export interface MCPNotification {
+  jsonrpc: "2.0";
+  method: string;
+  params?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +98,59 @@ export function toolNameToSkillName(toolName: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Notification helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a JSON-RPC notification (no `id` field — this is a server push, not
+ * a response to a request).
+ */
+export function buildNotification(method: string, params?: unknown): MCPNotification {
+  const n: MCPNotification = { jsonrpc: "2.0", method };
+  if (params !== undefined) n.params = params;
+  return n;
+}
+
+// ---------------------------------------------------------------------------
+// Skills watcher (exported for testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Watch the skills directory for new SKILL.md files. When a change is
+ * detected (debounced 80ms), reload skills and call notify() so the server
+ * can send a notifications/tools/list_changed message to the MCP client.
+ *
+ * Silently skips watching if the directory does not exist.
+ */
+export function setupSkillsWatcher(
+  skillsDir: string,
+  onReload: (skills: Skill[]) => void,
+  notify: () => void,
+): void {
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    watch(skillsDir, { persistent: false }, () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadSkillsFromDir(skillsDir)
+          .then((updated) => {
+            onReload(updated);
+            notify();
+          })
+          .catch(() => {
+            // Reload errors are silently ignored — stale skill list is better
+            // than crashing the server.
+          });
+      }, 80);
+    });
+  } catch {
+    // Skills directory doesn't exist or isn't watchable — skip silently.
+    // The server still works, just without hot-reload.
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Request handler (exported for testing)
 // ---------------------------------------------------------------------------
 
@@ -94,14 +159,19 @@ export function toolNameToSkillName(toolName: string): string {
  *
  * Exported so tests can call it directly without stdio.
  *
- * @param request  Parsed JSON-RPC request
- * @param skills   Loaded Phase2S skills (passed in so tests can inject fixtures)
- * @param cwd      Working directory for config loading and agent runs
+ * @param request              Parsed JSON-RPC request
+ * @param skills               Loaded Phase2S skills (passed in so tests can inject fixtures)
+ * @param cwd                  Working directory for config loading and agent runs
+ * @param sessionConversations Optional per-skill conversation map for session persistence.
+ *                             When provided, tools/call reuses the existing Conversation
+ *                             for each skill across multiple invocations rather than
+ *                             starting cold every call.
  */
 export async function handleRequest(
   request: JSONRPCRequest,
   skills: Skill[],
   cwd: string,
+  sessionConversations?: Map<string, Conversation>,
 ): Promise<JSONRPCResponse> {
   // -----------------------------------------------------------------------
   // initialize
@@ -112,7 +182,9 @@ export async function handleRequest(
       id: request.id,
       result: {
         protocolVersion: "2024-11-05",
-        capabilities: { tools: {} },
+        // listChanged: true tells the client to re-fetch tools/list when it
+        // receives a notifications/tools/list_changed notification.
+        capabilities: { tools: { listChanged: true } },
         serverInfo: { name: "phase2s", version: MCP_SERVER_VERSION },
       },
     };
@@ -152,8 +224,21 @@ export async function handleRequest(
 
     try {
       const config = await loadConfig();
-      const agent = new Agent({ config });
+
+      // Session persistence: look up an existing Conversation for this skill.
+      // On the first call the map has no entry and Agent creates a fresh one.
+      // On subsequent calls the Agent resumes where it left off.
+      const existingConversation = sessionConversations?.get(skillName);
+      const agent = new Agent({ config, conversation: existingConversation });
+
       const text = await agent.run(fullPrompt, { modelOverride: skill.model });
+
+      // Store the (possibly updated) conversation back into the session map
+      // so the next call to this skill can continue the conversation.
+      if (sessionConversations) {
+        sessionConversations.set(skillName, agent.getConversation());
+      }
+
       return {
         jsonrpc: "2.0",
         id: request.id,
@@ -197,11 +282,28 @@ export async function handleRequest(
  */
 export async function runMCPServer(cwd: string): Promise<void> {
   const skillsDir = join(cwd, ".phase2s", "skills");
-  const skills = await loadSkillsFromDir(skillsDir);
+  let skills = await loadSkillsFromDir(skillsDir);
 
-  const respond = (response: JSONRPCResponse): void => {
-    process.stdout.write(JSON.stringify(response) + "\n");
+  // One Conversation per skill, scoped to this process lifetime (= one Claude
+  // Code project session). Multi-turn skills like /satori and /consensus-plan
+  // resume where they left off rather than starting cold on every tools/call.
+  const sessionConversations = new Map<string, Conversation>();
+
+  const respond = (message: JSONRPCResponse | MCPNotification): void => {
+    process.stdout.write(JSON.stringify(message) + "\n");
   };
+
+  // Watch for new skills added mid-session (e.g. via /skill). When detected,
+  // reload the skills list and notify the MCP client so it re-fetches tools/list.
+  setupSkillsWatcher(
+    skillsDir,
+    (updated) => {
+      skills = updated;
+    },
+    () => {
+      respond(buildNotification("notifications/tools/list_changed"));
+    },
+  );
 
   // Manual event queue — safer than readline async iterator for long-lived servers
   const lineQueue: string[] = [];
@@ -259,7 +361,7 @@ export async function runMCPServer(cwd: string): Promise<void> {
       continue;
     }
 
-    const response = await handleRequest(request, skills, cwd);
+    const response = await handleRequest(request, skills, cwd, sessionConversations);
     respond(response);
   }
 }
