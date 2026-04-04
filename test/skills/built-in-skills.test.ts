@@ -128,3 +128,78 @@ describe("Built-in skills — Sprint 6", () => {
     expect(skills.length).toBeGreaterThanOrEqual(18);
   });
 });
+
+/**
+ * Tests for the 5 execution skills added in Sprint 7.
+ */
+describe("Built-in skills — Sprint 7", () => {
+  let skills: Skill[];
+
+  beforeAll(async () => {
+    const skillsDir = join(process.cwd(), ".phase2s", "skills");
+    skills = await loadSkillsFromDir(skillsDir);
+  });
+
+  function getSkill(name: string): Skill {
+    const skill = skills.find((s) => s.name === name);
+    if (!skill) throw new Error(`Skill "${name}" not found in .phase2s/skills/`);
+    return skill;
+  }
+
+  // --- Execution skills ---
+
+  it("debug: loads with correct triggers", () => {
+    const skill = getSkill("debug");
+    expect(skill.description.toLowerCase()).toContain("debug");
+    expect(skill.triggerPhrases).toContain("debug");
+    expect(skill.triggerPhrases).toContain("fix this bug");
+    expect(skill.promptTemplate).toContain("isolate");
+    expect(skill.promptTemplate).toContain("reproduce");
+  });
+
+  it("tdd: loads with correct triggers", () => {
+    const skill = getSkill("tdd");
+    expect(skill.description.toLowerCase()).toContain("test");
+    expect(skill.triggerPhrases).toContain("tdd");
+    expect(skill.triggerPhrases).toContain("test driven");
+    expect(skill.promptTemplate).toContain("Red");
+    expect(skill.promptTemplate).toContain("Green");
+  });
+
+  it("clean: loads with correct triggers", () => {
+    const skill = getSkill("clean");
+    expect(skill.description.toLowerCase()).toMatch(/refactor|clean/);
+    expect(skill.triggerPhrases).toContain("clean");
+    expect(skill.triggerPhrases).toContain("refactor");
+    expect(skill.promptTemplate).toContain("smell");
+    expect(skill.promptTemplate).toContain("Duplication");
+  });
+
+  it("deep-specify: loads with correct triggers", () => {
+    const skill = getSkill("deep-specify");
+    expect(skill.description.toLowerCase()).toMatch(/spec|clarif|ambig/);
+    expect(skill.triggerPhrases).toContain("deep specify");
+    expect(skill.triggerPhrases).toContain("clarify");
+    expect(skill.promptTemplate).toContain("NON-GOALS");
+    expect(skill.promptTemplate).toContain("spec");
+  });
+
+  it("docs: loads with correct triggers", () => {
+    const skill = getSkill("docs");
+    expect(skill.description.toLowerCase()).toContain("doc");
+    expect(skill.triggerPhrases).toContain("docs");
+    expect(skill.triggerPhrases).toContain("jsdoc");
+    expect(skill.promptTemplate).toContain("JSDoc");
+    expect(skill.promptTemplate).toContain("@param");
+  });
+
+  // --- Sanity: total skill count ---
+
+  it("loads all 23 built-in skills (18 prior + 5 new execution skills)", () => {
+    // Prior 18: review, investigate, plan, ship, qa, explain, diff,
+    //           retro, health, audit, plan-review, checkpoint, scope-review,
+    //           careful, freeze, guard, unfreeze, autoplan
+    // New 5: debug, tdd, clean, deep-specify, docs
+    expect(skills.length).toBeGreaterThanOrEqual(23);
+  });
+});

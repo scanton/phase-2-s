@@ -6,6 +6,19 @@
 
 ---
 
+## Sprint 7 (done) — Execution Skills (5 new skills)
+
+Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleaner` → `/clean`). Added original execution workflows for debug and TDD. Added documentation generation.
+
+- [x] `/debug` — systematic debugging: reproduce → isolate → hypothesize → fix → verify. Saves logs to `.phase2s/debug/`.
+- [x] `/tdd` — test-driven development: Red (failing tests) → Green (minimal impl) → Refactor. Reports coverage delta.
+- [x] `/clean` — anti-slop refactor pass: 5-smell taxonomy (dead code, duplication, needless abstraction, boundary violations, missing tests). One category at a time. Tests first.
+- [x] `/deep-specify` — structured spec interview (ported from OMX `$deep-interview`): 3-5 Socratic questions, outputs Intent / Boundaries / Non-goals / Constraints / Success criteria to `.phase2s/specs/`.
+- [x] `/docs` — inline documentation generation: JSDoc/TSDoc, type annotations, module headers. Documents git-changed files or a specified target.
+- [x] Tests: `built-in-skills` Sprint 7 — 6 tests across all 5 new skills + total count sanity check (>=23). 157 tests total.
+
+---
+
 ## Sprint 6 (done) — Skill Expansion (11 new skills)
 
 - [x] `/retro` — weekly engineering retrospective: git commit analysis, velocity stats, one improvement focus
@@ -92,6 +105,22 @@
 ---
 
 ## Long-term (v1.0+) — Multi-model + Ecosystem
+
+### OMX Infrastructure (from oh-my-codex analysis, Sprint 7 backlog)
+
+These are the power features from oh-my-codex that go beyond SKILL.md. They require infrastructure changes to Phase2S's core.
+
+- [ ] **Agent tier routing** — LOW/STANDARD/THOROUGH tiers mapped to `fast_model`/`smart_model` in `.phase2s.yaml`. Skills declare their tier; agent picks the right model automatically. Foundation for model-per-skill.
+- [ ] **Persistent execution loop** (`$ralph` pattern) — iterate on a task until done + verified by a second agent pass. Requires stateful skill protocol (session hooks or MCP state). High value for long-running coding tasks.
+- [ ] **Consensus planning** (`$ralplan` pattern) — Planner → Architect → Critic multi-agent consensus, up to 5 iterations until approved plan emerges. Requires multi-model routing infrastructure.
+- [ ] **Parallel team execution** (`$team` pattern) — spawn N parallel Codex workers in git worktrees via tmux. Phase2S spawns and coordinates, collects outputs. High complexity but unlocks parallel agent work.
+- [ ] **MCP state server** — implement `src/mcp/` state server with `state_write`/`state_read`/`state_clear`. Gives skills durable cross-turn state (like OMX's `.omx/state/` via MCP). Required by persistent execution and consensus planning.
+- [ ] **Notification gateway** — Telegram/Discord webhooks for long-running team operations. Alerts when a parallel run completes or errors. OMX uses OpenClaw.
+- [ ] **Context snapshots** — mandatory `.phase2s/context/{task-slug}-{ts}.md` before execution: task, outcome, constraints, unknowns, codebase touchpoints. Prevents silent partial completion.
+- [ ] **`/skill` meta-skill** — manage skills from within a session: list, add, remove, edit, sync user↔project scope. Mirrors OMX's `$skill` command.
+- [ ] **Underspecification gate** — block requests below a confidence threshold and require `force:` prefix to bypass. OMX's `!` prefix / `force:` pattern.
+
+### General
 
 - [ ] **Multi-model routing** — use different models for different tasks
   - Config: `fast_model: gpt-4o-mini`, `smart_model: o3`, `code_model: codex`

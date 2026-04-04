@@ -90,7 +90,7 @@ phase2s
 
 You'll see a prompt:
 ```
-Phase2S v0.8.0
+Phase2S v0.9.0
 Type your message and press Enter. Type /quit to exit.
 
 you >
@@ -123,7 +123,17 @@ phase2s skills
 
 ## Built-in skills
 
-Phase2S ships with 18 skills. Type any of them in the REPL:
+Phase2S ships with 23 skills. Type any of them in the REPL:
+
+**Execution:**
+
+| Skill | What it does |
+|-------|-------------|
+| `/debug` | Systematic debugging — reproduce, isolate, fix, and verify a bug end-to-end. Saves a log to `.phase2s/debug/`. |
+| `/tdd` | Test-driven development — write failing tests first (Red), implement to pass (Green), then refactor. Reports coverage delta. |
+| `/clean` | Anti-slop refactor — 5-smell taxonomy (dead code, duplication, needless abstraction, boundary violations, missing tests). One category at a time, tests after each pass. |
+| `/deep-specify` | Structured spec interview — Socratic questions resolve ambiguity before any code is written. Outputs Intent / Boundaries / Non-goals / Success criteria to `.phase2s/specs/`. |
+| `/docs` | Inline documentation — generates JSDoc/TSDoc, type annotations, and module headers for undocumented code. |
 
 **Code review and analysis:**
 
@@ -165,6 +175,11 @@ Phase2S ships with 18 skills. Type any of them in the REPL:
 
 **Skills accept file and context arguments:**
 ```
+/debug src/core/agent.ts            — debug a specific file
+/tdd src/auth.ts "reject expired tokens" — TDD a specific behavior
+/clean src/tools/                   — anti-slop pass on one directory
+/deep-specify                       — interview before starting work
+/docs src/core/agent.ts             — document a specific file
 /review src/core/agent.ts           — focus review on one file
 /review src/core/ src/cli/          — focus on multiple paths
 /investigate why does the REPL exit — describe the problem in words
@@ -331,11 +346,11 @@ Options:
 ## Roadmap
 
 - [x] Codex CLI provider (uses ChatGPT subscription, no API key required)
-- [x] 18 built-in skills: review, investigate, plan, ship, qa, explain, diff, retro, health, audit, plan-review, scope-review, autoplan, checkpoint, careful, freeze, guard, unfreeze
+- [x] 23 built-in skills: review, investigate, plan, ship, qa, explain, diff, retro, health, audit, plan-review, scope-review, autoplan, checkpoint, careful, freeze, guard, unfreeze, debug, tdd, clean, deep-specify, docs
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 151 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 157 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Streaming output — responses stream token-by-token, no spinner
