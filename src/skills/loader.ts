@@ -85,6 +85,7 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
   let promptTemplate: string;
   let skill_model: string | undefined;
   let skill_retries: number | undefined;
+  let skill_inputs: import("./types.js").Skill["inputs"] | undefined;
 
   if (frontmatterMatch) {
     const rawMeta = frontmatterMatch[1];
@@ -110,6 +111,28 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
 
     if (typeof meta.model === "string" && meta.model.length > 0) skill_model = meta.model;
     if (typeof meta.retries === "number" && meta.retries > 0) skill_retries = meta.retries;
+
+    // Parse inputs: key — must be an object mapping name → { prompt: string }
+    if (
+      meta.inputs !== null &&
+      meta.inputs !== undefined &&
+      typeof meta.inputs === "object" &&
+      !Array.isArray(meta.inputs)
+    ) {
+      const rawInputs = meta.inputs as Record<string, unknown>;
+      const parsed: import("./types.js").Skill["inputs"] = {};
+      for (const [key, val] of Object.entries(rawInputs)) {
+        if (
+          val !== null &&
+          typeof val === "object" &&
+          !Array.isArray(val) &&
+          typeof (val as Record<string, unknown>).prompt === "string"
+        ) {
+          parsed[key] = { prompt: (val as Record<string, unknown>).prompt as string };
+        }
+      }
+      if (Object.keys(parsed).length > 0) skill_inputs = parsed;
+    }
   } else {
     promptTemplate = content.trim();
   }
@@ -123,6 +146,7 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
   };
   if (skill_model !== undefined) skill.model = skill_model;
   if (skill_retries !== undefined) skill.retries = skill_retries;
+  if (skill_inputs !== undefined) skill.inputs = skill_inputs;
   return skill;
 }
 

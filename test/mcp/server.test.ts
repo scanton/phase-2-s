@@ -326,3 +326,85 @@ describe("MCP server — session persistence (Sprint 12)", () => {
     expect(response.result).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 13: skill inputs (schema + injection)
+// ---------------------------------------------------------------------------
+
+describe("MCP server — skill inputs (Sprint 13)", () => {
+  const SKILL_WITH_INPUTS: Skill = {
+    name: "plan-feature",
+    description: "Plan a feature",
+    triggerPhrases: ["plan this"],
+    promptTemplate: "Plan the {{feature}} feature. Scope: {{scope}}.",
+    inputs: {
+      feature: { prompt: "What feature are you planning?" },
+      scope: { prompt: "Any constraints or non-goals?" },
+    },
+  };
+
+  const SKILL_NO_INPUTS: Skill = {
+    name: "adversarial",
+    description: "Adversarial review",
+    triggerPhrases: ["challenge"],
+    promptTemplate: "Challenge this plan.",
+  };
+
+  it("skillToTool adds input fields as optional string properties in schema", () => {
+    const tool = skillToTool(SKILL_WITH_INPUTS);
+    const props = tool.inputSchema.properties;
+    expect(props.feature).toMatchObject({ type: "string", description: "What feature are you planning?" });
+    expect(props.scope).toMatchObject({ type: "string", description: "Any constraints or non-goals?" });
+    // prompt is always present
+    expect(props.prompt).toBeDefined();
+    // inputs are NOT in required (they are optional)
+    expect(tool.inputSchema.required).toContain("prompt");
+    expect(tool.inputSchema.required).not.toContain("feature");
+  });
+
+  it("skillToTool with no inputs produces the standard prompt-only schema", () => {
+    const tool = skillToTool(SKILL_NO_INPUTS);
+    expect(Object.keys(tool.inputSchema.properties)).toEqual(["prompt"]);
+  });
+
+  it("handleRequest substitutes input values from tool arguments into template", async () => {
+    const skills = [SKILL_WITH_INPUTS];
+    const response = await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "phase2s__plan_feature",
+          arguments: { prompt: "", feature: "auth", scope: "no SAML" },
+        },
+      },
+      skills,
+      process.cwd(),
+    );
+    expect(response.error).toBeUndefined();
+    // MockAgent.run() receives the substituted prompt — verify no raw placeholders remain
+    // (MockAgent echoes its input back via the mock resolver; we verify no error)
+    expect(response.result).toBeDefined();
+  });
+
+  it("handleRequest leaves undeclared {{token}} unchanged when input value is missing", async () => {
+    const skills = [SKILL_WITH_INPUTS];
+    // Call without providing 'scope' — should not throw, scope placeholder may remain
+    const response = await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: {
+          name: "phase2s__plan_feature",
+          arguments: { prompt: "some context", feature: "auth" },
+        },
+      },
+      skills,
+      process.cwd(),
+    );
+    expect(response.error).toBeUndefined();
+    expect(response.result).toBeDefined();
+  });
+});

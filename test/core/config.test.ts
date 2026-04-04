@@ -189,3 +189,30 @@ describe("loadConfig — Sprint 8 fields", () => {
     expect(config.verifyCommand).toBe("vitest run");
   });
 });
+
+describe("loadConfig — tools and deny (Sprint 13)", () => {
+  beforeEach(() => {
+    process.env.HOME = "/tmp";
+    process.env.USERPROFILE = "/tmp";
+  });
+
+  it("tools defaults to undefined (no allow-list)", async () => {
+    const config = await loadConfig({});
+    expect(config.tools).toBeUndefined();
+  });
+
+  it("deny defaults to undefined (no deny-list)", async () => {
+    const config = await loadConfig({});
+    expect(config.deny).toBeUndefined();
+  });
+
+  it("tools: array is accepted as an override", async () => {
+    const config = await loadConfig({ tools: ["file_read", "shell"] });
+    expect(config.tools).toEqual(["file_read", "shell"]);
+  });
+
+  it("deny: array is accepted as an override", async () => {
+    const config = await loadConfig({ deny: ["shell"] });
+    expect(config.deny).toEqual(["shell"]);
+  });
+});

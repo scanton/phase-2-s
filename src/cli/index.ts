@@ -11,9 +11,10 @@ import { Agent } from "../core/agent.js";
 import { Conversation } from "../core/conversation.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { loadAllSkills } from "../skills/index.js";
+import { substituteInputs, getUnfilledInputKeys } from "../skills/template.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.15.0";
+const VERSION = "0.16.0";
 
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
@@ -355,13 +356,24 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         }
 
         const safeArgs = args.startsWith("force:") ? args.slice("force:".length).trim() : args;
-        const finalExpanded = skill.promptTemplate + buildSkillContext(safeArgs);
+
+        // Prompt user for any declared inputs that appear as {{key}} in the template
+        const inputValues: Record<string, string> = {};
+        const unfilledKeys = getUnfilledInputKeys(skill.promptTemplate, skill.inputs);
+        for (const key of unfilledKeys) {
+          const inputDef = skill.inputs![key];
+          process.stdout.write(chalk.cyan(`  ${inputDef.prompt} `));
+          const answer = await nextLine();
+          inputValues[key] = answer?.trim() ?? "";
+        }
+        const substitutedTemplate = substituteInputs(skill.promptTemplate, inputValues, skill.inputs);
+        const finalExpanded = substitutedTemplate + buildSkillContext(safeArgs);
 
         process.stdout.write(chalk.dim(`Running /${skill.name}${safeArgs ? ` on: ${safeArgs}` : ""}...\n`));
 
         // Satori mode: skill declares retries > 0
         if (skill.retries && skill.retries > 0) {
-          const slug = makeSlug(expanded.slice(0, 100));
+          const slug = makeSlug(finalExpanded.slice(0, 100));
           const startedAt = new Date().toISOString();
           const attempts: import("../core/agent.js").SatoriResult[] = [];
 
@@ -370,7 +382,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
               modelOverride: skill.model,
               maxRetries: skill.retries,
               verifyCommand: config.verifyCommand,
-              preRun: () => writeContextSnapshot(expanded, config),
+              preRun: () => writeContextSnapshot(finalExpanded, config),
               postRun: async (result) => {
                 attempts.push(result);
                 await writeSatoriLog(slug, startedAt, result, config, attempts);

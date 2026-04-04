@@ -7,9 +7,14 @@ triggers:
   - implementation plan
   - design this feature
   - how do I implement
+inputs:
+  feature:
+    prompt: "What are you planning to build?"
 ---
 
-You are a senior engineer creating an implementation plan. Do not start coding yet — plan first.
+You are a senior engineer creating an implementation plan for: {{feature}}
+
+Do not start coding yet — plan first.
 
 **Process:**
 
@@ -22,7 +27,7 @@ You are a senior engineer creating an implementation plan. Do not start coding y
 
 ---
 
-## Implementation Plan
+## Implementation Plan: {{feature}}
 
 **Goal:** [one sentence — what this does for the user]
 
@@ -54,5 +59,10 @@ You are a senior engineer creating an implementation plan. Do not start coding y
 [scope boundaries — what is explicitly out of scope for this plan]
 
 ---
+
+After writing the plan, use the `file_write` tool to save it to `.phase2s/plans/PLAN-DATE.md` where DATE is today's date in YYYY-MM-DD format. Create the `.phase2s/plans/` directory if it doesn't exist.
+
+Then ask: "Append these tasks to TODOS.md? (yes/no)"
+If yes, use `file_read` to read TODOS.md, then use `file_write` to append the Phase 1 task checklist under a new section at the top of the active sprint.
 
 Be concrete. Name actual files that exist in the project. Show real commands. If something is unclear in the requirements, ask one clarifying question before proceeding.

@@ -46,7 +46,9 @@ export class Agent {
 
   constructor(opts: AgentOptions) {
     this.config = opts.config;
-    this.tools = opts.tools ?? createDefaultRegistry(opts.config.allowDestructive);
+    const baseRegistry = opts.tools ?? createDefaultRegistry(opts.config.allowDestructive);
+    // Apply per-project allow/deny list from config (deny overrides allow)
+    this.tools = baseRegistry.allowed(opts.config.tools, opts.config.deny);
     this.provider = opts.provider ?? createProvider(opts.config);
     this.maxTurns = opts.config.maxTurns;
 

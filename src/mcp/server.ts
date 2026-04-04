@@ -18,10 +18,11 @@ import { loadSkillsFromDir } from "../skills/loader.js";
 import { loadConfig } from "../core/config.js";
 import { Agent } from "../core/agent.js";
 import { Conversation } from "../core/conversation.js";
+import { substituteInputs } from "../skills/template.js";
 import { join } from "node:path";
 import type { Skill } from "../skills/types.js";
 
-export const MCP_SERVER_VERSION = "0.15.0";
+export const MCP_SERVER_VERSION = "0.16.0";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,17 +74,30 @@ export interface MCPNotification {
  *      "consensus-plan" → "phase2s__consensus_plan"
  */
 export function skillToTool(skill: Skill): MCPTool {
+  const properties: Record<string, unknown> = {
+    prompt: {
+      type: "string",
+      description: `Task or content for the ${skill.name} skill. Paste the text you want analyzed or acted on.`,
+    },
+  };
+
+  // Add declared inputs as named optional string parameters.
+  // Claude Code will fill these in before calling the tool.
+  if (skill.inputs) {
+    for (const [key, input] of Object.entries(skill.inputs)) {
+      properties[key] = {
+        type: "string",
+        description: input.prompt,
+      };
+    }
+  }
+
   return {
     name: `phase2s__${skill.name.replace(/-/g, "_")}`,
     description: skill.description || `Run the ${skill.name} skill`,
     inputSchema: {
       type: "object",
-      properties: {
-        prompt: {
-          type: "string",
-          description: `Task or content for the ${skill.name} skill. Paste the text you want analyzed or acted on.`,
-        },
-      },
+      properties,
       required: ["prompt"],
     },
   };
@@ -219,8 +233,20 @@ export async function handleRequest(
     }
 
     const userPrompt = params?.arguments?.prompt ?? "";
-    // Prepend the skill's system prompt to the user's content
-    const fullPrompt = skill.promptTemplate + (userPrompt ? `\n\n## Input\n\n${userPrompt}` : "");
+    // Extract declared input values from tool call arguments and substitute
+    // them into the template. Unknown {{tokens}} pass through unchanged.
+    const inputValues: Record<string, string> = {};
+    if (skill.inputs) {
+      const args = params?.arguments as Record<string, unknown> | undefined;
+      for (const key of Object.keys(skill.inputs)) {
+        if (args && typeof args[key] === "string") {
+          inputValues[key] = args[key] as string;
+        }
+      }
+    }
+    const substitutedTemplate = substituteInputs(skill.promptTemplate, inputValues, skill.inputs);
+    // Prepend the (substituted) skill prompt to the user's content
+    const fullPrompt = substitutedTemplate + (userPrompt ? `\n\n## Input\n\n${userPrompt}` : "");
 
     try {
       const config = await loadConfig();

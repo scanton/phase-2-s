@@ -22,6 +22,16 @@ const configSchema = z.object({
   allowDestructive: z.boolean().default(false),
   verifyCommand: z.string().default("npm test"),
   requireSpecification: z.boolean().default(false),
+  /**
+   * Allow-list: only the named tools are available to the agent.
+   * When omitted, all tools are available. `deny` takes precedence over `tools`.
+   */
+  tools: z.array(z.string()).optional(),
+  /**
+   * Deny-list: the named tools are blocked even if they appear in `tools`.
+   * `deny` always wins — it is a security control, not a preference.
+   */
+  deny: z.array(z.string()).optional(),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };

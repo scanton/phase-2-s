@@ -572,4 +572,34 @@ describe("Agent — satori retry loop", () => {
     expect(result).toBe("hello world");
     expect(chunks.join("")).toBe("hello world");
   });
+
+  it("applies config.deny to filter tools (deny overrides allow)", async () => {
+    const client = makeStreamingFakeClient([makeTextChunks("done")]);
+    const provider = new OpenAIProvider(minimalConfig, client);
+
+    // Inject a custom registry with two tools
+    const customRegistry = new ToolRegistry();
+    customRegistry.register({
+      name: "file_read",
+      description: "Read a file",
+      parameters: z.object({}),
+      async execute() { return { success: true, output: "" }; },
+    });
+    customRegistry.register({
+      name: "shell",
+      description: "Run a command",
+      parameters: z.object({}),
+      async execute() { return { success: true, output: "" }; },
+    });
+
+    const configWithDeny: Config = { ...minimalConfig, deny: ["shell"] };
+    const agent = new Agent({ config: configWithDeny, tools: customRegistry, provider });
+
+    // Confirm that only file_read is in the tool list passed to the provider
+    await agent.run("do something");
+    const callArgs = (client.chat.completions.create as Mock).mock.calls[0][0] as { tools?: { function: { name: string } }[] };
+    const toolNames = (callArgs.tools ?? []).map((t) => t.function.name);
+    expect(toolNames).toContain("file_read");
+    expect(toolNames).not.toContain("shell");
+  });
 });

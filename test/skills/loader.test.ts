@@ -227,4 +227,49 @@ describe("loadSkillsFromDir — Sprint 8 frontmatter fields", () => {
     expect(skills[0].retries).toBe(3);
     await rm(tmpDir, { recursive: true });
   });
+
+  it("inputs: block is parsed into skill.inputs with prompt strings", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "my-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: my-skill",
+      "description: test",
+      "inputs:",
+      "  feature:",
+      "    prompt: What feature?",
+      "  scope:",
+      "    prompt: Any constraints?",
+      "---",
+      "Plan {{feature}}. Scope: {{scope}}.",
+    ].join("\n"), "utf-8");
+    const skills = await loadSkillsFromDir(tmpDir);
+    expect(skills[0].inputs).toBeDefined();
+    expect(skills[0].inputs!.feature.prompt).toBe("What feature?");
+    expect(skills[0].inputs!.scope.prompt).toBe("Any constraints?");
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("inputs: with non-object entries are ignored (malformed input values)", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "my-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: my-skill",
+      "description: test",
+      "inputs:",
+      "  good:",
+      "    prompt: Good input",
+      "  bad: not-an-object",
+      "---",
+      "Plan {{good}}.",
+    ].join("\n"), "utf-8");
+    const skills = await loadSkillsFromDir(tmpDir);
+    expect(skills[0].inputs).toBeDefined();
+    expect(skills[0].inputs!.good.prompt).toBe("Good input");
+    expect(skills[0].inputs!.bad).toBeUndefined();
+    await rm(tmpDir, { recursive: true });
+  });
 });

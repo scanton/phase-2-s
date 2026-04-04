@@ -6,15 +6,15 @@
 
 ---
 
-## Sprint 13 (current) — Interactive Skills + Plan Output + Tool Control (v0.16.0)
+## Sprint 13 (done) — Interactive Skills + Plan Output + Tool Control (v0.16.0)
 
-| Metric | Target |
-|--------|--------|
+| Metric | Value |
+|--------|-------|
 | Version | v0.16.0 |
 | Skills | 29 (updated templates) |
-| Tests | ~245 |
+| Tests | 249 |
 
-_Plan reviewed by `/plan-eng-review` + outside voice (Claude subagent). Key decisions locked in below._
+_Plan reviewed by `/plan-eng-review` + outside voice (Claude subagent)._
 
 ### Multi-turn skills — skill inputs protocol
 

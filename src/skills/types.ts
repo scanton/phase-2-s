@@ -1,3 +1,9 @@
+export interface SkillInput {
+  /** Human-readable prompt shown to the user in REPL mode, and used as the
+   *  MCP tool parameter description in MCP mode. */
+  prompt: string;
+}
+
 export interface Skill {
   name: string;
   description: string;
@@ -10,4 +16,13 @@ export interface Skill {
   model?: string;
   /** Number of satori retries (enables satori mode when > 0) */
   retries?: number;
+  /**
+   * Named inputs the skill needs before running. Each key corresponds to a
+   * {{key}} placeholder in promptTemplate. In REPL mode Phase2S prompts the
+   * user for each. In MCP mode each becomes a typed tool parameter.
+   *
+   * Only {{key}} tokens declared here are substituted — unknown {{tokens}}
+   * pass through unchanged.
+   */
+  inputs?: Record<string, SkillInput>;
 }

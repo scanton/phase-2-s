@@ -129,3 +129,50 @@ describe("ToolRegistry", () => {
     expect(capturedArgs).toEqual({ value: "test-input" });
   });
 });
+
+describe("ToolRegistry.allowed()", () => {
+  function makeRegistry(...names: string[]): ToolRegistry {
+    const r = new ToolRegistry();
+    for (const name of names) r.register(makeTool(name, { success: true, output: "" }));
+    return r;
+  }
+
+  it("returns all tools when no allow/deny is specified", () => {
+    const r = makeRegistry("file_read", "file_write", "shell");
+    expect(r.allowed().names()).toEqual(expect.arrayContaining(["file_read", "file_write", "shell"]));
+    expect(r.allowed().names()).toHaveLength(3);
+  });
+
+  it("allow-list: only listed tools are returned", () => {
+    const r = makeRegistry("file_read", "file_write", "shell");
+    const filtered = r.allowed(["file_read", "shell"]);
+    expect(filtered.names()).toContain("file_read");
+    expect(filtered.names()).toContain("shell");
+    expect(filtered.names()).not.toContain("file_write");
+  });
+
+  it("deny-list: denies are excluded from full set", () => {
+    const r = makeRegistry("file_read", "file_write", "shell");
+    const filtered = r.allowed(undefined, ["shell"]);
+    expect(filtered.names()).toContain("file_read");
+    expect(filtered.names()).toContain("file_write");
+    expect(filtered.names()).not.toContain("shell");
+  });
+
+  it("deny overrides allow: name in both lists is excluded", () => {
+    const r = makeRegistry("file_read", "shell");
+    const filtered = r.allowed(["file_read", "shell"], ["shell"]);
+    expect(filtered.names()).toContain("file_read");
+    expect(filtered.names()).not.toContain("shell");
+  });
+
+  it("warns on unrecognized tool names in allow list", () => {
+    const r = makeRegistry("file_read");
+    const warned: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => warned.push(String(args[0]));
+    r.allowed(["typo_tool"]);
+    console.warn = origWarn;
+    expect(warned.some((w) => w.includes("typo_tool"))).toBe(true);
+  });
+});
