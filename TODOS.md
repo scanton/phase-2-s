@@ -112,6 +112,17 @@
 - CI added (GitHub Actions, Node.js 22) — no deploy step yet (CLI tool)
 - `agent.ts`: provider display log showed "codex-cli" even when `PHASE2S_PROVIDER=openai-api` — fixed in Sprint 4 (now reads `this.provider.name`).
 
+### INVESTIGATE (deferred from Sprint 5 adversarial review)
+
+These were flagged but not fixed — they need deeper analysis before touching.
+
+- **TOCTOU race in `assertInSandbox`** — There is a window between `assertInSandbox()` returning a resolved path and `writeFile(fullPath, ...)` actually writing. An attacker who can swap the file for a symlink in that window could redirect the write. Mitigating: the window is microseconds and requires local process control; fix would require `O_NOFOLLOW`-style atomic open, which Node.js `fs` doesn't expose directly. Worth a spike to see if `open(fd, O_WRONLY | O_NOFOLLOW)` via a native addon is feasible.
+- **`SESSION_DIR` captured at module load** — `const SESSION_DIR = join(process.cwd(), ...)` in `cli/index.ts` runs when the module is imported, not when `main()` runs. If `cwd` changes before `main()` (unlikely in practice, but possible in programmatic use), the session path would be wrong. Fix: move to a lazy getter or compute inside `interactiveMode()`.
+- **Signal handler test side effects** — The SIGTERM/SIGINT handlers registered in `codex.ts` are process-global and persist across test runs in the same vitest worker. A test that spawns a Codex provider but doesn't clean it up will leave orphaned handlers. Could cause `MaxListenersExceededWarning`. Fix: deregister handlers when the provider instance is done, or use `AbortController` pattern.
+- **`--full-auto` + poisoned session file threat model** — `phase2s --resume` injects arbitrary prior messages into the agent context. A crafted session file with plausible-looking assistant messages could influence the model to skip safety checks or run destructive commands under `--full-auto`. The role validation added in Sprint 5 blocks outright invalid roles, but a semantically poisoned (but structurally valid) session is not blocked. Threat model: only relevant if session files can be written by untrusted parties. Document the assumption that `.phase2s/sessions/` is user-private.
+- **Prompt size cap before codex spawn** — No limit on prompt length before spawning codex. A very long conversation history passed via `--resume` could exceed codex's context limit, resulting in a cryptic spawn error. Fix: add a `conversation.trimToTokenBudget()` call before constructing the first codex prompt, or warn when `conversation.estimateTokens()` exceeds a threshold.
+- **Session files world-readable** — `writeFile(path, content, "utf-8")` creates files with the process umask (typically `0o644`). Session files contain conversation history including potentially sensitive prompts, code, and file contents. Fix: use `writeFile(path, content, { encoding: "utf-8", mode: 0o600 })` to restrict to owner-only. Low risk on single-user machines; higher risk on shared systems.
+
 ---
 
 ## Icebox (maybe never, but worth tracking)
