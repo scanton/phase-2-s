@@ -1,6 +1,6 @@
 {
   "name": "phase2s",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "AI programming harness with multi-model support",
   "type": "module",
   "files": [
@@ -21,7 +21,9 @@
     "test:watch": "vitest"
   },
   "test": {
-    "include": ["test/**/*.test.ts"],
+    "include": [
+      "test/**/*.test.ts"
+    ],
     "environment": "node"
   },
   "engines": {

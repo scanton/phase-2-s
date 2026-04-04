@@ -10,6 +10,8 @@ export interface AgentOptions {
   tools?: ToolRegistry;
   systemPrompt?: string;
   provider?: Provider;
+  /** Inject an existing conversation (e.g. loaded from a saved session via --resume). */
+  conversation?: Conversation;
 }
 
 export class Agent {
@@ -25,13 +27,25 @@ export class Agent {
     this.provider = opts.provider ?? createProvider(opts.config);
     this.maxTurns = opts.config.maxTurns;
 
-    const systemPrompt = buildSystemPrompt(
-      this.tools.list(),
-      opts.systemPrompt ?? opts.config.systemPrompt,
-    );
-    this.conversation = new Conversation(systemPrompt);
+    if (opts.conversation) {
+      // Resume from an injected conversation (loaded from a saved session).
+      this.conversation = opts.conversation;
+    } else {
+      const systemPrompt = buildSystemPrompt(
+        this.tools.list(),
+        opts.systemPrompt ?? opts.config.systemPrompt,
+      );
+      this.conversation = new Conversation(systemPrompt);
+    }
 
     log.dim(`Provider: ${this.provider.name} | Model: ${this.config.model}`);
+  }
+
+  /**
+   * Expose the current conversation for external save/inspect (e.g. session persistence).
+   */
+  getConversation(): Conversation {
+    return this.conversation;
   }
 
   /**

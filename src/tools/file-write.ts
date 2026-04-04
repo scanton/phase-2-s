@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { writeFile, mkdir, access } from "node:fs/promises";
-import { resolve, dirname, sep } from "node:path";
+import { resolve, dirname } from "node:path";
 import type { ToolDefinition, ToolResult } from "./types.js";
+import { assertInSandbox } from "./sandbox.js";
 
 /** Sanitize an error message before returning it to the LLM — strip absolute paths. */
 function sanitizeError(err: unknown): string {
@@ -21,15 +22,37 @@ export const fileWriteTool: ToolDefinition = {
   parameters: params,
   async execute(raw: unknown): Promise<ToolResult> {
     const args = params.parse(raw);
-    const fullPath = resolve(args.path);
-    const projectRoot = process.cwd();
 
-    // Sandbox: reject paths outside the project directory
-    if (!fullPath.startsWith(projectRoot + sep) && fullPath !== projectRoot) {
+    // For files that need createDirs, we need to mkdir first so that
+    // realpath() can resolve the parent directory. We use a lexical resolve
+    // pre-check before mkdir, then assertInSandbox after dirs exist.
+    const lexicalFullPath = resolve(args.path);
+
+    if (args.createDirs) {
+      // Pre-check using lexical resolve before creating dirs (prevents creating
+      // dirs outside the project before we can realpath-check them).
+      const { sep } = await import("node:path");
+      const cwd = process.cwd();
+      if (!lexicalFullPath.startsWith(cwd + sep) && lexicalFullPath !== cwd) {
+        return {
+          success: false,
+          output: "",
+          error: `Path outside project directory: ${args.path}`,
+        };
+      }
+      await mkdir(dirname(lexicalFullPath), { recursive: true });
+    }
+
+    // Sandbox: reject paths outside the project directory (realpath-based, blocks symlink escapes)
+    // After dirs are created, realpath() can resolve the parent reliably.
+    let fullPath: string;
+    try {
+      fullPath = await assertInSandbox(args.path);
+    } catch (err) {
       return {
         success: false,
         output: "",
-        error: `Path outside project directory: ${args.path}`,
+        error: err instanceof Error ? err.message : `Path outside project directory: ${args.path}`,
       };
     }
 
@@ -57,10 +80,6 @@ export const fileWriteTool: ToolDefinition = {
         existed = true;
       } catch {
         // doesn't exist
-      }
-
-      if (args.createDirs) {
-        await mkdir(dirname(fullPath), { recursive: true });
       }
 
       await writeFile(fullPath, args.content, "utf-8");

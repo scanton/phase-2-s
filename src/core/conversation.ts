@@ -1,3 +1,5 @@
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 import type { Message } from "../providers/types.js";
 
 // Conservative token budget: 80% of gpt-4o's 128k context window.
@@ -44,6 +46,32 @@ export class Conversation {
         : 0;
       return sum + Math.ceil((contentLen + toolCallsLen) / 4);
     }, 0);
+  }
+
+  /**
+   * Serialize the conversation history to a JSON file.
+   * Creates parent directories if they don't exist.
+   */
+  async save(path: string): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify(this.messages, null, 2), "utf-8");
+  }
+
+  /**
+   * Deserialize a conversation from a JSON file previously written by save().
+   *
+   * Throws if the file doesn't exist, is unreadable, or contains invalid JSON —
+   * callers (e.g. the CLI --resume path) should handle these gracefully.
+   */
+  static async load(path: string): Promise<Conversation> {
+    const raw = await readFile(path, "utf-8");
+    const messages: Message[] = JSON.parse(raw);
+    if (!Array.isArray(messages)) {
+      throw new Error("Invalid session file: expected a JSON array of messages");
+    }
+    const conv = new Conversation();
+    conv.messages = messages;
+    return conv;
   }
 
   /**
