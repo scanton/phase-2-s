@@ -6,7 +6,7 @@
 
 ---
 
-## Sprint 15 (in progress) — Model Tier Dogfooding + One-Shot Routing + Typed Inputs (v0.18.0)
+## Sprint 15 (done) — Model Tier Dogfooding + One-Shot Routing + Typed Inputs (v0.18.0)
 
 | Metric | Target |
 |--------|--------|

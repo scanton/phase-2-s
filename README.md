@@ -83,7 +83,8 @@ you > /remember                      — save a project convention to memory
 One-shot mode (no REPL):
 
 ```bash
-phase2s run "explain what src/core/agent.ts does"
+phase2s run "/explain src/core/agent.ts"   # routes through the explain skill
+phase2s run "explain what src/core/agent.ts does"  # plain prompt, no skill
 ```
 
 Resume your last session:
@@ -134,7 +135,7 @@ phase2s skills
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 267 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 279 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family, all 29 skills

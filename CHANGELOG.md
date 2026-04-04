@@ -35,7 +35,7 @@ inputs:
 - **`src/skills/types.ts`** — `SkillInput` gains optional `type?: "string" | "boolean" | "enum" | "number"` and `enum?: string[]`.
 - **`src/skills/loader.ts`** — Parses `type:` and `enum:` from YAML inputs. Validates type values (unknown → warn + fallback to "string"). Coerces `enum: "string"` → `["string"]` (YAML parser edge case). Warns on invalid `model:` values that look like misspelled tiers.
 - **`src/mcp/server.ts`** — `skillToTool()` emits typed JSON Schema: `boolean` → `{ type: "boolean" }`, `enum` → `{ type: "string", enum: [...] }`, `number` → `{ type: "number" }`. Input values are coerced to strings via `String()` before template substitution.
-- **`src/cli/index.ts`** — `oneShotMode()` detects `/skillname` prefix, looks up the skill, calls `substituteInputs()` (not a direct string replace), applies `modelOverride`, logs routing to stderr. Logs a warning when `/unknown-skill` has no match.
+- **`src/cli/index.ts`** — New exported `resolveSkillRouting()` function detects `/skillname` prefix, looks up the skill, calls `substituteInputs()` (not a direct string replace), applies `modelOverride`. `oneShotMode()` delegates to it. Logs routing and unknown-skill warnings to stderr.
 - **`package.json`** — `glob` updated from `^11.0.0` to `^13.0.0`.
 - **279 tests** (up from 267). New: +6 loader tests (type/enum parsing and validation), +3 server tests (typed schema generation), +3 cli tests (one-shot routing).
 
