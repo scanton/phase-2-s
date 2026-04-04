@@ -130,4 +130,18 @@ describe("loadConfig", () => {
       else process.env.PHASE2S_ALLOW_DESTRUCTIVE = orig;
     }
   });
+
+  it("PHASE2S_ALLOW_DESTRUCTIVE accepts '1' and 'yes' (truthy variants)", async () => {
+    const orig = process.env.PHASE2S_ALLOW_DESTRUCTIVE;
+    for (const val of ["1", "yes", "YES", "True"]) {
+      process.env.PHASE2S_ALLOW_DESTRUCTIVE = val;
+      const config = await loadConfig({});
+      expect(config.allowDestructive).toBe(true);
+    }
+    process.env.PHASE2S_ALLOW_DESTRUCTIVE = "false";
+    const configFalse = await loadConfig({});
+    expect(configFalse.allowDestructive).toBe(false);
+    if (orig === undefined) delete process.env.PHASE2S_ALLOW_DESTRUCTIVE;
+    else process.env.PHASE2S_ALLOW_DESTRUCTIVE = orig;
+  });
 });

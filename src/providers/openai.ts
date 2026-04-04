@@ -133,8 +133,11 @@ export class OpenAIProvider implements Provider {
       }
     }
 
-    if (toolCallAccum.length > 0) {
-      const calls: ToolCall[] = toolCallAccum.map((tc) => ({
+    // Filter out any sparse-array holes (undefined slots from non-contiguous indices).
+    // Normally OpenAI sends tool call indices as 0, 1, 2... but guard against gaps.
+    const validCalls = toolCallAccum.filter((tc) => tc !== undefined && tc.id !== "");
+    if (validCalls.length > 0) {
+      const calls: ToolCall[] = validCalls.map((tc) => ({
         id: tc.id,
         name: tc.name,
         arguments: tc.arguments, // raw JSON string — parsed by tool executor
