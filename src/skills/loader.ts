@@ -1,7 +1,25 @@
 import { readFile, readdir, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import type { Skill } from "./types.js";
+
+/**
+ * Resolve the path to the skills bundled inside the installed package.
+ *
+ * At runtime this file lives at:
+ *   <pkg-root>/dist/src/skills/loader.js
+ *
+ * The bundled skills live at:
+ *   <pkg-root>/.phase2s/skills/
+ *
+ * Three levels up from this file's directory gets us to <pkg-root>.
+ */
+function bundledSkillsDir(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  const pkgRoot = resolve(dirname(thisFile), "../../..");
+  return join(pkgRoot, ".phase2s", "skills");
+}
 
 /**
  * Load skills from SKILL.md files in a directory.
@@ -113,8 +131,10 @@ async function parseSkillFile(path: string): Promise<Skill | null> {
  * 1. .phase2s/skills/ — current project skills (highest priority)
  * 2. ~/.phase2s/skills/ — global user skills
  * 3. ~/.codex/skills/ — Codex CLI's native skill directory (cross-tool compatibility)
+ * 4. <pkg-root>/.phase2s/skills/ — skills bundled inside the installed package (lowest priority)
  *
- * Deduplication: first skill found with a given name wins (project > global > codex).
+ * Deduplication: first skill found with a given name wins.
+ * Project skills override global, global override codex, all override bundled defaults.
  */
 export async function loadAllSkills(): Promise<Skill[]> {
   const skills: Skill[] = [];
@@ -124,6 +144,7 @@ export async function loadAllSkills(): Promise<Skill[]> {
     join(process.cwd(), ".phase2s", "skills"),
     join(home, ".phase2s", "skills"),
     join(home, ".codex", "skills"),  // Codex CLI native skills — same SKILL.md format
+    bundledSkillsDir(),               // skills shipped inside the npm package
   ];
 
   const seen = new Set<string>();

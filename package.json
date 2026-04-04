@@ -1,10 +1,11 @@
 {
   "name": "@scanton/phase2s",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "AI programming harness with multi-model support",
   "type": "module",
   "files": [
     "dist/",
+    ".phase2s/",
     "README.md",
     "LICENSE"
   ],
