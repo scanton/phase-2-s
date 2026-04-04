@@ -1,12 +1,17 @@
 # Phase2S
 
-An AI programming harness for OpenAI Codex. Phase2S gives Codex a skill system — so instead of typing raw prompts, you run `/review`, `/investigate`, `/plan`, and more. Same idea as gstack for Claude Code, built for Codex.
+A CLI AI programming harness with streaming output and a skill system. Phase2S runs an agent loop against OpenAI — responses stream to your terminal word-by-word as the model thinks. Type `/review`, `/investigate`, `/plan`, and watch the output appear live.
 
 ```
-you > /review src/core/agent.ts
-Running /review on: src/core/agent.ts...
-assistant > ## Code Review
-...
+you > explain how the agent loop works
+assistant > The agent loop in src/core/agent.ts works like this...
+```
+
+Install it globally and run it anywhere:
+
+```bash
+npm install -g phase2s
+OPENAI_API_KEY=sk-... phase2s run "list my TypeScript files"
 ```
 
 ---
@@ -131,6 +136,7 @@ maxTurns: 50
 | `PHASE2S_MODEL` | Override model |
 | `PHASE2S_CODEX_PATH` | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | API key for `openai-api` provider |
+| `PHASE2S_ALLOW_DESTRUCTIVE` | Set to `true` to allow destructive shell commands (`rm -rf`, `sudo`, etc.) |
 
 **Model auto-detection:** If you've set a model in `~/.codex/config.toml`, Phase2S picks it up automatically. No need to configure twice.
 
@@ -145,8 +151,8 @@ user input → skill prompt injection → Codex (or direct API) → tool calls �
 ```
 
 **Providers:**
-- `codex-cli` — spawns `codex exec` in non-interactive mode (`--json --full-auto`). Each call is a fresh Codex process. Best for one-shot skill invocations.
-- `openai-api` — direct OpenAI API with conversation history and full tool control. Set `PHASE2S_PROVIDER=openai-api` and `OPENAI_API_KEY=sk-...` to use it.
+- `codex-cli` — spawns `codex exec` in non-interactive mode (`--json --full-auto`). Each call is a fresh Codex process.
+- `openai-api` — direct OpenAI API with streaming output, conversation history, and full tool control. Set `PHASE2S_PROVIDER=openai-api` and `OPENAI_API_KEY=sk-...` to use it. Responses stream to your terminal in real time — no spinner, no wait.
 
 **Tools** (available when using `openai-api` provider):
 - `file-read` — read file contents with line range support; sandboxed to project directory
@@ -192,11 +198,13 @@ Options:
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory
-- [x] Test suite: 107 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] Test suite: 111 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider — live-verified with tool calling (Sprint 3)
+- [x] Streaming output — responses stream token-by-token, no spinner (Sprint 4)
+- [x] npm publish — `npm install -g phase2s` (Sprint 4)
 - [ ] Model-per-skill config via SKILL.md frontmatter
-- [ ] npm publish
+- [ ] Real Codex streaming (JSONL stdout parsing)
 
 ---
 

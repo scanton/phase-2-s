@@ -3,13 +3,12 @@ import { createInterface } from "node:readline";
 import { access, constants } from "node:fs/promises";
 import { resolve } from "node:path";
 import chalk from "chalk";
-import ora from "ora";
 import { loadConfig, type Config } from "../core/config.js";
 import { Agent } from "../core/agent.js";
 import { loadAllSkills } from "../skills/index.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const program = new Command();
@@ -76,7 +75,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
  * Uses a manual event-queue pattern (rl.on('line')) rather than the
  * readline async iterator. The async iterator has a known issue where
  * it terminates if the event loop drains while awaiting between turns —
- * which is exactly what happens while codex is running.
+ * which is exactly what happens while the LLM is streaming.
  */
 async function interactiveMode(config: Config): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
@@ -160,7 +159,7 @@ async function interactiveMode(config: Config): Promise<void> {
       continue;
     }
 
-    // Skill invocation
+    // Skill invocation — batch mode (no streaming, keeps the "Running..." indicator)
     if (trimmed.startsWith("/")) {
       const skillName = trimmed.slice(1).split(" ")[0];
       const skill = skills.find((s) => s.name === skillName);
@@ -178,12 +177,15 @@ async function interactiveMode(config: Config): Promise<void> {
       }
     }
 
-    // Normal message — no spinner (ora can interact with stdin state)
-    process.stdout.write(chalk.dim("Thinking...\n"));
+    // Normal message — stream deltas as they arrive
+    process.stdout.write(chalk.bold("\nassistant > "));
     try {
-      const response = await agent.run(trimmed);
-      console.log(chalk.bold("\nassistant > ") + response + "\n");
+      await agent.run(trimmed, (chunk) => {
+        process.stdout.write(chunk);
+      });
+      process.stdout.write("\n\n");
     } catch (err) {
+      process.stdout.write("\n");
       log.error(err instanceof Error ? err.message : String(err));
     }
   }
@@ -255,14 +257,19 @@ async function oneShotMode(config: Config, prompt: string): Promise<void> {
   if (!checkOpenAIKey(config)) process.exit(1);
 
   const agent = new Agent({ config });
-  const spinner = ora("Thinking...").start();
+  let hasOutput = false;
 
   try {
-    const response = await agent.run(prompt);
-    spinner.stop();
-    console.log(response);
+    const result = await agent.run(prompt, (chunk) => {
+      process.stdout.write(chunk);
+      hasOutput = true;
+    });
+    if (!hasOutput) {
+      // Fallback: tool-only path with no final text (rare in practice)
+      process.stdout.write(result);
+    }
+    process.stdout.write("\n");
   } catch (err) {
-    spinner.stop();
     log.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }

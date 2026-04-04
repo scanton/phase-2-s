@@ -36,9 +36,15 @@ export class Agent {
 
   /**
    * Run one turn of the agent loop:
-   * user message -> LLM -> (tool calls -> execute -> LLM)* -> final text
+   * user message -> LLM stream -> (tool calls -> execute -> LLM stream)* -> final text
+   *
+   * @param userMessage - The user's input
+   * @param onDelta - Optional callback invoked with each text chunk as it arrives.
+   *   Fires on every text event across all turns (including intermediate tool-call
+   *   reasoning text if the LLM produces any). Skills call run() without onDelta
+   *   (batch semantics); the CLI uses onDelta to stream to stdout.
    */
-  async run(userMessage: string): Promise<string> {
+  async run(userMessage: string, onDelta?: (text: string) => void): Promise<string> {
     this.conversation.addUser(userMessage);
 
     let turns = 0;
@@ -49,10 +55,24 @@ export class Agent {
       // Trim context before each LLM call to prevent context_length_exceeded errors
       this.conversation.trimToTokenBudget();
 
-      const { text, toolCalls } = await this.provider.chat(
+      let text = "";
+      const toolCalls: import("../providers/types.js").ToolCall[] = [];
+
+      for await (const event of this.provider.chatStream(
         this.conversation.getMessages(),
         this.tools.toOpenAI(),
-      );
+      )) {
+        if (event.type === "text") {
+          text += event.content;
+          onDelta?.(event.content);
+        } else if (event.type === "tool_calls") {
+          toolCalls.push(...event.calls);
+        } else if (event.type === "error") {
+          throw new Error(event.error);
+        } else if (event.type === "done") {
+          break;
+        }
+      }
 
       if (toolCalls.length === 0) {
         // No tool calls — final response
