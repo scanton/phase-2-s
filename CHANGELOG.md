@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.17.0 — 2026-04-04
+
+Sprint 14: Multi-provider support — Anthropic and Ollama.
+
+### What you can do now
+
+- **Run skills on Claude** — set `provider: anthropic` in `.phase2s.yaml` and every one of the 29 skills runs on Claude 3.5 Sonnet (or any Claude model you specify). Same `/adversarial`, `/satori`, `/consensus-plan` — now with Anthropic's API. Reads `ANTHROPIC_API_KEY` from env automatically.
+- **Run skills locally, free, private** — set `provider: ollama` and `model: qwen2.5-coder:7b` (or any model you have pulled) and the entire skill library runs on your machine. No API keys. Works offline. Free after the initial model pull.
+- **Switch providers with one line** — the only change needed is `provider:` in `.phase2s.yaml`. No other config required.
+
+### New config fields
+
+- `provider: anthropic | ollama` — two new values alongside the existing `codex-cli` and `openai-api`
+- `anthropicApiKey` — Anthropic API key (falls back to `ANTHROPIC_API_KEY` env var)
+- `anthropicMaxTokens` — max tokens for Anthropic responses (default `8192`)
+- `ollamaBaseUrl` — Ollama server base URL (default `http://localhost:11434/v1`)
+- Default models: `anthropic` → `claude-3-5-sonnet-20241022`, `ollama` → `llama3.1:8b`
+
+### For contributors
+
+- **`src/providers/anthropic.ts`** — New `AnthropicProvider` implementing `Provider`. Translates Anthropic streaming events (`content_block_delta`, `tool_use` blocks, `message_stop`) to the shared `ProviderEvent` format. Exports `translateMessages()` for direct testing — handles system message extraction, assistant tool-call turns, and consecutive tool-result folding into single synthetic user messages.
+- **`src/providers/ollama.ts`** — `createOllamaProvider()` factory. Reuses `OpenAIProvider` with `baseURL` injection — Ollama's OpenAI-compatible API requires no new class.
+- **`src/providers/index.ts`** — `createProvider()` extended for `"anthropic"` and `"ollama"` cases.
+- **`src/core/config.ts`** — Provider enum extended to 4 values. New optional fields: `anthropicApiKey`, `anthropicMaxTokens`, `ollamaBaseUrl`. `ANTHROPIC_API_KEY` env var wired. `resolveDefaultModel()` returns correct defaults per provider.
+- **267 tests** (up from 249). New: `test/providers/anthropic.test.ts` (12 tests), `test/providers/ollama.test.ts` (4 tests), +2 config tests.
+
 ## v0.15.0 — 2026-04-04
 
 Sprint 12: MCP hot-reload and session persistence.
