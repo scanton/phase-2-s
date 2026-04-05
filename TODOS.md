@@ -275,10 +275,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [x] **Complete openai-api provider** — wire tool calling end-to-end ← done Sprint 3
   - Handle `finish_reason: "length"` and `"content_filter"` gracefully
   - Test with `file_read`, `shell`, and `glob` tools via direct API
-- [ ] **Model-per-skill config** — `model: o3-mini` in SKILL.md frontmatter overrides default
-  - Cheap model for fast skills (investigate, grep), smart model for complex ones (plan, review)
-  - Deferred from Sprint 5 (no current consumers; implement when a skill actually needs it)
-  - Future: consider model-tier config (`fast_model`, `smart_model` in `.phase2s.yaml`) instead of per-skill strings
+- [x] **Model-per-skill config** — fully implemented. `model: fast | smart | gpt-4o` (any literal) in SKILL.md frontmatter. `agent.ts:resolveModel()` maps "fast"→`config.fast_model`, "smart"→`config.smart_model`, anything else passes through as a literal model ID. 28 of 29 built-in skills declare a tier (Sprint 15). No code changes needed.
 - [x] **Codex arg injection hardening** — `"--"` separator added to args array before prompt. Done Sprint 5. v0.7.0.
 - [x] **Shell tool hardening** — blocks destructive commands by default ← done Sprint 3
   - `allowDestructive: false` default; set `true` in `.phase2s.yaml` to unlock
@@ -295,9 +292,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
   - Write plan to `.phase2s/plans/YYYY-MM-DD.md`
   - Integration with TODOS.md (append generated tasks)
 - [x] **`/diff` skill** — done Sprint 5. Structured diff review with LOOKS GOOD / NEEDS REVIEW / RISKY verdict. v0.7.0.
-- [ ] **Configurable tool allow/deny list** — per-project `.phase2s.yaml`
-  - `tools: [file_read, shell]` — only enable listed tools
-  - `deny: [shell]` — disable specific tools
+- [x] **Configurable tool allow/deny list** — fully implemented since Sprint 13. `tools:` and `deny:` in `.phase2s.yaml`. `ToolRegistry.allowed()` enforces deny-overrides-allow. Warns on unknown names at startup. Documented in `docs/configuration.md` (Sprint 18).
 - [ ] **Real Codex JSONL streaming** — Codex outputs JSONL on stdout; format is undocumented. Spike needed before committing. Would make long `/satori` runs feel faster.
 - [x] **`glob` deprecation fix** — Fixed Sprint 15. Upgraded `glob` from `^11.0.0` to `^13.0.0` in package.json.
 - [x] **Anthropic Claude provider** — `src/providers/anthropic.ts` shipped in Sprint 14. `provider: anthropic` in `.phase2s.yaml`. Uses `@anthropic-ai/sdk@0.82.0`. All 29 skills work on Claude 3.5 Sonnet.
@@ -319,9 +314,9 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [ ] **Parallel team execution** (`$team` pattern) — spawn N parallel Codex workers in git worktrees via tmux. Phase2S spawns and coordinates, collects outputs. High complexity but unlocks parallel agent work.
 - [ ] **MCP state server** — implement `src/mcp/` state server with `state_write`/`state_read`/`state_clear`. Gives skills durable cross-turn state (like OMX's `.omx/state/` via MCP). Required by persistent execution and consensus planning.
 - [ ] **Notification gateway** — Telegram/Discord webhooks for long-running team operations. Alerts when a parallel run completes or errors. OMX uses OpenClaw.
-- [ ] **Context snapshots** — mandatory `.phase2s/context/{task-slug}-{ts}.md` before execution: task, outcome, constraints, unknowns, codebase touchpoints. Prevents silent partial completion.
+- [x] **Context snapshots** — implemented. `writeContextSnapshot()` in `cli/index.ts` writes `.phase2s/context/{ts}-{slug}.md` before each satori run (branch, recent commits, diff stat, verify command, task). The "mandatory for all prompts" framing was over-broad — satori is the right scope (long-running tasks where partial completion is the risk).
 - [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview (3 questions) generates a SKILL.md file via file-write. Creates `.phase2s/skills/<name>/SKILL.md` from within a session.
-- [ ] **Underspecification gate** — block requests below a confidence threshold and require `force:` prefix to bypass. OMX's `!` prefix / `force:` pattern.
+- [x] **Underspecification gate** — implemented. `isUnderspecified()` in `cli/index.ts` checks prompt length (&lt;15 words, no file path). Gated on `requireSpecification: true` in `.phase2s.yaml`. User overrides with `force:` prefix. Documented in `docs/configuration.md` under "Safety mode for shared repos".
 
 ### General
 
