@@ -193,7 +193,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--resume", "Resume from the last completed sub-task (reads state from .phase2s/state/)")
     .option("--review-before-run", "Run adversarial review on spec before executing")
     .option("--notify", "Send a notification when the run completes (macOS + optional Slack webhook)")
-    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean }) => {
+    .option("--dry-run", "Parse and display the spec decomposition tree without running anything")
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean }) => {
       const { runGoal } = await import("./goal.js");
       try {
         const result = await runGoal(specFile, {
@@ -201,8 +202,9 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           resume: cmdOpts.resume,
           reviewBeforeRun: cmdOpts.reviewBeforeRun,
           notify: cmdOpts.notify,
+          dryRun: cmdOpts.dryRun,
         });
-        if (result.runLogPath) console.log(`Run log: ${result.runLogPath}`);
+        if (!result.dryRun && result.runLogPath) console.log(`Run log: ${result.runLogPath}`);
         process.exit(result.success ? 0 : 1);
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err));

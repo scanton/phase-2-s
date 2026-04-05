@@ -9,11 +9,19 @@
  * Exit code reflects result: 0 = no errors (warnings OK), 1 = one or more errors.
  */
 
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import chalk from "chalk";
 import { parseSpec } from "../core/spec-parser.js";
 import type { Spec } from "../core/spec-parser.js";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Specs with more sub-tasks than this threshold get a large-spec warning. */
+const MAX_SUBTASKS_WARNING = 8;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,6 +93,14 @@ export function lintSpec(spec: Spec): LintResult {
     });
   }
 
+  if (spec.decomposition.length > MAX_SUBTASKS_WARNING) {
+    issues.push({
+      severity: "warn",
+      message: `spec has ${spec.decomposition.length} sub-tasks — large specs are unreliable`,
+      fix: "Consider breaking this into multiple smaller specs (2-3 sub-tasks each) and running them sequentially",
+    });
+  }
+
   for (const subtask of spec.decomposition) {
     if (!subtask.successCriteria || subtask.successCriteria.trim() === "") {
       issues.push({
@@ -133,6 +149,25 @@ export async function runLint(specFilePath: string): Promise<boolean> {
 
   const spec = parseSpec(content);
   const result = lintSpec(spec);
+
+  // Check evalCommand's first word is on PATH.
+  // Skip when evalCommand equals the default ("npm test") — most dev machines
+  // have npm, and the existing "npm test (default)" warning already covers that.
+  // Guard against empty evalBin (parseSpec always returns a default, but be safe).
+  const evalBin = spec.evalCommand.split(/\s+/)[0];
+  if (evalBin && spec.evalCommand !== "npm test") {
+    const binOnPath = await new Promise<boolean>((resolve) => {
+      execFile("which", [evalBin], { shell: false }, (err) => resolve(!err));
+    });
+    if (!binOnPath) {
+      result.issues.push({
+        severity: "warn",
+        message: `evalCommand uses "${evalBin}" which was not found on PATH (note: shell virtualenv activation is not applied here — run \`which ${evalBin}\` in your shell to verify)`,
+        fix: `Install ${evalBin} or update evalCommand to a command that is available on PATH`,
+      });
+      // ok is unchanged — PATH warnings are advisory only, not blocking errors
+    }
+  }
 
   const errors = result.issues.filter((i) => i.severity === "error");
   const warns = result.issues.filter((i) => i.severity === "warn");

@@ -22,6 +22,7 @@
 import { execFile } from "child_process";
 import { readFileSync } from "fs";
 import { resolve, dirname, basename } from "path";
+import chalk from "chalk";
 import { Agent } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
@@ -45,6 +46,8 @@ export interface GoalOptions {
    * Notification is sent after the run completes (success, failure, or challenge).
    */
   notify?: boolean | NotifyOptions;
+  /** If true, print the decomposition tree and exit without making any LLM calls. */
+  dryRun?: boolean;
 }
 
 export interface GoalResult {
@@ -61,6 +64,8 @@ export interface GoalResult {
   challenged?: boolean;
   /** Full adversarial review text when challenged is true. */
   challengeResponse?: string;
+  /** true if this was a dry run — no LLM calls were made. */
+  dryRun?: boolean;
 }
 
 export async function runGoal(specFile: string, options: GoalOptions = {}): Promise<GoalResult> {
@@ -82,9 +87,25 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   const maxAttempts = Math.max(1, parseInt(options.maxAttempts ?? "3", 10) || 3);
   const resume = !!options.resume;
 
+  const startMs = Date.now();
+
+  // Dry-run: print the decomposition tree and exit immediately — zero LLM calls,
+  // zero file handles opened. Must be before RunLogger construction.
+  if (options.dryRun) {
+    printDryRunTree(spec);
+    return {
+      success: true,
+      attempts: 0,
+      criteriaResults: {},
+      runLogPath: "",
+      summary: "Dry run — no LLM calls made.",
+      durationMs: Date.now() - startMs,
+      dryRun: true,
+    };
+  }
+
   // Initialise RunLogger now so we can capture the path even if we halt early.
   const logger = new RunLogger(specDir, specHash);
-  const startMs = Date.now();
 
   // Load config early so it's available for all return paths (including early exits).
   const config = await loadConfig();
@@ -234,7 +255,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
       // Skip sub-tasks already marked passed on a prior run.
       if (priorResult?.status === "passed") {
-        console.log(`\nSkipping sub-task (already passed): ${subtask.name}`);
+        console.log(chalk.dim(`\n[skip] ${subtask.name} (passed in a prior attempt)`));
         continue;
       }
 
@@ -245,7 +266,14 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
       const numericIndex = globalIndex >= 0 ? globalIndex : i;
       logger.log({ event: "subtask_started", attempt, index: numericIndex, name: subtask.name });
-      console.log(`\nRunning sub-task: ${subtask.name}`);
+
+      // isRetry: on attempt 2+, subtasksToRun is already filtered to only failed tasks
+      const isRetry = attempt > 1;
+      const subtaskLabel = isRetry
+        ? chalk.yellow(`[${i + 1}/${subtasksToRun.length}] Retrying:`)
+        : chalk.cyan(`[${i + 1}/${subtasksToRun.length}] Running:`);
+      console.log(`\n${subtaskLabel} ${subtask.name}`);
+      const subtaskStartMs = Date.now();
       const taskContext = buildSatoriContext(subtask, spec.constraints, priorFailureContext);
       // Combine satori system instructions + task-specific context
       const effectivePrompt = satoriTemplate
@@ -269,6 +297,8 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         satoriError = err;
       }
       process.stdout.write("\n");
+      const elapsedSec = ((Date.now() - subtaskStartMs) / 1000).toFixed(1);
+      console.log(chalk.dim(`  Done in ${elapsedSec}s`));
 
       const outputStr = outputChunks.join("");
       const truncated = outputStr.slice(-FAILURE_CONTEXT_MAX_BYTES);
@@ -632,6 +662,42 @@ export async function runCommand(cmd: string, timeoutMs = 120_000): Promise<stri
       resolve(`EVAL ERROR: ${err.message}\n${chunks.join("")}`);
     });
   });
+}
+
+function printDryRunTree(spec: Spec): void {
+  console.log(chalk.bold(`\nSpec: ${spec.title}`));
+  console.log(chalk.dim(`Eval: ${spec.evalCommand}`));
+  console.log("");
+
+  console.log(chalk.bold(`Sub-tasks (${spec.decomposition.length}):`));
+  for (let i = 0; i < spec.decomposition.length; i++) {
+    const st = spec.decomposition[i];
+    console.log(`  ${chalk.cyan(`${i + 1}.`)} ${st.name}`);
+    if (st.input) console.log(chalk.dim(`     Input:  ${st.input}`));
+    if (st.output) console.log(chalk.dim(`     Output: ${st.output}`));
+    if (st.successCriteria) console.log(chalk.dim(`     When:   ${st.successCriteria}`));
+  }
+
+  if (spec.acceptanceCriteria.length > 0) {
+    console.log("");
+    console.log(chalk.bold(`Acceptance Criteria (${spec.acceptanceCriteria.length}):`));
+    for (const c of spec.acceptanceCriteria) {
+      console.log(`  · ${c}`);
+    }
+  }
+
+  if (spec.constraints) {
+    const { mustDo, cannotDo, shouldPrefer } = spec.constraints;
+    if (mustDo.length > 0 || cannotDo.length > 0 || shouldPrefer.length > 0) {
+      console.log("");
+      console.log(chalk.bold("Constraints:"));
+      if (mustDo.length > 0) console.log(chalk.dim(`  Must Do: ${mustDo.join("; ")}`));
+      if (cannotDo.length > 0) console.log(chalk.dim(`  Cannot Do: ${cannotDo.join("; ")}`));
+      if (shouldPrefer.length > 0) console.log(chalk.dim(`  Prefer: ${shouldPrefer.join("; ")}`));
+    }
+  }
+
+  console.log("");
 }
 
 function printCriteriaTable(criteriaResults: Record<string, boolean>): void {

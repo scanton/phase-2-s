@@ -115,6 +115,45 @@ This catches structural problems instantly — missing title, empty problem stat
 phase2s lint specs/rate-limiting.md && phase2s goal specs/rate-limiting.md
 ```
 
+Two additional checks:
+
+- **evalCommand PATH check** — if your spec uses `eval: pytest tests/` and `pytest` is not on PATH, lint warns immediately instead of failing 20 minutes into a run. (This check is skipped for the default `npm test` — most machines have npm.)
+- **Large spec warning** — if your spec has more than 8 sub-tasks, lint warns. Large specs are unreliable; the retry combinatorics grow fast. Break into multiple smaller specs and run them sequentially.
+
+### Preview without running
+
+To see what `phase2s goal` would execute — without making a single LLM call — use `--dry-run`:
+
+```bash
+phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md --dry-run
+```
+
+Example output:
+
+```
+Spec: Rate Limiting
+
+Eval: npm test
+
+Sub-tasks (2):
+  1. Token bucket core
+     Input:  Requests with user ID (auth) or IP address (anon)
+     Output: src/utils/rate-limiter.ts — RateLimiter class
+     When:   Unit tests for bucket fill, drain, and window reset pass
+  2. Express middleware
+     Input:  RateLimiter class
+     Output: src/middleware/rate-limit.ts registered in src/app.ts
+     When:   Integration tests with real HTTP requests pass
+
+Acceptance Criteria (4):
+  · Authenticated users: 100 req/min, 429 + Retry-After header on exceed
+  · Unauthenticated IPs: 20 req/min, 429 + Retry-After header on exceed
+  · All existing tests continue to pass
+  · npm test passes after implementation
+```
+
+Exits in under one second. Useful before committing to a long run: if the decomposition looks wrong, fix the spec first.
+
 ---
 
 ## Step 2: Run the goal executor
@@ -266,15 +305,16 @@ Max attempts: 3
 Attempt 1/3
 ==================================================
 
-Running sub-task: Token bucket core
+[1/2] Running: Token bucket core
 You are running in satori mode — persistent execution until verified complete...
 
 [model implements src/utils/rate-limiter.ts]
 [model writes tests in test/utils/rate-limiter.test.ts]
 Verification: npm test
 PASS (12 tests)
+  Done in 8.2s
 
-Running sub-task: Express middleware
+[2/2] Running: Express middleware
 [model implements src/middleware/rate-limit.ts]
 [model registers middleware in src/app.ts]
 Verification: npm test
@@ -283,6 +323,7 @@ FAIL — test/middleware/rate-limit.test.ts: authenticated user still throttled 
 [satori attempt 2: analyzes failure, fixes window reset logic]
 Verification: npm test
 PASS (24 tests)
+  Done in 11.0s
 
 Running evaluation: npm test
 ...24 tests pass...
@@ -325,12 +366,13 @@ Retrying 1 sub-task(s): Express middleware
 Attempt 2/3
 ==================================================
 
-Running sub-task: Express middleware
+[1/1] Retrying: Express middleware
 [Previous failure: The middleware was checking limits after sending the response.
 The 429 was never reaching the client. Fix this specifically.]
 
 [satori implements fix: move limit check before res.send()]
 npm test: PASS
+  Done in 7.3s
 
 Acceptance criteria:
   ✓ Authenticated users: 100 req/min, 429 + Retry-After on exceed

@@ -228,7 +228,7 @@ phase2s skills --json # machine-readable for scripts
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 582 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, installation health checks, self-update, skills search, and spec linting
+- [x] 589 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, and lint PATH checks
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -271,6 +271,9 @@ phase2s skills --json # machine-readable for scripts
 - [x] `phase2s skills [query]` — filter the skill list by name or description (`phase2s skills security`)
 - [x] Google Gemini provider — free tier, `gemini-2.0-flash` default, OpenAI-compatible endpoint, no new SDK dependency
 - [x] `phase2s lint <spec.md>` — validate a spec before a dark factory run: catches structural errors before the 20-minute agent loop begins
+- [x] `phase2s goal --dry-run` — parse and display the spec decomposition tree without making a single LLM call
+- [x] Live dark factory progress: `[1/3] Running: Sub-task name` with elapsed time per sub-task
+- [x] `phase2s lint`: >8 sub-task warning and evalCommand PATH check
 
 ---
 

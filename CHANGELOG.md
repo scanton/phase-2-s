@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.9.0 — 2026-04-05
+
+Dark factory visibility: dry-run mode, live progress, and richer lint checks.
+
+### What's new
+
+- **`phase2s goal <spec.md> --dry-run`** — parse and display the spec decomposition tree without making a single LLM call. Prints the spec title, eval command, sub-task list (with inputs, outputs, and success criteria), and acceptance criteria. Exits in under a second. Useful before committing to a 20-minute dark-factory run. 3 tests.
+- **Live progress display** — the dark factory now shows `[1/3] Running: Sub-task name` (cyan) or `[1/3] Retrying: Sub-task name` (yellow) as each sub-task starts, and `Done in Xs` when it finishes. Skipped sub-tasks (passed in a prior attempt) are shown in dim. Makes it clear where you are in a long run.
+- **`phase2s lint`: >8 sub-task warning** — if your spec has more than 8 sub-tasks, lint warns. Large specs are unreliable; retry combinatorics grow fast. Break into multiple smaller specs and run sequentially. 1 test.
+- **`phase2s lint`: evalCommand PATH check** — if your spec specifies an eval command (e.g., `pytest tests/`) and the binary isn't on PATH, lint warns immediately instead of failing 20 minutes into a run. Skipped for the default `npm test` (most machines have npm). 3 tests.
+
+### Usage
+
+```bash
+# Preview what a dark-factory run would do
+phase2s goal specs/add-rate-limiting.md --dry-run
+
+# Validate + preview before committing to a long run
+phase2s lint specs/add-rate-limiting.md && phase2s goal specs/add-rate-limiting.md --dry-run
+
+# Run with live progress
+phase2s goal specs/add-rate-limiting.md
+# [1/2] Running: Token bucket core
+# Done in 8s
+# [2/2] Running: Express middleware
+# Done in 11s
+```
+
+---
+
 ## v1.8.0 — 2026-04-05
 
 Spec linting + Google Gemini provider.
