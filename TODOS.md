@@ -6,7 +6,22 @@
 
 ---
 
-## Sprint 15 (done) — Model Tier Dogfooding + One-Shot Routing + Typed Inputs (v0.18.0)
+## Sprint 16 (done) — Scripting, Clean Install, Accurate Tests (v0.20.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.20.0 |
+| Tests | 295 (+4) |
+
+- [x] `phase2s skills --json` — machine-readable skill list (name, description, model tier, inputs with types)
+- [x] `node-domexception` deprecation fixed — `overrides.formdata-node: ^6.0.0` in package.json
+- [x] Vitest worktree exclusion — `vitest.config.ts` with `exclude: ['.claude/**']`, test count accurate at 295
+- [x] `/plan` disk output — saves to `.phase2s/plans/YYYY-MM-DD-HH-MM-<slug>.md` with timestamp
+- [x] `VERSION` reads from `package.json` at runtime via `createRequire` (no more hardcoded constant)
+
+---
+
+## Sprint 15 (done) — Model Tier Dogfooding + One-Shot Routing + Typed Inputs (v0.18.0–v0.19.1)
 
 | Metric | Target |
 |--------|--------|
@@ -16,13 +31,13 @@
 
 _Plan reviewed by `/autoplan` (CEO + Eng + DX). Approved 2026-04-04._
 
-### Deferred from autoplan review (add to backlog)
+### Deferred from autoplan review
 
 - [ ] **TODO-1: CLI completion hints for one-shot mode** — tab-complete skill names in `phase2s run "/ski<TAB>"`. (human: ~2h / CC: ~10min) P3
-- [ ] **TODO-2: `phase2s skills --json` output** — `--json` flag outputting skill list with name, model tier, inputs. Enables scripting. (human: ~1h / CC: ~5min) P3
-- [x] **TODO-3: `--dry-run` flag for one-shot mode** — show skill + model without executing. (human: ~2h / CC: ~10min) P2
-- [x] **TODO-4: Typed inputs REPL rendering** — show `(yes/no)` for boolean, `[a/b/c]` for enum in REPL prompts. (human: ~1h / CC: ~5min) P3
-- [x] **TODO-5: Inline model tier in `phase2s skills` output** (TASTE) — `explain  [fast]  Explain what a file does`. (human: ~30min / CC: ~5min) P2
+- [x] **TODO-2: `phase2s skills --json` output** — shipped v0.20.0
+- [x] **TODO-3: `--dry-run` flag for one-shot mode** — shipped v0.19.0
+- [x] **TODO-4: Typed inputs REPL rendering** — shipped v0.19.0
+- [x] **TODO-5: Inline model tier in `phase2s skills` output** — shipped v0.19.0
 
 ---
 
