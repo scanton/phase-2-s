@@ -1,6 +1,7 @@
 ---
 name: guard
 description: Full safety mode — combines careful (destructive command confirmation) and freeze (edit directory restriction)
+model: fast
 triggers:
   - guard mode
   - guard

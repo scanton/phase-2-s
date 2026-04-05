@@ -122,15 +122,17 @@ model: fast    # resolves to config.fast_model
 model: gpt-4o  # literal — always uses this model, ignores tier config
 ```
 
-**Built-in skills that use `smart`:** `/satori`, `/consensus-plan`.
+**Built-in skill tiers (28 of 29 skills declare a tier):**
 
-All other built-in skills use the default model (`config.model`).
+- **`fast`** (9 skills): `/explain`, `/diff`, `/checkpoint`, `/remember`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/skill`
+- **`smart`** (19 skills): `/satori`, `/consensus-plan`, `/adversarial`, `/debug`, `/investigate`, `/review`, `/audit`, `/health`, `/qa`, `/tdd`, `/slop-clean`, `/plan`, `/plan-review`, `/scope-review`, `/deep-specify`, `/ship`, `/retro`, `/land-and-deploy`, `/docs`
+- **default model** (1 skill): `/autoplan`
 
 **What this means in practice:**
 
-- You type `/explain src/auth.ts` — uses `fast_model` (or default). Fast response, low cost.
+- You type `/explain src/auth.ts` — uses `fast_model`. Fast response, low cost.
 - You type `/satori implement pagination` — uses `smart_model`. Slower, costs more, but the retry loop needs the model that will actually fix the problem.
-- You type `/review src/core/agent.ts` — uses default model. Middle ground.
+- You type `/review src/core/agent.ts` — uses `smart_model`. Review needs reasoning depth, not speed.
 
 Without `fast_model` / `smart_model` configured, all skills use the same model. Tier routing is optional.
 

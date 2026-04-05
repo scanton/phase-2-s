@@ -1,6 +1,7 @@
 ---
 name: health
 description: Code quality dashboard — runs type check, tests, and lint, scores the codebase, shows trends
+model: smart
 triggers:
   - health check
   - health

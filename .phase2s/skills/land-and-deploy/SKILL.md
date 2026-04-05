@@ -1,6 +1,7 @@
 ---
 name: land-and-deploy
 description: Push, open a PR, merge it, wait for CI, and verify the deploy landed cleanly
+model: smart
 triggers:
   - land this
   - land and deploy

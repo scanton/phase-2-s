@@ -1,6 +1,7 @@
 ---
 name: deep-specify
 description: Structured spec interview — resolve ambiguity with Socratic questions before any code is written
+model: smart
 triggers:
   - deep specify
   - deep-specify

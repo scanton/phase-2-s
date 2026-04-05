@@ -1,6 +1,7 @@
 ---
 name: review
 description: Code review — read the current diff and give structured, actionable feedback
+model: smart
 triggers:
   - review my code
   - code review

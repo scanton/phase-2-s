@@ -1,6 +1,7 @@
 ---
 name: plan-review
 description: Engineering plan review — scope validation, architecture critique, test coverage map, performance analysis
+model: smart
 triggers:
   - review the architecture
   - engineering review

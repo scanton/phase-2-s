@@ -1,6 +1,7 @@
 ---
 name: careful
 description: Activate safety mode — pause before destructive shell commands and ask for explicit confirmation
+model: fast
 triggers:
   - be careful
   - careful

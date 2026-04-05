@@ -1,6 +1,7 @@
 ---
 name: ship
 description: Prepare and execute a clean commit — review the diff, write the message, check nothing's broken
+model: smart
 triggers:
   - ship this
   - commit this

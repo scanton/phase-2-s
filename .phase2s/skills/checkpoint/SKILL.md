@@ -1,6 +1,7 @@
 ---
 name: checkpoint
 description: Save a structured snapshot of current session state — what we're working on, decisions made, what's left
+model: fast
 triggers:
   - checkpoint
   - save progress

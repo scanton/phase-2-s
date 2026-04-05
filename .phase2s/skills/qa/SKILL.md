@@ -1,6 +1,7 @@
 ---
 name: qa
 description: Quality assurance pass — find bugs, edge cases, and missing error handling in recent changes
+model: smart
 triggers:
   - test this
   - find bugs

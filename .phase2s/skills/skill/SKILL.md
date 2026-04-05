@@ -1,6 +1,7 @@
 ---
 name: skill
 description: Create a new Phase2S skill — guided interview, generates a SKILL.md file
+model: fast
 triggers:
   - create a skill
   - new skill

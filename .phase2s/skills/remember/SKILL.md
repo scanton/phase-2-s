@@ -1,6 +1,7 @@
 ---
 name: remember
 description: Save a project learning to persistent memory for future sessions
+model: fast
 triggers:
   - remember this
   - save this learning

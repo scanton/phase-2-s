@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -270,6 +270,146 @@ describe("loadSkillsFromDir — Sprint 8 frontmatter fields", () => {
     expect(skills[0].inputs).toBeDefined();
     expect(skills[0].inputs!.good.prompt).toBe("Good input");
     expect(skills[0].inputs!.bad).toBeUndefined();
+    await rm(tmpDir, { recursive: true });
+  });
+});
+
+describe("loadSkillsFromDir — Sprint 15 typed inputs", () => {
+  it("input type: boolean is parsed into skill.inputs[key].type", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "typed-bool");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: typed-bool",
+      "description: test",
+      "inputs:",
+      "  include_tests:",
+      "    prompt: Include tests?",
+      "    type: boolean",
+      "---",
+      "Plan with tests: {{include_tests}}.",
+    ].join("\n"), "utf-8");
+    const skills = await loadSkillsFromDir(tmpDir);
+    expect(skills[0].inputs!.include_tests.type).toBe("boolean");
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("input type: enum with array is parsed into skill.inputs[key].type and enum", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "typed-enum");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: typed-enum",
+      "description: test",
+      "inputs:",
+      "  format:",
+      "    prompt: Output format",
+      "    type: enum",
+      "    enum:",
+      "      - prose",
+      "      - bullets",
+      "      - table",
+      "---",
+      "Format: {{format}}.",
+    ].join("\n"), "utf-8");
+    const skills = await loadSkillsFromDir(tmpDir);
+    const input = skills[0].inputs!.format;
+    expect(input.type).toBe("enum");
+    expect(input.enum).toEqual(["prose", "bullets", "table"]);
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("input type: enum with empty enum array falls back to string", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "enum-empty");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: enum-empty",
+      "description: test",
+      "inputs:",
+      "  format:",
+      "    prompt: Output format",
+      "    type: enum",
+      "---",
+      "Format: {{format}}.",
+    ].join("\n"), "utf-8");
+    const skills = await loadSkillsFromDir(tmpDir);
+    const input = skills[0].inputs!.format;
+    expect(input.type).toBe("string");
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("input type: invalid value falls back to string (and warns)", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "type-invalid");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: type-invalid",
+      "description: test",
+      "inputs:",
+      "  field:",
+      "    prompt: Some field",
+      "    type: magic",
+      "---",
+      "Field: {{field}}.",
+    ].join("\n"), "utf-8");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const skills = await loadSkillsFromDir(tmpDir);
+    expect(skills[0].inputs!.field.type).toBe("string");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unrecognized type"));
+    warnSpy.mockRestore();
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("input enum: string value is coerced to single-element array (and warns)", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "enum-string");
+    await mkdir(skillDir, { recursive: true });
+    // Write raw YAML where enum: is a single string (YAML scalar coercion edge case)
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: enum-string",
+      "description: test",
+      "inputs:",
+      "  format:",
+      "    prompt: Output format",
+      "    type: enum",
+      "    enum: prose",
+      "---",
+      "Format: {{format}}.",
+    ].join("\n"), "utf-8");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const skills = await loadSkillsFromDir(tmpDir);
+    const input = skills[0].inputs!.format;
+    // Single string enum is coerced to array; type stays enum since enum is now non-empty
+    expect(Array.isArray(input.enum)).toBe(true);
+    expect(input.enum).toEqual(["prose"]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("oercing to single-element array"));
+    warnSpy.mockRestore();
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("model: unrecognized short value warns but still sets model", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-"));
+    const skillDir = join(tmpDir, "model-warn");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---",
+      "name: model-warn",
+      "description: test",
+      "model: quik",
+      "---",
+      "Do stuff.",
+    ].join("\n"), "utf-8");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const skills = await loadSkillsFromDir(tmpDir);
+    expect(skills[0].model).toBe("quik");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("looks like a misspelled tier"));
+    warnSpy.mockRestore();
     await rm(tmpDir, { recursive: true });
   });
 });

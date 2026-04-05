@@ -98,6 +98,54 @@ triggers:
 
 When you type "summarize changes" in the REPL, Phase2S matches it against all skill triggers and invokes the skill.
 
+### `inputs` (optional)
+
+Named inputs the skill needs before running. Each input corresponds to a `{{key}}` placeholder in the prompt template.
+
+In **REPL mode**, Phase2S prompts the user for each declared input before running. In **MCP mode** (Claude Code), each input becomes a typed tool parameter.
+
+```yaml
+inputs:
+  feature:
+    prompt: "What feature are you planning?"
+  include_tests:
+    prompt: "Include test tasks? (yes/no)"
+    type: boolean
+  output_format:
+    prompt: "Output format"
+    type: enum
+    enum:
+      - prose
+      - bullet-points
+      - table
+  max_items:
+    prompt: "Max items to return"
+    type: number
+```
+
+**Prompt body uses `{{key}}` placeholders:**
+
+```
+Plan the {{feature}} feature.
+Include tests: {{include_tests}}
+Format: {{output_format}}
+```
+
+**`type` field** (optional, default `string`):
+
+| Type | MCP schema | Template value |
+|------|------------|----------------|
+| `string` | `{ "type": "string" }` | string as-is |
+| `boolean` | `{ "type": "boolean" }` | `"true"` or `"false"` |
+| `number` | `{ "type": "number" }` | number as string |
+| `enum` | `{ "type": "string", "enum": [...] }` | one of the enum values |
+
+All values are converted to strings before template substitution. A `boolean` input with value `true` becomes `"true"` in the template.
+
+**`enum` field** (only valid when `type: enum`): list of allowed values. If absent or empty when `type` is `enum`, Phase2S falls back to `type: string`.
+
+**One-shot mode (`phase2s run`)**: skill inputs are not prompted interactively. Unfilled `{{key}}` placeholders remain in the template — the model sees them as context and handles them gracefully.
+
 ---
 
 ## Skill search order

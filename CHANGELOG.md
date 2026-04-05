@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.18.0 — 2026-04-04
+
+Sprint 15: Model tier dogfooding, one-shot skill routing, typed inputs v2.
+
+### What you can do now
+
+- **Model tier routing actually works** — 28 of 29 built-in skills now declare their model tier. Quick skills (`/explain`, `/diff`, `/checkpoint`, `/remember`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/skill`) run on `fast_model`. Deep skills (`/review`, `/satori`, `/debug`, `/investigate`, `/audit`, `/health`, `/qa`, `/tdd`, `/slop-clean`, `/plan`, `/plan-review`, `/scope-review`, `/deep-specify`, `/ship`, `/retro`, `/land-and-deploy`, `/docs`, `/adversarial`, `/consensus-plan`) run on `smart_model`. If you've configured `fast_model` and `smart_model` in `.phase2s.yaml`, this now actually does something.
+- **One-shot skill routing** — `phase2s run "/explain src/auth.ts"` now routes through the explain skill and applies its model tier. Previously `phase2s run` treated everything as a plain prompt regardless of `/` prefix. REPL and one-shot mode now behave consistently. Routing is logged to stderr: `Routing to skill: explain (model: fast)`.
+- **Typed MCP tool parameters** — Skills with `inputs:` can now declare `type: boolean | enum | number` on individual inputs. Claude Code presents boolean inputs as checkboxes, enum inputs as dropdowns, and number inputs as number fields. All values are stringified before template substitution. See [docs/writing-skills.md](docs/writing-skills.md).
+- **glob upgraded to v13** — The `glob` package used for the file search tool has been upgraded from v11 (deprecated) to v13. No behavior changes.
+
+### New SKILL.md frontmatter fields
+
+```yaml
+inputs:
+  feature:
+    prompt: "What feature are you planning?"
+    type: string      # default, MCP: string field
+  include_tests:
+    prompt: "Include test tasks?"
+    type: boolean     # MCP: boolean checkbox
+  format:
+    prompt: "Output format"
+    type: enum
+    enum: [prose, bullets, table]  # MCP: dropdown
+  max_items:
+    prompt: "Max items"
+    type: number      # MCP: number field
+```
+
+### For contributors
+
+- **`src/skills/types.ts`** — `SkillInput` gains optional `type?: "string" | "boolean" | "enum" | "number"` and `enum?: string[]`.
+- **`src/skills/loader.ts`** — Parses `type:` and `enum:` from YAML inputs. Validates type values (unknown → warn + fallback to "string"). Coerces `enum: "string"` → `["string"]` (YAML parser edge case). Warns on invalid `model:` values that look like misspelled tiers.
+- **`src/mcp/server.ts`** — `skillToTool()` emits typed JSON Schema: `boolean` → `{ type: "boolean" }`, `enum` → `{ type: "string", enum: [...] }`, `number` → `{ type: "number" }`. Input values are coerced to strings via `String()` before template substitution.
+- **`src/cli/index.ts`** — New exported `resolveSkillRouting()` function detects `/skillname` prefix, looks up the skill, calls `substituteInputs()` (not a direct string replace), applies `modelOverride`. `oneShotMode()` delegates to it. Logs routing and unknown-skill warnings to stderr.
+- **`package.json`** — `glob` updated from `^11.0.0` to `^13.0.0`.
+- **279 tests** (up from 267). New: +6 loader tests (type/enum parsing and validation), +3 server tests (typed schema generation), +3 cli tests (one-shot routing).
+
 ## v0.17.0 — 2026-04-04
 
 Sprint 14: Multi-provider support — Anthropic and Ollama.

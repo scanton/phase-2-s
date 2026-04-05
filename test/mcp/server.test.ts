@@ -408,3 +408,61 @@ describe("MCP server — skill inputs (Sprint 13)", () => {
     expect(response.result).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 15: typed input schema generation
+// ---------------------------------------------------------------------------
+
+describe("skillToTool — Sprint 15 typed inputs", () => {
+  it("boolean input emits { type: 'boolean' } in MCP schema", () => {
+    const skill: Skill = {
+      name: "typed-bool",
+      description: "test",
+      triggerPhrases: [],
+      promptTemplate: "Include tests: {{include_tests}}",
+      inputs: {
+        include_tests: { prompt: "Include tests?", type: "boolean" },
+      },
+    };
+    const tool = skillToTool(skill);
+    expect(tool.inputSchema.properties.include_tests).toEqual({
+      type: "boolean",
+      description: "Include tests?",
+    });
+  });
+
+  it("enum input emits { type: 'string', enum: [...] } in MCP schema", () => {
+    const skill: Skill = {
+      name: "typed-enum",
+      description: "test",
+      triggerPhrases: [],
+      promptTemplate: "Format: {{format}}",
+      inputs: {
+        format: { prompt: "Output format", type: "enum", enum: ["prose", "bullets", "table"] },
+      },
+    };
+    const tool = skillToTool(skill);
+    expect(tool.inputSchema.properties.format).toEqual({
+      type: "string",
+      enum: ["prose", "bullets", "table"],
+      description: "Output format",
+    });
+  });
+
+  it("number input emits { type: 'number' } in MCP schema", () => {
+    const skill: Skill = {
+      name: "typed-number",
+      description: "test",
+      triggerPhrases: [],
+      promptTemplate: "Max: {{max_items}}",
+      inputs: {
+        max_items: { prompt: "Max items", type: "number" },
+      },
+    };
+    const tool = skillToTool(skill);
+    expect(tool.inputSchema.properties.max_items).toEqual({
+      type: "number",
+      description: "Max items",
+    });
+  });
+});

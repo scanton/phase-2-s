@@ -1,6 +1,7 @@
 ---
 name: tdd
 description: Test-driven development — write failing tests first, then implement to make them pass, then refactor
+model: smart
 triggers:
   - tdd
   - test driven
