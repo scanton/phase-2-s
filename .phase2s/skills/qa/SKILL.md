@@ -26,6 +26,7 @@ You are doing a QA pass on recent code changes. Your job is to find bugs before 
    - **User-visible failures**: what does the user see when something goes wrong?
 
 4. Run any existing tests: `npm test` or equivalent. Report failures.
+5. **If `browser: true` is set in `.phase2s.yaml`** and there is a running web app (e.g. `localhost:3000`): use the `browser` tool to navigate to the app, click through the affected flows, and take screenshots. Include a screenshot in the report. If the app is not running, skip this step.
 
 **Output format:**
 

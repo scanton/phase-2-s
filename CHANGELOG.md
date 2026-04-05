@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.23.0 — 2026-04-04
+
+Sprint 19: headless browser tool via Playwright.
+
+### What you can do now
+
+- **Browser tool** — a new `browser` tool powered by headless Chromium (via Playwright). Navigate to URLs, click elements, fill forms, take screenshots, and evaluate JavaScript in the page context. The `/qa` skill can now actually drive a running web app — not just inspect files.
+- **Localhost first** — dev servers on `http://localhost:*` are the primary use case. `navigate` to your Next.js app, click a button, screenshot the result.
+- **SSRF protection** — private IP ranges (RFC 1918: 10.x.x.x, 172.16-31.x.x, 192.168.x.x), link-local (169.254.x.x, AWS metadata), and non-HTTP schemes (chrome://, data://) are blocked. Only localhost and public internet addresses are allowed.
+- **file:// sandboxed** — file:// URLs are allowed, but only for paths within the project directory (same sandbox as the existing file tools).
+- **Screenshots to disk** — screenshots save to `.phase2s/screenshots/<timestamp>-<label>.png` and the tool returns both the file path and an 800×600 viewport thumbnail as base64 so the model can see what the page looks like.
+- **Opt-in** — the browser tool is disabled by default (Playwright is ~170MB of Chromium). Enable in `.phase2s.yaml` with `browser: true`, or `PHASE2S_BROWSER=true` env var. If you enable it without Playwright installed, you get a clear error with install instructions.
+
+### Setup
+
+```bash
+npm install -g playwright
+npx playwright install chromium
+```
+
+Then in `.phase2s.yaml`:
+```yaml
+browser: true
+```
+
+Or one-shot:
+```bash
+PHASE2S_BROWSER=true phase2s run "/qa test the login page"
+```
+
+### For contributors
+
+- **`src/tools/browser.ts`** — new file. `createBrowserTool(cwd)` factory. `disposeBrowser()` exported for process cleanup. `getUrlBlockReason()` exported (used in tests). Single active-page model — each `navigate` closes the previous page before opening a new one.
+- **`src/tools/index.ts`** — new `RegistryOptions` interface. `createDefaultRegistry()` accepts both the legacy boolean signature and the new options object (`{ allowDestructive, cwd, browserEnabled }`). Browser tool registered when `browserEnabled: true`.
+- **`src/core/config.ts`** — new `browser?: boolean` field (default `false`). Reads `PHASE2S_BROWSER` env var.
+- **`src/core/agent.ts`** — new `cwd?` field on `AgentOptions`. Passes `cwd` and `browserEnabled` to `createDefaultRegistry`.
+- **`src/cli/index.ts`** — imports `disposeBrowser`. Calls it on SIGINT (before `process.exit`) and registers a `process.once("exit")` hook for normal exits.
+- **341 tests** (up from 300). New: +10 browser tool tests (URL blocking, mocked playwright for all 7 actions, missing Playwright graceful error path).
+
 ## v0.22.0 — 2026-04-04
 
 Sprint 18: shell completion, tool allow/deny docs, version path fix.

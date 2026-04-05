@@ -35,6 +35,8 @@ export interface AgentOptions {
   conversation?: Conversation;
   /** Pre-formatted learnings string from formatLearningsForPrompt(). Injected into the system prompt. */
   learnings?: string;
+  /** Working directory for tools that need it (e.g. browser tool screenshot path). Default: process.cwd(). */
+  cwd?: string;
 }
 
 export class Agent {
@@ -46,7 +48,11 @@ export class Agent {
 
   constructor(opts: AgentOptions) {
     this.config = opts.config;
-    const baseRegistry = opts.tools ?? createDefaultRegistry(opts.config.allowDestructive);
+    const baseRegistry = opts.tools ?? createDefaultRegistry({
+      allowDestructive: opts.config.allowDestructive,
+      cwd: opts.cwd ?? process.cwd(),
+      browserEnabled: opts.config.browser,
+    });
     // Apply per-project allow/deny list from config (deny overrides allow)
     this.tools = baseRegistry.allowed(opts.config.tools, opts.config.deny);
     this.provider = opts.provider ?? createProvider(opts.config);

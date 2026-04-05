@@ -1,6 +1,6 @@
 {
   "name": "@scanton/phase2s",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "AI programming harness with multi-model support",
   "type": "module",
   "files": [
@@ -53,6 +53,14 @@
     "@types/node": "^22.9.0",
     "typescript": "^5.7.0",
     "vitest": "^4.1.2"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
   },
   "overrides": {
     "formdata-node": "^6.0.0"

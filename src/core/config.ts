@@ -39,6 +39,11 @@ const configSchema = z.object({
    * `deny` always wins — it is a security control, not a preference.
    */
   deny: z.array(z.string()).optional(),
+  /**
+   * Enable the headless browser tool (requires `playwright` to be installed).
+   * Default false — opt-in to avoid requiring playwright on every install.
+   */
+  browser: z.boolean().default(false),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };
@@ -82,6 +87,11 @@ export async function loadConfig(overrides?: Partial<z.infer<typeof configSchema
   const _destructive = process.env.PHASE2S_ALLOW_DESTRUCTIVE?.toLowerCase();
   if (_destructive === "true" || _destructive === "1" || _destructive === "yes") {
     envConfig.allowDestructive = true;
+  }
+  // Accept "true", "1", "yes" (case-insensitive) for PHASE2S_BROWSER.
+  const _browser = process.env.PHASE2S_BROWSER?.toLowerCase();
+  if (_browser === "true" || _browser === "1" || _browser === "yes") {
+    envConfig.browser = true;
   }
 
   const merged = { ...fileConfig, ...envConfig, ...overrides };

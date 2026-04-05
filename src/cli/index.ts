@@ -10,6 +10,7 @@ import { join, resolve, dirname } from "node:path";
 import chalk from "chalk";
 import { loadConfig, type Config } from "../core/config.js";
 import { Agent } from "../core/agent.js";
+import { disposeBrowser } from "../tools/browser.js";
 import { Conversation } from "../core/conversation.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { loadAllSkills } from "../skills/index.js";
@@ -63,6 +64,9 @@ async function findLatestSession(): Promise<string | null> {
 }
 
 export async function main(argv: string[] = process.argv): Promise<void> {
+  // Best-effort browser cleanup on any exit (SIGTERM, uncaught errors, etc.)
+  process.once("exit", () => { disposeBrowser().catch(() => {}); });
+
   const program = new Command();
 
   program
@@ -449,7 +453,8 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     }
     log.info("Goodbye!");
     rl.close();
-    process.exit(0);
+    // Best-effort browser cleanup before exit
+    disposeBrowser().catch(() => {}).finally(() => process.exit(0));
   });
 
   /** Wait for the next line of input. Returns null if stdin closes. */
