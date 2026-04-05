@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { createInterface } from "node:readline";
+import { createRequire } from "node:module";
 import { access, constants, readdir } from "node:fs/promises";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
@@ -14,7 +15,8 @@ import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, getUnfilledInputKeys } from "../skills/template.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.19.1";
+const _require = createRequire(import.meta.url);
+const VERSION: string = (_require("../../package.json") as { version: string }).version;
 
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
