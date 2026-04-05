@@ -16,7 +16,6 @@ import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, getUnfilledInputKeys, extractAskTokens, substituteAskValues, stripAskTokens } from "../skills/template.js";
 import { log } from "../utils/logger.js";
-import { initBear, bear, BearState } from "../bear/index.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -77,8 +76,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("-p, --provider <provider>", "LLM provider (codex-cli | openai-api)")
     .option("-m, --model <model>", "Model to use")
     .option("--system <prompt>", "Custom system prompt")
-    .option("--resume", "Resume the most recent session")
-    .option("--no-banner", "Suppress the bear mascot startup banner");
+    .option("--resume", "Resume the most recent session");
 
   // Default command: interactive REPL
   program
@@ -91,7 +89,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         model: opts.model,
         systemPrompt: opts.system,
       });
-      await interactiveMode(config, { resume: !!opts.resume, noBanner: opts.banner === false });
+      await interactiveMode(config, { resume: !!opts.resume });
     });
 
   // One-shot mode
@@ -508,7 +506,7 @@ async function writeSatoriLog(
  * it terminates if the event loop drains while awaiting between turns —
  * which is exactly what happens while the LLM is streaming.
  */
-async function interactiveMode(config: Config, opts: { resume?: boolean; noBanner?: boolean } = {}): Promise<void> {
+async function interactiveMode(config: Config, opts: { resume?: boolean } = {}): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
   if (!checkOpenAIKey(config)) process.exit(1);
   if (!checkAnthropicKey(config)) process.exit(1);
@@ -529,17 +527,8 @@ async function interactiveMode(config: Config, opts: { resume?: boolean; noBanne
     }
   }
 
-  // Initialize bear mascot
-  initBear(config, { noBanner: !!opts.noBanner });
-  let skillCount = 29; // fallback if loadAllSkills fails
-  try { skillCount = (await loadAllSkills()).length; } catch { /* cosmetic, don't crash startup */ }
-  const providerCount = 7;
-  bear.render(
-    BearState.greeting,
-    chalk.bold.cyan("Phase2S") + " " + chalk.green(`v${VERSION}`) + "\n" +
-    chalk.dim(`AI coding assistant | ${skillCount} skills | ${providerCount} providers`) + "\n" +
-    chalk.dim("Type your message and press Enter. Type /quit to exit."),
-  );
+  console.log(chalk.bold(`\nPhase2S v${VERSION}`));
+  console.log(chalk.dim("Type your message and press Enter. Type /quit to exit.\n"));
 
   // Load persistent memory learnings from .phase2s/memory/learnings.jsonl
   const learningsList = await loadLearnings(process.cwd());
@@ -725,22 +714,18 @@ async function interactiveMode(config: Config, opts: { resume?: boolean; noBanne
                 await writeSatoriLog(slug, startedAt, result, config, attempts);
               },
             });
-            bear.render(BearState.success);
             console.log(chalk.bold("\nassistant > ") + response + "\n");
             await saveSession();
           } catch (err) {
-            bear.render(BearState.error);
             log.error(err instanceof Error ? err.message : String(err));
           }
         } else {
           // Normal skill run
           try {
             const response = await agent.run(finalExpanded, { modelOverride: skill.model });
-            bear.render(BearState.success);
             console.log(chalk.bold("\nassistant > ") + response + "\n");
             await saveSession();
           } catch (err) {
-            bear.render(BearState.error);
             log.error(err instanceof Error ? err.message : String(err));
           }
         }
@@ -963,8 +948,7 @@ function buildSkillContext(args: string): string {
 }
 
 function printHelp(skills: Array<{ name: string; description: string }>): void {
-  bear.render(BearState.help);
-  console.log(chalk.bold("Phase2S Commands:\n"));
+  console.log(chalk.bold("\nPhase2S Commands:\n"));
   console.log("  /help    — Show this help");
   console.log("  /quit    — Exit the session");
   console.log("  /exit    — Exit the session");

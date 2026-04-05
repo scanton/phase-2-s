@@ -588,9 +588,6 @@ export async function handleRequest(
  * while awaiting between messages.
  */
 export async function runMCPServer(cwd: string): Promise<void> {
-  // Prevent bear mascot from writing to stdout (JSON-RPC transport)
-  const { setMcpMode } = await import("../bear/index.js");
-  setMcpMode();
   const skillsDir = join(cwd, ".phase2s", "skills");
   let skills = await loadSkillsFromDir(skillsDir);
 

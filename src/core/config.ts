@@ -36,8 +36,6 @@ const configSchema = z.object({
   minimaxApiKey: z.string().optional(),
   /** MiniMax base URL (default https://api.minimax.io/v1/). Override for custom endpoints. */
   minimaxBaseUrl: z.string().optional(),
-  /** Bear mascot toggle. Set to false to disable the bear. Default true. */
-  bear: z.boolean().default(true),
   codexPath: z.string().default("codex"),
   systemPrompt: z.string().optional(),
   maxTurns: z.number().default(50),

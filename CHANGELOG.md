@@ -1,14 +1,17 @@
 # Changelog
 
-## v1.10.0 — 2026-04-05
+## v1.11.0 — 2026-04-05
 
-Bear mascot + MiniMax provider + README refresh.
+MiniMax provider + README refresh (bear mascot removed).
 
 ### What's new
 
-- **Bear mascot** — ASCII art white teddy bear with 5 poses: greeting (startup banner), thinking (single-line during agent work), success (skill completed), error (something broke), help (`/help` command). Width-adaptive: full 8-line art at 60+ cols, compact single-line at 40-59, text-only below 40. MCP-safe (suppressed in JSON-RPC mode). Configurable: `bear: false` in `.phase2s.yaml` or `--no-banner` flag. Architecture: `BearState` enum + `BearRenderer` interface for future animation.
 - **MiniMax provider** — `provider: minimax` in `.phase2s.yaml` (or `PHASE2S_PROVIDER=minimax`). Connects to MiniMax's OpenAI-compatible API at `api.minimax.io/v1/`. Default model `MiniMax-M2.5`. Set `MINIMAX_API_KEY` or `minimaxApiKey` in config. `phase2s init` wizard option 7 and `phase2s doctor` both handle MiniMax. 7 providers total.
 - **README refresh** — Providers comparison table. Features in Depth section covering: `phase2s lint`, `--dry-run`, live progress display, `phase2s report`, MCP state server, MCP report tool, headless browser, `--system` flag, `verifyCommand` config.
+
+### Removed
+
+- Bear mascot (shipped in v1.10.0, removed in v1.11.0). The ASCII art didn't meet the quality bar.
 
 ### Usage
 

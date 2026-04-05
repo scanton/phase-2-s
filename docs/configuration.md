@@ -90,11 +90,6 @@ provider: codex-cli
 # MiniMax base URL (minimax provider only, default https://api.minimax.io/v1/)
 # minimaxBaseUrl: https://api.minimax.io/v1/
 
-# Bear mascot (default: true)
-# Shows ASCII art bear at startup, on skill completion, and during help.
-# Set to false to disable all bear rendering.
-# bear: true
-
 # Max agent loop turns before stopping
 # The agent loop runs tool calls and feeds results back until no more tool calls.
 # This limits runaway loops.
