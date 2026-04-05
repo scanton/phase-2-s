@@ -16,7 +16,7 @@ describe("Bear renderer", () => {
       renderer.render(BearState.greeting, "Phase2S v1.10.0");
 
       const output = spy.mock.calls.map(c => c[0]).join("\n");
-      expect(output).toContain(".----.");
+      expect(output).toContain("_     _"); // bear ears
       expect(output).toContain("Phase2S v1.10.0");
       spy.mockRestore();
     });
@@ -49,7 +49,7 @@ describe("Bear renderer", () => {
       spy.mockRestore();
     });
 
-    it("thinking renders inline (no blank lines)", async () => {
+    it("thinking renders without extra blank lines", async () => {
       const spy = vi.spyOn(console, "log").mockImplementation(() => {});
       Object.defineProperty(process.stdout, "columns", { value: 80, configurable: true });
 
@@ -57,8 +57,11 @@ describe("Bear renderer", () => {
       const renderer = new StaticBearRenderer();
       renderer.render(BearState.thinking);
 
-      // Should be exactly 1 console.log call (single line)
+      // Thinking renders the art (1 call) but no extra blank lines
       expect(spy.mock.calls.length).toBe(1);
+      // The single call should contain the full 7-line bear face
+      const output = spy.mock.calls[0][0];
+      expect(output).toContain("_");
       spy.mockRestore();
     });
 

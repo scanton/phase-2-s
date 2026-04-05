@@ -33,7 +33,7 @@ export class StaticBearRenderer implements BearRenderer {
     const compact = cols > 0 && cols < 60;
     const art = getBearArt(state, compact);
 
-    // Thinking state: inline, no blank lines
+    // Thinking state: no extra blank lines (appears mid-stream)
     if (state === BearState.thinking) {
       console.log(art);
       return;

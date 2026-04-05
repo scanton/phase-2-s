@@ -17,32 +17,47 @@ describe("Bear art", () => {
     expect(Object.keys(compactPoses)).toEqual(["greeting", "thinking", "success", "error", "help"]);
   });
 
-  it("greeting pose is multi-line (8+ lines)", async () => {
+  it("all full poses are 7 lines (fixed-frame bear face)", async () => {
     const { fullPoses } = await import("../../src/bear/art.js");
-    const lines = fullPoses.greeting.split("\n");
-    expect(lines.length).toBeGreaterThanOrEqual(8);
+    for (const [state, art] of Object.entries(fullPoses)) {
+      const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+      const lines = stripAnsi(art).split("\n");
+      expect(lines.length, `${state} should be 7 lines`).toBe(7);
+    }
   });
 
-  it("thinking pose is a single line", async () => {
+  it("all poses share the same fixed frame (ears, forehead, nose, chin)", async () => {
     const { fullPoses } = await import("../../src/bear/art.js");
-    expect(fullPoses.thinking.split("\n").length).toBe(1);
+    const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+    const poses = Object.values(fullPoses).map((art) => stripAnsi(art).split("\n"));
+    // Lines 0-2 (ears + forehead), line 4 (nose), line 6 (chin) should be identical
+    for (let i = 1; i < poses.length; i++) {
+      expect(poses[i][0]).toBe(poses[0][0]); // ear tips
+      expect(poses[i][1]).toBe(poses[0][1]); // ear curves
+      expect(poses[i][2]).toBe(poses[0][2]); // forehead
+      expect(poses[i][4]).toBe(poses[0][4]); // nose
+      expect(poses[i][6]).toBe(poses[0][6]); // chin
+    }
   });
 
-  it("success pose is multi-line (8+ lines)", async () => {
+  it("bear has ears (underscore characters on line 1)", async () => {
     const { fullPoses } = await import("../../src/bear/art.js");
-    const lines = fullPoses.success.split("\n");
-    expect(lines.length).toBeGreaterThanOrEqual(8);
+    const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+    const firstLine = stripAnsi(fullPoses.greeting).split("\n")[0];
+    expect(firstLine).toContain("_");
   });
 
-  it("error pose is multi-line (8+ lines)", async () => {
+  it("bear has a nose with (_) on line 5", async () => {
     const { fullPoses } = await import("../../src/bear/art.js");
-    const lines = fullPoses.error.split("\n");
-    expect(lines.length).toBeGreaterThanOrEqual(8);
+    const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+    const noseLine = stripAnsi(fullPoses.greeting).split("\n")[4];
+    expect(noseLine).toContain("(_)");
   });
 
-  it("help pose includes pointing arm (==>)", async () => {
+  it("help pose has pointing mouth (> >)", async () => {
     const { fullPoses } = await import("../../src/bear/art.js");
-    expect(fullPoses.help).toContain("==>");
+    const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+    expect(stripAnsi(fullPoses.help)).toContain("> >");
   });
 
   it("compact poses are single-line", async () => {
@@ -55,8 +70,9 @@ describe("Bear art", () => {
   it("getBearArt returns full pose when compact is false", async () => {
     const { getBearArt } = await import("../../src/bear/art.js");
     const { BearState } = await import("../../src/bear/types.js");
+    const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
     const art = getBearArt(BearState.greeting, false);
-    expect(art.split("\n").length).toBeGreaterThanOrEqual(8);
+    expect(stripAnsi(art).split("\n").length).toBe(7);
   });
 
   it("getBearArt returns compact pose when compact is true", async () => {
@@ -70,7 +86,6 @@ describe("Bear art", () => {
     it("all full poses are non-empty with chalk.level=0", async () => {
       const savedLevel = chalk.level;
       chalk.level = 0;
-      // Re-import to get uncolored versions
       const { getBearArt } = await import("../../src/bear/art.js");
       const { BearState } = await import("../../src/bear/types.js");
       for (const state of Object.values(BearState)) {
@@ -83,7 +98,6 @@ describe("Bear art", () => {
 
   it("poses use only pure ASCII characters (no Unicode)", async () => {
     const { fullPoses } = await import("../../src/bear/art.js");
-    // Strip ANSI escape codes, then check remaining chars are ASCII
     const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
     for (const [_state, art] of Object.entries(fullPoses)) {
       const stripped = stripAnsi(art);

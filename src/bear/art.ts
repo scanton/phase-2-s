@@ -1,87 +1,62 @@
 /**
- * Bear ASCII art — composable parts for DRY assembly.
+ * Bear ASCII art — fixed-frame with swappable eye/mouth slots.
  *
  * Pure ASCII only (no Unicode, no emoji) for Windows compatibility.
- * Each pose is assembled from shared body parts + pose-specific face/arms.
- *
- * The bear is ~8 lines tall when fully assembled.
+ * 7-line bear face: ears, forehead, eyes, nose, mouth, chin.
+ * Lines 1-3 (ears/forehead), line 5 (nose), and line 7 (chin) never change.
+ * Only lines 4 (eyes) and 6 (mouth) swap per pose.
  */
 
 import chalk from "chalk";
 import { BearState } from "./types.js";
 
 // ---------------------------------------------------------------------------
-// Composable parts
+// Fixed frame lines (never change across poses)
 // ---------------------------------------------------------------------------
 
-const head = chalk.white("    .----.") ;
+const ear1 = "   _     _";
+const ear2 = "  ( \\   / )";
+const brow = "   \\ \\_/ /";
+const nose = "  (  (_)  )";
+const chin = "    '---'";
 
-const faces: Record<string, string> = {
-  neutral: chalk.white("   /") + chalk.dim(" o  o ") + chalk.white("\\"),
-  happy:   chalk.white("   /") + chalk.dim(" ^  ^ ") + chalk.white("\\"),
-  confused:chalk.white("   /") + chalk.dim(" o  O ") + chalk.white("\\"),
-};
+// ---------------------------------------------------------------------------
+// Variable lines per pose (eyes + mouth)
+// ---------------------------------------------------------------------------
 
-const mouths: Record<string, string> = {
-  normal:  chalk.white("  (   ") + chalk.dim("<>") + chalk.white("   )"),
-  smile:   chalk.white("  (   ") + chalk.dim("<>") + chalk.white("   )"),
-  sad:     chalk.white("  (   ") + chalk.dim("..") + chalk.white("   )"),
-  point:   chalk.white("  (   ") + chalk.dim("<>") + chalk.white("   )==>"),
-};
-
-const bodies: Record<string, string[]> = {
-  standing: [
-    chalk.white("  |\\  ") + chalk.dim("--") + chalk.white("  /|"),
-    chalk.white("  | \\    / |"),
-    chalk.white("   \\ \\||/ /"),
-    chalk.white("    \\_||_/"),
-    chalk.white("     |  |"),
-  ],
-  celebrate: [
-    chalk.white("   \\  \\/  /"),
-    chalk.white("    | \\/ |"),
-    chalk.white("   /  ||  \\"),
-    chalk.white("  /___||___\\"),
-    chalk.white("  \\__/  \\__/"),
-  ],
-  confused: [
-    chalk.white("  |\\  ") + chalk.dim("--") + chalk.white("  /|"),
-    chalk.white("  | |    | |"),
-    chalk.white("   \\ \\||/ /"),
-    chalk.white("    \\_||_/") + chalk.dim("?"),
-    chalk.white("     |  |"),
-  ],
-  help: [
-    chalk.white("  |\\  ") + chalk.dim("--") + chalk.white("  /|"),
-    chalk.white("  | |    | |"),
-    chalk.white("   \\ \\||/ /"),
-    chalk.white("    \\_||_/"),
-    chalk.white("     |  |"),
-  ],
+const poses: Record<BearState, { eyes: string; mouth: string }> = {
+  [BearState.greeting]: { eyes: "  ( o   o )", mouth: "   ( - - )" },
+  [BearState.thinking]: { eyes: "  ( -   - )", mouth: "   ( ~ ~ )" },
+  [BearState.success]:  { eyes: "  ( ^   ^ )", mouth: "   ( w w )" },
+  [BearState.error]:    { eyes: "  ( O   O )", mouth: "   ( x x )" },
+  [BearState.help]:     { eyes: "  ( o   o )", mouth: "   ( > > )" },
 };
 
 // ---------------------------------------------------------------------------
 // Pose assembly
 // ---------------------------------------------------------------------------
 
-function assembleFullPose(face: string, mouth: string, body: string[]): string {
-  return [head, face, mouth, ...body].join("\n");
+function renderPose(state: BearState): string {
+  const p = poses[state];
+  return chalk.white(
+    [ear1, ear2, brow, p.eyes, nose, p.mouth, chin].join("\n"),
+  );
 }
 
 const fullPoses: Record<BearState, string> = {
-  [BearState.greeting]: assembleFullPose(faces.neutral, mouths.normal, bodies.standing),
-  [BearState.thinking]: chalk.dim("  (o.o) thinking..."),
-  [BearState.success]:  assembleFullPose(faces.happy, mouths.smile, bodies.celebrate),
-  [BearState.error]:    assembleFullPose(faces.confused, mouths.sad, bodies.confused),
-  [BearState.help]:     assembleFullPose(faces.neutral, mouths.point, bodies.help),
+  [BearState.greeting]: renderPose(BearState.greeting),
+  [BearState.thinking]: renderPose(BearState.thinking),
+  [BearState.success]:  renderPose(BearState.success),
+  [BearState.error]:    renderPose(BearState.error),
+  [BearState.help]:     renderPose(BearState.help),
 };
 
 // Compact single-line versions for narrow terminals
 const compactPoses: Record<BearState, string> = {
   [BearState.greeting]: chalk.white("(o.o)"),
-  [BearState.thinking]: chalk.dim("(o.o) thinking..."),
+  [BearState.thinking]: chalk.dim("(-.-) thinking..."),
   [BearState.success]:  chalk.white("(^.^)") + " " + chalk.green("done!"),
-  [BearState.error]:    chalk.white("(o.O)") + " " + chalk.red("uh oh"),
+  [BearState.error]:    chalk.white("(O.O)") + " " + chalk.red("uh oh"),
   [BearState.help]:     chalk.white("(o.o)>"),
 };
 
@@ -93,5 +68,4 @@ export function getBearArt(state: BearState, compact: boolean): string {
   return compact ? compactPoses[state] : fullPoses[state];
 }
 
-/** Raw (uncolored) art for snapshot testing with chalk.level=0. */
 export { fullPoses, compactPoses };
