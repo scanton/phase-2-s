@@ -228,7 +228,7 @@ phase2s skills --json # machine-readable for scripts
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 580 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, installation health checks, self-update, skills search, and spec linting
+- [x] 582 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, installation health checks, self-update, skills search, and spec linting
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family

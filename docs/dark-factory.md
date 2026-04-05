@@ -101,6 +101,20 @@ npm test
 
 **The parser is lenient.** You don't need all five sections to run `phase2s goal`. If Decomposition is missing, the executor runs eval only. If Acceptance Criteria is missing, it reports the raw eval output and exits. Use what you have.
 
+### Validate before running
+
+Before committing a 20-minute run, lint the spec:
+
+```bash
+phase2s lint .phase2s/specs/2026-04-04-11-00-rate-limiting.md
+```
+
+This catches structural problems instantly — missing title, empty problem statement, no sub-tasks, no acceptance criteria. Exits 0 if the spec is runnable (warnings OK), exits 1 on errors. Ideal in a pre-run script:
+
+```bash
+phase2s lint specs/rate-limiting.md && phase2s goal specs/rate-limiting.md
+```
+
 ---
 
 ## Step 2: Run the goal executor

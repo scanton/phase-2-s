@@ -100,7 +100,7 @@ With Option A (Codex CLI), Phase2S shows each intermediate agent message as it a
 
 ## Phase2S-managed tool loop
 
-With any direct API provider (Options B–E), Phase2S controls the full agent loop:
+With any direct API provider (Options B–F), Phase2S controls the full agent loop:
 
 1. Sends your message and skill prompt to OpenAI API
 2. Receives a response that may include tool calls (file reads, shell commands, etc.)
@@ -137,7 +137,7 @@ The file sandbox rejects reads and writes outside your project directory, includ
 
 ## Model-per-skill routing
 
-With any direct API provider (Options B–E), you can configure two model tiers and route skills to each one.
+With any direct API provider (Options B–F), you can configure two model tiers and route skills to each one.
 
 **Configure in `.phase2s.yaml`:**
 
@@ -181,7 +181,7 @@ Without `fast_model` / `smart_model` configured, all skills use the same model. 
 
 ## Conversation context management
 
-With any direct API provider (Options B–E), Phase2S manages context automatically. When the conversation history grows large enough to approach the model's context limit, Phase2S trims old turns.
+With any direct API provider (Options B–F), Phase2S manages context automatically. When the conversation history grows large enough to approach the model's context limit, Phase2S trims old turns.
 
 Trimming preserves atomic units. If a turn includes both an assistant message with tool calls and the corresponding tool results, they're trimmed together. Leaving an assistant message that references tool results without the results would cause an API error.
 

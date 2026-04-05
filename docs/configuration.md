@@ -333,13 +333,19 @@ All config options can also be passed on the command line:
 phase2s [options] [command]
 
 Commands:
-  chat              Start an interactive REPL session (default)
-  run <prompt>      Run a single prompt and exit
-  skills            List available skills
-  mcp               Start as an MCP server for Claude Code
+  chat                     Start an interactive REPL session (default)
+  run <prompt>             Run a single prompt and exit
+  goal <spec.md>           Execute a spec autonomously (dark factory)
+  skills [query]           List available skills (optional search query)
+  lint <spec.md>           Validate a spec file before running it
+  report <log.jsonl>       Show a formatted run summary
+  init                     Interactive setup wizard
+  doctor                   Installation health check
+  upgrade                  Check for and install updates
+  mcp                      Start as an MCP server for Claude Code
 
 Options:
-  -p, --provider <provider>  LLM provider (codex-cli | openai-api | anthropic | ollama)
+  -p, --provider <provider>  LLM provider (codex-cli | openai-api | anthropic | ollama | openrouter | gemini)
   -m, --model <model>        Model to use
   --system <prompt>          Custom system prompt
   --resume                   Resume the most recent saved session

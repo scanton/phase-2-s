@@ -1,6 +1,6 @@
 # Skills Reference
 
-Phase2S ships with 29 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). Model tier routing (`fast_model` / `smart_model`) works with any direct API provider — Options B, C, D, or E.
+Phase2S ships with 29 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). Model tier routing (`fast_model` / `smart_model`) works with any direct API provider — Options B, C, D, E, or F.
 
 Invoke any skill from the REPL:
 
@@ -119,7 +119,7 @@ Use this before starting any non-trivial feature. It catches plan errors that on
 you > /consensus-plan add auth middleware
 ```
 
-Works with all providers. Model routing (using `smart_model` for the critic pass) requires a direct API provider — Options B, C, D, or E.
+Works with all providers. Model routing (using `smart_model` for the critic pass) requires a direct API provider — Options B, C, D, E, or F.
 
 ---
 
