@@ -377,3 +377,80 @@ describe("runGoal — reviewBeforeRun with CHALLENGED verdict", () => {
     expect(result.challengeResponse).toContain("NEEDS_CLARIFICATION");
   });
 });
+
+// ---------------------------------------------------------------------------
+// runGoal — dry-run mode
+// ---------------------------------------------------------------------------
+
+describe("runGoal — dryRun: true", () => {
+  let tmpDir: string;
+  let specPath: string;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `phase2s-goal-dryrun-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+    specPath = join(tmpDir, "spec.md");
+    writeFileSync(specPath, MINIMAL_SPEC_MD, "utf8");
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns dryRun:true and attempts:0 without calling the agent", async () => {
+    const result = await runGoal(specPath, { dryRun: true });
+    expect(result.dryRun).toBe(true);
+    expect(result.attempts).toBe(0);
+    expect(result.success).toBe(true);
+    expect(result.runLogPath).toBe("");
+    expect(result.summary).toContain("Dry run");
+  });
+
+  it("does not call Agent when dryRun is true", async () => {
+    // Agent is already mocked at top of file — reset call tracking
+    const AgentMock = (await import("../../src/core/agent.js")).Agent as unknown as { mock: { instances: unknown[] } };
+    const instancesBefore = AgentMock.mock?.instances?.length ?? 0;
+
+    await runGoal(specPath, { dryRun: true });
+
+    // Agent should not have been instantiated at all during a dry run
+    const instancesAfter = AgentMock.mock?.instances?.length ?? 0;
+    expect(instancesAfter).toBe(instancesBefore);
+  });
+
+  it("prints decomposition tree to console when dryRun is true", async () => {
+    // Write a spec that parses correctly (## Decomposition + ### Sub-task N: Name format)
+    const specWithSubtasks = `# Test Feature
+
+## Problem Statement
+A simple test.
+
+## Decomposition
+### Sub-task 1: Token bucket implementation
+- **Input:** Request with user ID
+- **Output:** RateLimiter class
+- **Success criteria:** Unit tests pass
+
+## Acceptance Criteria
+- It works
+
+## Eval Command
+\`\`\`
+echo done
+\`\`\`
+`;
+    writeFileSync(specPath, specWithSubtasks, "utf8");
+
+    const logMessages: string[] = [];
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation((msg: unknown) => {
+      logMessages.push(String(msg));
+    });
+
+    await runGoal(specPath, { dryRun: true });
+    consoleSpy.mockRestore();
+
+    const output = logMessages.join("\n");
+    expect(output).toContain("Sub-tasks (1)");
+    expect(output).toContain("Token bucket implementation");
+  });
+});
