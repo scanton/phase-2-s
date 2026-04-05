@@ -14,7 +14,7 @@ import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, getUnfilledInputKeys } from "../skills/template.js";
 import { log } from "../utils/logger.js";
 
-const VERSION = "0.19.0";
+const VERSION = "0.19.1";
 
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
