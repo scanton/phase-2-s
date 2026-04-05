@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.11.0 — 2026-04-05
+
+Bear art redesign. The bear now has ears.
+
+### What's new
+
+- **Bear face redesign** — Complete redesign of the ASCII art bear mascot. 7-line face with round ears, forehead, proper muzzle nose `(_)`, and chin. Fixed-frame architecture: 5 lines never change across poses, only eyes and mouth swap. Each pose is instantly recognizable as the same character. The bear actually looks like a teddy bear now.
+
+### Changed
+
+- Thinking pose is now a full 7-line bear face (was single-line `(o.o) thinking...` in v1.10.0)
+- All poses use the same fixed frame, making future pose additions trivial
+
+---
+
 ## v1.10.0 — 2026-04-05
 
 Bear mascot + MiniMax provider + README refresh.
