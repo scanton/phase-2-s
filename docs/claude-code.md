@@ -120,6 +120,7 @@ Once Phase2S is running as an MCP server, Claude Code gets a tool for every Phas
 
 | Phase2S skill | Claude Code tool name |
 |---|---|
+| `phase2s goal` | `phase2s__goal` |
 | `/adversarial` | `phase2s__adversarial` |
 | `/plan-review` | `phase2s__plan_review` |
 | `/consensus-plan` | `phase2s__consensus_plan` |
@@ -178,6 +179,61 @@ Should I proceed with the updated approach?
 ```
 
 Claude caught both issues before writing a single line of code.
+
+---
+
+## Triggering the dark factory from Claude Code
+
+Phase2S v1.2.0 adds `phase2s__goal` — Claude Code can now run the dark factory directly, without you touching a terminal.
+
+```
+you: Build the pagination spec at .phase2s/specs/2026-04-04-pagination.md
+
+Claude: [Calls phase2s__goal with specFile and reviewBeforeRun: true]
+
+phase2s__goal result:
+Goal run: success
+Spec: .phase2s/specs/2026-04-04-pagination.md
+Attempts: 2
+Criteria: 3/3 passed
+Run log (absolute): /your/project/.phase2s/runs/2026-04-05T12-00-00-a1b2c3d4.jsonl
+
+Claude: Done. All three acceptance criteria passed after 2 attempts. The run
+log shows the cursor logic took an extra satori retry on attempt 1 — the
+resetAt logic was off by one. Fixed on retry. Do you want me to read the full
+run log?
+```
+
+`phase2s__goal` is long-running — dark factory runs can take 20+ minutes for large specs. When you ask Claude to build a spec, Claude starts the tool call and waits. You can do other things; Claude Code will surface the result when it finishes.
+
+**What Claude gets back:**
+- A one-line run summary
+- Attempt count and criteria pass/fail ratio
+- The **absolute path** to the structured JSONL run log — Claude can call `file_read` on it to see exactly what happened at each sub-task without guessing
+
+**With adversarial pre-check:**
+
+```
+you: Run .phase2s/specs/new-feature.md with adversarial review
+
+Claude: [Calls phase2s__goal with reviewBeforeRun: true]
+
+phase2s__goal result:
+Goal run: challenged
+Spec: .phase2s/specs/new-feature.md
+Attempts: 0
+
+Adversarial review response:
+VERDICT: CHALLENGED
+STRONGEST_CONCERN: No sub-task handles the database migration.
+OBJECTIONS:
+1. The spec adds a new column but has no sub-task for the migration script.
+   The acceptance criteria can't pass on a fresh database without it.
+APPROVE_IF: Add a sub-task: "Write and run migration for new_column".
+
+Claude: The spec was challenged before any code ran. The reviewer flagged a
+missing migration sub-task. Want me to update the spec and re-run?
+```
 
 ---
 

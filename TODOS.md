@@ -6,6 +6,83 @@
 
 ---
 
+## Sprint 25 (done) — Dark Factory as MCP Tool + Run Logs + Pre-Execution Adversarial Review (v1.2.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.2.0 |
+| Tests | 453 (+20) |
+
+- [x] **`phase2s__goal` MCP tool** — Claude Code can trigger the dark factory directly. Returns run summary + absolute JSONL run log path. Long-running by design (20+ min, MCP spec has no timeout).
+- [x] **Structured JSONL run logs** — `RunLogger` class writes `<specDir>/.phase2s/runs/<timestamp>-<hash>.jsonl`. Events: goal_started, subtask_started/completed, eval_started/completed, criteria_checked, plan_review_completed, goal_completed. Written incrementally, survives process death.
+- [x] **Pre-execution adversarial review** — `--review-before-run` CLI flag + `reviewBeforeRun` MCP option. Fresh Agent instance (no context contamination). CHALLENGED/NEEDS_CLARIFICATION halts; APPROVED proceeds. `buildAdversarialPrompt()` injects spec decomposition + criteria as the plan.
+- [x] **`runGoal()` throws Error** — no longer calls `process.exit()`. CLI entry point wraps in try/catch. `GoalResult` extended: `runLogPath`, `summary`, `challenged?`, `challengeResponse?`.
+- [x] **Docs updated** — `docs/dark-factory.md` (--review-before-run, run logs), `docs/claude-code.md` (phase2s__goal section + tool table).
+
+---
+
+## Sprint 24 (done) — MCP State Server + Dark Factory Resumability (v1.1.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.1.0 |
+| Tests | 433 (+34) |
+
+- [x] **`phase2s goal --resume`** — resume from last completed sub-task after interruption. State keyed by SHA-256 of spec content. Atomic writes (tmp→rename).
+- [x] **MCP state tools** — `phase2s__state_write`, `phase2s__state_read`, `phase2s__state_clear`. Raw key-value store, JSON-serializable values, `.phase2s/state/<key>.json`.
+- [x] **`src/core/state.ts`** — pure state functions. GoalState (typed) + raw KV (for MCP tools). Shared by goal.ts and server.ts.
+
+---
+
+## Sprint 23 (done) — QA Pass + Security Fixes + npm v1.0.0 (v1.0.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.0.0 |
+| Tests | 399 |
+
+- [x] Security: CVE fixes in `@actions/core`, `@actions/github`, `undici`
+- [x] Docs: version strings corrected, `PHASE2S_BROWSER` env var documented
+- [x] `package.json`: npm page fields (repository, homepage, bugs, author, keywords)
+- [x] Stability contract documented in CHANGELOG
+
+---
+
+## Sprint 22 (done) — Real Codex JSONL Streaming (v0.26.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.26.0 |
+| Tests | 390 |
+
+- [x] **Real Codex streaming** — JSONL stdout parsing from codex subprocess. Step-by-step feedback for multi-step tasks. No more waiting for full completion before output appears.
+
+---
+
+## Sprint 21 (done) — Dark Factory: phase2s goal (v0.25.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.25.0 |
+| Tests | ~360 |
+
+- [x] **`phase2s goal <spec.md>`** — dark factory: spec in, feature out. Breaks spec into sub-tasks, runs each through satori, checks acceptance criteria, retries with failure analysis.
+- [x] **5-pillar spec format** — `/deep-specify` output feeds directly into `phase2s goal`. Parser is lenient (missing sections handled gracefully).
+- [x] **`spec-parser.ts`** — pure parser for the 5-pillar spec format.
+
+---
+
+## Sprint 20 (done) — GitHub Action (v0.24.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.24.0 |
+| Tests | 295 |
+
+- [x] **`uses: scanton/phase2s@v1` GitHub Action** — run Phase2S skills in CI. Requires API key (not ChatGPT subscription — OAuth can't run in CI).
+
+---
+
 ## Sprint 16 (done) — Scripting, Clean Install, Accurate Tests (v0.20.0)
 
 | Metric | Value |
@@ -307,10 +384,10 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 These are the power features from oh-my-codex that go beyond SKILL.md. They require infrastructure changes to Phase2S's core.
 
 - [ ] **Agent tier routing** — LOW/STANDARD/THOROUGH tiers mapped to `fast_model`/`smart_model` in `.phase2s.yaml`. Skills declare their tier; agent picks the right model automatically. Foundation for model-per-skill.
-- [ ] **Persistent execution loop** (`$ralph` pattern) — iterate on a task until done + verified by a second agent pass. Requires stateful skill protocol (session hooks or MCP state). High value for long-running coding tasks.
-- [ ] **Consensus planning** (`$ralplan` pattern) — Planner → Architect → Critic multi-agent consensus, up to 5 iterations until approved plan emerges. Requires multi-model routing infrastructure.
+- [x] **Persistent execution loop** (`$ralph` pattern) — shipped as `phase2s goal` (Sprint 21) + satori inner retry loop. `phase2s__goal` MCP tool (Sprint 25) makes it callable from Claude Code.
+- [x] **Consensus planning** (`$ralplan` pattern) — shipped as `/consensus-plan` skill (Sprint 13). `phase2s__consensus_plan` MCP tool available.
 - [ ] **Parallel team execution** (`$team` pattern) — spawn N parallel Codex workers in git worktrees via tmux. Phase2S spawns and coordinates, collects outputs. High complexity but unlocks parallel agent work.
-- [ ] **MCP state server** — implement `src/mcp/` state server with `state_write`/`state_read`/`state_clear`. Gives skills durable cross-turn state (like OMX's `.omx/state/` via MCP). Required by persistent execution and consensus planning.
+- [x] **MCP state server** — shipped Sprint 24 (v1.1.0). `phase2s__state_write/read/clear` in `src/core/state.ts` + `src/mcp/server.ts`.
 - [ ] **Notification gateway** — Telegram/Discord webhooks for long-running team operations. Alerts when a parallel run completes or errors. OMX uses OpenClaw.
 - [x] **Context snapshots** — implemented. `writeContextSnapshot()` in `cli/index.ts` writes `.phase2s/context/{ts}-{slug}.md` before each satori run (branch, recent commits, diff stat, verify command, task). The "mandatory for all prompts" framing was over-broad — satori is the right scope (long-running tasks where partial completion is the risk).
 - [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview (3 questions) generates a SKILL.md file via file-write. Creates `.phase2s/skills/<name>/SKILL.md` from within a session.
@@ -321,19 +398,15 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [ ] **Multi-model routing** — use different models for different tasks
   - Config: `fast_model: gpt-4o-mini`, `smart_model: o3`, `code_model: codex`
   - Skills declare which tier they need; agent picks automatically
-- [ ] **MCP server integration** — expose Phase2S tools as an MCP server
-  - Any MCP client (Claude Desktop, other agents) can use phase2s tools
-  - Inverse: consume external MCP servers as tools in the agent loop
+- [x] **MCP server integration** — shipped Sprint 12. `phase2s mcp` exposes all 29 skills + state tools + goal tool as Claude Code tools. Configured via `.claude/settings.json`.
 - [ ] **oh-my-codex-style multi-agent** — route subtasks to specialized sub-agents
   - Orchestrator assigns tasks; specialist agents (coder, reviewer, tester) execute
   - Each specialist has its own tool set and system prompt
 - [x] **Persistent memory across sessions** — done in Sprint 10. `loadLearnings()` + `formatLearningsForPrompt()` in `src/core/memory.ts`. Injected into system prompt via `AgentOptions.learnings`. CLI loads automatically from `.phase2s/memory/learnings.jsonl`. `/remember` skill writes new learnings.
-- [ ] **Browser tool** — headless browser via Playwright for web research
-  - Used by `/qa` skill (test sites), `/browse` skill (research), `/investigate` (docs lookup)
+- [x] **Browser tool** — shipped Sprint 19 (v0.23.0). Headless Playwright browser. Used by `/qa` skill and available as a tool in the agent loop.
 - [x] **More provider support** — Anthropic Claude + local Ollama shipped in Sprint 14. Gemini deferred.
   - Provider interface already abstracted; just implement `chatStream()`
-- [ ] **GitHub Actions integration** — run phase2s as a CI step
-  - `/review` on every PR, `/qa` on every deploy, `/investigate` on test failures
+- [x] **GitHub Actions integration** — shipped Sprint 20. `uses: scanton/phase2s@v1`. Requires API key for CI use.
 - [ ] **VS Code extension** — run skills from the editor sidebar
   - `/review` on current file, `/investigate` on selected error, `/plan` for a feature
 

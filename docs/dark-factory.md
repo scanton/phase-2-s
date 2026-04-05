@@ -117,6 +117,53 @@ phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md --max-attempts 5
 
 The executor runs immediately. No interactive prompts.
 
+### Challenge the spec before running
+
+Add `--review-before-run` to have the spec challenged by GPT before a single line of code is written:
+
+```bash
+phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md --review-before-run
+```
+
+This runs the spec's decomposition and acceptance criteria through the `/adversarial` skill. If GPT raises objections:
+
+```
+Spec CHALLENGED before execution. Adversarial review response:
+
+VERDICT: CHALLENGED
+STRONGEST_CONCERN: The token bucket reset logic is underspecified.
+OBJECTIONS:
+1. The Decomposition says "bucket fill/drain tests pass" but doesn't specify
+   what the window duration is. A 1-second window and a 60-second window are
+   both satisfiable by the criterion as written — this ambiguity will produce
+   inconsistent output.
+2. Acceptance Criteria #1 says "100 req/min" but the Decomposition has no
+   sub-task for the middleware that enforces the limit. The criteria could
+   pass trivially if the test mocks the rate limiter.
+APPROVE_IF: Specify the window duration; add a sub-task for the enforcement
+middleware.
+```
+
+No code runs until you fix the objections and re-run. If the spec is sound:
+
+```
+Adversarial review: APPROVED. Proceeding with execution.
+```
+
+Use `--review-before-run` on new specs. Skip it on re-runs where you're iterating on a known-good spec.
+
+### Run logs
+
+Every `phase2s goal` run writes a structured JSONL log to `.phase2s/runs/<timestamp>-<hash>.jsonl` relative to the spec file directory. The path is printed on exit:
+
+```
+Run log: /your/project/.phase2s/runs/2026-04-05T12-00-00-a1b2c3d4.jsonl
+```
+
+Each line is one event: `goal_started`, `subtask_started`, `subtask_completed`, `eval_started`, `eval_completed`, `criteria_checked`, `goal_completed`. Read it to see exactly what happened at each sub-task, including the first 2000 chars of eval output and a per-criterion pass/fail record.
+
+The log survives process death — it's written incrementally, not at the end. If a run is interrupted, the log contains everything up to the interruption.
+
 ---
 
 ## Step 3: Watch it work (or don't)
