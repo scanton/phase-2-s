@@ -288,9 +288,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [x] **Streaming output** — done in Sprint 4 (v0.6.0). OpenAI streams; Codex passthrough wrapper. Real Codex JSONL streaming still deferred (format undocumented).
 - [x] **Conversation persistence** — done Sprint 5. `Conversation.save/load`, `--resume` flag, auto-save after each turn. v0.7.0.
 - [x] **Multi-turn skills** — shipped Sprint 17 (v0.21.0). `{{ASK: question}}` inline prompts in SKILL.md. REPL prompts interactively; one-shot strips + warns; MCP strips + surfaces PHASE2S_NOTE degradation signal.
-- [ ] **`/plan` skill improvement** — output structured task list, not just prose
-  - Write plan to `.phase2s/plans/YYYY-MM-DD.md`
-  - Integration with TODOS.md (append generated tasks)
+- [x] **`/plan` skill improvement** — shipped Sprint 16/17. Saves to `.phase2s/plans/YYYY-MM-DD-HH-MM-<slug>.md` via `shell` + `file_write`. After writing, asks "Append Phase 1 tasks to TODOS.md?" and appends if confirmed. Structured checklist output format with phases and verify steps.
 - [x] **`/diff` skill** — done Sprint 5. Structured diff review with LOOKS GOOD / NEEDS REVIEW / RISKY verdict. v0.7.0.
 - [x] **Configurable tool allow/deny list** — fully implemented since Sprint 13. `tools:` and `deny:` in `.phase2s.yaml`. `ToolRegistry.allowed()` enforces deny-overrides-allow. Warns on unknown names at startup. Documented in `docs/configuration.md` (Sprint 18).
 - [ ] **Real Codex JSONL streaming** — Codex outputs JSONL on stdout; format is undocumented. Spike needed before committing. Would make long `/satori` runs feel faster.
