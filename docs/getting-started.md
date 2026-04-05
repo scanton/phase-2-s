@@ -187,6 +187,13 @@ Plain prompts also work if you don't want a specific skill:
 phase2s run "what does src/core/agent.ts do?"
 ```
 
+To preview routing without executing (useful for debugging `fast_model`/`smart_model` config):
+
+```bash
+phase2s run --dry-run "/explain src/core/agent.ts"
+# → Would route to skill: explain (model: gpt-4o-mini)
+```
+
 ---
 
 ## What Phase2S saves to your project

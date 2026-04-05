@@ -16,6 +16,31 @@ List all loaded skills (built-in + custom):
 phase2s skills
 ```
 
+Each skill shows its name, description, and model tier badge (`[fast]` or `[smart]`). Skills without a declared tier use the default model.
+
+For machine-readable output (useful in scripts):
+
+```bash
+phase2s skills --json
+```
+
+Returns a JSON array with `name`, `description`, `model`, and `inputs` for every skill. Pipe into `jq`:
+
+```bash
+# List all fast-tier skills
+phase2s skills --json | jq '.[] | select(.model=="fast") | .name'
+
+# Skills with inputs
+phase2s skills --json | jq '.[] | select(.inputs != null) | .name'
+```
+
+To preview skill routing without executing (useful when debugging `fast_model`/`smart_model` config):
+
+```bash
+phase2s run --dry-run "/explain src/core/agent.ts"
+# → Would route to skill: explain (model: gpt-4o-mini)
+```
+
 ---
 
 ## Persistent execution
@@ -294,6 +319,8 @@ you > /explain what is the difference between a tool call and a function call in
 ### `/plan`
 
 Phased implementation plan with verify steps per phase. Concrete and ordered.
+
+Saves to `.phase2s/plans/YYYY-MM-DD-HH-MM-<slug>.md`. Multiple plans in the same day get their own timestamped file.
 
 ```
 you > /plan add rate limiting to the API middleware

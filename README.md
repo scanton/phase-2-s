@@ -152,8 +152,13 @@ phase2s skills
 - [x] `/skill` meta-skill — create new skills from inside Phase2S
 - [x] Session file security — session files written with `mode: 0o600` (owner-only)
 - [x] `/land-and-deploy` skill — push, PR, CI wait, merge, deploy confirmation via `gh` CLI
+- [x] Model tier badges in `phase2s skills` output — `[fast]` / `[smart]` per skill at a glance
+- [x] `phase2s run --dry-run "/explain foo"` — preview skill routing without executing
+- [x] Typed input hints in REPL — boolean shows `(yes/no)`, enum shows `[option1/option2]`
+- [x] `phase2s skills --json` — machine-readable skill list for scripts and tooling
+- [x] Clean install — no deprecation warnings from `npm install -g @scanton/phase2s`
+- [x] npm publish — `@scanton/phase2s` on npm, `npm install -g @scanton/phase2s`
 - [ ] Real Codex streaming (JSONL stdout parsing)
-- [ ] npm publish
 
 ---
 
