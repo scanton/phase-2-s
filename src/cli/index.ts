@@ -175,9 +175,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .command("goal <spec-file>")
     .description("Execute a spec file end-to-end: run sub-tasks, evaluate, retry until done")
     .option("--max-attempts <n>", "Maximum retry loops (default: 3)", "3")
-    .action(async (specFile: string, cmdOpts: { maxAttempts?: string }) => {
+    .option("--resume", "Resume from the last completed sub-task (reads state from .phase2s/state/)")
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean }) => {
       const { runGoal } = await import("./goal.js");
-      const result = await runGoal(specFile, { maxAttempts: cmdOpts.maxAttempts });
+      const result = await runGoal(specFile, { maxAttempts: cmdOpts.maxAttempts, resume: cmdOpts.resume });
       process.exit(result.success ? 0 : 1);
     });
 

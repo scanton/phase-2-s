@@ -1,10 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   handleRequest,
   skillToTool,
   toolNameToSkillName,
   buildNotification,
   MCP_SERVER_VERSION,
+  STATE_TOOLS,
 } from "../../src/mcp/server.js";
 import { Conversation } from "../../src/core/conversation.js";
 import type { Skill } from "../../src/skills/types.js";
@@ -122,7 +126,8 @@ describe("MCP server — protocol compliance", () => {
 
     expect(response.error).toBeUndefined();
     const result = response.result as { tools: unknown[] };
-    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length);
+    // tools/list now includes skill tools + 3 state tools (state_write, state_read, state_clear)
+    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length + 3);
   });
 
   it("tools/list: tool names use phase2s__ prefix and underscore convention", async () => {
@@ -513,5 +518,144 @@ describe("tools/call — {{ASK:}} token handling", () => {
     const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
     const note = content.find((c) => c.text.includes("PHASE2S_NOTE"));
     expect(note).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// State tools — STATE_TOOLS descriptor + round-trip via handleRequest
+// ---------------------------------------------------------------------------
+
+describe("STATE_TOOLS descriptor", () => {
+  it("exports three state tools with correct names", () => {
+    const names = STATE_TOOLS.map((t) => t.name);
+    expect(names).toContain("phase2s__state_write");
+    expect(names).toContain("phase2s__state_read");
+    expect(names).toContain("phase2s__state_clear");
+  });
+
+  it("state_write requires key and value", () => {
+    const tool = STATE_TOOLS.find((t) => t.name === "phase2s__state_write")!;
+    expect(tool.inputSchema.required).toContain("key");
+    expect(tool.inputSchema.required).toContain("value");
+  });
+
+  it("state_read requires key", () => {
+    const tool = STATE_TOOLS.find((t) => t.name === "phase2s__state_read")!;
+    expect(tool.inputSchema.required).toContain("key");
+  });
+
+  it("state_clear requires key", () => {
+    const tool = STATE_TOOLS.find((t) => t.name === "phase2s__state_clear")!;
+    expect(tool.inputSchema.required).toContain("key");
+  });
+
+  it("tools/list includes state tools alongside skill tools", async () => {
+    const request = { jsonrpc: "2.0" as const, id: 1, method: "tools/list" };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    const tools = (response.result as { tools: Array<{ name: string }> }).tools;
+    const toolNames = tools.map((t) => t.name);
+    expect(toolNames).toContain("phase2s__state_write");
+    expect(toolNames).toContain("phase2s__state_read");
+    expect(toolNames).toContain("phase2s__state_clear");
+    // Skill tools still present
+    expect(toolNames).toContain("phase2s__adversarial");
+  });
+});
+
+describe("state tools — handleRequest round-trip", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `phase2s-mcp-state-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("state_write then state_read returns the written value", async () => {
+    const writeReq = {
+      jsonrpc: "2.0" as const,
+      id: 1,
+      method: "tools/call",
+      params: { name: "phase2s__state_write", arguments: { key: "my-key", value: { x: 42 } } },
+    };
+    await handleRequest(writeReq, [], tmpDir);
+
+    const readReq = {
+      jsonrpc: "2.0" as const,
+      id: 2,
+      method: "tools/call",
+      params: { name: "phase2s__state_read", arguments: { key: "my-key" } },
+    };
+    const readResp = await handleRequest(readReq, [], tmpDir);
+    const content = (readResp.result as { content: Array<{ type: string; text: string }> }).content;
+    const parsed = JSON.parse(content[0].text) as unknown;
+    expect(parsed).toEqual({ x: 42 });
+  });
+
+  it("state_read returns null for a missing key", async () => {
+    const readReq = {
+      jsonrpc: "2.0" as const,
+      id: 3,
+      method: "tools/call",
+      params: { name: "phase2s__state_read", arguments: { key: "no-such-key" } },
+    };
+    const readResp = await handleRequest(readReq, [], tmpDir);
+    const content = (readResp.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content[0].text).toBe("null");
+  });
+
+  it("state_clear removes a written key", async () => {
+    const writeReq = {
+      jsonrpc: "2.0" as const,
+      id: 4,
+      method: "tools/call",
+      params: { name: "phase2s__state_write", arguments: { key: "del-key", value: "bye" } },
+    };
+    await handleRequest(writeReq, [], tmpDir);
+
+    const clearReq = {
+      jsonrpc: "2.0" as const,
+      id: 5,
+      method: "tools/call",
+      params: { name: "phase2s__state_clear", arguments: { key: "del-key" } },
+    };
+    await handleRequest(clearReq, [], tmpDir);
+
+    const readReq = {
+      jsonrpc: "2.0" as const,
+      id: 6,
+      method: "tools/call",
+      params: { name: "phase2s__state_read", arguments: { key: "del-key" } },
+    };
+    const readResp = await handleRequest(readReq, [], tmpDir);
+    const content = (readResp.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content[0].text).toBe("null");
+  });
+
+  it("state_write with empty key returns an error", async () => {
+    const req = {
+      jsonrpc: "2.0" as const,
+      id: 7,
+      method: "tools/call",
+      params: { name: "phase2s__state_write", arguments: { key: "", value: {} } },
+    };
+    const resp = await handleRequest(req, [], tmpDir);
+    expect(resp.error).toBeDefined();
+    expect(resp.error?.message).toContain("state_write");
+  });
+
+  it("state_clear is a no-op for a missing key (no error)", async () => {
+    const clearReq = {
+      jsonrpc: "2.0" as const,
+      id: 8,
+      method: "tools/call",
+      params: { name: "phase2s__state_clear", arguments: { key: "phantom-key" } },
+    };
+    const resp = await handleRequest(clearReq, [], tmpDir);
+    expect(resp.error).toBeUndefined();
+    expect(resp.result).toBeDefined();
   });
 });

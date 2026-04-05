@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.1.0 — 2026-04-05
+
+MCP state server + dark factory resumability.
+
+### What's new
+
+- **`phase2s goal --resume <spec.md>`** — resume a goal run from the last completed sub-task after interruption, crash, or non-retriable failure. State is written atomically after each sub-task completes or fails. Keyed by SHA-256 of spec file content (not path) so renamed specs resume cleanly and modified specs don't resume stale state.
+- **MCP state tools** — three new tools available in every Phase2S MCP session:
+  - `phase2s__state_write(key, value)` — write any JSON-serializable value to `.phase2s/state/<key>.json`
+  - `phase2s__state_read(key)` — read a stored value, returns `null` if not found
+  - `phase2s__state_clear(key)` — delete a stored value, no-op if not found
+- **`src/core/state.ts`** — pure state functions shared by goal.ts and server.ts. Atomic writes via tmp-file + rename pattern.
+- **Tests:** 433 passing (was 399, +34 new tests covering state.ts, goal resume behavior, MCP state tool round-trips).
+
+### Behavior details
+
+- State lives at `.phase2s/state/<hash>.json` relative to the **spec file directory** (not invocation cwd).
+- `phase2s goal --resume spec.md` with no existing state: starts fresh silently. No error, no warning.
+- Concurrent runs against the same spec: last-writer-wins. Documented constraint, no file locking.
+- Sub-tasks interrupted mid-execution (process killed during satori): treated as not started on resume, retried from the beginning.
+- On clean completion (all criteria pass): state is cleared automatically.
+- `failureContext`: last 4096 bytes of satori output captured for failed sub-tasks, injected as prior failure context on resume.
+
 ## v1.0.0 — 2026-04-05
 
 Feature complete. Full QA pass. Zero open roadmap items.

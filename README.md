@@ -228,7 +228,7 @@ phase2s skills --json # machine-readable for scripts
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 399 tests covering all tools, core modules, agent integration, and goal executor
+- [x] 433 tests covering all tools, core modules, agent integration, goal executor, and state server
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -254,6 +254,8 @@ phase2s skills --json # machine-readable for scripts
 - [x] `phase2s goal <spec.md>` — dark factory: spec in, feature out
 - [x] 5-pillar spec format — `/deep-specify` output feeds directly into `phase2s goal`
 - [x] Real Codex streaming (JSONL stdout parsing) — step-by-step feedback for multi-step tasks
+- [x] MCP state server — `state_read`/`state_write`/`state_clear` as Claude Code tools
+- [x] `phase2s goal --resume` — dark factory continuity: resumes from last completed sub-task after interruption
 
 ---
 

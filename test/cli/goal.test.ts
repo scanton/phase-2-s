@@ -1,7 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { buildSatoriContext, checkCriteria, runCommand } from "../../src/cli/goal.js";
+import { computeSpecHash, readState, writeState } from "../../src/core/state.js";
 import type { SubTask, Spec } from "../../src/core/spec-parser.js";
 import { Agent } from "../../src/core/agent.js";
+import { mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -128,5 +132,77 @@ describe("runCommand", () => {
   it("returns timeout message when command exceeds timeout", async () => {
     const output = await runCommand("sleep 10", 100); // 100ms timeout
     expect(output).toContain("EVAL TIMEOUT");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Goal state + resume integration
+// ---------------------------------------------------------------------------
+
+describe("goal state — computeSpecHash is stable", () => {
+  it("same content produces same hash", () => {
+    const content = "# My Spec\n\nBuild something great.";
+    expect(computeSpecHash(content)).toBe(computeSpecHash(content));
+  });
+
+  it("different content produces different hash", () => {
+    expect(computeSpecHash("spec v1")).not.toBe(computeSpecHash("spec v2"));
+  });
+});
+
+describe("goal state — writeState marks sub-task passed and readState recovers it", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `phase2s-goal-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("persists a passed sub-task result and retrieves it", () => {
+    const hash = computeSpecHash("spec content");
+    const state = {
+      specFile: "spec.md",
+      specHash: hash,
+      startedAt: "2026-04-05T10:00:00Z",
+      lastUpdatedAt: "2026-04-05T10:05:00Z",
+      maxAttempts: 3,
+      attempt: 1,
+      subTaskResults: {
+        "0": { status: "passed" as const, completedAt: "2026-04-05T10:05:00Z" },
+      },
+    };
+    writeState(tmpDir, hash, state);
+    const loaded = readState(tmpDir, hash);
+    expect(loaded?.subTaskResults["0"]?.status).toBe("passed");
+  });
+
+  it("persists a failed sub-task with failureContext", () => {
+    const hash = computeSpecHash("spec content for failure");
+    const state = {
+      specFile: "spec.md",
+      specHash: hash,
+      startedAt: "2026-04-05T10:00:00Z",
+      lastUpdatedAt: "2026-04-05T10:10:00Z",
+      maxAttempts: 3,
+      attempt: 1,
+      subTaskResults: {
+        "1": { status: "failed" as const, failureContext: "TypeError: cannot read property", attempts: 1 },
+      },
+    };
+    writeState(tmpDir, hash, state);
+    const loaded = readState(tmpDir, hash);
+    expect(loaded?.subTaskResults["1"]?.status).toBe("failed");
+    expect(loaded?.subTaskResults["1"]?.failureContext).toBe("TypeError: cannot read property");
+    expect(loaded?.subTaskResults["1"]?.attempts).toBe(1);
+  });
+
+  it("readState returns null when no prior state exists (--resume with fresh spec)", () => {
+    const result = readState(tmpDir, "unknown-hash-no-file");
+    // This is the --resume fresh-start case: null means start over silently.
+    expect(result).toBeNull();
   });
 });

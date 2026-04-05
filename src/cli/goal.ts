@@ -6,21 +6,31 @@
  * output, retries failed sub-tasks with failure context, and loops until all
  * criteria pass or max attempts are exhausted.
  *
- * Usage: phase2s goal <spec-file> [--max-attempts <n>]
+ * Usage: phase2s goal <spec-file> [--max-attempts <n>] [--resume]
+ *
+ * With --resume: reads existing state from .phase2s/state/<hash>.json
+ * (relative to the spec file directory), skips completed sub-tasks, and
+ * injects saved failure context for failed ones. Starts fresh if no state
+ * exists.
  */
 
 import { execFile } from "child_process";
 import { readFileSync } from "fs";
-import { resolve } from "path";
+import { resolve, dirname, basename } from "path";
 import { Agent } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { parseSpec, type Spec, type SubTask } from "../core/spec-parser.js";
+import { computeSpecHash, readState, writeState, clearState, type GoalState } from "../core/state.js";
 import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
 
+/** Cap on bytes stored for failureContext per sub-task. */
+const FAILURE_CONTEXT_MAX_BYTES = 4096;
+
 export interface GoalOptions {
   maxAttempts?: string;
+  resume?: boolean;
 }
 
 export interface GoalResult {
@@ -31,6 +41,9 @@ export interface GoalResult {
 
 export async function runGoal(specFile: string, options: GoalOptions = {}): Promise<GoalResult> {
   const specPath = resolve(process.cwd(), specFile);
+  // State is stored relative to the spec file directory, not invocation cwd.
+  const specDir = dirname(specPath);
+
   let markdown: string;
   try {
     markdown = readFileSync(specPath, "utf8");
@@ -39,14 +52,38 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     process.exit(1);
   }
 
+  const specHash = computeSpecHash(markdown);
   const spec = parseSpec(markdown);
   const maxAttempts = Math.max(1, parseInt(options.maxAttempts ?? "3", 10) || 3);
+  const resume = !!options.resume;
+
+  // -------------------------------------------------------------------------
+  // State: load existing state when resuming, otherwise start fresh.
+  // -------------------------------------------------------------------------
+  let state: GoalState | null = resume ? readState(specDir, specHash) : null;
+
+  // If --resume but no prior state found: silently start fresh (no error).
+  if (state === null) {
+    state = {
+      specFile: basename(specPath),
+      specHash,
+      startedAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString(),
+      maxAttempts,
+      attempt: 0,
+      subTaskResults: {},
+    };
+  }
 
   console.log(`\nGoal executor: ${spec.title}`);
   console.log(`Eval command: ${spec.evalCommand}`);
   console.log(`Sub-tasks: ${spec.decomposition.length}`);
   console.log(`Acceptance criteria: ${spec.acceptanceCriteria.length}`);
   console.log(`Max attempts: ${maxAttempts}`);
+  if (resume) {
+    const doneCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
+    console.log(`Resuming: ${doneCount}/${spec.decomposition.length} sub-tasks already completed`);
+  }
 
   if (spec.decomposition.length === 0 && spec.acceptanceCriteria.length === 0) {
     console.log("\nSpec has no sub-tasks and no acceptance criteria. Nothing to execute.");
@@ -78,33 +115,84 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     ? stripAskTokens(substituteInputs(satoriSkill.promptTemplate, {}, satoriSkill.inputs)).result
     : "";
 
-  let attempt = 0;
+  let attempt = state.attempt;
   let subtasksToRun = spec.decomposition;
   let previousFailureContext: string | undefined;
   let criteriaResults: Record<string, boolean> = {};
 
   while (attempt < maxAttempts) {
     attempt++;
+    state.attempt = attempt;
     console.log(`\n${"=".repeat(50)}`);
     console.log(`Attempt ${attempt}/${maxAttempts}`);
     console.log("=".repeat(50));
 
     // Run sub-tasks through satori
-    for (const subtask of subtasksToRun) {
+    for (let i = 0; i < subtasksToRun.length; i++) {
+      const subtask = subtasksToRun[i];
+      // When resuming, find the original index of this sub-task in the full decomposition.
+      const globalIndex = spec.decomposition.indexOf(subtask);
+      const indexKey = String(globalIndex >= 0 ? globalIndex : i);
+      const priorResult = state.subTaskResults[indexKey];
+
+      // Skip sub-tasks already marked passed on a prior run.
+      if (priorResult?.status === "passed") {
+        console.log(`\nSkipping sub-task (already passed): ${subtask.name}`);
+        continue;
+      }
+
+      // Inject prior failure context if this sub-task failed before.
+      const priorFailureContext = priorResult?.status === "failed"
+        ? priorResult.failureContext
+        : previousFailureContext;
+
       console.log(`\nRunning sub-task: ${subtask.name}`);
-      const taskContext = buildSatoriContext(subtask, spec.constraints, previousFailureContext);
+      const taskContext = buildSatoriContext(subtask, spec.constraints, priorFailureContext);
       // Combine satori system instructions + task-specific context
       const effectivePrompt = satoriTemplate
         ? `${satoriTemplate}\n\n## Task\n${taskContext}`
         : taskContext;
 
-      await agent.run(effectivePrompt, {
-        modelOverride: satoriModel,
-        maxRetries: satoriRetries,
-        verifyCommand: spec.evalCommand,
-        onDelta: (chunk) => process.stdout.write(chunk),
-      });
+      // Capture satori output so we can store it as failureContext if needed.
+      const outputChunks: string[] = [];
+      let satoriError: unknown = null;
+      try {
+        await agent.run(effectivePrompt, {
+          modelOverride: satoriModel,
+          maxRetries: satoriRetries,
+          verifyCommand: spec.evalCommand,
+          onDelta: (chunk) => {
+            process.stdout.write(chunk);
+            outputChunks.push(chunk);
+          },
+        });
+      } catch (err) {
+        satoriError = err;
+      }
       process.stdout.write("\n");
+
+      const outputStr = outputChunks.join("");
+      const truncated = outputStr.slice(-FAILURE_CONTEXT_MAX_BYTES);
+
+      if (satoriError) {
+        // Sub-task threw — mark as failed, write checkpoint, continue.
+        state.subTaskResults[indexKey] = {
+          status: "failed",
+          failureContext: truncated,
+          attempts: (priorResult?.attempts ?? 0) + 1,
+        };
+        state.lastUpdatedAt = new Date().toISOString();
+        writeState(specDir, specHash, state);
+        console.error(`\nSub-task failed: ${subtask.name}`);
+      } else {
+        // Sub-task completed without throwing — mark as passed, write checkpoint.
+        state.subTaskResults[indexKey] = {
+          status: "passed",
+          completedAt: new Date().toISOString(),
+        };
+        state.lastUpdatedAt = new Date().toISOString();
+        writeState(specDir, specHash, state);
+      }
     }
 
     // Run evaluation
@@ -126,12 +214,16 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
     if (failing.length === 0) {
       console.log(`\n✓ All acceptance criteria met after ${attempt} attempt(s).`);
+      // Clean completion: remove state so stale state doesn't block future runs.
+      clearState(specDir, specHash);
       return { success: true, attempts: attempt, criteriaResults };
     }
 
     if (attempt < maxAttempts) {
       previousFailureContext = await analyzeFailures(failing, evalOutput, spec, agent);
       subtasksToRun = await identifyFailedSubtasks(failing, spec.decomposition, previousFailureContext, agent);
+      // Reset passed sub-tasks on the next attempt so they re-run in context of new failures.
+      // We only keep the state for cross-run resumability, not within the same goal invocation.
       console.log(`\nRetrying ${subtasksToRun.length} sub-task(s): ${subtasksToRun.map((s) => s.name).join(", ")}`);
     }
   }

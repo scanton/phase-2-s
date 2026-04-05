@@ -19,6 +19,7 @@ import { loadConfig } from "../core/config.js";
 import { Agent } from "../core/agent.js";
 import { Conversation } from "../core/conversation.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
+import { readRawState, writeRawState, clearRawState } from "../core/state.js";
 import { join } from "node:path";
 import type { Skill } from "../skills/types.js";
 
@@ -121,6 +122,59 @@ export function toolNameToSkillName(toolName: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// State tool descriptors
+// ---------------------------------------------------------------------------
+
+/**
+ * The three durable state tools exposed alongside skill tools.
+ *
+ * Keys accept arbitrary strings (alphanumeric + hyphens + underscores).
+ * Values are JSON-serializable objects. State is stored at
+ * .phase2s/state/<key>.json relative to process.cwd() at server startup.
+ */
+export const STATE_TOOLS: MCPTool[] = [
+  {
+    name: "phase2s__state_write",
+    description:
+      "Write a JSON-serializable value to Phase2S durable state. " +
+      "Creates .phase2s/state/<key>.json. Persists across turns and process restarts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "State key (alphanumeric, hyphens, underscores)." },
+        value: { description: "JSON-serializable value to store." },
+      },
+      required: ["key", "value"],
+    },
+  },
+  {
+    name: "phase2s__state_read",
+    description:
+      "Read a value from Phase2S durable state. " +
+      "Returns the stored JSON value, or null if the key does not exist.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "State key to read." },
+      },
+      required: ["key"],
+    },
+  },
+  {
+    name: "phase2s__state_clear",
+    description:
+      "Delete a value from Phase2S durable state. No-op if the key does not exist.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "State key to delete." },
+      },
+      required: ["key"],
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Notification helpers
 // ---------------------------------------------------------------------------
 
@@ -220,7 +274,7 @@ export async function handleRequest(
     return {
       jsonrpc: "2.0",
       id: request.id,
-      result: { tools: skills.map(skillToTool) },
+      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS] },
     };
   }
 
@@ -228,8 +282,56 @@ export async function handleRequest(
   // tools/call
   // -----------------------------------------------------------------------
   if (request.method === "tools/call") {
-    const params = request.params as { name?: string; arguments?: { prompt?: string } } | undefined;
+    const params = request.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
     const toolName = params?.name ?? "";
+    const args = params?.arguments ?? {};
+
+    // -----------------------------------------------------------------------
+    // State tools — handled before skill lookup.
+    // -----------------------------------------------------------------------
+    if (toolName === "phase2s__state_write") {
+      const key = String(args["key"] ?? "");
+      const value = args["value"];
+      if (!key) {
+        return { jsonrpc: "2.0", id: request.id, error: { code: -32602, message: "state_write: key is required" } };
+      }
+      writeRawState(cwd, key, value);
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        result: { content: [{ type: "text", text: `State written for key: ${key}` }] },
+      };
+    }
+
+    if (toolName === "phase2s__state_read") {
+      const key = String(args["key"] ?? "");
+      if (!key) {
+        return { jsonrpc: "2.0", id: request.id, error: { code: -32602, message: "state_read: key is required" } };
+      }
+      const value = readRawState(cwd, key);
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        result: { content: [{ type: "text", text: JSON.stringify(value) }] },
+      };
+    }
+
+    if (toolName === "phase2s__state_clear") {
+      const key = String(args["key"] ?? "");
+      if (!key) {
+        return { jsonrpc: "2.0", id: request.id, error: { code: -32602, message: "state_clear: key is required" } };
+      }
+      clearRawState(cwd, key);
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        result: { content: [{ type: "text", text: `State cleared for key: ${key}` }] },
+      };
+    }
+
+    // -----------------------------------------------------------------------
+    // Skill tools — look up by name.
+    // -----------------------------------------------------------------------
     const skillName = toolNameToSkillName(toolName);
     const skill = skills.find((s) => s.name === skillName);
 
@@ -241,14 +343,13 @@ export async function handleRequest(
       };
     }
 
-    const userPrompt = params?.arguments?.prompt ?? "";
+    const userPrompt = typeof args["prompt"] === "string" ? args["prompt"] : "";
     // Extract declared input values from tool call arguments and substitute
     // them into the template. Unknown {{tokens}} pass through unchanged.
     const inputValues: Record<string, string> = {};
     if (skill.inputs) {
-      const args = params?.arguments as Record<string, unknown> | undefined;
       for (const key of Object.keys(skill.inputs)) {
-        if (args && args[key] !== undefined && args[key] !== null) {
+        if (args[key] !== undefined && args[key] !== null) {
           // Stringify all input types before substitution — boolean, number, enum all become strings
           inputValues[key] = String(args[key]);
         }
