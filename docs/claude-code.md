@@ -210,7 +210,12 @@ run log?
 **What Claude gets back:**
 - A one-line run summary
 - Attempt count and criteria pass/fail ratio
-- The **absolute path** to the structured JSONL run log — Claude can call `file_read` on it to see exactly what happened at each sub-task without guessing
+- The **absolute path** to the structured JSONL run log — Claude can call `phase2s__report` with that path to get a formatted summary, or `file_read` for raw JSONL
+
+**Parameters:**
+- `specFile` (required) — path to the spec `.md` file
+- `reviewBeforeRun` (optional, boolean) — run adversarial review before execution; challenged specs stop before any code is written
+- `notify` (optional, boolean) — send a notification on completion via all configured channels (`notify.slack`, `notify.discord`, `notify.teams` in `.phase2s.yaml`, or the corresponding env vars)
 
 **With adversarial pre-check:**
 
