@@ -17,6 +17,13 @@ import { parseSpec } from "../core/spec-parser.js";
 import type { Spec } from "../core/spec-parser.js";
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Specs with more sub-tasks than this threshold get a large-spec warning. */
+const MAX_SUBTASKS_WARNING = 8;
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -86,7 +93,7 @@ export function lintSpec(spec: Spec): LintResult {
     });
   }
 
-  if (spec.decomposition.length > 8) {
+  if (spec.decomposition.length > MAX_SUBTASKS_WARNING) {
     issues.push({
       severity: "warn",
       message: `spec has ${spec.decomposition.length} sub-tasks — large specs are unreliable`,

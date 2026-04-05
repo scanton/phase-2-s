@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Spec } from "../../src/core/spec-parser.js";
 
 // ---------------------------------------------------------------------------
@@ -130,10 +130,20 @@ describe("lintSpec", () => {
 // ---------------------------------------------------------------------------
 
 describe("runLint — evalCommand PATH check", () => {
+  const createdDirs: string[] = [];
+
   beforeEach(() => {
     mockExecFile.mockReset();
     // Default: simulate "npm" always on PATH (avoids warnings for non-pytest specs)
     mockExecFile.mockImplementation((_cmd: unknown, _args: unknown, _opts: unknown, cb: (err: Error | null) => void) => cb(null));
+  });
+
+  afterEach(async () => {
+    const { rmSync } = await import("node:fs");
+    for (const dir of createdDirs) {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+    createdDirs.length = 0;
   });
 
   it("warns when evalCommand uses a binary not on PATH", async () => {
@@ -146,6 +156,7 @@ describe("runLint — evalCommand PATH check", () => {
     const { tmpdir } = await import("node:os");
     const dir = join(tmpdir(), `lint-test-${Date.now()}`);
     mkdirSync(dir, { recursive: true });
+    createdDirs.push(dir);
     const specPath = join(dir, "spec.md");
     const specMd = `# Test Spec\n\n## Problem Statement\nSomething broken needs fixing.\n\n## Decomposition\n### Sub-task 1: Fix it\n- **Input:** broken code\n- **Output:** working code\n- **Success criteria:** tests pass\n\n## Acceptance Criteria\n- Tests pass\n\n## Eval Command\n\`\`\`\npytest tests/\n\`\`\`\n`;
     writeFileSync(specPath, specMd, "utf8");
@@ -172,6 +183,7 @@ describe("runLint — evalCommand PATH check", () => {
     const { tmpdir } = await import("node:os");
     const dir = join(tmpdir(), `lint-test-found-${Date.now()}`);
     mkdirSync(dir, { recursive: true });
+    createdDirs.push(dir);
     const specPath = join(dir, "spec.md");
     const specMd = `# Test Spec\n\n## Problem Statement\nSomething broken needs fixing.\n\n## Decomposition\n### Sub-task 1: Fix it\n- **Input:** broken code\n- **Output:** working code\n- **Success criteria:** tests pass\n\n## Acceptance Criteria\n- Tests pass\n\n## Eval Command\n\`\`\`\npytest tests/\n\`\`\`\n`;
     writeFileSync(specPath, specMd, "utf8");
@@ -193,6 +205,7 @@ describe("runLint — evalCommand PATH check", () => {
     const { tmpdir } = await import("node:os");
     const dir = join(tmpdir(), `lint-test-npmtest-${Date.now()}`);
     mkdirSync(dir, { recursive: true });
+    createdDirs.push(dir);
     const specPath = join(dir, "spec.md");
     // evalCommand defaults to "npm test" when not specified
     writeFileSync(specPath, `# Test Spec\n\n## Problem Statement\nSomething broken needs fixing.\n\n## Decomposition\n### Sub-task 1: Fix it\n- **Input:** broken code\n- **Output:** working code\n- **Success criteria:** tests pass\n\n## Acceptance Criteria\n- Tests pass\n`, "utf8");
