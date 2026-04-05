@@ -398,7 +398,7 @@ assistant > Saved 'build-before-test' to .phase2s/memory/learnings.jsonl.
 Next session:
 
 ```
-Phase2S v0.12.0
+Phase2S v1.0.0
 Learnings: 2 entries from .phase2s/memory/
 ```
 

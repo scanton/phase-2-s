@@ -42,7 +42,7 @@ phase2s
 You'll see:
 
 ```
-Phase2S v0.12.0
+Phase2S v1.0.0
 Type your message and press Enter. Type /quit to exit.
 
 you >

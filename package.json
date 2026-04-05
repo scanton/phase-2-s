@@ -1,7 +1,16 @@
 {
   "name": "@scanton/phase2s",
-  "version": "0.26.0",
-  "description": "AI programming harness with multi-model support",
+  "version": "1.0.0",
+  "description": "AI coding assistant with 29 built-in skills, ChatGPT subscription support, and autonomous spec execution",
+  "author": "Scott Canton",
+  "homepage": "https://github.com/scanton/phase-2-s",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/scanton/phase-2-s.git"
+  },
+  "bugs": {
+    "url": "https://github.com/scanton/phase-2-s/issues"
+  },
   "type": "module",
   "files": [
     "dist/",
@@ -36,8 +45,14 @@
     "ai",
     "codex",
     "openai",
+    "anthropic",
+    "claude",
+    "chatgpt",
     "cli",
-    "agent"
+    "agent",
+    "mcp",
+    "coding-assistant",
+    "dark-factory"
   ],
   "license": "MIT",
   "dependencies": {
@@ -52,9 +67,9 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@actions/core": "^1.11.1",
+    "@actions/core": "^3.0.0",
     "@actions/exec": "^1.1.1",
-    "@actions/github": "^6.0.1",
+    "@actions/github": "^9.0.0",
     "@types/node": "^22.9.0",
     "@vercel/ncc": "^0.38.4",
     "playwright": ">=1.40.0",

@@ -53,7 +53,7 @@ Memory is explicit. You decide what gets saved. There's no auto-capture that fil
 3. Next session startup: Phase2S loads the file and injects learnings into the system prompt
 
 ```
-Phase2S v0.12.0
+Phase2S v1.0.0
 Learnings: 3 entries from .phase2s/memory/
 ```
 

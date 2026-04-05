@@ -1,8 +1,8 @@
 # Advanced Features
 
-> **Streaming and tool-loop visibility require a direct API provider: `openai-api`, `anthropic`, or `ollama`.**
+> **Token-by-token streaming and tool-loop visibility require a direct API provider: `openai-api`, `anthropic`, or `ollama`.**
 >
-> If you're using a ChatGPT subscription (Option A / Codex CLI), you don't need this page. All 29 skills work without it. Come back when you want streaming output or model-per-skill routing.
+> If you're using a ChatGPT subscription (Option A / Codex CLI), you don't need this page for most things. Codex CLI already shows step-by-step messages for multi-step tasks (added v0.26.0). Come back when you want token-by-token streaming or model-per-skill routing.
 
 ---
 
@@ -55,7 +55,7 @@ you > /review src/core/agent.ts
 
 The text appears in real time. On long responses (like `/consensus-plan` or `/satori` attempts), you see progress as it happens.
 
-With Option A (Codex CLI), Phase2S shows the response after Codex finishes processing. The output is the same — it's a display difference, not a capability difference.
+With Option A (Codex CLI), Phase2S shows each intermediate agent message as it arrives during multi-step tasks (since v0.26.0). For simple single-response tasks, you see the result once Codex finishes. Token-by-token streaming within a single response is a direct API feature only.
 
 ---
 

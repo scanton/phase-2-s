@@ -106,6 +106,7 @@ All config file settings can be overridden with environment variables. Environme
 | `PHASE2S_SMART_MODEL` | `smart_model` | Smart tier model name |
 | `PHASE2S_VERIFY_COMMAND` | `verifyCommand` | Satori verify command |
 | `PHASE2S_ALLOW_DESTRUCTIVE` | `allowDestructive` | `true`, `1`, or `yes` to allow |
+| `PHASE2S_BROWSER` | `browser` | `true`, `1`, or `yes` to enable Playwright headless browser tool |
 | `PHASE2S_CODEX_PATH` | — | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | — | API key for `openai-api` provider |
 | `ANTHROPIC_API_KEY` | — | API key for `anthropic` provider |

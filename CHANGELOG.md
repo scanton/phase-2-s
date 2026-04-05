@@ -1,5 +1,47 @@
 # Changelog
 
+## v1.0.0 — 2026-04-05
+
+Feature complete. Full QA pass. Zero open roadmap items.
+
+### What changed from v0.26.0
+
+- **Security:** Updated `@actions/core` (v3), `@actions/github` (v9), and transitive `@actions/http-client` (v4) to resolve 3 CVEs in `undici` (1 high, 2 moderate). Action bundle rebuilt.
+- **Docs: `advanced.md`** corrected — no longer claims Codex CLI can't stream. Codex now shows step-by-step messages for multi-step tasks (since v0.26.0).
+- **Docs: version strings** updated in `getting-started.md`, `memory.md`, `workflows.md` example output blocks.
+- **Docs: `PHASE2S_BROWSER`** environment variable added to `configuration.md`.
+- **`package.json`:** Added `repository`, `homepage`, `bugs`, `author` fields for npm page. Expanded keywords to include `anthropic`, `claude`, `chatgpt`, `mcp`, `coding-assistant`, `dark-factory`.
+- **README:** Roadmap test count corrected (389 → 399).
+
+### Stability contract
+
+What is stable at v1.0.0 and will not break without a major version bump:
+
+| Surface | Stable? | Notes |
+|---------|---------|-------|
+| `phase2s` CLI commands (`chat`, `run`, `mcp`, `skills`, `goal`, `completion`) | ✓ | Command names, flag names, exit codes |
+| `phase2s run "/skillname args"` routing | ✓ | Skill routing in one-shot mode |
+| `phase2s run --dry-run` | ✓ | |
+| `phase2s goal <spec.md>` | ✓ | Spec format, `--max-attempts` flag |
+| `.phase2s.yaml` config keys | ✓ | All documented keys in `docs/configuration.md` |
+| Environment variables (`PHASE2S_*`) | ✓ | All documented in `docs/configuration.md` |
+| SKILL.md frontmatter format | ✓ | `name`, `description`, `model`, `triggers`, `inputs` fields |
+| MCP tool names (`phase2s__<skill_name>`) | ✓ | Naming convention stable |
+| Session file format (`.phase2s/sessions/*.json`) | ✓ | Forward-compatible |
+| Learnings file format (`.phase2s/memory/learnings.jsonl`) | ✓ | Append-only JSONL |
+| Provider interface (`chatStream` async iterable) | internal | Not a public API — can change in minor versions |
+| `ProviderEvent` types | internal | Not a public API |
+
+### What "stable" means
+
+- **CLI:** No flags renamed or removed without a deprecation period.
+- **Config:** No keys renamed without a migration path.
+- **SKILL.md:** Skills written for v1.0.0 will continue to load and run.
+- **MCP tools:** Existing `phase2s__*` tool names will continue to exist. New tools may be added.
+- **Breaking changes** (when they happen) get a major version bump and a migration note in CHANGELOG.
+
+---
+
 ## v0.26.0 — 2026-04-04
 
 Sprint 22: Real Codex streaming — JSONL stdout parsing replaces the `--output-last-message` temp file approach.
