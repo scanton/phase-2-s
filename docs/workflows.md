@@ -463,3 +463,50 @@ you > /diff-summary
 ```
 
 That's the full skill creation loop — from nothing to a working `/command` in 30 seconds.
+
+---
+
+## Running skills automatically in CI
+
+Everything above happens in your terminal when you think to ask. The GitHub Action makes it automatic.
+
+Create `.github/workflows/phase2s.yml` in your repo:
+
+```yaml
+name: Phase2S
+
+on:
+  pull_request:
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: scanton/phase2s@v1
+        with:
+          skill: review
+          provider: anthropic
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+When you open a PR, the action runs `/review` and posts the output as a PR comment. You see the review before you merge — without having to remember to ask.
+
+If you want it to actually block a merge when something's wrong, use `/adversarial` with `fail-on: challenged`:
+
+```yaml
+- uses: scanton/phase2s@v1
+  with:
+    skill: adversarial
+    provider: anthropic
+    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+    fail-on: challenged
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The action fails (red X on the PR) if `/adversarial` raises a challenge. Then you either address it or override. This turns Phase2S from "tool you use when you remember" into "gate that runs every time."
+
+Full reference: [GitHub Action docs](github-action.md).

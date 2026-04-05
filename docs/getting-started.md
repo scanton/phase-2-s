@@ -217,3 +217,4 @@ Everything else (`satori/`, `specs/`, `debug/`, `checkpoints/`) is created on-de
 - [Memory and persistence](memory.md) — session resume, `/remember`, `/skill`
 - [Writing custom skills](writing-skills.md) — create your own `/commands`
 - [Configuration](configuration.md) — `.phase2s.yaml` and environment variables
+- [GitHub Action](github-action.md) — run skills automatically on every PR or push

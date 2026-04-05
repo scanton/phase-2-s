@@ -1,6 +1,9 @@
 node_modules/
 dist/*
 !dist/action/
+dist/action/src/
+dist/action/bin/
+dist/action/package.json
 *.js.map
 .env
 .test-*/
