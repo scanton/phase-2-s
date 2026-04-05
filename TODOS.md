@@ -6,6 +6,26 @@
 
 ---
 
+## Future — Bear Animation V2
+
+- [ ] **Animated bear renderer** — Pinned terminal region that reacts to Phase2S events in real-time. 2-3 frames per state, cycling on 500ms interval. Subscribes to Agent event emitter. Uses ANSI cursor positioning for multi-line pinned output. Swap `StaticBearRenderer` for `AnimatedBearRenderer` (same `BearRenderer` interface). Requires adding `EventEmitter` to Agent class. Handle terminal resize, non-TTY fallback, and coexistence with progress display.
+  - Architecture: `src/bear/animated-renderer.ts` implements `BearRenderer` interface
+  - Agent changes: extend Agent with EventEmitter, emit `thinking`, `streaming`, `toolCall`, `done`, `error` events
+  - Bear states map to event types (ears perk on code gen, squint on retry, dance on test pass)
+  - Per-skill suppression: quick skills skip animation, long workflows get full bear
+  - README: Replace static screenshots with asciinema GIF of reactive bear session
+
+---
+
+## Sprint 32-33 (done) — Bear Mascot, MiniMax Provider, README Refresh (v1.10.0)
+
+- [x] Bear mascot system: 5 poses (greeting, thinking, success, error, help), BearState enum + BearRenderer interface, StaticBearRenderer, module singleton
+- [x] MiniMax provider: composition over OpenAI, `https://api.minimax.io/v1/`, MiniMax-M2.5 default
+- [x] README refresh: providers table, features in depth (lint, dry-run, progress, report, state server, MCP report, browser, --system, verifyCommand)
+- [x] 615 tests (up from 589)
+
+---
+
 ## Sprint 31 (done) — Spec Linting + Gemini Provider (v1.8.0)
 
 | Metric | Value |
