@@ -290,10 +290,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 
 - [x] **Streaming output** — done in Sprint 4 (v0.6.0). OpenAI streams; Codex passthrough wrapper. Real Codex JSONL streaming still deferred (format undocumented).
 - [x] **Conversation persistence** — done Sprint 5. `Conversation.save/load`, `--resume` flag, auto-save after each turn. v0.7.0.
-- [ ] **Multi-turn skills** — skills that ask follow-up questions mid-workflow
-  - Today skills are static prompt templates; this makes them interactive
-  - Protocol: `{{ASK: question}}` placeholder in SKILL.md that Phase2S intercepts and prompts the user before continuing
-  - Required in both REPL mode (easy) and MCP mode (harder — needs round-trip)
+- [x] **Multi-turn skills** — shipped Sprint 17 (v0.21.0). `{{ASK: question}}` inline prompts in SKILL.md. REPL prompts interactively; one-shot strips + warns; MCP strips + surfaces PHASE2S_NOTE degradation signal.
 - [ ] **`/plan` skill improvement** — output structured task list, not just prose
   - Write plan to `.phase2s/plans/YYYY-MM-DD.md`
   - Integration with TODOS.md (append generated tasks)
@@ -302,7 +299,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
   - `tools: [file_read, shell]` — only enable listed tools
   - `deny: [shell]` — disable specific tools
 - [ ] **Real Codex JSONL streaming** — Codex outputs JSONL on stdout; format is undocumented. Spike needed before committing. Would make long `/satori` runs feel faster.
-- [ ] **`glob` deprecation fix** — `glob@11.1.0` flagged as deprecated during npm install. Pinpoint which transitive dep pulls it in; update or pin to silence the warning.
+- [x] **`glob` deprecation fix** — Fixed Sprint 15. Upgraded `glob` from `^11.0.0` to `^13.0.0` in package.json.
 - [x] **Anthropic Claude provider** — `src/providers/anthropic.ts` shipped in Sprint 14. `provider: anthropic` in `.phase2s.yaml`. Uses `@anthropic-ai/sdk@0.82.0`. All 29 skills work on Claude 3.5 Sonnet.
 - [x] **Skill inputs v2: typed parameters** — Add optional `type: "boolean" | "enum" | "number"` and `enum:` to inputs schema so MCP tool parameters can be typed. Shipping in Sprint 15 (v0.18.0).
 - [ ] **Skill inputs v2: glob/prefix matching in allow/deny** — `tools: ["file_*"]` pattern matching. v1 is exact-name only. Deferred from Sprint 13.
