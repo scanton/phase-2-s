@@ -231,9 +231,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .command("init")
     .description("Interactive setup wizard — configure .phase2s.yaml for your provider")
     .option("--non-interactive", "Skip prompts and use flag values (for CI)")
-    .option("--provider <provider>", "Provider: codex-cli, openai-api, anthropic, ollama")
+    .option("--provider <provider>", "Provider: codex-cli, openai-api, anthropic, ollama, openrouter, gemini")
     .option("--api-key <key>", "API key for openai-api or anthropic provider")
     .option("--openrouter-api-key <key>", "API key for openrouter provider")
+    .option("--gemini-api-key <key>", "API key for gemini provider (starts with AIza)")
     .option("--fast-model <model>", "Fast tier model name")
     .option("--smart-model <model>", "Smart tier model name")
     .option("--slack-webhook <url>", "Slack webhook URL for notifications")
@@ -244,6 +245,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       provider?: string;
       apiKey?: string;
       openrouterApiKey?: string;
+      geminiApiKey?: string;
       fastModel?: string;
       smartModel?: string;
       slackWebhook?: string;
@@ -256,6 +258,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         provider: cmdOpts.provider,
         apiKey: cmdOpts.apiKey,
         openrouterApiKey: cmdOpts.openrouterApiKey,
+        geminiApiKey: cmdOpts.geminiApiKey,
         fastModel: cmdOpts.fastModel,
         smartModel: cmdOpts.smartModel,
         slackWebhook: cmdOpts.slackWebhook,

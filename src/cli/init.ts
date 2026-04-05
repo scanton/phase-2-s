@@ -223,6 +223,8 @@ export interface InitOptions {
   smartModel?: string;
   /** OpenRouter API key override. */
   openrouterApiKey?: string;
+  /** Gemini API key override. */
+  geminiApiKey?: string;
   /** Slack webhook override. */
   slackWebhook?: string;
   /** Discord webhook override. */
@@ -252,6 +254,7 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
       provider: providerRaw as Provider,
       apiKey: options.apiKey,
       openrouterApiKey: options.openrouterApiKey,
+      geminiApiKey: options.geminiApiKey,
       fastModel: options.fastModel,
       smartModel: options.smartModel,
       slackWebhook: options.slackWebhook,

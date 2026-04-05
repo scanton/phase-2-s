@@ -35,21 +35,22 @@ export class GeminiProvider implements Provider {
       );
     }
 
+    // Ensure baseURL has a trailing slash — OpenAI SDK path joins require it.
+    const rawBaseURL =
+      config.geminiBaseUrl ?? "https://generativelanguage.googleapis.com/v1beta/openai/";
+    const baseURL = rawBaseURL.endsWith("/") ? rawBaseURL : `${rawBaseURL}/`;
+
     const resolvedClient: OpenAIClientLike =
       client ??
       (new OpenAI({
         apiKey: config.geminiApiKey,
-        baseURL:
-          config.geminiBaseUrl ??
-          "https://generativelanguage.googleapis.com/v1beta/openai/",
+        baseURL,
       }) as unknown as OpenAIClientLike);
 
-    // OpenAIProvider validates config.apiKey — pass the Gemini key there.
-    // The real client is already constructed above; OpenAIProvider uses it directly.
-    this.inner = new OpenAIProvider(
-      { ...config, apiKey: config.geminiApiKey ?? "" },
-      resolvedClient,
-    );
+    // OpenAIProvider is always given an already-constructed client here, so its
+    // config.apiKey validation guard (!client && !config.apiKey) never fires.
+    // Pass config as-is — no need to alias the Gemini key into the OpenAI field.
+    this.inner = new OpenAIProvider(config, resolvedClient);
   }
 
   async *chatStream(

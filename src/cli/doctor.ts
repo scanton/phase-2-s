@@ -10,7 +10,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, accessSync, mkdirSync, constants } from "node:fs";
 import { resolve, join } from "node:path";
-import { parse as parseSemver } from "node:module";
 import chalk from "chalk";
 import { parse as parseYaml } from "yaml";
 import { readFileSync } from "node:fs";
@@ -134,12 +133,21 @@ export function checkAuth(
 
     case "gemini": {
       const key = (config.geminiApiKey as string | undefined) ?? process.env.GEMINI_API_KEY;
-      const ok = Boolean(key);
+      const present = Boolean(key);
+      const validPrefix = !key || key.startsWith("AIza");
       return {
         name: "Gemini API key",
-        ok,
-        detail: ok ? "set" : "missing",
-        fix: ok ? undefined : "Set GEMINI_API_KEY or run phase2s init. Get a free key at https://aistudio.google.com/apikey",
+        ok: present,
+        detail: !present
+          ? "missing"
+          : !validPrefix
+            ? "set (note: Gemini keys normally start with AIza — verify key is correct)"
+            : "set",
+        fix: !present
+          ? "Set GEMINI_API_KEY or run phase2s init. Get a free key at https://aistudio.google.com/apikey"
+          : !validPrefix
+            ? "Verify you are using a Gemini API key from https://aistudio.google.com/apikey"
+            : undefined,
       };
     }
 

@@ -89,7 +89,7 @@ export function lintSpec(spec: Spec): LintResult {
     if (!subtask.successCriteria || subtask.successCriteria.trim() === "") {
       issues.push({
         severity: "warn",
-        message: `sub-task "${subtask.name}" has no Success Criteria`,
+        message: `sub-task "${subtask.name || "<unnamed>"}" has no Success Criteria`,
         fix: "Add a Success Criteria line so satori knows when the sub-task is done",
       });
     }

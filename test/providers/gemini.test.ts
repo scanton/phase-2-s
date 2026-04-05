@@ -109,6 +109,16 @@ describe("GeminiProvider", () => {
     expect(instance._baseURL).toBe("https://custom.gemini.example/v1/");
   });
 
+  it("adds a trailing slash to geminiBaseUrl if missing", async () => {
+    const { GeminiProvider } = await import("../../src/providers/gemini.js");
+    new GeminiProvider(
+      makeConfig({ geminiBaseUrl: "https://custom.gemini.example/v1" }),
+    );
+    expect(mockOpenAIInstances.length).toBeGreaterThan(0);
+    const instance = mockOpenAIInstances[mockOpenAIInstances.length - 1];
+    expect(instance._baseURL).toBe("https://custom.gemini.example/v1/");
+  });
+
   it("does NOT inject extra headers (unlike OpenRouter)", async () => {
     const { GeminiProvider } = await import("../../src/providers/gemini.js");
     new GeminiProvider(makeConfig());

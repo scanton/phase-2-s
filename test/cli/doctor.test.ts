@@ -152,6 +152,14 @@ describe("checkAuth", () => {
     expect(result.fix).toContain("GEMINI_API_KEY");
   });
 
+  it("gemini: ok but notes non-AIza prefix when key looks wrong", async () => {
+    const { checkAuth } = await import("../../src/cli/doctor.js");
+    const result = checkAuth("gemini", { geminiApiKey: "sk-not-a-gemini-key" });
+    expect(result.ok).toBe(true); // key is present — not a hard failure
+    expect(result.detail).toContain("AIza");
+    expect(result.fix).toBeDefined();
+  });
+
   it("ollama: always N/A (no auth required)", async () => {
     const { checkAuth } = await import("../../src/cli/doctor.js");
     const result = checkAuth("ollama", {});
