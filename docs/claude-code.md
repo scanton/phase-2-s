@@ -1,39 +1,40 @@
-# Using Phase2S with Claude Code
+# Claude Code + Phase2S: Cross-Model Adversarial Review
 
-Phase2S can run as an MCP (Model Context Protocol) server, exposing every skill as a tool that Claude Code can invoke automatically. This is separate from the normal Phase2S REPL workflow — you don't type skills yourself, Claude Code calls them on your behalf in the background.
+If you use Claude Code as your daily driver, this is the most immediately useful thing Phase2S does for you.
 
----
+Claude Code is good. But it's one model. When Claude reviews Claude's own plan, it's working with the same training, the same biases, the same blind spots. It tends to agree with itself.
 
-## What this enables
-
-The main use case is **cross-model adversarial review**. When Claude Code (running on Claude, Anthropic's model) is about to execute a plan, it can call `phase2s__adversarial` to get a structured challenge from Phase2S (running on GPT-4o via your ChatGPT subscription).
-
-Two different models, different training, different biases, working in concert on the same plan. You get a second opinion from a model with no stake in agreeing with the first.
-
-All other Phase2S skills are available too: `phase2s__health`, `phase2s__plan_review`, `phase2s__consensus_plan`, all 29.
+Phase2S plugs into Claude Code as an MCP server. This gives Claude a tool — `phase2s__adversarial` — that sends a plan to GPT (running on your ChatGPT subscription) and gets back a structured challenge. Two different models, different training, different failure modes, working on the same plan. When both agree, you can proceed with more confidence. When they disagree, you find out before you've written a thousand lines of code.
 
 ---
 
 ## What you need
 
-- `phase2s` installed globally: `npm install -g @scanton/phase2s`
-- Codex CLI installed and authenticated: `npm install -g @openai/codex && codex auth`
+- Phase2S installed: `npm install -g @scanton/phase2s`
+- Codex CLI installed and authenticated with your ChatGPT account:
+  ```bash
+  npm install -g @openai/codex
+  codex auth
+  ```
+  `codex auth` opens a browser window. Log in with the same account you use at [chat.openai.com](https://chat.openai.com). You do this once — Codex saves a token and reuses it.
 - Claude Code with a project open
-- **No API key required.** Phase2S uses your ChatGPT subscription by default.
+- A `.claude/settings.json` file in your project (see Setup below)
+
+**No API key required.** Phase2S uses your ChatGPT subscription for all AI work.
 
 ---
 
-## Setup
+## Setup (2 minutes)
 
-**Step 1: Verify phase2s is in PATH**
+**Step 1: Create `.claude/settings.json` in your project root**
+
+If the `.claude/` directory doesn't exist yet, create it:
 
 ```bash
-phase2s --version
+mkdir -p .claude
 ```
 
-If this doesn't work, `npm install -g @scanton/phase2s` and try again.
-
-**Step 2: Add `.claude/settings.json` to your project root**
+Then create the file:
 
 ```json
 {
@@ -46,80 +47,195 @@ If this doesn't work, `npm install -g @scanton/phase2s` and try again.
 }
 ```
 
-That's it. Claude Code reads this file when you open the project and automatically starts `phase2s mcp` as a subprocess. You don't need to run Phase2S manually in a separate terminal.
+That's the whole file. Claude Code reads it when you open the project and automatically starts `phase2s mcp` as a background process. You don't run anything manually. Phase2S starts when Claude Code starts and stops when Claude Code stops.
 
-**Working directory:** Claude Code spawns `phase2s mcp` from your project's root directory. Phase2S loads skills from `.phase2s/skills/` in that project, and file tools read and write relative to that root. Everything works from the same directory Claude Code is already working in.
+**Step 2: Open or reload the project in Claude Code**
+
+Close and reopen your project folder in Claude Code. The Phase2S MCP server starts automatically. You'll see all 29 Phase2S skills available as tools (prefixed with `phase2s__`).
+
+**Step 3: Add routing rules to CLAUDE.md**
+
+Claude Code needs to know when to reach for Phase2S tools. Add a `CLAUDE.md` file to your project root (or update the existing one) with instructions:
+
+```markdown
+## Phase2S tools
+
+Phase2S is running as an MCP server. Use its tools proactively:
+
+- Before executing any significant plan, call `phase2s__adversarial` with the plan
+  text as `prompt`. Read the VERDICT field. If CHALLENGED, address OBJECTIONS before
+  proceeding. Do not call `codex exec` directly — it requires browser auth and fails
+  silently. Always use `phase2s__adversarial` instead.
+
+- For engineering plan review, call `phase2s__plan_review`.
+- For scope ambiguity, call `phase2s__scope_review`.
+- For code quality checks, call `phase2s__health`.
+```
+
+This tells Claude to use `phase2s__adversarial` automatically when it writes a plan, without you having to ask.
 
 ---
 
-## How Claude Code uses Phase2S skills
+## How adversarial review works
 
-Once configured, Claude Code gains a tool for every Phase2S skill:
+When Claude Code calls `phase2s__adversarial`, it passes the plan text. Phase2S runs it through GPT (via your ChatGPT subscription) using the `/adversarial` skill, which is specifically designed for AI-to-AI use: no interactive questions, no back-and-forth, just a structured verdict.
 
-| Phase2S skill | Claude Code tool |
-|--------------|-----------------|
+The output always looks like this:
+
+```
+VERDICT: CHALLENGED
+
+STRONGEST_CONCERN: The token bucket resets per-request rather than per-window.
+
+OBJECTIONS:
+1. RateLimiter.check() increments the counter and resets the bucket lazily on
+   the first request after the window expires. This means a client can always
+   make one free request immediately after being throttled. The window reset
+   should happen on a fixed schedule, not on demand.
+
+2. The middleware is registered after the auth middleware in app.ts line 34.
+   Unauthenticated requests hit the auth check before they hit rate limiting,
+   which means they bypass rate limiting entirely if auth fails fast.
+
+3. The Retry-After header is set to a hardcoded 60 but should reflect the
+   actual time remaining until the window resets.
+
+APPROVE_IF: Fix the window reset to be time-based not request-based; move
+middleware before auth; compute Retry-After from the actual reset timestamp.
+```
+
+**VERDICT: APPROVED** — no blocking objections. Claude proceeds.
+
+**VERDICT: CHALLENGED** — specific, actionable objections. Claude surfaces them to you and waits. You decide whether to address them or override.
+
+**VERDICT: NEEDS_CLARIFICATION** — the plan is ambiguous in ways that affect correctness. Claude asks you for the missing context before going further.
+
+The objections are concrete and falsifiable. Not "this could be improved" but "line 34, this specific behavior, this specific consequence." If you disagree with an objection, you can tell Claude to proceed and explain why — you always have the final call.
+
+---
+
+## What Claude Code sees
+
+Once Phase2S is running as an MCP server, Claude Code gets a tool for every Phase2S skill:
+
+| Phase2S skill | Claude Code tool name |
+|---|---|
 | `/adversarial` | `phase2s__adversarial` |
 | `/plan-review` | `phase2s__plan_review` |
 | `/consensus-plan` | `phase2s__consensus_plan` |
 | `/scope-review` | `phase2s__scope_review` |
 | `/health` | `phase2s__health` |
+| `/review` | `phase2s__review` |
+| `/audit` | `phase2s__audit` |
+| `/remember` | `phase2s__remember` |
 | `/retro` | `phase2s__retro` |
-| (all 29 skills) | `phase2s__<name>` |
+| (all 29) | `phase2s__<name>` |
 
-Hyphens in skill names become underscores in tool names. `plan-review` → `phase2s__plan_review`.
+Hyphens become underscores: `plan-review` → `phase2s__plan_review`.
 
-**Adding new skills:** Add a SKILL.md to `.phase2s/skills/` and it automatically becomes a new Claude Code tool the next time the MCP server starts. No code changes required.
+Claude Code can call any of these on your behalf. The most commonly useful ones:
 
----
-
-## Routing rules
-
-Claude Code needs to know when to reach for Phase2S tools. The `CLAUDE.md` file in your project root tells it. The Phase2S repo includes a `CLAUDE.md` with routing rules:
-
-- Run `phase2s__adversarial` before executing any significant plan
-- Run `phase2s__plan_review` when reviewing an engineering spec
-- Run `phase2s__health` after completing a sprint
-- Run `phase2s__consensus_plan` before starting a non-trivial feature
-
-You can customize `CLAUDE.md` to match your workflow. The rules are just instructions to Claude Code — add, remove, or change them as you see fit.
+- `phase2s__adversarial` — challenge a plan before executing it
+- `phase2s__health` — check code quality after finishing a sprint
+- `phase2s__scope_review` — validate that a feature's scope is right before writing code
+- `phase2s__remember` — save a project convention so future sessions know about it
 
 ---
 
-## The `/adversarial` skill in detail
+## Example session
 
-`/adversarial` is specifically designed for AI-to-AI invocation. Unlike most Phase2S skills (which are interactive), it has no questions, no interactive steps, and produces machine-readable structured output:
+Here's what a real session looks like with Phase2S configured:
 
 ```
-VERDICT: CHALLENGED | APPROVED | NEEDS_CLARIFICATION
-STRONGEST_CONCERN: [one sentence, specific and citable]
+you: Add rate limiting to the API. Use a token bucket, 100 req/min for
+     authenticated users, 20/min per IP for unauthenticated.
+
+Claude: I'll plan this out before implementing.
+
+[Calls phase2s__adversarial with the plan...]
+
+phase2s__adversarial result:
+VERDICT: CHALLENGED
+STRONGEST_CONCERN: Window reset is lazy (per-request) not fixed-schedule.
 OBJECTIONS:
-1. [specific, falsifiable objection]
-2. [specific, falsifiable objection]
-3. [optional]
-APPROVE_IF: [what would need to change]
+1. Lazy reset means clients get one free request after every throttle period.
+2. Middleware registration order: rate limiting must run before auth, not after.
+APPROVE_IF: Fix window reset to time-based; move middleware before auth.
+
+Claude: The adversarial review raised two issues I need to address:
+
+1. I was planning to reset the bucket on the first request after the window
+   expires. That gives every client one free over-limit request. The correct
+   approach is a fixed-interval reset using setInterval or a resetAt timestamp
+   checked on every request.
+
+2. I had middleware registration after auth. That means unauthenticated users
+   bypass rate limiting entirely. Middleware needs to go before auth.
+
+Updated plan: [revised plan with fixes]
+
+Should I proceed with the updated approach?
 ```
 
-**APPROVED** — the plan is sound, no blocking objections.
-
-**CHALLENGED** — there are specific, actionable objections. `APPROVE_IF` tells you exactly what needs to change. Claude Code can refuse to proceed and surface the objections to you.
-
-**NEEDS_CLARIFICATION** — the plan is ambiguous in ways that affect whether it's correct. More information needed before a verdict.
-
-All objections are specific and falsifiable. Not "this could be better" — "the bucket isn't cleared between requests in the same window, which means the limit resets on every request instead of every minute."
-
-**Invoking manually:**
-
-```
-you > /adversarial
-[paste the plan you want challenged]
-```
+Claude caught both issues before writing a single line of code.
 
 ---
 
-## MCP server notes
+## Adding custom skills that Claude Code can use
 
-**Each tool call is stateless.** `tools/call` creates a fresh agent for each invocation. Multi-turn conversations don't persist across MCP calls. If you need conversation continuity, use the Phase2S REPL directly.
+Any skill you add to `.phase2s/skills/` in your project automatically becomes a Claude Code tool at next server start.
 
-**Skills added mid-session aren't visible until restart.** If you create a skill via `/skill` in a Phase2S REPL session while Claude Code's MCP server is running, the new skill won't appear as a tool until Claude Code restarts the `phase2s mcp` subprocess.
+For example, if your project has a deployment step that isn't covered by the built-in `/ship` skill, you can write a `.phase2s/skills/deploy-staging/SKILL.md`:
 
-**Errors surface as tool errors.** If `phase2s mcp` fails (e.g., codex not authenticated), Claude Code will see a tool error and report it. Run `codex auth` and try again.
+```yaml
+---
+name: deploy-staging
+description: Deploy the current branch to staging and verify health checks
+model: smart
+triggers:
+  - deploy staging
+  - push to staging
+---
+
+Deploy the current branch to staging:
+1. Run `npm run build`
+2. Run `git push origin HEAD:staging`
+3. Wait for the deploy webhook (check .phase2s/deploy-status.json)
+4. Run `npm run health-check:staging`
+5. Report pass/fail with the health check URL
+```
+
+Save it, restart Claude Code's MCP server (close and reopen the project), and Claude Code now has `phase2s__deploy_staging` available as a tool.
+
+---
+
+## Troubleshooting
+
+**"No tool named phase2s__adversarial" or tools aren't showing**
+
+1. Check `.claude/settings.json` exists in your project root (not home directory)
+2. Verify `phase2s` is in PATH: `which phase2s`
+3. Try reloading the project in Claude Code
+4. Run `phase2s mcp` manually in a terminal to see if it starts without errors
+
+**"phase2s__adversarial returned an error"**
+
+Usually means Codex isn't authenticated. Run `codex auth` in a terminal. The browser login saves a token that Phase2S uses — this token expires occasionally and needs to be refreshed.
+
+**Claude Code calls `codex exec` directly instead of `phase2s__adversarial`**
+
+Add this to your `CLAUDE.md`:
+
+```markdown
+NEVER run `codex exec` or `codex review` directly for adversarial review.
+Codex CLI requires browser OAuth and fails in automated contexts.
+ALWAYS use `phase2s__adversarial` instead.
+```
+
+Claude Code reads CLAUDE.md before every session and will follow it.
+
+**MCP server notes**
+
+Each tool call is stateless — a fresh agent is created for each invocation. Multi-turn conversation history doesn't persist across MCP calls. If you need conversation continuity, use the Phase2S REPL directly.
+
+If you create a new skill during a REPL session, it won't appear as a Claude Code tool until you restart the MCP server (close and reopen the project in Claude Code).
