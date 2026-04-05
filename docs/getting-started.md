@@ -25,7 +25,15 @@ If you pay for ChatGPT at [chat.openai.com](https://chat.openai.com), you alread
 npm install -g @openai/codex @scanton/phase2s
 ```
 
-**Step 2: Authenticate Codex CLI with your ChatGPT account**
+**Step 2: Run the setup wizard**
+
+```bash
+phase2s init
+```
+
+This asks you 2-4 questions, checks that your tools are installed correctly, and writes `.phase2s.yaml`. Takes under 60 seconds. Skip it if you prefer setting env vars by hand (Options B-D below still work).
+
+**Step 3: Authenticate Codex CLI with your ChatGPT account**
 
 ```bash
 codex auth
@@ -33,7 +41,7 @@ codex auth
 
 This opens a browser window. Log in with the same account you use at chat.openai.com. Codex saves a token to `~/.codex/`. You only do this once.
 
-**Step 3: Start Phase2S**
+**Step 4: Start Phase2S**
 
 ```bash
 phase2s

@@ -6,6 +6,23 @@
 
 ---
 
+## Sprint 27 (done) — Onboarding Wizard (v1.4.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.4.0 |
+| Tests | 503 (+20) |
+
+- [x] **`phase2s init`** — interactive setup wizard: provider selection (1–4), API key prompt, optional fast/smart model tiers, optional Slack webhook. Writes `.phase2s.yaml` with comments. Validates prerequisites and prints tailored next steps.
+- [x] **Non-interactive mode** — `--non-interactive` flag with `--provider`, `--api-key`, `--fast-model`, `--smart-model`, `--slack-webhook` for CI scripting.
+- [x] **Existing config pre-fill** — `readExistingConfig()` reads current `.phase2s.yaml` so re-running `init` defaults to current values. Safe to run multiple times.
+- [x] **Prerequisite validation** — checks `codex` binary (codex-cli), `sk-` prefix (openai-api), `sk-ant-` prefix (anthropic), `ollama` binary (ollama). Reports warnings but always writes config.
+- [x] **`src/cli/init.ts`** — pure functions (`formatConfig`, `checkPrerequisites`, `readExistingConfig`) exported for testing; IO functions (`promptConfig`, `runInit`) handle all side effects.
+- [x] **`test/cli/init.test.ts`** — 20 tests: `formatConfig` (all 4 providers, model tiers, Slack), `checkPrerequisites` (key format, missing binary, missing env var), `readExistingConfig` (parse, missing, invalid YAML, non-object).
+- [x] **`docs/getting-started.md`** — `phase2s init` added as Step 2 of Option A setup flow.
+
+---
+
 ## Sprint 26 (done) — Notification Gateway + Run Report Viewer (v1.3.0)
 
 | Metric | Value |

@@ -211,6 +211,35 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       }
     });
 
+  // Interactive setup wizard
+  program
+    .command("init")
+    .description("Interactive setup wizard — configure .phase2s.yaml for your provider")
+    .option("--non-interactive", "Skip prompts and use flag values (for CI)")
+    .option("--provider <provider>", "Provider: codex-cli, openai-api, anthropic, ollama")
+    .option("--api-key <key>", "API key for openai-api or anthropic provider")
+    .option("--fast-model <model>", "Fast tier model name")
+    .option("--smart-model <model>", "Smart tier model name")
+    .option("--slack-webhook <url>", "Slack webhook URL for notifications")
+    .action(async (cmdOpts: {
+      nonInteractive?: boolean;
+      provider?: string;
+      apiKey?: string;
+      fastModel?: string;
+      smartModel?: string;
+      slackWebhook?: string;
+    }) => {
+      const { runInit } = await import("./init.js");
+      await runInit({
+        nonInteractive: cmdOpts.nonInteractive,
+        provider: cmdOpts.provider,
+        apiKey: cmdOpts.apiKey,
+        fastModel: cmdOpts.fastModel,
+        smartModel: cmdOpts.smartModel,
+        slackWebhook: cmdOpts.slackWebhook,
+      });
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")

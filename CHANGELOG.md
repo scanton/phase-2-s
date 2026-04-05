@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.4.0 — 2026-04-05
+
+Interactive onboarding wizard — get from zero to configured in under 60 seconds.
+
+### What's new
+
+- **`phase2s init`** — interactive setup wizard that writes `.phase2s.yaml` for you. Asks up to 4 questions: provider choice (codex-cli / openai-api / anthropic / ollama), API key, optional fast/smart model tiers, optional Slack webhook. Pre-fills from an existing config file if one exists. Validates prerequisites (checks binaries, key formats) and prints tailored next steps per provider.
+- **Non-interactive mode** — `phase2s init --non-interactive --provider openai-api --api-key sk-...` for CI scripting and automated setup. Zero prompts.
+- **Existing config pre-fill** — if `.phase2s.yaml` already exists, all prompts default to the current values. Rerunning `init` is safe — it's an update wizard, not just a first-run tool.
+- **Prerequisite validation** — checks that `codex` is on PATH (codex-cli provider), validates API key prefix format (`sk-` for OpenAI, `sk-ant-` for Anthropic), checks that `ollama` is on PATH (ollama provider). Reports warnings post-write so the config is always saved even if setup isn't complete.
+
+### Usage
+
+```bash
+# Interactive (recommended for first-time setup)
+phase2s init
+
+# Non-interactive (CI / automation)
+phase2s init --non-interactive --provider openai-api --api-key sk-your-key
+phase2s init --non-interactive --provider anthropic --api-key sk-ant-your-key
+phase2s init --non-interactive --provider codex-cli --fast-model gpt-4o-mini --smart-model o3
+```
+
+### Tests
+
+503 passing (was 483, +20 new tests):
+- `test/cli/init.test.ts` (new) — 20 tests covering `formatConfig` (all 4 providers, model tiers, Slack block), `checkPrerequisites` (binary detection, API key format validation, missing key warnings), `readExistingConfig` (parse, missing file, invalid YAML, non-object YAML)
+
+---
+
 ## v1.3.0 — 2026-04-05
 
 Notification gateway + run report viewer — complete the fire-and-forget story for the dark factory.
