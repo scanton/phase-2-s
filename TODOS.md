@@ -20,9 +20,9 @@ _Plan reviewed by `/autoplan` (CEO + Eng + DX). Approved 2026-04-04._
 
 - [ ] **TODO-1: CLI completion hints for one-shot mode** — tab-complete skill names in `phase2s run "/ski<TAB>"`. (human: ~2h / CC: ~10min) P3
 - [ ] **TODO-2: `phase2s skills --json` output** — `--json` flag outputting skill list with name, model tier, inputs. Enables scripting. (human: ~1h / CC: ~5min) P3
-- [ ] **TODO-3: `--dry-run` flag for one-shot mode** — show skill + model without executing. (human: ~2h / CC: ~10min) P2
-- [ ] **TODO-4: Typed inputs REPL rendering** — show `(yes/no)` for boolean, `[a/b/c]` for enum in REPL prompts. (human: ~1h / CC: ~5min) P3
-- [ ] **TODO-5: Inline model tier in `phase2s skills` output** (TASTE) — `explain  [fast]  Explain what a file does`. (human: ~30min / CC: ~5min) P2
+- [x] **TODO-3: `--dry-run` flag for one-shot mode** — show skill + model without executing. (human: ~2h / CC: ~10min) P2
+- [x] **TODO-4: Typed inputs REPL rendering** — show `(yes/no)` for boolean, `[a/b/c]` for enum in REPL prompts. (human: ~1h / CC: ~5min) P3
+- [x] **TODO-5: Inline model tier in `phase2s skills` output** (TASTE) — `explain  [fast]  Explain what a file does`. (human: ~30min / CC: ~5min) P2
 
 ---
 

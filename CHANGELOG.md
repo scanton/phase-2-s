@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.19.0 — 2026-04-04
+
+Sprint 15 polish: `--dry-run` flag, typed input hints in REPL, model tier badges in skill list.
+
+### What you can do now
+
+- **`phase2s run --dry-run "/explain src/auth.ts"`** — preview which skill and model would be used without running anything. Useful when debugging `fast_model`/`smart_model` config. Shows "Would route to skill: explain (model: gpt-4o-mini)" or "No skill named 'X'. Would run as plain prompt."
+- **Typed input hints in REPL** — when a skill asks you for an input, the prompt now shows the expected format inline. Boolean inputs show `(yes/no)`, enum inputs show `[low/medium/high]`. No more guessing valid values.
+- **Model tier badges in skill list** — `phase2s skills` now shows `[fast]` or `[smart]` next to each skill name so you can see at a glance which model tier each skill uses. Skills without a declared tier show no badge.
+
+### For contributors
+
+- **`src/cli/index.ts`** — `run` command gains `--dry-run` option. Skills command gains tier badge display. REPL input prompting appends `typeHint` based on `SkillInput.type`.
+- **291 tests** (up from 279). New: +12 tests for dry-run routing, tier badges, and typed input hints.
+
 ## v0.18.0 — 2026-04-04
 
 Sprint 15: Model tier dogfooding, one-shot skill routing, typed inputs v2.
