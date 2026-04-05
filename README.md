@@ -253,7 +253,7 @@ phase2s skills --json # machine-readable for scripts
 - [x] GitHub Action — `uses: scanton/phase2s@v1`
 - [x] `phase2s goal <spec.md>` — dark factory: spec in, feature out
 - [x] 5-pillar spec format — `/deep-specify` output feeds directly into `phase2s goal`
-- [ ] Real Codex streaming (JSONL stdout parsing)
+- [x] Real Codex streaming (JSONL stdout parsing) — step-by-step feedback for multi-step tasks
 
 ---
 

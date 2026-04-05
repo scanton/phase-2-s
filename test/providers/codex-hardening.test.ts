@@ -2,13 +2,13 @@ import { describe, it, expect } from "vitest";
 import { readFile } from "node:fs/promises";
 
 /**
- * Codex arg injection hardening tests.
+ * Codex provider structural hardening tests.
  *
- * We verify the source of codex.ts contains the "--" separator in the args array.
- * We can't run codex in CI (not installed), so we test the structure statically
- * and verify the logic directly.
+ * We verify key security and correctness properties of codex.ts by inspecting
+ * its source. We can't run codex in CI (not installed), so we test structure
+ * statically and verify the implementation logic directly.
  */
-describe("Codex arg injection hardening", () => {
+describe("Codex provider hardening", () => {
   it("codex.ts contains the '--' end-of-flags separator before the prompt", async () => {
     const source = await readFile("src/providers/codex.ts", "utf-8");
     // The "--" element should appear in the args array
@@ -18,46 +18,42 @@ describe("Codex arg injection hardening", () => {
     const promptIdx = source.indexOf("prompt,", dashIdx);
     // The prompt argument should follow the "--" separator (in the same args array)
     expect(promptIdx).toBeGreaterThan(dashIdx);
-    // And the "--" should come after the outputFile arg (ensuring correct position)
-    const outputFileIdx = source.lastIndexOf("outputFile", dashIdx);
-    expect(outputFileIdx).toBeGreaterThan(-1);
-    expect(outputFileIdx).toBeLessThan(dashIdx);
   });
 
-  it("codex.ts registers SIGTERM handler for temp dir cleanup", async () => {
+  it("codex.ts uses --json flag (required for non-interactive scripting mode)", async () => {
     const source = await readFile("src/providers/codex.ts", "utf-8");
-    expect(source).toContain('process.on("SIGTERM"');
+    expect(source).toContain('"--json"');
   });
 
-  it("codex.ts registers SIGINT handler for temp dir cleanup", async () => {
+  it("codex.ts does NOT use --output-last-message (replaced by JSONL parsing)", async () => {
     const source = await readFile("src/providers/codex.ts", "utf-8");
-    expect(source).toContain('process.on("SIGINT"');
+    expect(source).not.toContain("--output-last-message");
   });
 
-  it("cleanupTempDirs function is extracted and reused by all signal handlers", async () => {
+  it("codex.ts does NOT create temp directories (replaced by JSONL streaming)", async () => {
     const source = await readFile("src/providers/codex.ts", "utf-8");
-    // Should define the function once and reference it multiple times
-    const fnDef = source.indexOf("function cleanupTempDirs");
-    expect(fnDef).toBeGreaterThan(-1);
-    // All three handlers (exit, SIGTERM, SIGINT) should reference cleanupTempDirs
-    const exitHandler = source.indexOf("cleanupTempDirs", source.indexOf('process.on("exit"'));
-    const sigtermHandler = source.indexOf("cleanupTempDirs", source.indexOf('process.on("SIGTERM"'));
-    const sigintHandler = source.indexOf("cleanupTempDirs", source.indexOf('process.on("SIGINT"'));
-    expect(exitHandler).toBeGreaterThan(-1);
-    expect(sigtermHandler).toBeGreaterThan(-1);
-    expect(sigintHandler).toBeGreaterThan(-1);
+    expect(source).not.toContain("mkdtemp");
+    expect(source).not.toContain("activeTempDirs");
+    expect(source).not.toContain("tmpdir()");
   });
 
-  it("codex.ts has signal handler guard flag to prevent double-registration", async () => {
+  it("codex.ts JSONL parser silently skips malformed lines (JSON.parse in try/catch)", async () => {
     const source = await readFile("src/providers/codex.ts", "utf-8");
-    // Should declare a guard variable
-    expect(source).toContain("_signalHandlersRegistered");
-    // The guard check should wrap the handler registration
-    const guardIdx = source.indexOf("_signalHandlersRegistered");
-    const ifIdx = source.indexOf("if (!_signalHandlersRegistered)", guardIdx - 5);
-    expect(ifIdx).toBeGreaterThan(-1);
-    // The process.on calls should appear after the guard check
-    const exitIdx = source.indexOf('process.on("exit"', ifIdx);
-    expect(exitIdx).toBeGreaterThan(ifIdx);
+    // The processLine function should wrap JSON.parse in a try/catch
+    const parseTry = source.indexOf("JSON.parse(line)");
+    expect(parseTry).toBeGreaterThan(-1);
+    // There should be a catch block after the parse
+    const catchIdx = source.indexOf("} catch {", parseTry);
+    expect(catchIdx).toBeGreaterThan(parseTry);
+  });
+
+  it("codex.ts uses async queue pattern with finish() guard against double-call", async () => {
+    const source = await readFile("src/providers/codex.ts", "utf-8");
+    expect(source).toContain("if (finished) return;");
+  });
+
+  it("codex.ts yields { type: 'done' } as the final event", async () => {
+    const source = await readFile("src/providers/codex.ts", "utf-8");
+    expect(source).toContain(`yield { type: "done", stopReason: "stop" }`);
   });
 });

@@ -432,22 +432,14 @@ describe("Agent integration", () => {
     expect(events[events.length - 1]).toMatchObject({ type: "done" });
   });
 
-  it("Codex provider chatStream() emits text + done from batch _chat() result", async () => {
-    // Test the Codex passthrough wrapper by using the CodexProvider with a mocked _chat
+  it("Codex provider implements Provider interface (JSONL streaming tested in test/providers/codex.test.ts)", async () => {
+    // Structural check: CodexProvider is instantiable and has the right shape.
+    // Full streaming behavior (single message, multi-step, error handling, malformed JSONL)
+    // is covered by test/providers/codex.test.ts with spawn mocks.
     const { CodexProvider } = await import("../../src/providers/codex.js");
     const provider = new CodexProvider(minimalConfig);
-
-    // Patch the private _chat method for testing
-    (provider as unknown as { _chat: unknown })._chat = vi.fn().mockResolvedValue({
-      text: "Codex says hello",
-      toolCalls: [],
-    });
-
-    const events = await collectStream(provider as unknown as OpenAIProvider, [], []);
-    expect(events).toEqual([
-      { type: "text", content: "Codex says hello" },
-      { type: "done", stopReason: "stop" },
-    ]);
+    expect(typeof provider.chatStream).toBe("function");
+    expect(provider.name).toBe("codex-cli");
   });
 });
 

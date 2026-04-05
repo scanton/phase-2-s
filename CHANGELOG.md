@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.26.0 — 2026-04-04
+
+Sprint 22: Real Codex streaming — JSONL stdout parsing replaces the `--output-last-message` temp file approach.
+
+### What changed
+
+- **Real-time step-by-step feedback** — For multi-step Codex tasks (where Codex runs shell commands between messages), each intermediate `agent_message` is now yielded immediately as it arrives. Previously all output was held until the entire run finished. With `/satori` or `phase2s goal` running a long spec, you now see progress live instead of waiting for the final message.
+
+- **Temp file machinery removed** — `--output-last-message`, `mkdtemp`, `activeTempDirs`, `cleanupTempDirs`, and the SIGTERM/SIGINT signal handlers are all gone. The provider is ~70 lines shorter and has no filesystem side effects.
+
+- **Silent JSONL fallback** — Malformed JSONL lines are silently skipped. If a Codex CLI version changes its event format, Phase2S degrades gracefully rather than crashing.
+
+- **Error events surface cleanly** — `{"type":"error","message":"..."}` events from the Codex JSONL stream now throw immediately with the error message, rather than waiting for a non-zero exit code.
+
+- **399 tests** — up from 389 (+10: JSONL streaming unit tests, updated hardening tests).
+
+### JSONL event format (documented via spike)
+
+```json
+{"type":"thread.started","thread_id":"..."}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"type":"agent_message","text":"Running that now."}}
+{"type":"item.started","item":{"type":"command_execution","command":"npm test",...}}
+{"type":"item.completed","item":{"type":"command_execution","command":"npm test","exit_code":0,...}}
+{"type":"item.completed","item":{"type":"agent_message","text":"All 23 tests pass."}}
+{"type":"turn.completed","usage":{"input_tokens":500,"output_tokens":20}}
+```
+
+Only `item.completed` events with `type: "agent_message"` produce output. `command_execution` items are consumed silently (Codex runs the command and we see the result in the next agent_message).
+
+---
+
 ## v0.25.0 — 2026-04-04
 
 Sprint 21: Dark Factory v1 — `phase2s goal <spec.md>` executes a spec autonomously using your ChatGPT subscription.

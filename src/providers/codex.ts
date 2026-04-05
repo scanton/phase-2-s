@@ -1,63 +1,69 @@
 import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import type { Config } from "../core/config.js";
-import type { Provider, Message, ToolCall, ProviderEvent } from "./types.js";
+import type { Provider, Message, ProviderEvent } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
 
-/** Track all temp dirs created this process so we can clean up on crash/exit. */
-const activeTempDirs = new Set<string>();
+// ---------------------------------------------------------------------------
+// Codex JSONL event types (format confirmed via spike on 2026-04-04)
+//
+// Example output from `codex exec --full-auto --json -- "<prompt>"`:
+//   {"type":"thread.started","thread_id":"..."}
+//   {"type":"turn.started"}
+//   {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello"}}
+//   {"type":"turn.completed","usage":{"input_tokens":6189,"output_tokens":22}}
+//
+// Multi-step (with tool calls):
+//   {"type":"item.completed","item":{"type":"agent_message","text":"Running now..."}}
+//   {"type":"item.started","item":{"type":"command_execution","command":"npm test",...}}
+//   {"type":"item.completed","item":{"type":"command_execution",...,"exit_code":0}}
+//   {"type":"item.completed","item":{"type":"agent_message","text":"All tests pass."}}
+//
+// Error:
+//   {"type":"error","message":"stream error: ..."}
+// ---------------------------------------------------------------------------
 
-function cleanupTempDirs(): void {
-  // Synchronous cleanup — rmSync is available here (unlike the async rm).
-  for (const dir of activeTempDirs) {
-    try {
-      rmSync(dir, { recursive: true, force: true });
-    } catch {
-      // Best-effort — ignore errors (e.g. already deleted by normal path)
-    }
-  }
+interface CodexAgentMessage {
+  id: string;
+  type: "agent_message";
+  text: string;
 }
 
-/**
- * Guard against double-registration if the module is evaluated multiple times.
- * In vitest environments, modules may be re-evaluated between test files, which
- * would register duplicate handlers and trigger MaxListenersExceededWarning.
- */
-let _signalHandlersRegistered = false;
+interface CodexCommandExecution {
+  id: string;
+  type: "command_execution";
+  command: string;
+  aggregated_output: string;
+  exit_code?: number;
+  status?: string;
+}
 
-if (!_signalHandlersRegistered) {
-  _signalHandlersRegistered = true;
-  process.on("exit", cleanupTempDirs);
-  // SIGTERM and SIGINT don't trigger "exit" automatically — register them explicitly
-  // so that temp dirs (which may contain prompt text) are cleaned up on Ctrl+C and kill.
-  process.on("SIGTERM", () => {
-    cleanupTempDirs();
-    process.exit(0);
-  });
-  process.on("SIGINT", () => {
-    cleanupTempDirs();
-    process.exit(0);
-  });
+type CodexItem = CodexAgentMessage | CodexCommandExecution | { id: string; type: string };
+
+type CodexJsonlEvent =
+  | { type: "thread.started"; thread_id: string }
+  | { type: "turn.started" }
+  | { type: "item.started"; item: CodexItem }
+  | { type: "item.completed"; item: CodexItem }
+  | { type: "turn.completed"; usage: { input_tokens: number; cached_input_tokens?: number; output_tokens: number } }
+  | { type: "error"; message: string };
+
+function isAgentMessage(item: CodexItem): item is CodexAgentMessage {
+  return item.type === "agent_message" && "text" in item;
 }
 
 /**
  * Codex CLI provider.
  *
  * Uses `codex exec` in fully non-interactive scripting mode:
- *   --json                   suppresses the terminal UI (outputs JSONL instead)
- *   --output-last-message    writes the final response to a temp file
+ *   --json      suppresses the terminal UI, outputs JSONL events on stdout
  *
- * This means codex never needs to open /dev/tty, so it cannot corrupt
- * the parent process's terminal/readline session.
+ * Each `item.completed` event with `type: "agent_message"` is yielded immediately
+ * as a `{ type: "text" }` ProviderEvent. Multi-step tasks (with tool calls) produce
+ * multiple agent_message items, so callers see real-time step-by-step progress rather
+ * than waiting for the entire run to finish.
  *
- * Real Codex streaming is deferred — the JSONL stdout format is undocumented.
- * `chatStream()` wraps `_chat()` in a passthrough single-event generator
- * (same batch UX as before, but through the Provider streaming interface).
- * Tool calling is not supported via the --output-last-message mechanism;
- * toolCalls is always [].
+ * Malformed JSONL lines are silently skipped.
+ * Tool calling is not surfaced via this mechanism; toolCalls is always [].
  */
 export class CodexProvider implements Provider {
   name = "codex-cli";
@@ -71,120 +77,141 @@ export class CodexProvider implements Provider {
 
   async *chatStream(
     messages: Message[],
-    tools: OpenAIFunctionDef[],
+    _tools: OpenAIFunctionDef[],
     options?: import("./types.js").ChatStreamOptions,
   ): AsyncIterable<ProviderEvent> {
-    const result = await this._chat(messages, tools, options?.model);
-    if (result.text) {
-      yield { type: "text", content: result.text };
-    }
-    // Codex provider currently always returns toolCalls: [] — tool calling
-    // is not supported via the --output-last-message mechanism.
-    if (result.toolCalls.length > 0) {
-      yield { type: "tool_calls", calls: result.toolCalls };
-      yield { type: "done", stopReason: "tool_calls" };
-    } else {
-      yield { type: "done", stopReason: "stop" };
-    }
-  }
+    const model = options?.model ?? this.model;
 
-  private async _chat(
-    messages: Message[],
-    _tools: OpenAIFunctionDef[],
-    modelOverride?: string,
-  ): Promise<{ text: string; toolCalls: ToolCall[] }> {
     // Build the full prompt: system context + conversation history
     const parts: string[] = [];
-
     const systemMessages = messages.filter((m) => m.role === "system");
     if (systemMessages.length > 0) {
       parts.push(systemMessages.map((m) => m.content).join("\n"));
       parts.push("---");
     }
-
-    const nonSystem = messages.filter((m) => m.role !== "system");
-    for (const msg of nonSystem) {
+    for (const msg of messages.filter((m) => m.role !== "system")) {
       if (msg.role === "user") {
         parts.push(`User: ${msg.content}`);
       } else if (msg.role === "assistant" && msg.content) {
         parts.push(`Assistant: ${msg.content}`);
       }
     }
-
     const prompt = parts.join("\n\n");
 
-    // Use a temp dir for the output file so we don't pollute the project
-    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-"));
-    activeTempDirs.add(tmpDir);
-    const outputFile = join(tmpDir, "last-message.txt");
-
-    // codex exec --json suppresses the interactive UI (no /dev/tty access)
-    // --output-last-message writes the final response to a file we control
-    //
-    // The "--" separator signals end-of-flags to codex's own arg parser.
-    // Without it, a prompt beginning with "--" (e.g. "--help" or "--flags")
-    // would be misinterpreted as a codex CLI flag rather than as the prompt.
-    // spawn() with an array is NOT shell-injected, so this is the only risk.
+    // codex exec --json suppresses the interactive UI and outputs JSONL on stdout.
+    // The "--" separator signals end-of-flags so prompts beginning with "--" are safe.
+    // spawn() with an array is NOT shell-injected, so this is the only prompt-injection risk.
     const args = [
       "exec",
-      "-m", modelOverride ?? this.model,
+      "-m", model,
       "--full-auto",
       "-C", process.cwd(),
       "--json",
-      "--output-last-message", outputFile,
       "--",
       prompt,
     ];
 
-    return new Promise((resolve, reject) => {
-      const proc = spawn(this.codexPath, args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          NO_COLOR: "1",
-          FORCE_COLOR: "0",
-        },
-      });
-
-      let stderr = "";
-
-      // Consume stdout (JSONL events) so the pipe buffer never fills and
-      // blocks codex. We don't parse it — we use --output-last-message instead.
-      proc.stdout.resume();
-
-      proc.stderr.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      proc.on("close", async (code) => {
-        // Try reading the output file first (most reliable)
-        try {
-          const text = await readFile(outputFile, "utf-8");
-          await rm(tmpDir, { recursive: true }).catch(() => {});
-          activeTempDirs.delete(tmpDir);
-          resolve({ text: text.trim(), toolCalls: [] });
-          return;
-        } catch {
-          // Output file missing — fall through to error handling
-        }
-
-        await rm(tmpDir, { recursive: true }).catch(() => {});
-        activeTempDirs.delete(tmpDir);
-
-        if (code !== 0) {
-          reject(new Error(`Codex exited with code ${code}: ${stderr.trim()}`));
-          return;
-        }
-
-        // Unexpected: exited 0 but no output file
-        reject(new Error("Codex produced no output"));
-      });
-
-      proc.on("error", async (err) => {
-        await rm(tmpDir, { recursive: true }).catch(() => {});
-        activeTempDirs.delete(tmpDir);
-        reject(new Error(`Failed to spawn codex: ${err.message}`));
-      });
+    const proc = spawn(this.codexPath, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+      },
     });
+
+    // -------------------------------------------------------------------------
+    // Async queue: bridges the event-emitter world → async generator.
+    //
+    // We can't `yield` from inside event handlers, so we push events into a
+    // queue and use a one-shot resolve callback to wake the generator loop.
+    // -------------------------------------------------------------------------
+    const pendingEvents: ProviderEvent[] = [];
+    let finished = false;
+    let finishError: Error | null = null;
+    let wakeUp: (() => void) | null = null;
+    let hasProducedText = false;
+
+    const push = (event: ProviderEvent): void => {
+      pendingEvents.push(event);
+      wakeUp?.();
+      wakeUp = null;
+    };
+
+    const finish = (err?: Error): void => {
+      if (finished) return; // Guard: called at most once
+      finished = true;
+      finishError = err ?? null;
+      wakeUp?.();
+      wakeUp = null;
+    };
+
+    // JSONL line parser — called for each complete line from stdout
+    const processLine = (line: string): void => {
+      if (!line) return;
+      let evt: CodexJsonlEvent;
+      try {
+        evt = JSON.parse(line) as CodexJsonlEvent;
+      } catch {
+        // Silent fallback: malformed JSONL line, skip it
+        return;
+      }
+
+      if (evt.type === "item.completed" && isAgentMessage(evt.item)) {
+        hasProducedText = true;
+        push({ type: "text", content: evt.item.text });
+      } else if (evt.type === "error") {
+        finish(new Error(`Codex error: ${evt.message}`));
+      }
+    };
+
+    // Stream stdout, splitting on newlines as chunks arrive
+    let lineBuffer = "";
+    proc.stdout.on("data", (chunk: Buffer) => {
+      lineBuffer += chunk.toString();
+      let newlineIdx: number;
+      while ((newlineIdx = lineBuffer.indexOf("\n")) !== -1) {
+        processLine(lineBuffer.slice(0, newlineIdx).trim());
+        lineBuffer = lineBuffer.slice(newlineIdx + 1);
+      }
+    });
+
+    // Consume stderr so the pipe buffer never fills and blocks codex.
+    proc.stderr.resume();
+
+    proc.on("close", (code) => {
+      if (finished) return;
+      // Flush any remaining content without a trailing newline
+      const remaining = lineBuffer.trim();
+      if (remaining) processLine(remaining);
+
+      if (!hasProducedText && code !== 0) {
+        finish(new Error(`Codex exited with code ${code ?? "null"}`));
+      } else if (!hasProducedText) {
+        finish(new Error("Codex produced no output"));
+      } else {
+        finish();
+      }
+    });
+
+    proc.on("error", (err) => {
+      finish(new Error(`Failed to spawn codex: ${err.message}`));
+    });
+
+    // Generator loop: drain the queue, wait for more, repeat until done
+    while (true) {
+      while (pendingEvents.length > 0) {
+        yield pendingEvents.shift()!;
+      }
+      if (finished) {
+        if (finishError) throw finishError;
+        yield { type: "done", stopReason: "stop" };
+        return;
+      }
+      // Wait for the next push() or finish() call
+      await new Promise<void>((resolve) => {
+        wakeUp = resolve;
+      });
+    }
   }
 }
