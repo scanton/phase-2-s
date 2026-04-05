@@ -173,6 +173,35 @@ describe("checkPrerequisites", () => {
     expect(result.ok).toBe(false);
     expect(result.warnings[0]).toContain("ollama not found");
   });
+
+  it("gemini: warning when key doesn't start with AIza", () => {
+    const result = checkPrerequisites({ provider: "gemini", geminiApiKey: "bad-key" });
+    expect(result.ok).toBe(false);
+    expect(result.warnings[0]).toContain("should start with 'AIza'");
+  });
+
+  it("gemini: ok when key starts with AIza", () => {
+    const result = checkPrerequisites({ provider: "gemini", geminiApiKey: "AIzaTestKey" });
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatConfig Gemini
+// ---------------------------------------------------------------------------
+
+describe("formatConfig (gemini)", () => {
+  it("includes geminiApiKey line and helpful comment", () => {
+    const yaml = formatConfig({ provider: "gemini", geminiApiKey: "AIzaTestKey" });
+    expect(yaml).toContain('geminiApiKey: "AIzaTestKey"');
+    expect(yaml).toContain("aistudio.google.com/apikey");
+  });
+
+  it("no geminiApiKey in output when absent", () => {
+    const yaml = formatConfig({ provider: "gemini" });
+    expect(yaml).not.toContain("geminiApiKey");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -132,6 +132,17 @@ export function checkAuth(
       };
     }
 
+    case "gemini": {
+      const key = (config.geminiApiKey as string | undefined) ?? process.env.GEMINI_API_KEY;
+      const ok = Boolean(key);
+      return {
+        name: "Gemini API key",
+        ok,
+        detail: ok ? "set" : "missing",
+        fix: ok ? undefined : "Set GEMINI_API_KEY or run phase2s init. Get a free key at https://aistudio.google.com/apikey",
+      };
+    }
+
     case "ollama":
       return { name: "auth", ok: true, detail: "N/A (no auth required)" };
 
@@ -157,7 +168,7 @@ export function checkConfigFile(configPath: string): CheckResult {
     const raw = readFileSync(configPath, "utf8");
     const parsed = parseYaml(raw) as Record<string, unknown> | null;
     const provider = parsed?.provider as string | undefined;
-    const knownProviders = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter"];
+    const knownProviders = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini"];
     if (provider && !knownProviders.includes(provider)) {
       return {
         name: ".phase2s.yaml",

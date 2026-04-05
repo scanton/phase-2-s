@@ -19,7 +19,7 @@ import { parse as parseYaml } from "yaml";
 // Types
 // ---------------------------------------------------------------------------
 
-export type Provider = "codex-cli" | "openai-api" | "anthropic" | "ollama" | "openrouter";
+export type Provider = "codex-cli" | "openai-api" | "anthropic" | "ollama" | "openrouter" | "gemini";
 
 export interface InitConfig {
   provider: Provider;
@@ -31,6 +31,8 @@ export interface InitConfig {
   smartModel?: string;
   /** OpenRouter API key. Not written for other providers. */
   openrouterApiKey?: string;
+  /** Gemini API key. Not written for other providers. */
+  geminiApiKey?: string;
   /** Slack incoming webhook URL — optional. */
   slackWebhook?: string;
   /** Discord incoming webhook URL — optional. */
@@ -79,6 +81,14 @@ export function formatConfig(config: InitConfig): string {
     lines.push("# Model names use provider-prefixed slugs: openai/gpt-4o, anthropic/claude-3-5-sonnet,");
     lines.push("# google/gemini-pro-1.5, meta-llama/llama-3.1-8b-instruct");
     lines.push("# Browse all models at https://openrouter.ai/models");
+  }
+
+  if (config.provider === "gemini" && config.geminiApiKey) {
+    lines.push(`geminiApiKey: "${config.geminiApiKey}"`);
+    lines.push("");
+    lines.push("# Consider using GEMINI_API_KEY env var instead of storing keys in config.");
+    lines.push("# Get a free key at https://aistudio.google.com/apikey — keys start with 'AIza'.");
+    lines.push("# Default model: gemini-2.0-flash. Upgrade with: model: gemini-2.5-pro");
   }
 
   const hasTiers = config.fastModel || config.smartModel;
@@ -164,6 +174,17 @@ export function checkPrerequisites(config: InitConfig): PrereqResult {
       }
       break;
     }
+    case "gemini": {
+      if (config.geminiApiKey && !config.geminiApiKey.startsWith("AIza")) {
+        warnings.push("Gemini API key should start with 'AIza'. Double-check your key at https://aistudio.google.com/apikey");
+      }
+      if (!config.geminiApiKey && !process.env.GEMINI_API_KEY) {
+        warnings.push(
+          "No API key provided. Set GEMINI_API_KEY or re-run phase2s init. Get a free key at https://aistudio.google.com/apikey",
+        );
+      }
+      break;
+    }
   }
 
   return { ok: warnings.length === 0, warnings };
@@ -223,7 +244,7 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
   if (options.nonInteractive) {
     // Non-interactive: assemble config from flags, validate, write.
     const providerRaw = options.provider ?? "codex-cli";
-    const validProviders: Provider[] = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter"];
+    const validProviders: Provider[] = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini"];
     if (!validProviders.includes(providerRaw as Provider)) {
       throw new Error(`Unknown provider: ${providerRaw}. Valid: ${validProviders.join(", ")}`);
     }
@@ -275,13 +296,14 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
   console.log("    3  Anthropic API key");
   console.log("    4  Local Ollama (no internet required)");
   console.log("    5  OpenRouter (one key — Claude, GPT-4o, Gemini, and 50+ more)");
+  console.log("    6  Google Gemini (free tier available — gemini-2.0-flash by default)");
   console.log("");
 
   const providerToNum: Record<string, string> = {
-    "codex-cli": "1", "openai-api": "2", "anthropic": "3", "ollama": "4", "openrouter": "5",
+    "codex-cli": "1", "openai-api": "2", "anthropic": "3", "ollama": "4", "openrouter": "5", "gemini": "6",
   };
   const numToProvider: Record<string, Provider> = {
-    "1": "codex-cli", "2": "openai-api", "3": "anthropic", "4": "ollama", "5": "openrouter",
+    "1": "codex-cli", "2": "openai-api", "3": "anthropic", "4": "ollama", "5": "openrouter", "6": "gemini",
   };
   const defaultNum = providerToNum[String(existing.provider)] ?? "1";
 
@@ -310,6 +332,15 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
       : "  OpenRouter API key (sk-or-...): ";
     const key = await ask(prompt);
     config.openrouterApiKey = key || currentKey || undefined;
+  }
+
+  if (provider === "gemini") {
+    const currentKey = String(existing.geminiApiKey ?? "");
+    const prompt = currentKey
+      ? `  Gemini API key (current: ${currentKey.slice(0, 10)}...) [enter to keep]: `
+      : "  Gemini API key (AIza...) — get a free key at https://aistudio.google.com/apikey: ";
+    const key = await ask(prompt);
+    config.geminiApiKey = key || currentKey || undefined;
   }
 
   // --- Model tiers (optional) ---
@@ -417,6 +448,12 @@ function printNextSteps(provider: Provider): void {
     console.log("    1.  Browse models:               https://openrouter.ai/models");
     console.log("    2.  Set your model in .phase2s.yaml (default: openai/gpt-4o):");
     console.log("        model: anthropic/claude-3-5-sonnet");
+    console.log("    3.  Start the REPL:              phase2s");
+    console.log("    4.  Or run a skill directly:     phase2s run \"/explain src/index.ts\"");
+  } else if (provider === "gemini") {
+    console.log("    1.  Verify your API key:         https://aistudio.google.com/apikey");
+    console.log("    2.  Default model is gemini-2.0-flash. Upgrade in .phase2s.yaml:");
+    console.log("        model: gemini-2.5-pro");
     console.log("    3.  Start the REPL:              phase2s");
     console.log("    4.  Or run a skill directly:     phase2s run \"/explain src/index.ts\"");
   } else {

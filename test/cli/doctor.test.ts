@@ -135,6 +135,23 @@ describe("checkAuth", () => {
     expect(result.fix).toContain("OPENROUTER_API_KEY");
   });
 
+  it("gemini: ok when config.geminiApiKey is set", async () => {
+    const { checkAuth } = await import("../../src/cli/doctor.js");
+    const result = checkAuth("gemini", { geminiApiKey: "AIzaTestKey" });
+    expect(result.ok).toBe(true);
+    expect(result.name).toBe("Gemini API key");
+  });
+
+  it("gemini: fails when no key in config or env", async () => {
+    const { checkAuth } = await import("../../src/cli/doctor.js");
+    const savedKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    const result = checkAuth("gemini", {});
+    if (savedKey !== undefined) process.env.GEMINI_API_KEY = savedKey;
+    expect(result.ok).toBe(false);
+    expect(result.fix).toContain("GEMINI_API_KEY");
+  });
+
   it("ollama: always N/A (no auth required)", async () => {
     const { checkAuth } = await import("../../src/cli/doctor.js");
     const result = checkAuth("ollama", {});

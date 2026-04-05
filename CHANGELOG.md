@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.8.0 — 2026-04-05
+
+Spec linting + Google Gemini provider.
+
+### What's new
+
+- **`phase2s lint <spec.md>`** — validates a 5-pillar spec file before you commit 20 minutes to a dark-factory run. Catches 4 structural errors (missing title, empty problem statement, no decomposition sub-tasks, no acceptance criteria) and 2 advisory warnings (default evalCommand still set to `npm test`, subtask missing success criteria). Exits 0 when the spec is runnable (warnings OK), exits 1 on errors. Designed to integrate into CI before `phase2s goal`. 8 tests.
+- **Gemini provider** — `provider: gemini` in `.phase2s.yaml` (or `PHASE2S_PROVIDER=gemini` env var). Connects to Google's OpenAI-compatible API at `generativelanguage.googleapis.com/v1beta/openai/` — no new SDK dependency. Default model `gemini-2.0-flash`. Free tier available. Set `GEMINI_API_KEY` (starts with `AIza`) or `geminiApiKey` in config. Optional `geminiBaseUrl` override. `phase2s init` wizard option 6 and `phase2s doctor` both handle Gemini. 5 tests.
+
+### Usage
+
+```bash
+# Validate a spec before running it
+phase2s lint specs/add-rate-limiting.md
+
+# Run only after lint passes
+phase2s lint specs/add-rate-limiting.md && phase2s goal specs/add-rate-limiting.md
+
+# Configure Gemini
+export GEMINI_API_KEY="AIza..."
+phase2s init  # choose option 6
+# or in .phase2s.yaml:
+# provider: gemini
+# model: gemini-2.5-pro   # upgrade from the default gemini-2.0-flash
+```
+
+---
+
 ## v1.7.0 — 2026-04-05
 
 Self-update command + skills search.

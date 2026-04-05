@@ -6,6 +6,23 @@
 
 ---
 
+## Sprint 31 (done) — Spec Linting + Gemini Provider (v1.8.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.8.0 |
+| Tests | 580 (+21) |
+
+- [x] **`phase2s lint <spec.md>`** — validate a 5-pillar spec before running it. Catches 4 structural errors (missing title, empty problem statement, no decomposition, no acceptance criteria) and 2 advisory warnings (default evalCommand, subtask missing success criteria). Exits 0 when spec is runnable (warnings OK), exits 1 on errors. Pure function `lintSpec()` exported for testing. `runLint()` handles IO. 8 tests in `test/cli/lint.test.ts`.
+- [x] **Gemini provider** — `src/providers/gemini.ts`. Composition over `OpenAIProvider` using Google's OpenAI-compatible API endpoint (`generativelanguage.googleapis.com/v1beta/openai/`). No new SDK dependency. `GEMINI_API_KEY` env var or `geminiApiKey` in config. Optional `geminiBaseUrl` override. Default model: `gemini-2.0-flash`. 5 tests in `test/providers/gemini.test.ts`.
+- [x] **Config schema updates** — `geminiApiKey`, `geminiBaseUrl` fields in `src/core/config.ts`. Provider enum extended to include `"gemini"`. Default model logic extended.
+- [x] **`phase2s init` wizard updates** — Gemini added as provider option 6 ("Google Gemini (free tier available — gemini-2.0-flash by default)"). `checkPrerequisites` validates `AIza` prefix. Prompts for API key with link to aistudio.google.com/apikey. `printNextSteps` shows next steps for Gemini. Non-interactive `validProviders` includes "gemini". 4 tests added to `test/cli/init.test.ts`.
+- [x] **`phase2s doctor` updates** — Gemini case added to `checkAuth()`. "gemini" added to `knownProviders` in `checkConfigFile()`. 2 tests added to `test/cli/doctor.test.ts`.
+- [x] **Shell completion** — `lint` added to bash COMPREPLY list and zsh subcommands array.
+- [x] **Docs** — `docs/configuration.md` (Gemini provider comment, `geminiApiKey`/`geminiBaseUrl` fields, env var table, provider enum), `docs/getting-started.md` (Option F: Google Gemini, version bump to v1.8.0), `docs/advanced.md` (Option F section, streaming note updated), `CHANGELOG.md` v1.8.0 entry.
+
+---
+
 ## Sprint 30 (done) — Self-Update + Skills Search (v1.7.0)
 
 | Metric | Value |
@@ -480,13 +497,13 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
   - Each specialist has its own tool set and system prompt
 - [x] **Persistent memory across sessions** — done in Sprint 10. `loadLearnings()` + `formatLearningsForPrompt()` in `src/core/memory.ts`. Injected into system prompt via `AgentOptions.learnings`. CLI loads automatically from `.phase2s/memory/learnings.jsonl`. `/remember` skill writes new learnings.
 - [x] **Browser tool** — shipped Sprint 19 (v0.23.0). Headless Playwright browser. Used by `/qa` skill and available as a tool in the agent loop.
-- [x] **More provider support** — Anthropic + Ollama (Sprint 14), OpenRouter (Sprint 29), Gemini (Sprint 31 planned).
+- [x] **More provider support** — Anthropic + Ollama (Sprint 14), OpenRouter (Sprint 29), Gemini (Sprint 31).
   - Provider interface already abstracted; just implement `chatStream()`
 - [x] **GitHub Actions integration** — shipped Sprint 20. `uses: scanton/phase2s@v1`. Requires API key for CI use.
 - [x] **Self-update** — shipped Sprint 30 (v1.7.0). `phase2s upgrade` checks npm registry, prompts to install. `--check` for CI.
 - [x] **Skills search** — shipped Sprint 30 (v1.7.0). `phase2s skills <query>` filters by name/description.
-- [ ] **`phase2s lint <spec.md>`** — validate a 5-pillar spec before running: missing sections, empty criteria, blank evalCommand. Saves the 20-minute dark-factory wait on a broken spec. (Sprint 31 planned)
-- [ ] **Gemini provider** — `provider: gemini`, `GEMINI_API_KEY`, `@google/generative-ai` SDK. Free tier available. `gemini-2.0-flash` default, `gemini-2.5-pro` for smart tier. (Sprint 31 planned)
+- [x] **`phase2s lint <spec.md>`** — shipped Sprint 31 (v1.8.0). Validates 5-pillar spec structure before dark factory run.
+- [x] **Gemini provider** — shipped Sprint 31 (v1.8.0). `provider: gemini`, `GEMINI_API_KEY`, OpenAI-compatible endpoint, no new SDK dependency.
 - [ ] **MiniMax provider** — `provider: minimax`, `MINIMAX_API_KEY`. OpenAI-compatible API surface.
 - [ ] **VS Code extension** — run skills from the editor sidebar
   - `/review` on current file, `/investigate` on selected error, `/plan` for a feature

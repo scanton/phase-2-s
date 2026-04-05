@@ -1,6 +1,6 @@
 # Advanced Features
 
-> **Token-by-token streaming and tool-loop visibility require a direct API provider: `openai-api`, `anthropic`, `ollama`, or `openrouter`.**
+> **Token-by-token streaming and tool-loop visibility require a direct API provider: `openai-api`, `anthropic`, `ollama`, `openrouter`, or `gemini`.**
 >
 > If you're using a ChatGPT subscription (Option A / Codex CLI), you don't need this page for most things. Codex CLI already shows step-by-step messages for multi-step tasks (added v0.26.0). Come back when you want token-by-token streaming or model-per-skill routing.
 
@@ -67,11 +67,21 @@ phase2s -m google/gemini-pro-1.5 run "/explain src/cli/index.ts"
 
 Default model is `openai/gpt-4o`. Get your key at [openrouter.ai/keys](https://openrouter.ai/keys).
 
+**Option F: Google Gemini (free tier available)**
+
+```bash
+export GEMINI_API_KEY=AIza-your-key-here
+export PHASE2S_PROVIDER=gemini
+phase2s
+```
+
+Connects to Google's OpenAI-compatible endpoint — no new SDK dependency. Default model is `gemini-2.0-flash`. Upgrade with `model: gemini-2.5-pro` in `.phase2s.yaml`. Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Keys start with `AIza`.
+
 ---
 
 ## Token-by-token streaming
 
-With any direct API provider (Options B–E), responses stream word-by-word as the model generates them. No spinner, no waiting for a complete response.
+With any direct API provider (Options B–F), responses stream word-by-word as the model generates them. No spinner, no waiting for a complete response.
 
 ```
 you > /review src/core/agent.ts

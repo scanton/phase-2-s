@@ -228,7 +228,7 @@ phase2s skills --json # machine-readable for scripts
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 559 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, installation health checks, self-update, and skills search
+- [x] 580 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, installation health checks, self-update, skills search, and spec linting
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -269,6 +269,8 @@ phase2s skills --json # machine-readable for scripts
 - [x] `phase2s doctor` — installation health check: Node version, provider binary, auth, config, working dir
 - [x] `phase2s upgrade` — self-update: checks npm registry, prompts to install, `--check` for CI
 - [x] `phase2s skills [query]` — filter the skill list by name or description (`phase2s skills security`)
+- [x] Google Gemini provider — free tier, `gemini-2.0-flash` default, OpenAI-compatible endpoint, no new SDK dependency
+- [x] `phase2s lint <spec.md>` — validate a spec before a dark factory run: catches structural errors before the 20-minute agent loop begins
 
 ---
 

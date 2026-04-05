@@ -50,7 +50,7 @@ phase2s
 You'll see:
 
 ```
-Phase2S v1.7.0
+Phase2S v1.8.0
 Type your message and press Enter. Type /quit to exit.
 
 you >
@@ -111,6 +111,17 @@ phase2s
 ```
 
 Get your key at [openrouter.ai/keys](https://openrouter.ai/keys). Switch models on the fly with `-m anthropic/claude-3-5-sonnet` or set `model:` in `.phase2s.yaml`. All provider-prefixed slugs work: `openai/gpt-4o`, `google/gemini-pro-1.5`, etc.
+
+### Option F — Google Gemini (free tier available)
+
+```bash
+npm install -g @scanton/phase2s
+export GEMINI_API_KEY=AIza-your-key-here
+export PHASE2S_PROVIDER=gemini
+phase2s
+```
+
+Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Keys start with `AIza`. Default model is `gemini-2.0-flash` — upgrade with `model: gemini-2.5-pro` in `.phase2s.yaml`.
 
 ---
 

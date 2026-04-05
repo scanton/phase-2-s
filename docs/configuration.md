@@ -29,17 +29,19 @@ Full reference with all fields:
 # anthropic:   Anthropic API (requires ANTHROPIC_API_KEY, defaults to claude-3-5-sonnet-20241022)
 # ollama:      local Ollama server (no API key, defaults to llama3.1:8b, requires ollama serve)
 # openrouter:  OpenRouter gateway (requires OPENROUTER_API_KEY, 50+ models via one key)
+# gemini:      Google Gemini (requires GEMINI_API_KEY, free tier available, defaults to gemini-2.0-flash)
 provider: codex-cli
 
 # Model to use
 # If not set: auto-detected from ~/.codex/config.toml (codex-cli provider)
 # or defaults to gpt-4o (openai-api), claude-3-5-sonnet-20241022 (anthropic),
-# llama3.1:8b (ollama), openai/gpt-4o (openrouter)
+# llama3.1:8b (ollama), openai/gpt-4o (openrouter), gemini-2.0-flash (gemini)
 # model: gpt-4o
 # model: claude-3-5-sonnet-20241022
 # model: qwen2.5-coder:7b
 # model: openai/gpt-4o          # OpenRouter: use provider-prefixed slugs
 # model: anthropic/claude-3-5-sonnet
+# model: gemini-2.5-pro         # Gemini: upgrade from the default gemini-2.0-flash
 
 # Model tier routing (openai-api and anthropic providers)
 # Skills declare 'model: fast' or 'model: smart' in their SKILL.md frontmatter.
@@ -69,6 +71,15 @@ provider: codex-cli
 # OpenRouter base URL (openrouter provider only, default https://openrouter.ai/api/v1)
 # Override for custom deployments or compatible gateways.
 # openrouterBaseUrl: https://openrouter.ai/api/v1
+
+# Gemini API key (gemini provider only)
+# Falls back to GEMINI_API_KEY environment variable.
+# Get a free key at https://aistudio.google.com/apikey — keys start with 'AIza'.
+# geminiApiKey: AIza-your-key-here
+
+# Gemini base URL (gemini provider only, default https://generativelanguage.googleapis.com/v1beta/openai/)
+# Override for custom endpoints or enterprise deployments.
+# geminiBaseUrl: https://generativelanguage.googleapis.com/v1beta/openai/
 
 # Max agent loop turns before stopping
 # The agent loop runs tool calls and feeds results back until no more tool calls.
@@ -135,7 +146,7 @@ All config file settings can be overridden with environment variables. Environme
 
 | Variable | Equivalent config field | Description |
 |----------|------------------------|-------------|
-| `PHASE2S_PROVIDER` | `provider` | `codex-cli`, `openai-api`, `anthropic`, `ollama`, or `openrouter` |
+| `PHASE2S_PROVIDER` | `provider` | `codex-cli`, `openai-api`, `anthropic`, `ollama`, `openrouter`, or `gemini` |
 | `PHASE2S_MODEL` | `model` | Model name (e.g., `gpt-4o`, `o3`, `claude-3-5-sonnet-20241022`) |
 | `PHASE2S_FAST_MODEL` | `fast_model` | Fast tier model name |
 | `PHASE2S_SMART_MODEL` | `smart_model` | Smart tier model name |
@@ -149,6 +160,7 @@ All config file settings can be overridden with environment variables. Environme
 | `OPENAI_API_KEY` | — | API key for `openai-api` provider |
 | `ANTHROPIC_API_KEY` | — | API key for `anthropic` provider |
 | `OPENROUTER_API_KEY` | `openrouterApiKey` | API key for `openrouter` provider |
+| `GEMINI_API_KEY` | `geminiApiKey` | API key for `gemini` provider (keys start with `AIza`) |
 
 ---
 

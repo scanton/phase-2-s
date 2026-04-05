@@ -274,6 +274,16 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       await runUpgrade(VERSION, { check: cmdOpts.check });
     });
 
+  // Spec linting
+  program
+    .command("lint <spec-file>")
+    .description("Validate a 5-pillar spec file before running it — catches structural errors before the dark factory run begins")
+    .action(async (specFile: string) => {
+      const { runLint } = await import("./lint.js");
+      const ok = await runLint(specFile);
+      if (!ok) process.exit(1);
+    });
+
   // Installation health check
   program
     .command("doctor")
@@ -319,7 +329,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp goal report init upgrade doctor completion" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run skills mcp goal report init upgrade lint doctor completion" -- "\$cur"))
     return
   fi
 
@@ -360,6 +370,7 @@ _phase2s() {
     'report:Display a human-readable summary of a run log'
     'init:Interactive setup wizard — configure .phase2s.yaml'
     'upgrade:Check for a newer version and offer to install it'
+    'lint:Validate a 5-pillar spec file before running it'
     'doctor:Check Phase2S installation health'
     'completion:Output shell completion script'
   )
