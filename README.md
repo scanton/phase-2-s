@@ -124,6 +124,7 @@ phase2s skills
 
 ## Docs
 
+- [GitHub Actions](docs/github-action.md) — `uses: scanton/phase2s@v1` reference, inputs, outputs, examples
 - [Getting started](docs/getting-started.md) — full setup walkthrough, first session, first skill call
 - [Skills reference](docs/skills.md) — all 29 skills with examples and arguments
 - [Workflows](docs/workflows.md) — real development sessions: feature, debug, review, weekly rhythm
@@ -142,7 +143,7 @@ phase2s skills
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 341 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 365 tests covering all tools, core modules, agent integration, and the GitHub Action (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family, all 29 skills
@@ -169,6 +170,7 @@ phase2s skills
 - [x] Shell completion — `eval "$(phase2s completion bash)"` for tab-complete in bash/zsh
 - [x] Tool allow/deny — `tools:` and `deny:` in `.phase2s.yaml` restrict agent tool access
 - [x] Headless browser tool — navigate, click, type, screenshot, evaluate JS via Playwright (opt-in: `browser: true`)
+- [x] GitHub Action — `uses: scanton/phase2s@v1` runs any skill in CI, posts results as PR comments and Step Summaries
 - [ ] Real Codex streaming (JSONL stdout parsing)
 
 ---

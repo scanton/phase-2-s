@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.24.0 — 2026-04-04
+
+Sprint 20: published GitHub Action — `uses: scanton/phase2s@v1`.
+
+### What you can do now
+
+- **GitHub Action** — add Phase2S to any workflow with `uses: scanton/phase2s@v1`. No install step, no setup — it auto-installs `@scanton/phase2s` at runtime, runs your skill, and surfaces results three ways: `result` + `verdict` outputs, a GitHub Step Summary, and a PR comment (when `GITHUB_TOKEN` is set on `pull_request` events).
+- **Skill routing** — the `skill:` input accepts any Phase2S skill name with or without a leading `/` (`review`, `/adversarial`, etc.). Optional `args:` are appended to the prompt.
+- **Multi-provider** — `provider:` accepts `anthropic` (default), `openai-api`, or `ollama`. Pass your key as a secret via `anthropic-api-key:` or `openai-api-key:`.
+- **Verdict extraction** — for `/adversarial` (and any skill that emits `VERDICT: APPROVED|CHALLENGED|NEEDS_CLARIFICATION`), the `verdict` output is set automatically. Use it in downstream `if:` conditions.
+- **`fail-on` control** — `error` (default) fails on non-zero exit; `challenged` also fails when verdict is `CHALLENGED`; `never` always passes (useful for advisory runs).
+- **PR comments** — set `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and the action posts the full skill output as a PR comment. Long outputs (>60k chars) are truncated with a pointer to the Step Summary.
+- **Floating `v1` tag** — `uses: scanton/phase2s@v1` always points to the latest v0.x release. Updated automatically on every publish.
+
+### Example
+
+```yaml
+- uses: scanton/phase2s@v1
+  with:
+    skill: adversarial
+    args: "Evaluate the plan in PLAN.md"
+    provider: anthropic
+    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+    fail-on: challenged
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### For contributors
+
+- **`src/action/index.ts`** — new file. JS action entry point: credential validation, `npm install -g @scanton/phase2s`, skill execution, verdict extraction, Step Summary, PR comment, fail-on logic. Exported `run()` for testability.
+- **`action.yml`** — new file. `using: node20`, `main: dist/action/index.js`. Defines `skill`, `args`, `provider`, `anthropic-api-key`, `openai-api-key`, `fail-on` inputs and `result`, `verdict` outputs.
+- **`package.json`** — `build:action` script (`ncc build src/action/index.ts -o dist/action`). `@actions/core`, `@actions/exec`, `@actions/github`, `@vercel/ncc` added as devDependencies. `!dist/action/` excluded from npm package files.
+- **`tsconfig.json`** — `src/action` excluded so tsc doesn't emit a broken stub into `dist/action/`.
+- **`.gitignore`** — `!dist/action/` un-ignores the ncc bundle so GitHub can run the action from the committed artifact.
+- **`.github/workflows/build-action.yml`** — new CI workflow: verifies `dist/action/index.js` is committed and up-to-date on any PR touching `src/action/**`.
+- **`.github/workflows/publish.yml`** — builds action bundle and force-pushes the floating `v1` tag after every npm publish.
+- **365 tests** (up from 341). New: +24 action tests covering skill normalization, verdict extraction, fail-on logic, Step Summary, PR comments, env vars, auto-install, output truncation.
+
 ## v0.23.0 — 2026-04-04
 
 Sprint 19: headless browser tool via Playwright.

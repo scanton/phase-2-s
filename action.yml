@@ -1,0 +1,43 @@
+name: 'Phase2S'
+description: 'Run Phase2S AI skills in your GitHub Actions workflows'
+author: 'scanton'
+
+inputs:
+  skill:
+    description: 'Skill to run (e.g. review, audit, health, adversarial)'
+    required: true
+  args:
+    description: 'Arguments to pass to the skill (e.g. src/core/agent.ts)'
+    required: false
+    default: ''
+  provider:
+    description: 'AI provider: anthropic, openai-api, ollama'
+    required: false
+    default: 'anthropic'
+  anthropic-api-key:
+    description: 'Anthropic API key (required when provider=anthropic)'
+    required: false
+  openai-api-key:
+    description: 'OpenAI API key (required when provider=openai-api)'
+    required: false
+  fail-on:
+    description: >
+      When to fail the action: never | error | challenged.
+      'challenged' is only meaningful with the adversarial skill (which emits VERDICT).
+      For other skills, 'challenged' behaves identically to 'error'.
+    required: false
+    default: 'error'
+
+outputs:
+  result:
+    description: 'Raw skill output text'
+  verdict:
+    description: 'Extracted verdict, if present (APPROVED, CHALLENGED, NEEDS_CLARIFICATION)'
+
+runs:
+  using: 'node20'
+  main: 'dist/action/index.js'
+
+branding:
+  icon: 'zap'
+  color: 'purple'
