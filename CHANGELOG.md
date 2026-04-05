@@ -1,5 +1,251 @@
 # Changelog
 
+## v1.8.0 — 2026-04-05
+
+Spec linting + Google Gemini provider.
+
+### What's new
+
+- **`phase2s lint <spec.md>`** — validates a 5-pillar spec file before you commit 20 minutes to a dark-factory run. Catches 4 structural errors (missing title, empty problem statement, no decomposition sub-tasks, no acceptance criteria) and 2 advisory warnings (default evalCommand still set to `npm test`, subtask missing success criteria). Exits 0 when the spec is runnable (warnings OK), exits 1 on errors. Designed to integrate into CI before `phase2s goal`. 8 tests.
+- **Gemini provider** — `provider: gemini` in `.phase2s.yaml` (or `PHASE2S_PROVIDER=gemini` env var). Connects to Google's OpenAI-compatible API at `generativelanguage.googleapis.com/v1beta/openai/` — no new SDK dependency. Default model `gemini-2.0-flash`. Free tier available. Set `GEMINI_API_KEY` (starts with `AIza`) or `geminiApiKey` in config. Optional `geminiBaseUrl` override. `phase2s init` wizard option 6 and `phase2s doctor` both handle Gemini. 5 tests.
+
+### Usage
+
+```bash
+# Validate a spec before running it
+phase2s lint specs/add-rate-limiting.md
+
+# Run only after lint passes
+phase2s lint specs/add-rate-limiting.md && phase2s goal specs/add-rate-limiting.md
+
+# Configure Gemini
+export GEMINI_API_KEY="AIza..."
+phase2s init  # choose option 6
+# or in .phase2s.yaml:
+# provider: gemini
+# model: gemini-2.5-pro   # upgrade from the default gemini-2.0-flash
+```
+
+---
+
+## v1.7.0 — 2026-04-05
+
+Self-update command + skills search.
+
+### What's new
+
+- **`phase2s upgrade`** — checks npm registry for the latest version and offers to install it. Runs `npm install -g @scanton/phase2s` with live output when you say yes. `--check` flag for CI / non-interactive use (reports whether an update is available without prompting). Fails gracefully if the registry is unreachable. 12 tests.
+- **`phase2s skills [query]`** — optional search query on the `skills` command. Filters by skill name and description (case-insensitive substring match). `phase2s skills quality` returns `/health`, `/qa`, `/audit`. `phase2s skills ship` returns `/ship` and `/land-and-deploy`. Works with `--json` for scripting. When no skills match, prints a helpful message pointing back to `phase2s skills` for the full list. Fully backward compatible — no args still lists all skills. 7 tests.
+
+### Usage
+
+```bash
+# Check for updates and upgrade
+phase2s upgrade
+
+# Just check without prompting (CI-friendly)
+phase2s upgrade --check
+
+# Find skills related to a topic
+phase2s skills quality
+phase2s skills security
+phase2s skills deploy
+phase2s skills search    # try partial names too
+
+# JSON output with filter (for scripts)
+phase2s skills --json security
+```
+
+---
+
+## v1.6.0 — 2026-04-05
+
+Installation health check + OpenRouter provider.
+
+### What's new
+
+- **`phase2s doctor`** — new diagnostic command that runs 5 health checks and tells you exactly what's wrong and how to fix it. Checks Node.js version (>= 20), provider binary availability (codex, ollama), API key / auth state for all providers, `.phase2s.yaml` validity, and `.phase2s/` working directory writability. Prints `✓`/`✗` per check with one-line fix instructions. Exits with a summary: "All checks passed" or "N issues found."
+- **OpenRouter provider** — `provider: openrouter` in `.phase2s.yaml` (or `PHASE2S_PROVIDER=openrouter` env var). Routes requests through [openrouter.ai](https://openrouter.ai) to 50+ models under a single API key. Model names use provider-prefixed slugs: `openai/gpt-4o`, `anthropic/claude-3-5-sonnet`, `google/gemini-pro-1.5`. Set `OPENROUTER_API_KEY` or `openrouterApiKey` in config. Optional `openrouterBaseUrl` for custom deployments. `phase2s init` wizard supports OpenRouter setup with prerequisite check and next-steps guidance.
+
+### Usage
+
+```bash
+# Run the health check
+phase2s doctor
+
+# OpenRouter via env vars
+export PHASE2S_PROVIDER=openrouter
+export OPENROUTER_API_KEY=sk-or-...
+phase2s run "explain this file"
+
+# OpenRouter with a specific model
+phase2s -m anthropic/claude-3-5-sonnet run "review src/core/agent.ts"
+
+# Set up interactively
+phase2s init
+# (select OpenRouter when prompted for provider)
+```
+
+```yaml
+# .phase2s.yaml — OpenRouter config
+provider: openrouter
+openrouterApiKey: "sk-or-..."
+model: "openai/gpt-4o"        # any OpenRouter model slug
+fast_model: "openai/gpt-4o-mini"
+smart_model: "anthropic/claude-3-5-sonnet"
+```
+
+---
+
+## v1.5.0 — 2026-04-05
+
+Notification channels expansion + glob tool filtering.
+
+### What's new
+
+- **Discord notifications** — `notify.discord` in `.phase2s.yaml` or `PHASE2S_DISCORD_WEBHOOK` env var. Rich embeds with green/red color coding for success/failure. Works on macOS, Linux, and Windows.
+- **Microsoft Teams notifications** — `notify.teams` in `.phase2s.yaml` or `PHASE2S_TEAMS_WEBHOOK` env var. MessageCard format with color-coded `themeColor`. Works on macOS, Linux, and Windows.
+- **`phase2s init` wizard** — two new prompts for Discord and Teams webhook URLs. Pre-fills from existing config. `--discord-webhook` and `--teams-webhook` flags for non-interactive CI mode.
+- **Glob pattern matching in `tools` and `deny`** — `*` is now a wildcard in the tool allow/deny lists. `tools: ["file_*"]` allows `file_read` and `file_write` without listing them individually. `deny: ["*"]` blocks everything. Patterns that match no known tool produce a startup warning. Exact names still work as before — fully backward compatible.
+
+### Usage
+
+```bash
+# Discord via env var
+export PHASE2S_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
+phase2s goal my-spec.md --notify
+
+# Teams via env var
+export PHASE2S_TEAMS_WEBHOOK=https://outlook.office.com/webhook/...
+phase2s goal my-spec.md --notify
+
+# Set up interactively
+phase2s init
+
+# Non-interactive CI setup
+phase2s init --non-interactive --provider codex-cli \
+  --slack-webhook https://hooks.slack.com/... \
+  --discord-webhook https://discord.com/api/webhooks/... \
+  --teams-webhook https://outlook.office.com/webhook/...
+```
+
+```yaml
+# .phase2s.yaml — glob tool filtering
+tools:
+  - file_*   # file_read + file_write
+  - glob
+  - grep
+# shell is not listed, so it's blocked
+```
+
+### Tests
+
+516 passing (was 503, +13 new tests):
+- `test/core/registry.test.ts` — +5 glob matching tests: `file_*` allow, `*` allow-all, `file_*` deny, deny-overrides-allow with globs, no-match warns
+- `test/core/notify.test.ts` — +6 notification tests: Discord embed payload, Discord success/failure color, Teams MessageCard payload, Teams success/failure color, no-channel warning mentions all three env vars
+- `test/cli/init.test.ts` — +3 init tests: `discordWebhook` in formatConfig, `teamsWebhook` in formatConfig, all three webhooks together
+
+---
+
+## v1.4.0 — 2026-04-05
+
+Interactive onboarding wizard — get from zero to configured in under 60 seconds.
+
+### What's new
+
+- **`phase2s init`** — interactive setup wizard that writes `.phase2s.yaml` for you. Asks up to 4 questions: provider choice (codex-cli / openai-api / anthropic / ollama), API key, optional fast/smart model tiers, optional Slack webhook. Pre-fills from an existing config file if one exists. Validates prerequisites (checks binaries, key formats) and prints tailored next steps per provider.
+- **Non-interactive mode** — `phase2s init --non-interactive --provider openai-api --api-key sk-...` for CI scripting and automated setup. Zero prompts.
+- **Existing config pre-fill** — if `.phase2s.yaml` already exists, all prompts default to the current values. Rerunning `init` is safe — it's an update wizard, not just a first-run tool.
+- **Prerequisite validation** — checks that `codex` is on PATH (codex-cli provider), validates API key prefix format (`sk-` for OpenAI, `sk-ant-` for Anthropic), checks that `ollama` is on PATH (ollama provider). Reports warnings post-write so the config is always saved even if setup isn't complete.
+
+### Usage
+
+```bash
+# Interactive (recommended for first-time setup)
+phase2s init
+
+# Non-interactive (CI / automation)
+phase2s init --non-interactive --provider openai-api --api-key sk-your-key
+phase2s init --non-interactive --provider anthropic --api-key sk-ant-your-key
+phase2s init --non-interactive --provider codex-cli --fast-model gpt-4o-mini --smart-model o3
+```
+
+### Tests
+
+503 passing (was 483, +20 new tests):
+- `test/cli/init.test.ts` (new) — 20 tests covering `formatConfig` (all 4 providers, model tiers, Slack block), `checkPrerequisites` (binary detection, API key format validation, missing key warnings), `readExistingConfig` (parse, missing file, invalid YAML, non-object YAML)
+
+---
+
+## v1.3.0 — 2026-04-05
+
+Notification gateway + run report viewer — complete the fire-and-forget story for the dark factory.
+
+### What's new
+
+- **`phase2s goal --notify`** — after a dark factory run completes (success, failure, or challenged), send a notification. macOS system notification via `osascript` (no new deps). Optional Slack webhook via `PHASE2S_SLACK_WEBHOOK` env var or `notify.slack` in `.phase2s.yaml`. Both channels are fail-safe: errors go to stderr and never block the run.
+- **`phase2s report <logfile.jsonl>`** — parse and display a chalk-colored summary of a dark factory run log: spec filename, per-attempt sub-task timeline with durations (✓/✗), eval command, criteria verdicts, and total run time. Pass the path printed by `phase2s goal` as `Run log:`.
+- **`phase2s__report` MCP tool** — same report viewer exposed as an MCP tool. After Claude Code triggers `phase2s__goal`, it can call `phase2s__report` with the returned `runLogPath` to see exactly what happened.
+- **`GoalResult.durationMs`** — total wall-clock run duration now included in all goal results. Used by notifications and available to MCP callers.
+- **`notify` config block** — `.phase2s.yaml` accepts `notify: { mac: true, slack: "https://hooks.slack.com/..." }`. The `--notify` CLI flag enables the configured channels. `PHASE2S_SLACK_WEBHOOK` env var provides the Slack URL without config file changes.
+
+### Usage
+
+```bash
+# Run a spec with notifications enabled
+phase2s goal my-spec.md --notify --review-before-run
+
+# View a run log
+phase2s report .phase2s/runs/2026-04-05T10-30-00-a3f1b2c4.jsonl
+
+# Slack webhook via env var
+PHASE2S_SLACK_WEBHOOK=https://hooks.slack.com/services/... phase2s goal spec.md --notify
+```
+
+```yaml
+# .phase2s.yaml
+notify:
+  mac: true
+  slack: "https://hooks.slack.com/services/..."
+```
+
+### Tests
+
+483 passing (was 453, +30 new tests):
+- `test/core/notify.test.ts` (new) — 11 tests covering buildNotifyPayload variants, formatDurationMs, sendNotification no-op, osascript call, Slack fetch payload, error handling
+- `test/cli/report.test.ts` (new) — 11 tests covering parseRunLog, buildRunReport (sub-task durations, criteria, challenged, error), formatRunReport (success, failure, challenged)
+- `test/mcp/server.test.ts` — 4 new tests: REPORT_TOOL in tools/list, required logFile, empty logFile error, valid logFile returns report
+
+---
+
+## v1.2.0 — 2026-04-05
+
+Dark factory as MCP tool — run logs + pre-execution adversarial review.
+
+### What's new
+
+- **`phase2s__goal` MCP tool** — Claude Code can now trigger the dark factory directly. Call `phase2s__goal` with a spec file path and get back the run summary + an absolute path to the structured JSONL run log. No terminal required. Long-running by design (20+ min); the MCP 2024-11-05 spec has no timeout requirement at the transport level.
+- **Structured JSONL run logs** — every dark factory run now writes a log to `<specDir>/.phase2s/runs/<timestamp>-<hash>.jsonl`. One event per line: `goal_started`, `subtask_started/completed`, `eval_started/completed`, `criteria_checked`, `goal_completed`. Claude can read it with `file_read` to see exactly what happened at each sub-task without guessing.
+- **Pre-execution adversarial review** — `phase2s__goal` accepts `reviewBeforeRun: true` (and `phase2s goal --review-before-run` on the CLI). Before a single line of code is written, the spec is challenged by a fresh GPT agent using the adversarial SKILL.md template. `CHALLENGED` or `NEEDS_CLARIFICATION` → halts and returns the full challenge response. `APPROVED` → proceeds. The review agent is a fresh `Agent` instance (not the satori implementation agent) to prevent context contamination.
+- **`runGoal()` no longer calls `process.exit()`** — it throws `Error` on failure instead. The CLI entry point in `index.ts` wraps it in try/catch and calls `process.exit()` there. `runGoal()` is now a proper function that can be called from both CLI and MCP without leaking process lifecycle.
+- **`GoalResult` extended** — `runLogPath: string`, `summary: string`, `challenged?: boolean`, `challengeResponse?: string` added. CLI prints `Run log: <path>` on exit.
+
+### Behavior details
+
+- Run logs live at `<specDir>/.phase2s/runs/<YYYY-MM-DDTHH-MM-SS>-<hash.slice(0,8)>.jsonl` relative to the spec file directory.
+- Log writes are synchronous and throw on failure (never silently dropped).
+- `reviewBeforeRun` is opt-in (default false). Quick iteration cycles are not slowed down.
+- `NEEDS_CLARIFICATION` is treated identically to `CHALLENGED` — both halt execution and set `challenged: true`.
+- The `phase2s__goal` MCP response includes the absolute run log path so Claude can call `file_read` directly without guessing cwd.
+- `buildAdversarialPrompt()` injects the spec's decomposition names + acceptance criteria as the "plan" to challenge, then appends the adversarial SKILL.md template.
+
+### Tests
+
+453 passing (was 433, +20 new tests):
+- `test/core/run-logger.test.ts` (new) — 10 tests covering RunLogger lazy init, JSONL format, close() path, filename format, throw on write failure
+- `test/cli/goal.test.ts` — 6 new tests: missing spec throws Error, buildAdversarialPrompt content, CHALLENGED halts run, NEEDS_CLARIFICATION halts run
+- `test/mcp/server.test.ts` — 3 new tests: GOAL_TOOL in tools/list, required specFile, empty specFile returns error
+
 ## v1.1.0 — 2026-04-05
 
 MCP state server + dark factory resumability.

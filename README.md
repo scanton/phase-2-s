@@ -228,7 +228,7 @@ phase2s skills --json # machine-readable for scripts
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 433 tests covering all tools, core modules, agent integration, goal executor, and state server
+- [x] 582 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, installation health checks, self-update, skills search, and spec linting
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -256,6 +256,21 @@ phase2s skills --json # machine-readable for scripts
 - [x] Real Codex streaming (JSONL stdout parsing) — step-by-step feedback for multi-step tasks
 - [x] MCP state server — `state_read`/`state_write`/`state_clear` as Claude Code tools
 - [x] `phase2s goal --resume` — dark factory continuity: resumes from last completed sub-task after interruption
+- [x] `phase2s__goal` MCP tool — Claude Code can trigger the dark factory directly, no terminal needed
+- [x] Structured JSONL run logs — per-sub-task observability at `.phase2s/runs/<timestamp>.jsonl`
+- [x] `--review-before-run` — adversarial pre-execution review before the dark factory starts
+- [x] Notification gateway — `phase2s goal --notify` sends macOS system notification + optional Slack webhook on completion
+- [x] `phase2s report <log.jsonl>` — chalk-colored run summary: sub-task timeline, durations, criteria verdicts, total time
+- [x] `phase2s__report` MCP tool — Claude Code can summarize a run log after triggering the dark factory
+- [x] `phase2s init` — interactive onboarding wizard: provider choice, API key, model tiers, Slack/Discord/Teams webhooks, pre-fills from existing config
+- [x] Discord + Microsoft Teams notification channels for dark factory runs (`--notify`)
+- [x] Glob/wildcard patterns in `tools` and `deny` config (`file_*` matches `file_read` and `file_write`)
+- [x] OpenRouter provider — 50+ models (GPT-4o, Claude, Gemini, Llama) under a single `OPENROUTER_API_KEY`
+- [x] `phase2s doctor` — installation health check: Node version, provider binary, auth, config, working dir
+- [x] `phase2s upgrade` — self-update: checks npm registry, prompts to install, `--check` for CI
+- [x] `phase2s skills [query]` — filter the skill list by name or description (`phase2s skills security`)
+- [x] Google Gemini provider — free tier, `gemini-2.0-flash` default, OpenAI-compatible endpoint, no new SDK dependency
+- [x] `phase2s lint <spec.md>` — validate a spec before a dark factory run: catches structural errors before the 20-minute agent loop begins
 
 ---
 

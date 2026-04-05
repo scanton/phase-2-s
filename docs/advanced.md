@@ -1,8 +1,20 @@
 # Advanced Features
 
-> **Token-by-token streaming and tool-loop visibility require a direct API provider: `openai-api`, `anthropic`, or `ollama`.**
+> **Token-by-token streaming and tool-loop visibility require a direct API provider: `openai-api`, `anthropic`, `ollama`, `openrouter`, or `gemini`.**
 >
 > If you're using a ChatGPT subscription (Option A / Codex CLI), you don't need this page for most things. Codex CLI already shows step-by-step messages for multi-step tasks (added v0.26.0). Come back when you want token-by-token streaming or model-per-skill routing.
+
+---
+
+## Diagnosing installation problems
+
+Run the health check first:
+
+```bash
+phase2s doctor
+```
+
+It reports pass/fail for: Node.js version (>= 20 required), provider binary in PATH (codex, ollama), API key for your configured provider, `.phase2s.yaml` validity, and `.phase2s/` working directory writability. Each failure includes a one-line fix instruction.
 
 ---
 
@@ -38,11 +50,38 @@ phase2s
 
 Ollama uses the same OpenAI-compatible API — the full tool loop works. `ollama serve` must be running.
 
+**Option E: OpenRouter (50+ models, one API key)**
+
+```bash
+export OPENROUTER_API_KEY=sk-or-your-key-here
+export PHASE2S_PROVIDER=openrouter
+phase2s
+```
+
+OpenRouter routes to GPT-4o, Claude, Gemini, Llama, and 50+ other models through a single key. Model names use provider-prefixed slugs — set `model:` in `.phase2s.yaml` or pass `-m` on the command line:
+
+```bash
+phase2s -m anthropic/claude-3-5-sonnet run "/review src/core/agent.ts"
+phase2s -m google/gemini-pro-1.5 run "/explain src/cli/index.ts"
+```
+
+Default model is `openai/gpt-4o`. Get your key at [openrouter.ai/keys](https://openrouter.ai/keys).
+
+**Option F: Google Gemini (free tier available)**
+
+```bash
+export GEMINI_API_KEY=AIza-your-key-here
+export PHASE2S_PROVIDER=gemini
+phase2s
+```
+
+Connects to Google's OpenAI-compatible endpoint — no new SDK dependency. Default model is `gemini-2.0-flash`. Upgrade with `model: gemini-2.5-pro` in `.phase2s.yaml`. Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Keys start with `AIza`.
+
 ---
 
 ## Token-by-token streaming
 
-With Option B, responses stream word-by-word as the model generates them. No spinner, no waiting for a complete response.
+With any direct API provider (Options B–F), responses stream word-by-word as the model generates them. No spinner, no waiting for a complete response.
 
 ```
 you > /review src/core/agent.ts
@@ -61,7 +100,7 @@ With Option A (Codex CLI), Phase2S shows each intermediate agent message as it a
 
 ## Phase2S-managed tool loop
 
-With Option B, Phase2S controls the full agent loop:
+With any direct API provider (Options B–F), Phase2S controls the full agent loop:
 
 1. Sends your message and skill prompt to OpenAI API
 2. Receives a response that may include tool calls (file reads, shell commands, etc.)
@@ -82,7 +121,7 @@ you > /review src/core/agent.ts
 
 With Option A (Codex CLI), Codex handles its own tool loop internally. You see the final response but not the individual tool calls. Both approaches produce the same quality output.
 
-### Tools available (Option B)
+### Tools available (direct API providers)
 
 | Tool | What it does |
 |------|-------------|
@@ -98,7 +137,7 @@ The file sandbox rejects reads and writes outside your project directory, includ
 
 ## Model-per-skill routing
 
-With Option B, you can configure two model tiers and route skills to each one.
+With any direct API provider (Options B–F), you can configure two model tiers and route skills to each one.
 
 **Configure in `.phase2s.yaml`:**
 
@@ -142,7 +181,7 @@ Without `fast_model` / `smart_model` configured, all skills use the same model. 
 
 ## Conversation context management
 
-With Option B, Phase2S manages context automatically. When the conversation history grows large enough to approach the model's context limit, Phase2S trims old turns.
+With any direct API provider (Options B–F), Phase2S manages context automatically. When the conversation history grows large enough to approach the model's context limit, Phase2S trims old turns.
 
 Trimming preserves atomic units. If a turn includes both an assistant message with tool calls and the corresponding tool results, they're trimmed together. Leaving an assistant message that references tool results without the results would cause an API error.
 

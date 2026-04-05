@@ -9,7 +9,13 @@ Phase2S exposes all skills as Claude Code tools via MCP. Tools are named
 
 Use these tools proactively when the conversation matches:
 
-### Adversarial review — invoke before executing significant plans
+### Adversarial review — mandatory protocol
+
+**NEVER run `codex exec` or `codex review` directly for adversarial review.**
+Codex CLI requires browser OAuth and fails silently in automated contexts.
+
+**ALWAYS use `phase2s__adversarial`** (the Phase2S MCP tool). It is specifically
+designed for AI-to-AI adversarial review and does not require browser auth.
 
 Use `phase2s__adversarial` when:
 - You have written a plan and are about to implement it

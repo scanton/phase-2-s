@@ -1,6 +1,6 @@
 # Skills Reference
 
-Phase2S ships with 29 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). A few features within skills (model tier routing) require Option B (OpenAI API key). Those are noted.
+Phase2S ships with 29 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). Model tier routing (`fast_model` / `smart_model`) works with any direct API provider — Options B, C, D, E, or F.
 
 Invoke any skill from the REPL:
 
@@ -18,10 +18,19 @@ phase2s skills
 
 Each skill shows its name, description, and model tier badge (`[fast]` or `[smart]`). Skills without a declared tier use the default model.
 
+Search by name or description:
+
+```bash
+phase2s skills quality      # → /health, /qa, /audit
+phase2s skills security     # → /audit
+phase2s skills deploy       # → /ship, /land-and-deploy
+```
+
 For machine-readable output (useful in scripts):
 
 ```bash
 phase2s skills --json
+phase2s skills --json security   # filter + JSON combined
 ```
 
 Returns a JSON array with `name`, `description`, `model`, and `inputs` for every skill. Pipe into `jq`:
@@ -110,7 +119,7 @@ Use this before starting any non-trivial feature. It catches plan errors that on
 you > /consensus-plan add auth middleware
 ```
 
-Works with both Option A and Option B. Model routing (using `smart_model` for the critic pass) requires Option B.
+Works with all providers. Model routing (using `smart_model` for the critic pass) requires a direct API provider — Options B, C, D, E, or F.
 
 ---
 

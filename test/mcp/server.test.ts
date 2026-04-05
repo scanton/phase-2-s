@@ -9,6 +9,8 @@ import {
   buildNotification,
   MCP_SERVER_VERSION,
   STATE_TOOLS,
+  GOAL_TOOL,
+  REPORT_TOOL,
 } from "../../src/mcp/server.js";
 import { Conversation } from "../../src/core/conversation.js";
 import type { Skill } from "../../src/skills/types.js";
@@ -36,6 +38,25 @@ vi.mock("../../src/core/agent.js", () => {
   }
   return { Agent: MockAgent };
 });
+
+// Mock runGoal so GOAL_TOOL tests don't spin up a real dark factory run.
+vi.mock("../../src/cli/goal.js", () => ({
+  runGoal: vi.fn().mockResolvedValue({
+    success: true,
+    attempts: 1,
+    criteriaResults: { "All tests pass": true },
+    runLogPath: "/tmp/phase2s-test/.phase2s/runs/2026-04-05T12-00-00-abc12345.jsonl",
+    summary: "All criteria passed after 1 attempt(s).",
+    durationMs: 1234,
+  }),
+}));
+
+// Mock report functions so REPORT_TOOL tests don't need real log files.
+vi.mock("../../src/cli/report.js", () => ({
+  parseRunLog: vi.fn().mockReturnValue([]),
+  buildRunReport: vi.fn().mockReturnValue({ specFile: "test.md", finalSuccess: true, finalAttempts: 1, challenged: false, attempts: [], maxAttempts: 3, durationMs: 5000 }),
+  formatRunReport: vi.fn().mockReturnValue("Goal: test.md\n✓ Goal complete — 1 attempt"),
+}));
 
 // Mock loadConfig so tests don't need a .phase2s.yaml
 vi.mock("../../src/core/config.js", () => ({
@@ -126,8 +147,8 @@ describe("MCP server — protocol compliance", () => {
 
     expect(response.error).toBeUndefined();
     const result = response.result as { tools: unknown[] };
-    // tools/list now includes skill tools + 3 state tools (state_write, state_read, state_clear)
-    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length + 3);
+    // tools/list now includes skill tools + 3 state tools + 1 goal tool + 1 report tool
+    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length + 5);
   });
 
   it("tools/list: tool names use phase2s__ prefix and underscore convention", async () => {
@@ -657,5 +678,86 @@ describe("state tools — handleRequest round-trip", () => {
     const resp = await handleRequest(clearReq, [], tmpDir);
     expect(resp.error).toBeUndefined();
     expect(resp.result).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 25: GOAL_TOOL descriptor + phase2s__goal handler
+// ---------------------------------------------------------------------------
+
+describe("GOAL_TOOL descriptor", () => {
+  it("GOAL_TOOL appears in tools/list alongside skill and state tools", async () => {
+    const request = { jsonrpc: "2.0" as const, id: 1, method: "tools/list" };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    const tools = (response.result as { tools: Array<{ name: string }> }).tools;
+    const toolNames = tools.map((t) => t.name);
+    expect(toolNames).toContain("phase2s__goal");
+  });
+
+  it("GOAL_TOOL inputSchema requires specFile and has correct description", () => {
+    expect(GOAL_TOOL.name).toBe("phase2s__goal");
+    expect(GOAL_TOOL.inputSchema.required).toContain("specFile");
+    expect(GOAL_TOOL.inputSchema.required).not.toContain("maxAttempts");
+    expect(GOAL_TOOL.inputSchema.required).not.toContain("resume");
+    expect(GOAL_TOOL.description).toMatch(/LONG-RUNNING/i);
+  });
+
+  it("phase2s__goal with missing specFile returns an error response (not throws)", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 1,
+      method: "tools/call",
+      params: { name: "phase2s__goal", arguments: { specFile: "" } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.result).toBeUndefined();
+    expect(response.error).toBeDefined();
+    expect(response.error?.message).toContain("specFile");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 26: REPORT_TOOL descriptor + phase2s__report handler
+// ---------------------------------------------------------------------------
+
+describe("REPORT_TOOL descriptor", () => {
+  it("REPORT_TOOL appears in tools/list", async () => {
+    const request = { jsonrpc: "2.0" as const, id: 1, method: "tools/list" };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    const tools = (response.result as { tools: Array<{ name: string }> }).tools;
+    const toolNames = tools.map((t) => t.name);
+    expect(toolNames).toContain("phase2s__report");
+  });
+
+  it("REPORT_TOOL inputSchema requires logFile", () => {
+    expect(REPORT_TOOL.name).toBe("phase2s__report");
+    expect(REPORT_TOOL.inputSchema.required).toContain("logFile");
+    expect(REPORT_TOOL.inputSchema.required).not.toContain("specFile");
+  });
+
+  it("phase2s__report with missing logFile returns an error response", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 1,
+      method: "tools/call",
+      params: { name: "phase2s__report", arguments: { logFile: "" } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.result).toBeUndefined();
+    expect(response.error).toBeDefined();
+    expect(response.error?.message).toContain("logFile");
+  });
+
+  it("phase2s__report with valid logFile returns formatted report text", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 1,
+      method: "tools/call",
+      params: { name: "phase2s__report", arguments: { logFile: "/tmp/run.jsonl" } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+    const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content[0].text).toContain("Goal complete");
   });
 });

@@ -6,12 +6,17 @@
  * output, retries failed sub-tasks with failure context, and loops until all
  * criteria pass or max attempts are exhausted.
  *
- * Usage: phase2s goal <spec-file> [--max-attempts <n>] [--resume]
+ * Usage: phase2s goal <spec-file> [--max-attempts <n>] [--resume] [--review-before-run]
  *
  * With --resume: reads existing state from .phase2s/state/<hash>.json
  * (relative to the spec file directory), skips completed sub-tasks, and
  * injects saved failure context for failed ones. Starts fresh if no state
  * exists.
+ *
+ * With --review-before-run: runs the spec through adversarial review (fresh
+ * Agent instance, adversarial SKILL.md template) before execution begins.
+ * Halts and returns challenged: true if verdict is CHALLENGED or
+ * NEEDS_CLARIFICATION.
  */
 
 import { execFile } from "child_process";
@@ -22,6 +27,8 @@ import { loadConfig } from "../core/config.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { parseSpec, type Spec, type SubTask } from "../core/spec-parser.js";
 import { computeSpecHash, readState, writeState, clearState, type GoalState } from "../core/state.js";
+import { RunLogger } from "../core/run-logger.js";
+import { sendNotification, buildNotifyPayload, type NotifyOptions } from "../core/notify.js";
 import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
 
@@ -31,31 +38,56 @@ const FAILURE_CONTEXT_MAX_BYTES = 4096;
 export interface GoalOptions {
   maxAttempts?: string;
   resume?: boolean;
+  reviewBeforeRun?: boolean;
+  /**
+   * If true, use notification config from loadConfig().
+   * If a NotifyOptions object, override with those settings.
+   * Notification is sent after the run completes (success, failure, or challenge).
+   */
+  notify?: boolean | NotifyOptions;
 }
 
 export interface GoalResult {
   success: boolean;
   attempts: number;
   criteriaResults: Record<string, boolean>;
+  /** Absolute path to the structured JSONL run log. */
+  runLogPath: string;
+  /** One-liner summary for MCP response text. */
+  summary: string;
+  /** Total wall-clock duration of the run in milliseconds. */
+  durationMs: number;
+  /** true if pre-execution adversarial review halted the run. */
+  challenged?: boolean;
+  /** Full adversarial review text when challenged is true. */
+  challengeResponse?: string;
 }
 
 export async function runGoal(specFile: string, options: GoalOptions = {}): Promise<GoalResult> {
   const specPath = resolve(process.cwd(), specFile);
-  // State is stored relative to the spec file directory, not invocation cwd.
+  // State and run logs are stored relative to the spec file directory, not
+  // invocation cwd. This keeps logs next to the spec regardless of where
+  // `phase2s goal` is invoked from.
   const specDir = dirname(specPath);
 
   let markdown: string;
   try {
     markdown = readFileSync(specPath, "utf8");
   } catch {
-    console.error(`Error: Cannot read spec file: ${specPath}`);
-    process.exit(1);
+    throw new Error(`Cannot read spec file: ${specPath}`);
   }
 
   const specHash = computeSpecHash(markdown);
   const spec = parseSpec(markdown);
   const maxAttempts = Math.max(1, parseInt(options.maxAttempts ?? "3", 10) || 3);
   const resume = !!options.resume;
+
+  // Initialise RunLogger now so we can capture the path even if we halt early.
+  const logger = new RunLogger(specDir, specHash);
+  const startMs = Date.now();
+
+  // Load config early so it's available for all return paths (including early exits).
+  const config = await loadConfig();
 
   // -------------------------------------------------------------------------
   // State: load existing state when resuming, otherwise start fresh.
@@ -75,6 +107,15 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     };
   }
 
+  logger.log({
+    event: "goal_started",
+    specFile: basename(specPath),
+    specHash,
+    subTaskCount: spec.decomposition.length,
+    maxAttempts,
+    resuming: resume,
+  });
+
   console.log(`\nGoal executor: ${spec.title}`);
   console.log(`Eval command: ${spec.evalCommand}`);
   console.log(`Sub-tasks: ${spec.decomposition.length}`);
@@ -87,7 +128,17 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
   if (spec.decomposition.length === 0 && spec.acceptanceCriteria.length === 0) {
     console.log("\nSpec has no sub-tasks and no acceptance criteria. Nothing to execute.");
-    return { success: true, attempts: 0, criteriaResults: {} };
+    logger.log({ event: "goal_completed", success: true, attempts: 0 });
+    const result: GoalResult = {
+      success: true,
+      attempts: 0,
+      criteriaResults: {},
+      runLogPath: logger.close(),
+      summary: "Spec has no sub-tasks and no acceptance criteria.",
+      durationMs: Date.now() - startMs,
+    };
+    await maybeNotify(options, config, result, basename(specPath));
+    return result;
   }
 
   // Warn on large specs
@@ -99,21 +150,66 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   }
 
   // Set up agent
-  const config = await loadConfig();
   const learningsList = await loadLearnings(process.cwd());
   const learningsStr = formatLearningsForPrompt(learningsList);
-  const agent = new Agent({ config, learnings: learningsStr });
 
-  // Load skills to get satori template + settings
+  // Load skills to get satori + adversarial templates and settings
   const skills = await loadAllSkills();
   const satoriSkill = skills.find((s) => s.name === "satori");
+  const adversarialSkill = skills.find((s) => s.name === "adversarial");
   const satoriRetries = satoriSkill?.retries ?? 3;
   const satoriModel = satoriSkill?.model;
+  const adversarialModel = adversarialSkill?.model;
 
   // Build the satori base prompt from its template (same as what the REPL does)
   const satoriTemplate = satoriSkill
     ? stripAskTokens(substituteInputs(satoriSkill.promptTemplate, {}, satoriSkill.inputs)).result
     : "";
+
+  // -------------------------------------------------------------------------
+  // Pre-execution adversarial review (optional, uses fresh Agent to avoid
+  // contaminating the implementation agent's conversation history).
+  // -------------------------------------------------------------------------
+  if (options.reviewBeforeRun) {
+    logger.log({ event: "plan_review_started" });
+
+    const adversarialTemplate = adversarialSkill?.promptTemplate ?? "";
+    const reviewPrompt = buildAdversarialPrompt(spec, adversarialTemplate);
+    const reviewAgent = new Agent({ config, learnings: learningsStr });
+    const response = await reviewAgent.run(reviewPrompt, { modelOverride: adversarialModel });
+
+    const verdict = response.includes("VERDICT: CHALLENGED")
+      ? "CHALLENGED"
+      : response.includes("NEEDS_CLARIFICATION")
+        ? "NEEDS_CLARIFICATION"
+        : "APPROVED";
+
+    logger.log({ event: "plan_review_completed", verdict, response });
+
+    if (verdict !== "APPROVED") {
+      console.log(`\nSpec ${verdict} before execution. Adversarial review response:\n`);
+      console.log(response);
+      const result: GoalResult = {
+        success: false,
+        attempts: 0,
+        criteriaResults: {},
+        runLogPath: logger.close(),
+        summary: `Spec ${verdict} before execution.`,
+        durationMs: Date.now() - startMs,
+        challenged: true,
+        challengeResponse: response,
+      };
+      await maybeNotify(options, config, result, basename(specPath));
+      return result;
+    }
+
+    console.log("\nAdversarial review: APPROVED. Proceeding with execution.");
+  }
+
+  // -------------------------------------------------------------------------
+  // Main execution loop
+  // -------------------------------------------------------------------------
+  const agent = new Agent({ config, learnings: learningsStr });
 
   let attempt = state.attempt;
   let subtasksToRun = spec.decomposition;
@@ -123,6 +219,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   while (attempt < maxAttempts) {
     attempt++;
     state.attempt = attempt;
+    logger.log({ event: "attempt_started", attempt });
     console.log(`\n${"=".repeat(50)}`);
     console.log(`Attempt ${attempt}/${maxAttempts}`);
     console.log("=".repeat(50));
@@ -146,6 +243,8 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         ? priorResult.failureContext
         : previousFailureContext;
 
+      const numericIndex = globalIndex >= 0 ? globalIndex : i;
+      logger.log({ event: "subtask_started", attempt, index: numericIndex, name: subtask.name });
       console.log(`\nRunning sub-task: ${subtask.name}`);
       const taskContext = buildSatoriContext(subtask, spec.constraints, priorFailureContext);
       // Combine satori system instructions + task-specific context
@@ -183,6 +282,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         };
         state.lastUpdatedAt = new Date().toISOString();
         writeState(specDir, specHash, state);
+        logger.log({ event: "subtask_completed", attempt, index: numericIndex, status: "failed", failureContext: truncated });
         console.error(`\nSub-task failed: ${subtask.name}`);
       } else {
         // Sub-task completed without throwing — mark as passed, write checkpoint.
@@ -192,18 +292,32 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         };
         state.lastUpdatedAt = new Date().toISOString();
         writeState(specDir, specHash, state);
+        logger.log({ event: "subtask_completed", attempt, index: numericIndex, status: "passed" });
       }
     }
 
     // Run evaluation
     console.log(`\nRunning evaluation: ${spec.evalCommand}`);
+    logger.log({ event: "eval_started", command: spec.evalCommand });
     const evalOutput = await runCommand(spec.evalCommand);
     console.log(evalOutput.slice(0, 1000) + (evalOutput.length > 1000 ? "\n[...truncated...]" : ""));
+    // Store first 2000 chars in log (enough for diagnostics, not overwhelming)
+    logger.log({ event: "eval_completed", output: evalOutput.slice(0, 2000) });
 
     // If no acceptance criteria, report raw output and exit
     if (spec.acceptanceCriteria.length === 0) {
       console.log("\nNo acceptance criteria defined. Eval output shown above.");
-      return { success: true, attempts: attempt, criteriaResults: {} };
+      logger.log({ event: "goal_completed", success: true, attempts: attempt });
+      const result: GoalResult = {
+        success: true,
+        attempts: attempt,
+        criteriaResults: {},
+        runLogPath: logger.close(),
+        summary: `Goal completed successfully after ${attempt} attempt(s).`,
+        durationMs: Date.now() - startMs,
+      };
+      await maybeNotify(options, config, result, basename(specPath));
+      return result;
     }
 
     // Check acceptance criteria
@@ -211,12 +325,23 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     printCriteriaTable(criteriaResults);
 
     const failing = Object.entries(criteriaResults).filter(([, pass]) => !pass).map(([c]) => c);
+    logger.log({ event: "criteria_checked", results: criteriaResults, failing });
 
     if (failing.length === 0) {
       console.log(`\n✓ All acceptance criteria met after ${attempt} attempt(s).`);
       // Clean completion: remove state so stale state doesn't block future runs.
       clearState(specDir, specHash);
-      return { success: true, attempts: attempt, criteriaResults };
+      logger.log({ event: "goal_completed", success: true, attempts: attempt });
+      const result: GoalResult = {
+        success: true,
+        attempts: attempt,
+        criteriaResults,
+        runLogPath: logger.close(),
+        summary: `All criteria passed after ${attempt} attempt(s).`,
+        durationMs: Date.now() - startMs,
+      };
+      await maybeNotify(options, config, result, basename(specPath));
+      return result;
     }
 
     if (attempt < maxAttempts) {
@@ -230,10 +355,99 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
   console.log(`\n✗ Goal not achieved after ${maxAttempts} attempts.`);
   console.log("Failing criteria:");
-  for (const [criterion, pass] of Object.entries(criteriaResults)) {
-    if (!pass) console.log(`  ✗ ${criterion}`);
+  const failingFinal = Object.entries(criteriaResults).filter(([, pass]) => !pass).map(([c]) => c);
+  for (const criterion of failingFinal) {
+    console.log(`  ✗ ${criterion}`);
   }
-  return { success: false, attempts: maxAttempts, criteriaResults };
+  logger.log({ event: "goal_completed", success: false, attempts: maxAttempts });
+  const failResult: GoalResult = {
+    success: false,
+    attempts: maxAttempts,
+    criteriaResults,
+    runLogPath: logger.close(),
+    summary: `Goal failed after ${maxAttempts} attempts. ${failingFinal.length} criteria not met.`,
+    durationMs: Date.now() - startMs,
+  };
+  await maybeNotify(options, config, failResult, basename(specPath));
+  return failResult;
+}
+
+// ---------------------------------------------------------------------------
+// Notification helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a post-run notification if the caller requested one.
+ * Errors are swallowed — notification failures never surface to the user.
+ */
+async function maybeNotify(
+  options: GoalOptions,
+  config: import("../core/config.js").Config,
+  result: GoalResult,
+  specFile: string,
+): Promise<void> {
+  if (!options.notify) return;
+
+  const notifyOptions: NotifyOptions = typeof options.notify === "object"
+    ? options.notify
+    : {
+        mac: config.notify?.mac,
+        slack: config.notify?.slack,
+        discord: config.notify?.discord,
+        teams: config.notify?.teams,
+      };
+
+  const payload = buildNotifyPayload(
+    specFile,
+    result.success,
+    result.attempts,
+    result.challenged ?? false,
+    result.durationMs,
+  );
+
+  try {
+    await sendNotification(payload, notifyOptions);
+  } catch (err) {
+    console.error(`[phase2s notify] Notification failed: ${String(err)}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// buildAdversarialPrompt
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a pre-execution adversarial review prompt.
+ *
+ * Injects the spec's decomposition and acceptance criteria as the "plan" to
+ * challenge, then appends the adversarial SKILL.md template which instructs
+ * the model to review what came before it and emit a structured verdict.
+ */
+export function buildAdversarialPrompt(spec: Spec, adversarialTemplate: string): string {
+  const decompositionLines = spec.decomposition
+    .map((t, i) => `${i + 1}. **${t.name}**: ${t.successCriteria}`)
+    .join("\n");
+
+  const criteriaLines = spec.acceptanceCriteria
+    .map((c, i) => `${i + 1}. ${c}`)
+    .join("\n");
+
+  const plan = [
+    `## Spec: ${spec.title}`,
+    "",
+    "### Problem",
+    spec.problemStatement,
+    "",
+    "### Sub-task decomposition",
+    decompositionLines || "(none)",
+    "",
+    "### Acceptance criteria",
+    criteriaLines || "(none)",
+  ].join("\n");
+
+  return adversarialTemplate
+    ? `${plan}\n\n${adversarialTemplate}`
+    : plan;
 }
 
 // ---------------------------------------------------------------------------

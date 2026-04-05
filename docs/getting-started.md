@@ -25,7 +25,15 @@ If you pay for ChatGPT at [chat.openai.com](https://chat.openai.com), you alread
 npm install -g @openai/codex @scanton/phase2s
 ```
 
-**Step 2: Authenticate Codex CLI with your ChatGPT account**
+**Step 2: Run the setup wizard**
+
+```bash
+phase2s init
+```
+
+This asks you 2-4 questions, checks that your tools are installed correctly, and writes `.phase2s.yaml`. Takes under 60 seconds. Skip it if you prefer setting env vars by hand (Options B-D below still work).
+
+**Step 3: Authenticate Codex CLI with your ChatGPT account**
 
 ```bash
 codex auth
@@ -33,7 +41,7 @@ codex auth
 
 This opens a browser window. Log in with the same account you use at chat.openai.com. Codex saves a token to `~/.codex/`. You only do this once.
 
-**Step 3: Start Phase2S**
+**Step 4: Start Phase2S**
 
 ```bash
 phase2s
@@ -42,7 +50,7 @@ phase2s
 You'll see:
 
 ```
-Phase2S v1.0.0
+Phase2S v1.8.0
 Type your message and press Enter. Type /quit to exit.
 
 you >
@@ -92,6 +100,40 @@ phase2s
 ```
 
 `ollama serve` must be running. `qwen2.5-coder:7b` is a good alternative if you want stronger tool-calling support on complex tasks.
+
+### Option E — OpenRouter (50+ models, one API key)
+
+```bash
+npm install -g @scanton/phase2s
+export OPENROUTER_API_KEY=sk-or-your-key-here
+export PHASE2S_PROVIDER=openrouter
+phase2s
+```
+
+Get your key at [openrouter.ai/keys](https://openrouter.ai/keys). Switch models on the fly with `-m anthropic/claude-3-5-sonnet` or set `model:` in `.phase2s.yaml`. All provider-prefixed slugs work: `openai/gpt-4o`, `google/gemini-pro-1.5`, etc.
+
+### Option F — Google Gemini (free tier available)
+
+```bash
+npm install -g @scanton/phase2s
+export GEMINI_API_KEY=AIza-your-key-here
+export PHASE2S_PROVIDER=gemini
+phase2s
+```
+
+Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Keys start with `AIza`. Default model is `gemini-2.0-flash` — upgrade with `model: gemini-2.5-pro` in `.phase2s.yaml`.
+
+---
+
+## Verify your installation
+
+If something isn't working, run the health check:
+
+```bash
+phase2s doctor
+```
+
+It checks your Node.js version, provider binary, API key, config file, and working directory — then tells you exactly what to fix.
 
 ---
 
@@ -144,13 +186,21 @@ you > /satori add pagination to the search endpoint
 you > /investigate why does logout sometimes fail silently?
 ```
 
-List all available skills:
+List all available skills, or search by topic:
 
 ```bash
-phase2s skills
+phase2s skills               # list everything
+phase2s skills quality       # → /health, /qa, /audit
+phase2s skills deploy        # → /ship, /land-and-deploy
 ```
 
 See [docs/skills.md](skills.md) for the full reference.
+
+To keep Phase2S up to date:
+
+```bash
+phase2s upgrade
+```
 
 ---
 

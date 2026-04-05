@@ -101,6 +101,20 @@ npm test
 
 **The parser is lenient.** You don't need all five sections to run `phase2s goal`. If Decomposition is missing, the executor runs eval only. If Acceptance Criteria is missing, it reports the raw eval output and exits. Use what you have.
 
+### Validate before running
+
+Before committing a 20-minute run, lint the spec:
+
+```bash
+phase2s lint .phase2s/specs/2026-04-04-11-00-rate-limiting.md
+```
+
+This catches structural problems instantly — missing title, empty problem statement, no sub-tasks, no acceptance criteria. Exits 0 if the spec is runnable (warnings OK), exits 1 on errors. Ideal in a pre-run script:
+
+```bash
+phase2s lint specs/rate-limiting.md && phase2s goal specs/rate-limiting.md
+```
+
 ---
 
 ## Step 2: Run the goal executor
@@ -116,6 +130,124 @@ phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md --max-attempts 5
 ```
 
 The executor runs immediately. No interactive prompts.
+
+### Challenge the spec before running
+
+Add `--review-before-run` to have the spec challenged by GPT before a single line of code is written:
+
+```bash
+phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md --review-before-run
+```
+
+This runs the spec's decomposition and acceptance criteria through the `/adversarial` skill. If GPT raises objections:
+
+```
+Spec CHALLENGED before execution. Adversarial review response:
+
+VERDICT: CHALLENGED
+STRONGEST_CONCERN: The token bucket reset logic is underspecified.
+OBJECTIONS:
+1. The Decomposition says "bucket fill/drain tests pass" but doesn't specify
+   what the window duration is. A 1-second window and a 60-second window are
+   both satisfiable by the criterion as written — this ambiguity will produce
+   inconsistent output.
+2. Acceptance Criteria #1 says "100 req/min" but the Decomposition has no
+   sub-task for the middleware that enforces the limit. The criteria could
+   pass trivially if the test mocks the rate limiter.
+APPROVE_IF: Specify the window duration; add a sub-task for the enforcement
+middleware.
+```
+
+No code runs until you fix the objections and re-run. If the spec is sound:
+
+```
+Adversarial review: APPROVED. Proceeding with execution.
+```
+
+Use `--review-before-run` on new specs. Skip it on re-runs where you're iterating on a known-good spec.
+
+### Get notified when it finishes
+
+Dark factory runs take 20–60 minutes. Add `--notify` to get a notification when the run completes:
+
+```bash
+phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md --notify
+```
+
+**On macOS:** a system notification appears automatically (via `osascript`, no extra setup).
+
+**Cross-platform (macOS, Linux, Windows):** three webhook channels are supported. Set whichever one (or more) you use:
+
+```bash
+# Slack
+export PHASE2S_SLACK_WEBHOOK=https://hooks.slack.com/services/...
+
+# Discord
+export PHASE2S_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
+
+# Microsoft Teams
+export PHASE2S_TEAMS_WEBHOOK=https://outlook.office.com/webhook/...
+
+phase2s goal my-spec.md --notify
+```
+
+Or configure channels permanently in `.phase2s.yaml`. The fastest way is `phase2s init`, which walks you through each channel interactively. To do it by hand:
+
+```yaml
+notify:
+  slack: "https://hooks.slack.com/services/T.../B.../..."
+  discord: "https://discord.com/api/webhooks/.../..."
+  teams: "https://outlook.office.com/webhook/..."
+  mac: true  # default on macOS; set false to disable
+```
+
+**Getting webhook URLs:**
+- **Slack:** Apps → Incoming Webhooks → Add New Webhook. Copy the `https://hooks.slack.com/services/...` URL.
+- **Discord:** Server Settings → Integrations → Webhooks → New Webhook. Copy the URL.
+- **Teams:** Channel → Connectors → Incoming Webhook → Configure. Copy the URL.
+
+All channels are fail-safe: errors go to stderr and never block the run. Multiple channels can be active simultaneously — useful for team projects where some members use Slack and others use Teams.
+
+If no channels are configured (Linux/Windows with no webhook set), `--notify` logs a warning pointing to the available env vars.
+
+### Read the run report
+
+Every `phase2s goal` run writes a structured JSONL log to `.phase2s/runs/<timestamp>-<hash>.jsonl` relative to the spec file directory. The path is printed on exit:
+
+```
+Run log: /your/project/.phase2s/runs/2026-04-05T12-00-00-a1b2c3d4.jsonl
+```
+
+To read a human-readable summary:
+
+```bash
+phase2s report .phase2s/runs/2026-04-05T12-00-00-a1b2c3d4.jsonl
+```
+
+```
+Goal: rate-limiting.md
+
+  Attempt 1/3
+    ✓ Token bucket core      (8m 12s)
+    ✗ Express middleware     (11m 03s)
+  Eval: npm test
+
+  Criteria:
+    ✗ 100 req/min enforced
+
+  Attempt 2/3
+    ✓ Express middleware     (7m 22s)
+  Eval: npm test
+
+  Criteria:
+    ✓ 100 req/min enforced
+
+✓ Goal complete — 2 attempts — 26m 37s
+```
+
+The raw JSONL log contains everything at event granularity: `goal_started`, `subtask_started/completed`, `eval_started/completed`, `criteria_checked`, `goal_completed`. Read it directly if you need machine-readable detail (e.g., via `file_read` in Claude Code).
+
+The log survives process death — it's written incrementally, not at the end. If a run is interrupted, the log contains everything up to the interruption.
 
 ---
 

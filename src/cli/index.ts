@@ -131,11 +131,19 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   // List available skills
   program
-    .command("skills")
-    .description("List available skills")
+    .command("skills [query]")
+    .description("List available skills, or filter with an optional search query")
     .option("--json", "Output as JSON")
-    .action(async (cmdOpts: { json?: boolean }) => {
-      const skills = await loadAllSkills();
+    .action(async (query: string | undefined, cmdOpts: { json?: boolean }) => {
+      let skills = await loadAllSkills();
+      if (query) {
+        const q = query.toLowerCase();
+        skills = skills.filter(
+          (s) =>
+            s.name.toLowerCase().includes(q) ||
+            (s.description?.toLowerCase().includes(q) ?? false),
+        );
+      }
       if (cmdOpts.json) {
         const output = skills.map((s) => ({
           name: s.name,
@@ -154,10 +162,17 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         return;
       }
       if (skills.length === 0) {
-        log.info("No skills found. Add skills to .phase2s/skills/ or ~/.phase2s/skills/");
+        if (query) {
+          console.log(chalk.yellow(`\n  No skills match "${query}". Try a broader term or run phase2s skills to list all.\n`));
+        } else {
+          log.info("No skills found. Add skills to .phase2s/skills/ or ~/.phase2s/skills/");
+        }
         return;
       }
-      console.log(chalk.bold("\nAvailable skills:\n"));
+      const header = query
+        ? chalk.bold(`\nSkills matching "${query}":\n`)
+        : chalk.bold("\nAvailable skills:\n");
+      console.log(header);
       for (const skill of skills) {
         const tierBadge =
           skill.model === "fast"
@@ -176,10 +191,109 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .description("Execute a spec file end-to-end: run sub-tasks, evaluate, retry until done")
     .option("--max-attempts <n>", "Maximum retry loops (default: 3)", "3")
     .option("--resume", "Resume from the last completed sub-task (reads state from .phase2s/state/)")
-    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean }) => {
+    .option("--review-before-run", "Run adversarial review on spec before executing")
+    .option("--notify", "Send a notification when the run completes (macOS + optional Slack webhook)")
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean }) => {
       const { runGoal } = await import("./goal.js");
-      const result = await runGoal(specFile, { maxAttempts: cmdOpts.maxAttempts, resume: cmdOpts.resume });
-      process.exit(result.success ? 0 : 1);
+      try {
+        const result = await runGoal(specFile, {
+          maxAttempts: cmdOpts.maxAttempts,
+          resume: cmdOpts.resume,
+          reviewBeforeRun: cmdOpts.reviewBeforeRun,
+          notify: cmdOpts.notify,
+        });
+        if (result.runLogPath) console.log(`Run log: ${result.runLogPath}`);
+        process.exit(result.success ? 0 : 1);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
+  // Run log report viewer
+  program
+    .command("report <logfile>")
+    .description("Display a human-readable summary of a dark factory run log (.jsonl)")
+    .action(async (logfile: string) => {
+      const { parseRunLog, buildRunReport, formatRunReport } = await import("./report.js");
+      try {
+        const events = parseRunLog(logfile);
+        const report = buildRunReport(events);
+        console.log(formatRunReport(report));
+      } catch (err) {
+        console.error(`Error reading run log: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  // Interactive setup wizard
+  program
+    .command("init")
+    .description("Interactive setup wizard — configure .phase2s.yaml for your provider")
+    .option("--non-interactive", "Skip prompts and use flag values (for CI)")
+    .option("--provider <provider>", "Provider: codex-cli, openai-api, anthropic, ollama, openrouter, gemini")
+    .option("--api-key <key>", "API key for openai-api or anthropic provider")
+    .option("--openrouter-api-key <key>", "API key for openrouter provider")
+    .option("--gemini-api-key <key>", "API key for gemini provider (starts with AIza)")
+    .option("--fast-model <model>", "Fast tier model name")
+    .option("--smart-model <model>", "Smart tier model name")
+    .option("--slack-webhook <url>", "Slack webhook URL for notifications")
+    .option("--discord-webhook <url>", "Discord webhook URL for notifications")
+    .option("--teams-webhook <url>", "Microsoft Teams webhook URL for notifications")
+    .action(async (cmdOpts: {
+      nonInteractive?: boolean;
+      provider?: string;
+      apiKey?: string;
+      openrouterApiKey?: string;
+      geminiApiKey?: string;
+      fastModel?: string;
+      smartModel?: string;
+      slackWebhook?: string;
+      discordWebhook?: string;
+      teamsWebhook?: string;
+    }) => {
+      const { runInit } = await import("./init.js");
+      await runInit({
+        nonInteractive: cmdOpts.nonInteractive,
+        provider: cmdOpts.provider,
+        apiKey: cmdOpts.apiKey,
+        openrouterApiKey: cmdOpts.openrouterApiKey,
+        geminiApiKey: cmdOpts.geminiApiKey,
+        fastModel: cmdOpts.fastModel,
+        smartModel: cmdOpts.smartModel,
+        slackWebhook: cmdOpts.slackWebhook,
+        discordWebhook: cmdOpts.discordWebhook,
+        teamsWebhook: cmdOpts.teamsWebhook,
+      });
+    });
+
+  // Self-update command
+  program
+    .command("upgrade")
+    .description("Check for a newer version and offer to install it")
+    .option("--check", "Report whether an update is available without prompting")
+    .action(async (cmdOpts: { check?: boolean }) => {
+      const { runUpgrade } = await import("./upgrade.js");
+      await runUpgrade(VERSION, { check: cmdOpts.check });
+    });
+
+  // Spec linting
+  program
+    .command("lint <spec-file>")
+    .description("Validate a 5-pillar spec file before running it — catches structural errors before the dark factory run begins")
+    .action(async (specFile: string) => {
+      const { runLint } = await import("./lint.js");
+      const ok = await runLint(specFile);
+      if (!ok) process.exit(1);
+    });
+
+  // Installation health check
+  program
+    .command("doctor")
+    .description("Check Phase2S installation health — Node version, auth, config, working dir")
+    .action(async () => {
+      const { runDoctor } = await import("./doctor.js");
+      await runDoctor();
     });
 
   // Shell completion script generator
@@ -218,7 +332,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp completion" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run skills mcp goal report init upgrade lint doctor completion" -- "\$cur"))
     return
   fi
 
@@ -255,6 +369,12 @@ _phase2s() {
     'run:Run a single prompt and exit'
     'skills:List available skills'
     'mcp:Start as an MCP server for Claude Code'
+    'goal:Run a spec file autonomously (dark factory)'
+    'report:Display a human-readable summary of a run log'
+    'init:Interactive setup wizard — configure .phase2s.yaml'
+    'upgrade:Check for a newer version and offer to install it'
+    'lint:Validate a 5-pillar spec file before running it'
+    'doctor:Check Phase2S installation health'
     'completion:Output shell completion script'
   )
 

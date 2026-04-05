@@ -6,6 +6,178 @@
 
 ---
 
+## Sprint 31 (done) — Spec Linting + Gemini Provider (v1.8.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.8.0 |
+| Tests | 580 (+21) |
+
+- [x] **`phase2s lint <spec.md>`** — validate a 5-pillar spec before running it. Catches 4 structural errors (missing title, empty problem statement, no decomposition, no acceptance criteria) and 2 advisory warnings (default evalCommand, subtask missing success criteria). Exits 0 when spec is runnable (warnings OK), exits 1 on errors. Pure function `lintSpec()` exported for testing. `runLint()` handles IO. 8 tests in `test/cli/lint.test.ts`.
+- [x] **Gemini provider** — `src/providers/gemini.ts`. Composition over `OpenAIProvider` using Google's OpenAI-compatible API endpoint (`generativelanguage.googleapis.com/v1beta/openai/`). No new SDK dependency. `GEMINI_API_KEY` env var or `geminiApiKey` in config. Optional `geminiBaseUrl` override. Default model: `gemini-2.0-flash`. 5 tests in `test/providers/gemini.test.ts`.
+- [x] **Config schema updates** — `geminiApiKey`, `geminiBaseUrl` fields in `src/core/config.ts`. Provider enum extended to include `"gemini"`. Default model logic extended.
+- [x] **`phase2s init` wizard updates** — Gemini added as provider option 6 ("Google Gemini (free tier available — gemini-2.0-flash by default)"). `checkPrerequisites` validates `AIza` prefix. Prompts for API key with link to aistudio.google.com/apikey. `printNextSteps` shows next steps for Gemini. Non-interactive `validProviders` includes "gemini". 4 tests added to `test/cli/init.test.ts`.
+- [x] **`phase2s doctor` updates** — Gemini case added to `checkAuth()`. "gemini" added to `knownProviders` in `checkConfigFile()`. 2 tests added to `test/cli/doctor.test.ts`.
+- [x] **Shell completion** — `lint` added to bash COMPREPLY list and zsh subcommands array.
+- [x] **Docs** — `docs/configuration.md` (Gemini provider comment, `geminiApiKey`/`geminiBaseUrl` fields, env var table, provider enum), `docs/getting-started.md` (Option F: Google Gemini, version bump to v1.8.0), `docs/advanced.md` (Option F section, streaming note updated), `CHANGELOG.md` v1.8.0 entry.
+
+---
+
+## Sprint 30 (done) — Self-Update + Skills Search (v1.7.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.7.0 |
+| Tests | 559 (+19) |
+
+- [x] **`phase2s upgrade`** — checks npm registry for the latest version, prompts to run `npm install -g @scanton/phase2s`, live output during install. `--check` flag for CI non-interactive mode. Graceful failure when registry is unreachable. Pure functions: `parseVersion()`, `isUpdateAvailable()`, `checkLatestVersion()`. 12 tests in `test/cli/upgrade.test.ts`.
+- [x] **`phase2s skills [query]`** — optional positional search argument on the `skills` command. Case-insensitive substring match on skill name and description. Empty query = list all (backward compatible). "No skills match" message when query returns zero results. Works with `--json` for scripting. 7 tests added to `test/cli/skills-output.test.ts`.
+- [x] **Shell completion** — `upgrade` added to bash COMPREPLY list and zsh subcommands array.
+
+---
+
+## Sprint 29 (done) — Installation Health Check + OpenRouter Provider (v1.6.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.6.0 |
+| Tests | 540 (+24) |
+
+- [x] **`phase2s doctor`** — new diagnostic command. 5 pure check functions: `checkNodeVersion` (>= 20), `checkProviderBinary` (codex/ollama binary in PATH), `checkAuth` (API key for all 5 providers), `checkConfigFile` (valid YAML, known provider), `checkWorkDir` (.phase2s/ writable). `runDoctor()` loads existing config, runs checks, filters N/A, prints chalk ✓/✗ with fix instructions. 16 tests in `test/cli/doctor.test.ts`.
+- [x] **OpenRouter provider** — `src/providers/openrouter.ts`. Composition over `OpenAIProvider` with pre-configured OpenAI client pointing at `https://openrouter.ai/api/v1`. HTTP-Referer and X-Title headers injected for attribution. Model names use provider-prefixed slugs (`openai/gpt-4o`, `anthropic/claude-3-5-sonnet`). `OPENROUTER_API_KEY` env var or `openrouterApiKey` in config. Optional `openrouterBaseUrl` override. Default model: `openai/gpt-4o`. 6 tests in `test/providers/openrouter.test.ts`.
+- [x] **Config schema updates** — `openrouterApiKey`, `openrouterBaseUrl` fields in `src/core/config.ts`. Provider enum updated. Default model logic extended.
+- [x] **`phase2s init` wizard updates** — OpenRouter added as provider option (5). `checkPrerequisites` validates `sk-or-` prefix. Prompts for API key. `printNextSteps` links to `openrouter.ai/models`.
+- [x] **Shell completion** — `doctor` added to both bash COMPREPLY list and zsh subcommands array.
+- [x] **Docs** — `docs/configuration.md` (OpenRouter provider comments, `openrouterApiKey`/`openrouterBaseUrl` fields, env var table), `docs/getting-started.md` (Option E: OpenRouter + `phase2s doctor` health check section), `CHANGELOG.md` v1.6.0 entry.
+
+---
+
+## Sprint 28 (done) — Notification Channels + Glob Tool Filtering (v1.5.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.5.0 |
+| Tests | 516 (+13) |
+
+- [x] **Discord notifications** — `notify.discord` in `.phase2s.yaml` or `PHASE2S_DISCORD_WEBHOOK`. Rich embeds with green/red color. `sendDiscordNotification()` in `src/core/notify.ts`.
+- [x] **Microsoft Teams notifications** — `notify.teams` in `.phase2s.yaml` or `PHASE2S_TEAMS_WEBHOOK`. MessageCard format with `themeColor`. `sendTeamsNotification()` in `src/core/notify.ts`.
+- [x] **`phase2s init` Discord + Teams prompts** — interactive wizard now asks for Discord and Teams webhook URLs. `--discord-webhook` and `--teams-webhook` flags for CI mode.
+- [x] **Glob/wildcard in `tools` and `deny`** — `*` wildcard in tool allow/deny lists. `file_*` matches `file_read` and `file_write`. No-match patterns warn at startup. `matchesPattern()` in `src/tools/registry.ts`.
+- [x] **Backlog additions** — Gemini, MiniMax, OpenRouter, Telegram providers added to long-term backlog.
+
+---
+
+## Sprint 27 (done) — Onboarding Wizard (v1.4.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.4.0 |
+| Tests | 503 (+20) |
+
+- [x] **`phase2s init`** — interactive setup wizard: provider selection (1–4), API key prompt, optional fast/smart model tiers, optional Slack webhook. Writes `.phase2s.yaml` with comments. Validates prerequisites and prints tailored next steps.
+- [x] **Non-interactive mode** — `--non-interactive` flag with `--provider`, `--api-key`, `--fast-model`, `--smart-model`, `--slack-webhook` for CI scripting.
+- [x] **Existing config pre-fill** — `readExistingConfig()` reads current `.phase2s.yaml` so re-running `init` defaults to current values. Safe to run multiple times.
+- [x] **Prerequisite validation** — checks `codex` binary (codex-cli), `sk-` prefix (openai-api), `sk-ant-` prefix (anthropic), `ollama` binary (ollama). Reports warnings but always writes config.
+- [x] **`src/cli/init.ts`** — pure functions (`formatConfig`, `checkPrerequisites`, `readExistingConfig`) exported for testing; IO functions (`promptConfig`, `runInit`) handle all side effects.
+- [x] **`test/cli/init.test.ts`** — 20 tests: `formatConfig` (all 4 providers, model tiers, Slack), `checkPrerequisites` (key format, missing binary, missing env var), `readExistingConfig` (parse, missing, invalid YAML, non-object).
+- [x] **`docs/getting-started.md`** — `phase2s init` added as Step 2 of Option A setup flow.
+
+---
+
+## Sprint 26 (done) — Notification Gateway + Run Report Viewer (v1.3.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.3.0 |
+| Tests | 483 (+30) |
+
+- [x] **`phase2s goal --notify`** — sends macOS system notification via `osascript` (no deps) and/or Slack webhook (`PHASE2S_SLACK_WEBHOOK` env var or `notify.slack` in `.phase2s.yaml`) when a dark factory run completes. Both channels are fail-safe: errors go to stderr, never block the run. `notify` also available as `phase2s__goal` MCP parameter.
+- [x] **`phase2s report <log.jsonl>`** — chalk-colored run summary: spec filename, per-attempt sub-task timeline with durations (✓/✗), criteria verdicts, total time. Reads the JSONL run log written by Sprint 25's RunLogger.
+- [x] **`phase2s__report` MCP tool** — same report viewer as an MCP tool. Claude Code calls it with the `runLogPath` returned by `phase2s__goal` to see exactly what happened without reading raw JSONL.
+- [x] **`GoalResult.durationMs`** — total wall-clock run duration included in all goal results. Used by notifications and available to MCP callers.
+- [x] **`notify` config block** — `.phase2s.yaml` accepts `notify: { mac: true, slack: "..." }`.
+- [x] **`src/core/notify.ts`** — `sendNotification()`, `buildNotifyPayload()`, `formatDurationMs()`. Platform-agnostic, fail-safe.
+- [x] **`src/cli/report.ts`** — `parseRunLog()`, `buildRunReport()`, `formatRunReport()`. Pure functions — no side effects in parser, chalk in display layer only.
+
+---
+
+## Sprint 25 (done) — Dark Factory as MCP Tool + Run Logs + Pre-Execution Adversarial Review (v1.2.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.2.0 |
+| Tests | 453 (+20) |
+
+- [x] **`phase2s__goal` MCP tool** — Claude Code can trigger the dark factory directly. Returns run summary + absolute JSONL run log path. Long-running by design (20+ min, MCP spec has no timeout).
+- [x] **Structured JSONL run logs** — `RunLogger` class writes `<specDir>/.phase2s/runs/<timestamp>-<hash>.jsonl`. Events: goal_started, subtask_started/completed, eval_started/completed, criteria_checked, plan_review_completed, goal_completed. Written incrementally, survives process death.
+- [x] **Pre-execution adversarial review** — `--review-before-run` CLI flag + `reviewBeforeRun` MCP option. Fresh Agent instance (no context contamination). CHALLENGED/NEEDS_CLARIFICATION halts; APPROVED proceeds. `buildAdversarialPrompt()` injects spec decomposition + criteria as the plan.
+- [x] **`runGoal()` throws Error** — no longer calls `process.exit()`. CLI entry point wraps in try/catch. `GoalResult` extended: `runLogPath`, `summary`, `challenged?`, `challengeResponse?`.
+- [x] **Docs updated** — `docs/dark-factory.md` (--review-before-run, run logs), `docs/claude-code.md` (phase2s__goal section + tool table).
+
+---
+
+## Sprint 24 (done) — MCP State Server + Dark Factory Resumability (v1.1.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.1.0 |
+| Tests | 433 (+34) |
+
+- [x] **`phase2s goal --resume`** — resume from last completed sub-task after interruption. State keyed by SHA-256 of spec content. Atomic writes (tmp→rename).
+- [x] **MCP state tools** — `phase2s__state_write`, `phase2s__state_read`, `phase2s__state_clear`. Raw key-value store, JSON-serializable values, `.phase2s/state/<key>.json`.
+- [x] **`src/core/state.ts`** — pure state functions. GoalState (typed) + raw KV (for MCP tools). Shared by goal.ts and server.ts.
+
+---
+
+## Sprint 23 (done) — QA Pass + Security Fixes + npm v1.0.0 (v1.0.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.0.0 |
+| Tests | 399 |
+
+- [x] Security: CVE fixes in `@actions/core`, `@actions/github`, `undici`
+- [x] Docs: version strings corrected, `PHASE2S_BROWSER` env var documented
+- [x] `package.json`: npm page fields (repository, homepage, bugs, author, keywords)
+- [x] Stability contract documented in CHANGELOG
+
+---
+
+## Sprint 22 (done) — Real Codex JSONL Streaming (v0.26.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.26.0 |
+| Tests | 390 |
+
+- [x] **Real Codex streaming** — JSONL stdout parsing from codex subprocess. Step-by-step feedback for multi-step tasks. No more waiting for full completion before output appears.
+
+---
+
+## Sprint 21 (done) — Dark Factory: phase2s goal (v0.25.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.25.0 |
+| Tests | ~360 |
+
+- [x] **`phase2s goal <spec.md>`** — dark factory: spec in, feature out. Breaks spec into sub-tasks, runs each through satori, checks acceptance criteria, retries with failure analysis.
+- [x] **5-pillar spec format** — `/deep-specify` output feeds directly into `phase2s goal`. Parser is lenient (missing sections handled gracefully).
+- [x] **`spec-parser.ts`** — pure parser for the 5-pillar spec format.
+
+---
+
+## Sprint 20 (done) — GitHub Action (v0.24.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v0.24.0 |
+| Tests | 295 |
+
+- [x] **`uses: scanton/phase2s@v1` GitHub Action** — run Phase2S skills in CI. Requires API key (not ChatGPT subscription — OAuth can't run in CI).
+
+---
+
 ## Sprint 16 (done) — Scripting, Clean Install, Accurate Tests (v0.20.0)
 
 | Metric | Value |
@@ -84,7 +256,7 @@ inputs:
 
 ### `/plan` skill improvement
 
-- [ ] Update `.phase2s/skills/plan/SKILL.md`: write plan to `.phase2s/plans/YYYY-MM-DD-HH-MM.md`, offer TODOS.md append (deferred — needs design on when to write vs show in chat)
+- [x] Update `.phase2s/skills/plan/SKILL.md`: shipped Sprint 16/17. Saves to `.phase2s/plans/YYYY-MM-DD-HH-MM-<slug>.md`. Asks "Append Phase 1 tasks to TODOS.md?" and appends if confirmed.
 
 ### Configurable tool allow/deny list
 
@@ -197,9 +369,9 @@ inputs:
 
 ### OMX Infrastructure backlog (not yet implemented)
 
-- [ ] **MCP state server** — shared state across agent turns via MCP protocol
+- [x] **MCP state server** — shipped Sprint 24 (v1.1.0). `phase2s__state_write/read/clear`.
 - [ ] **Parallel teams** — multiple agents working in parallel on subtasks (tmux-style workers)
-- [ ] **Notification gateway** — post-task notifications (Slack, email, webhook)
+- [x] **Notification gateway** — shipped Sprint 26 (v1.3.0). macOS + Slack. `--notify` flag, `PHASE2S_SLACK_WEBHOOK` env var.
 - [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview creates SKILL.md files from within a session.
 
 ---
@@ -291,11 +463,11 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [x] **`/plan` skill improvement** — shipped Sprint 16/17. Saves to `.phase2s/plans/YYYY-MM-DD-HH-MM-<slug>.md` via `shell` + `file_write`. After writing, asks "Append Phase 1 tasks to TODOS.md?" and appends if confirmed. Structured checklist output format with phases and verify steps.
 - [x] **`/diff` skill** — done Sprint 5. Structured diff review with LOOKS GOOD / NEEDS REVIEW / RISKY verdict. v0.7.0.
 - [x] **Configurable tool allow/deny list** — fully implemented since Sprint 13. `tools:` and `deny:` in `.phase2s.yaml`. `ToolRegistry.allowed()` enforces deny-overrides-allow. Warns on unknown names at startup. Documented in `docs/configuration.md` (Sprint 18).
-- [ ] **Real Codex JSONL streaming** — Codex outputs JSONL on stdout; format is undocumented. Spike needed before committing. Would make long `/satori` runs feel faster.
+- [x] **Real Codex JSONL streaming** — Shipped Sprint 22 (v0.26.0). Step-by-step feedback for multi-step tasks.
 - [x] **`glob` deprecation fix** — Fixed Sprint 15. Upgraded `glob` from `^11.0.0` to `^13.0.0` in package.json.
 - [x] **Anthropic Claude provider** — `src/providers/anthropic.ts` shipped in Sprint 14. `provider: anthropic` in `.phase2s.yaml`. Uses `@anthropic-ai/sdk@0.82.0`. All 29 skills work on Claude 3.5 Sonnet.
 - [x] **Skill inputs v2: typed parameters** — Add optional `type: "boolean" | "enum" | "number"` and `enum:` to inputs schema so MCP tool parameters can be typed. Shipping in Sprint 15 (v0.18.0).
-- [ ] **Skill inputs v2: glob/prefix matching in allow/deny** — `tools: ["file_*"]` pattern matching. v1 is exact-name only. Deferred from Sprint 13.
+- [x] **Skill inputs v2: glob/prefix matching in allow/deny** — shipped Sprint 28 (v1.5.0). `tools: ["file_*"]` pattern matching via `matchesPattern()` in registry.ts. `*` wildcard supported in both `tools` and `deny`. No-match patterns warn at startup.
 - [x] **Skill inputs v2: one-shot skill routing** — `phase2s run "/plan build auth"` detects skill prefix and routes through skill system. Shipping in Sprint 15 (v0.18.0).
 
 ---
@@ -306,36 +478,36 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 
 These are the power features from oh-my-codex that go beyond SKILL.md. They require infrastructure changes to Phase2S's core.
 
-- [ ] **Agent tier routing** — LOW/STANDARD/THOROUGH tiers mapped to `fast_model`/`smart_model` in `.phase2s.yaml`. Skills declare their tier; agent picks the right model automatically. Foundation for model-per-skill.
-- [ ] **Persistent execution loop** (`$ralph` pattern) — iterate on a task until done + verified by a second agent pass. Requires stateful skill protocol (session hooks or MCP state). High value for long-running coding tasks.
-- [ ] **Consensus planning** (`$ralplan` pattern) — Planner → Architect → Critic multi-agent consensus, up to 5 iterations until approved plan emerges. Requires multi-model routing infrastructure.
+- [x] **Agent tier routing** — Shipped Sprint 15 (v0.18.0). `fast_model`/`smart_model` in `.phase2s.yaml`. `model: fast | smart` in SKILL.md frontmatter. 28 of 29 built-in skills declare a tier.
+- [x] **Persistent execution loop** (`$ralph` pattern) — shipped as `phase2s goal` (Sprint 21) + satori inner retry loop. `phase2s__goal` MCP tool (Sprint 25) makes it callable from Claude Code.
+- [x] **Consensus planning** (`$ralplan` pattern) — shipped as `/consensus-plan` skill (Sprint 13). `phase2s__consensus_plan` MCP tool available.
 - [ ] **Parallel team execution** (`$team` pattern) — spawn N parallel Codex workers in git worktrees via tmux. Phase2S spawns and coordinates, collects outputs. High complexity but unlocks parallel agent work.
-- [ ] **MCP state server** — implement `src/mcp/` state server with `state_write`/`state_read`/`state_clear`. Gives skills durable cross-turn state (like OMX's `.omx/state/` via MCP). Required by persistent execution and consensus planning.
-- [ ] **Notification gateway** — Telegram/Discord webhooks for long-running team operations. Alerts when a parallel run completes or errors. OMX uses OpenClaw.
+- [x] **MCP state server** — shipped Sprint 24 (v1.1.0). `phase2s__state_write/read/clear` in `src/core/state.ts` + `src/mcp/server.ts`.
+- [x] **Notification gateway** — shipped Sprint 26 (v1.3.0). macOS system notification + Slack webhook on dark factory completion. `--notify` CLI flag, `notify` MCP param, `notify:` config block.
 - [x] **Context snapshots** — implemented. `writeContextSnapshot()` in `cli/index.ts` writes `.phase2s/context/{ts}-{slug}.md` before each satori run (branch, recent commits, diff stat, verify command, task). The "mandatory for all prompts" framing was over-broad — satori is the right scope (long-running tasks where partial completion is the risk).
 - [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview (3 questions) generates a SKILL.md file via file-write. Creates `.phase2s/skills/<name>/SKILL.md` from within a session.
 - [x] **Underspecification gate** — implemented. `isUnderspecified()` in `cli/index.ts` checks prompt length (&lt;15 words, no file path). Gated on `requireSpecification: true` in `.phase2s.yaml`. User overrides with `force:` prefix. Documented in `docs/configuration.md` under "Safety mode for shared repos".
 
 ### General
 
-- [ ] **Multi-model routing** — use different models for different tasks
-  - Config: `fast_model: gpt-4o-mini`, `smart_model: o3`, `code_model: codex`
-  - Skills declare which tier they need; agent picks automatically
-- [ ] **MCP server integration** — expose Phase2S tools as an MCP server
-  - Any MCP client (Claude Desktop, other agents) can use phase2s tools
-  - Inverse: consume external MCP servers as tools in the agent loop
+- [x] **Multi-model routing** — Shipped Sprint 15 (v0.18.0). `fast_model`/`smart_model` config. Skills declare `model: fast | smart | <literal>`. `Agent.resolveModel()` maps tiers to configured models.
+- [x] **MCP server integration** — shipped Sprint 12. `phase2s mcp` exposes all 29 skills + state tools + goal tool as Claude Code tools. Configured via `.claude/settings.json`.
 - [ ] **oh-my-codex-style multi-agent** — route subtasks to specialized sub-agents
   - Orchestrator assigns tasks; specialist agents (coder, reviewer, tester) execute
   - Each specialist has its own tool set and system prompt
 - [x] **Persistent memory across sessions** — done in Sprint 10. `loadLearnings()` + `formatLearningsForPrompt()` in `src/core/memory.ts`. Injected into system prompt via `AgentOptions.learnings`. CLI loads automatically from `.phase2s/memory/learnings.jsonl`. `/remember` skill writes new learnings.
-- [ ] **Browser tool** — headless browser via Playwright for web research
-  - Used by `/qa` skill (test sites), `/browse` skill (research), `/investigate` (docs lookup)
-- [x] **More provider support** — Anthropic Claude + local Ollama shipped in Sprint 14. Gemini deferred.
+- [x] **Browser tool** — shipped Sprint 19 (v0.23.0). Headless Playwright browser. Used by `/qa` skill and available as a tool in the agent loop.
+- [x] **More provider support** — Anthropic + Ollama (Sprint 14), OpenRouter (Sprint 29), Gemini (Sprint 31).
   - Provider interface already abstracted; just implement `chatStream()`
-- [ ] **GitHub Actions integration** — run phase2s as a CI step
-  - `/review` on every PR, `/qa` on every deploy, `/investigate` on test failures
+- [x] **GitHub Actions integration** — shipped Sprint 20. `uses: scanton/phase2s@v1`. Requires API key for CI use.
+- [x] **Self-update** — shipped Sprint 30 (v1.7.0). `phase2s upgrade` checks npm registry, prompts to install. `--check` for CI.
+- [x] **Skills search** — shipped Sprint 30 (v1.7.0). `phase2s skills <query>` filters by name/description.
+- [x] **`phase2s lint <spec.md>`** — shipped Sprint 31 (v1.8.0). Validates 5-pillar spec structure before dark factory run.
+- [x] **Gemini provider** — shipped Sprint 31 (v1.8.0). `provider: gemini`, `GEMINI_API_KEY`, OpenAI-compatible endpoint, no new SDK dependency.
+- [ ] **MiniMax provider** — `provider: minimax`, `MINIMAX_API_KEY`. OpenAI-compatible API surface.
 - [ ] **VS Code extension** — run skills from the editor sidebar
   - `/review` on current file, `/investigate` on selected error, `/plan` for a feature
+- [ ] **Telegram notifications** — `notify.telegram.token` + `notify.telegram.chatId`. Requires BotFather setup + `getUpdates` to find chat ID. Consider `phase2s init --telegram-setup` helper that calls `getUpdates` and prints the chat ID automatically.
 
 ---
 

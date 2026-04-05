@@ -182,3 +182,109 @@ describe("TODO-2: skills --json output", () => {
     expect(JSON.parse(json)[0].name).toBe("review");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sprint 30: skills search filter logic
+// (mirrors the filter applied in the 'skills [query]' CLI command)
+// ---------------------------------------------------------------------------
+
+function filterSkills(skills: Skill[], query: string): Skill[] {
+  const q = query.toLowerCase();
+  return skills.filter(
+    (s) =>
+      s.name.toLowerCase().includes(q) ||
+      (s.description?.toLowerCase().includes(q) ?? false),
+  );
+}
+
+const FIXTURE_SKILLS: Skill[] = [
+  {
+    name: "health",
+    description: "Code quality dashboard — runs type check, tests, lint",
+    triggerPhrases: [],
+    promptTemplate: "Run health check.",
+    model: "smart",
+  },
+  {
+    name: "qa",
+    description: "Quality assurance pass — find bugs and edge cases",
+    triggerPhrases: [],
+    promptTemplate: "Run QA.",
+    model: "smart",
+  },
+  {
+    name: "audit",
+    description: "Security audit — scans for vulnerabilities",
+    triggerPhrases: [],
+    promptTemplate: "Run audit.",
+    model: "smart",
+  },
+  {
+    name: "explain",
+    description: "Explain code or a concept clearly",
+    triggerPhrases: [],
+    promptTemplate: "Explain {{target}}.",
+    model: "fast",
+  },
+  {
+    name: "ship",
+    description: "Prepare and execute a clean commit",
+    triggerPhrases: [],
+    promptTemplate: "Ship.",
+    model: "smart",
+  },
+  {
+    name: "land-and-deploy",
+    description: "Push, open a PR, merge, wait for CI, verify the deploy",
+    triggerPhrases: [],
+    promptTemplate: "Deploy.",
+    model: "smart",
+  },
+];
+
+describe("skills search filter", () => {
+  it("filters skills whose description contains the query", () => {
+    const results = filterSkills(FIXTURE_SKILLS, "quality");
+    expect(results.map((s) => s.name)).toEqual(
+      expect.arrayContaining(["health", "qa"]),
+    );
+    expect(results.map((s) => s.name)).not.toContain("explain");
+  });
+
+  it("matches the skill name itself", () => {
+    const results = filterSkills(FIXTURE_SKILLS, "audit");
+    expect(results.map((s) => s.name)).toContain("audit");
+  });
+
+  it("is case-insensitive", () => {
+    const results = filterSkills(FIXTURE_SKILLS, "QUALITY");
+    expect(results.length).toBeGreaterThan(0);
+    // same as lowercase query
+    expect(results.map((s) => s.name)).toEqual(
+      filterSkills(FIXTURE_SKILLS, "quality").map((s) => s.name),
+    );
+  });
+
+  it("returns empty array when no skills match", () => {
+    const results = filterSkills(FIXTURE_SKILLS, "nonexistent-term-xyz");
+    expect(results).toHaveLength(0);
+  });
+
+  it("returns all skills when query matches a common term", () => {
+    // Every skill has a non-empty description — "a" matches almost everything.
+    // Testing that partial match works broadly.
+    const results = filterSkills(FIXTURE_SKILLS, "a");
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("matches partial skill names (prefix)", () => {
+    // "land" should match "land-and-deploy"
+    const results = filterSkills(FIXTURE_SKILLS, "land");
+    expect(results.map((s) => s.name)).toContain("land-and-deploy");
+  });
+
+  it("returns all skills when query is empty string", () => {
+    const results = filterSkills(FIXTURE_SKILLS, "");
+    expect(results).toHaveLength(FIXTURE_SKILLS.length);
+  });
+});

@@ -1,11 +1,53 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { buildSatoriContext, checkCriteria, runCommand } from "../../src/cli/goal.js";
+import { buildSatoriContext, buildAdversarialPrompt, checkCriteria, runCommand, runGoal } from "../../src/cli/goal.js";
 import { computeSpecHash, readState, writeState } from "../../src/core/state.js";
 import type { SubTask, Spec } from "../../src/core/spec-parser.js";
 import { Agent } from "../../src/core/agent.js";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+
+// ---------------------------------------------------------------------------
+// Top-level mocks for runGoal integration tests
+// ---------------------------------------------------------------------------
+
+// Use vi.hoisted so we can mutate mockReviewResponse between tests.
+const mockReviewResponse = vi.hoisted(() => ({
+  value: "VERDICT: CHALLENGED\nSTRONGEST_CONCERN: Spec is too vague.\nOBJECTIONS:\n1. No concrete test.\nAPPROVE_IF: Add specific tests.",
+}));
+
+vi.mock("../../src/core/config.js", () => ({
+  loadConfig: vi.fn().mockResolvedValue({
+    provider: "codex-cli",
+    model: "gpt-4o",
+    maxTurns: 50,
+    timeout: 120_000,
+    allowDestructive: false,
+    verifyCommand: "npm test",
+    requireSpecification: false,
+    codexPath: "codex",
+  }),
+}));
+
+vi.mock("../../src/core/memory.js", () => ({
+  loadLearnings: vi.fn().mockResolvedValue([]),
+  formatLearningsForPrompt: vi.fn().mockReturnValue(""),
+}));
+
+vi.mock("../../src/core/agent.js", () => {
+  class MockAgent {
+    run = vi.fn().mockImplementation(() => Promise.resolve(mockReviewResponse.value));
+    getConversation() { return {}; }
+  }
+  return { Agent: MockAgent };
+});
+
+vi.mock("../../src/skills/index.js", () => ({
+  loadAllSkills: vi.fn().mockResolvedValue([
+    { name: "adversarial", description: "adversarial", model: "smart", promptTemplate: "Review it now.", triggers: [] },
+    { name: "satori", description: "satori", model: "smart", promptTemplate: "Implement it.", retries: 3, triggers: [] },
+  ]),
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -204,5 +246,134 @@ describe("goal state — writeState marks sub-task passed and readState recovers
     const result = readState(tmpDir, "unknown-hash-no-file");
     // This is the --resume fresh-start case: null means start over silently.
     expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runGoal — throws Error on missing spec file (no process.exit)
+// ---------------------------------------------------------------------------
+
+describe("runGoal — missing spec file throws Error", () => {
+  it("throws Error (not process.exit) when spec file does not exist", async () => {
+    await expect(runGoal("/nonexistent/path/to/spec.md")).rejects.toThrow(
+      /Cannot read spec file/,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildAdversarialPrompt
+// ---------------------------------------------------------------------------
+
+describe("buildAdversarialPrompt", () => {
+  const SPEC: Spec = {
+    title: "Add rate limiting",
+    problemStatement: "The API has no rate limiting and is vulnerable to abuse.",
+    decomposition: [
+      { name: "Token bucket implementation", successCriteria: "Unit tests pass", input: "Request", output: "RateLimiter class" },
+      { name: "Middleware integration", successCriteria: "Returns 429 on exceed", input: "Express app", output: "Wired middleware" },
+    ],
+    acceptanceCriteria: [
+      "100 requests per minute per user",
+      "Returns 429 on exceed",
+    ],
+    evalCommand: "npm test",
+    constraints: { mustDo: [], cannotDo: [], shouldPrefer: [], shouldEscalate: [] },
+  };
+
+  it("includes sub-task decomposition names", () => {
+    const prompt = buildAdversarialPrompt(SPEC, "Review it now.");
+    expect(prompt).toContain("Token bucket implementation");
+    expect(prompt).toContain("Middleware integration");
+  });
+
+  it("includes acceptance criteria", () => {
+    const prompt = buildAdversarialPrompt(SPEC, "Review it now.");
+    expect(prompt).toContain("100 requests per minute per user");
+    expect(prompt).toContain("Returns 429 on exceed");
+  });
+
+  it("appends the adversarial template after the plan", () => {
+    const template = "ADVERSARIAL_TEMPLATE_MARKER";
+    const prompt = buildAdversarialPrompt(SPEC, template);
+    const planIdx = prompt.indexOf("Token bucket");
+    const templateIdx = prompt.indexOf("ADVERSARIAL_TEMPLATE_MARKER");
+    expect(planIdx).toBeGreaterThanOrEqual(0);
+    expect(templateIdx).toBeGreaterThan(planIdx);
+  });
+
+  it("works when adversarial template is empty string", () => {
+    const prompt = buildAdversarialPrompt(SPEC, "");
+    expect(prompt).toContain("Token bucket implementation");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runGoal — pre-execution adversarial review
+// ---------------------------------------------------------------------------
+
+// Minimal spec markdown that parseSpec can handle
+const MINIMAL_SPEC_MD = `# Test Feature
+
+## Problem Statement
+A simple test.
+
+## Task Decomposition
+- **Task 1**: Do the thing
+  - Input: nothing
+  - Output: something
+  - Success criteria: it works
+
+## Acceptance Criteria
+- It works
+
+## Eval Command
+\`\`\`
+echo done
+\`\`\`
+
+## Constraints
+- Must do: keep it simple
+- Cannot do: break things
+`;
+
+describe("runGoal — reviewBeforeRun with CHALLENGED verdict", () => {
+  let tmpDir: string;
+  let specPath: string;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `phase2s-goal-review-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+    specPath = join(tmpDir, "spec.md");
+    writeFileSync(specPath, MINIMAL_SPEC_MD, "utf8");
+    // Reset to CHALLENGED response before each test
+    mockReviewResponse.value =
+      "VERDICT: CHALLENGED\nSTRONGEST_CONCERN: Spec is too vague.\nOBJECTIONS:\n1. No concrete test.\nAPPROVE_IF: Add specific tests.";
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns challenged: true and no sub-tasks run when verdict is CHALLENGED", async () => {
+    const result = await runGoal(specPath, { reviewBeforeRun: true });
+    expect(result.challenged).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.attempts).toBe(0);
+    expect(result.challengeResponse).toContain("VERDICT: CHALLENGED");
+    expect(result.summary).toContain("CHALLENGED");
+    expect(typeof result.runLogPath).toBe("string");
+  });
+
+  it("returns challenged: true when verdict is NEEDS_CLARIFICATION (same halt behavior)", async () => {
+    // Override mock response to NEEDS_CLARIFICATION for this test
+    mockReviewResponse.value =
+      "VERDICT: NEEDS_CLARIFICATION\nSTRONGEST_CONCERN: Missing context.\nOBJECTIONS:\n1. What is the scope?\nAPPROVE_IF: Clarify scope.";
+
+    const result = await runGoal(specPath, { reviewBeforeRun: true });
+    expect(result.challenged).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.attempts).toBe(0);
+    expect(result.challengeResponse).toContain("NEEDS_CLARIFICATION");
   });
 });

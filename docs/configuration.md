@@ -1,6 +1,14 @@
 # Configuration
 
-Phase2S configuration lives in `.phase2s.yaml` in your project root. Copy the example file to get started:
+Phase2S configuration lives in `.phase2s.yaml` in your project root. The fastest way to create one:
+
+```bash
+phase2s init
+```
+
+This runs an interactive wizard: pick your provider, enter your API key (if needed), optionally configure fast/smart model tiers and a Slack webhook. Takes under 60 seconds. Re-run anytime to update settings — existing values are pre-filled.
+
+If you prefer to write the file by hand, copy the example:
 
 ```bash
 cp .phase2s.yaml.example .phase2s.yaml
@@ -16,18 +24,24 @@ Full reference with all fields:
 
 ```yaml
 # LLM provider
-# codex-cli: uses your ChatGPT subscription via Codex CLI (default, no API key needed)
-# openai-api: direct OpenAI API access (requires OPENAI_API_KEY, per-token billing)
-# anthropic: Anthropic API (requires ANTHROPIC_API_KEY, defaults to claude-3-5-sonnet-20241022)
-# ollama: local Ollama server (no API key, defaults to llama3.1:8b, requires ollama serve)
+# codex-cli:   uses your ChatGPT subscription via Codex CLI (default, no API key needed)
+# openai-api:  direct OpenAI API access (requires OPENAI_API_KEY, per-token billing)
+# anthropic:   Anthropic API (requires ANTHROPIC_API_KEY, defaults to claude-3-5-sonnet-20241022)
+# ollama:      local Ollama server (no API key, defaults to llama3.1:8b, requires ollama serve)
+# openrouter:  OpenRouter gateway (requires OPENROUTER_API_KEY, 50+ models via one key)
+# gemini:      Google Gemini (requires GEMINI_API_KEY, free tier available, defaults to gemini-2.0-flash)
 provider: codex-cli
 
 # Model to use
 # If not set: auto-detected from ~/.codex/config.toml (codex-cli provider)
-# or defaults to gpt-4o (openai-api), claude-3-5-sonnet-20241022 (anthropic), llama3.1:8b (ollama)
+# or defaults to gpt-4o (openai-api), claude-3-5-sonnet-20241022 (anthropic),
+# llama3.1:8b (ollama), openai/gpt-4o (openrouter), gemini-2.0-flash (gemini)
 # model: gpt-4o
 # model: claude-3-5-sonnet-20241022
 # model: qwen2.5-coder:7b
+# model: openai/gpt-4o          # OpenRouter: use provider-prefixed slugs
+# model: anthropic/claude-3-5-sonnet
+# model: gemini-2.5-pro         # Gemini: upgrade from the default gemini-2.0-flash
 
 # Model tier routing (openai-api and anthropic providers)
 # Skills declare 'model: fast' or 'model: smart' in their SKILL.md frontmatter.
@@ -48,6 +62,24 @@ provider: codex-cli
 # Change this if your Ollama server runs on a different host or port.
 # Warning: remote URLs will send prompts and tool results to that host.
 # ollamaBaseUrl: http://localhost:11434/v1
+
+# OpenRouter API key (openrouter provider only)
+# Falls back to OPENROUTER_API_KEY environment variable.
+# Get your key at https://openrouter.ai/keys
+# openrouterApiKey: sk-or-your-key-here
+
+# OpenRouter base URL (openrouter provider only, default https://openrouter.ai/api/v1)
+# Override for custom deployments or compatible gateways.
+# openrouterBaseUrl: https://openrouter.ai/api/v1
+
+# Gemini API key (gemini provider only)
+# Falls back to GEMINI_API_KEY environment variable.
+# Get a free key at https://aistudio.google.com/apikey — keys start with 'AIza'.
+# geminiApiKey: AIza-your-key-here
+
+# Gemini base URL (gemini provider only, default https://generativelanguage.googleapis.com/v1beta/openai/)
+# Override for custom endpoints or enterprise deployments.
+# geminiBaseUrl: https://generativelanguage.googleapis.com/v1beta/openai/
 
 # Max agent loop turns before stopping
 # The agent loop runs tool calls and feeds results back until no more tool calls.
@@ -78,18 +110,32 @@ maxTurns: 50
 # Only the named tools are available to the agent. All others are blocked.
 # When omitted, all tools are available.
 # Available tools: file_read, file_write, shell, glob, grep
-# deny takes precedence over tools — a name in both lists is always blocked.
+# Supports * as a wildcard: file_* matches file_read and file_write.
+# deny takes precedence over tools — a pattern in both lists is always blocked.
 # tools:
-#   - file_read
+#   - file_*      # all file tools
 #   - glob
 #   - grep
 
 # Tool deny-list
 # The named tools are blocked even if they appear in tools.
 # deny always wins — it is a security control, not a preference.
-# Unknown names produce a warning at startup.
+# Supports * as a wildcard: file_* blocks file_read and file_write.
+# Patterns that match no known tool produce a warning at startup.
 # deny:
 #   - shell
+
+# Notification channels for dark factory runs (phase2s goal --notify)
+# mac: true sends a system notification via osascript (macOS only, default: true on macOS)
+# slack: Slack incoming webhook URL
+# discord: Discord incoming webhook URL
+# teams: Microsoft Teams incoming webhook URL
+# Each channel also has an env var equivalent (see Environment Variables section below).
+# notify:
+#   mac: true
+#   slack: "https://hooks.slack.com/services/T.../B.../..."
+#   discord: "https://discord.com/api/webhooks/.../..."
+#   teams: "https://outlook.office.com/webhook/..."
 ```
 
 ---
@@ -100,16 +146,21 @@ All config file settings can be overridden with environment variables. Environme
 
 | Variable | Equivalent config field | Description |
 |----------|------------------------|-------------|
-| `PHASE2S_PROVIDER` | `provider` | `codex-cli`, `openai-api`, `anthropic`, or `ollama` |
+| `PHASE2S_PROVIDER` | `provider` | `codex-cli`, `openai-api`, `anthropic`, `ollama`, `openrouter`, or `gemini` |
 | `PHASE2S_MODEL` | `model` | Model name (e.g., `gpt-4o`, `o3`, `claude-3-5-sonnet-20241022`) |
 | `PHASE2S_FAST_MODEL` | `fast_model` | Fast tier model name |
 | `PHASE2S_SMART_MODEL` | `smart_model` | Smart tier model name |
 | `PHASE2S_VERIFY_COMMAND` | `verifyCommand` | Satori verify command |
 | `PHASE2S_ALLOW_DESTRUCTIVE` | `allowDestructive` | `true`, `1`, or `yes` to allow |
 | `PHASE2S_BROWSER` | `browser` | `true`, `1`, or `yes` to enable Playwright headless browser tool |
+| `PHASE2S_SLACK_WEBHOOK` | `notify.slack` | Slack incoming webhook URL for dark factory run notifications |
+| `PHASE2S_DISCORD_WEBHOOK` | `notify.discord` | Discord incoming webhook URL for dark factory run notifications |
+| `PHASE2S_TEAMS_WEBHOOK` | `notify.teams` | Microsoft Teams incoming webhook URL for dark factory run notifications |
 | `PHASE2S_CODEX_PATH` | — | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | — | API key for `openai-api` provider |
 | `ANTHROPIC_API_KEY` | — | API key for `anthropic` provider |
+| `OPENROUTER_API_KEY` | `openrouterApiKey` | API key for `openrouter` provider |
+| `GEMINI_API_KEY` | `geminiApiKey` | API key for `gemini` provider (keys start with `AIza`) |
 
 ---
 
@@ -282,13 +333,19 @@ All config options can also be passed on the command line:
 phase2s [options] [command]
 
 Commands:
-  chat              Start an interactive REPL session (default)
-  run <prompt>      Run a single prompt and exit
-  skills            List available skills
-  mcp               Start as an MCP server for Claude Code
+  chat                     Start an interactive REPL session (default)
+  run <prompt>             Run a single prompt and exit
+  goal <spec.md>           Execute a spec autonomously (dark factory)
+  skills [query]           List available skills (optional search query)
+  lint <spec.md>           Validate a spec file before running it
+  report <log.jsonl>       Show a formatted run summary
+  init                     Interactive setup wizard
+  doctor                   Installation health check
+  upgrade                  Check for and install updates
+  mcp                      Start as an MCP server for Claude Code
 
 Options:
-  -p, --provider <provider>  LLM provider (codex-cli | openai-api | anthropic | ollama)
+  -p, --provider <provider>  LLM provider (codex-cli | openai-api | anthropic | ollama | openrouter | gemini)
   -m, --model <model>        Model to use
   --system <prompt>          Custom system prompt
   --resume                   Resume the most recent saved session
