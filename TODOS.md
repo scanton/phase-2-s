@@ -504,6 +504,10 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [x] **Skills search** — shipped Sprint 30 (v1.7.0). `phase2s skills <query>` filters by name/description.
 - [x] **`phase2s lint <spec.md>`** — shipped Sprint 31 (v1.8.0). Validates 5-pillar spec structure before dark factory run.
 - [x] **Gemini provider** — shipped Sprint 31 (v1.8.0). `provider: gemini`, `GEMINI_API_KEY`, OpenAI-compatible endpoint, no new SDK dependency.
+- [x] **`phase2s goal --dry-run`** — shipped Sprint 32 (v1.9.0). Parses and prints the spec decomposition tree without any LLM calls. Exits in under a second. 3 tests.
+- [x] **Live dark factory progress** — shipped Sprint 32 (v1.9.0). `[1/3] Running: Sub-task name` (cyan) and `Done in Xs` per sub-task. Retries shown in yellow. Makes long runs observable.
+- [x] **`phase2s lint` >8 sub-task warning** — shipped Sprint 32 (v1.9.0). Large specs are unreliable; lint warns and suggests breaking into smaller specs. 1 test.
+- [x] **`phase2s lint` evalCommand PATH check** — shipped Sprint 32 (v1.9.0). Warns immediately if the eval binary (e.g. `pytest`) is not on PATH. Skipped for default `npm test`. 3 tests.
 - [ ] **MiniMax provider** — `provider: minimax`, `MINIMAX_API_KEY`. OpenAI-compatible API surface.
 - [ ] **VS Code extension** — run skills from the editor sidebar
   - `/review` on current file, `/investigate` on selected error, `/plan` for a feature

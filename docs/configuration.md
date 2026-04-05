@@ -336,6 +336,11 @@ Commands:
   chat                     Start an interactive REPL session (default)
   run <prompt>             Run a single prompt and exit
   goal <spec.md>           Execute a spec autonomously (dark factory)
+    --dry-run              Preview the spec decomposition without any LLM calls
+    --max-attempts <n>     Number of outer retry attempts (default: 3)
+    --review-before-run    Adversarial challenge before execution starts
+    --resume               Resume from last completed sub-task
+    --notify               Send notification on completion
   skills [query]           List available skills (optional search query)
   lint <spec.md>           Validate a spec file before running it
   report <log.jsonl>       Show a formatted run summary
