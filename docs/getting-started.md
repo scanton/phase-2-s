@@ -11,7 +11,7 @@ This guide gets you running in under 5 minutes. After you're set up, see:
 ## Prerequisites
 
 - Node.js >= 20. Check: `node --version`
-- One of: ChatGPT Plus or Pro subscription, OpenAI API key, Anthropic API key, or local Ollama
+- One of: ChatGPT Plus or Pro subscription, OpenAI API key, Anthropic API key, local Ollama, OpenRouter key, Gemini key, or MiniMax key
 
 ---
 
@@ -50,7 +50,7 @@ phase2s
 You'll see:
 
 ```
-Phase2S v1.9.0
+Phase2S v1.10.0
 Type your message and press Enter. Type /quit to exit.
 
 you >
@@ -122,6 +122,17 @@ phase2s
 ```
 
 Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Keys start with `AIza`. Default model is `gemini-2.0-flash` — upgrade with `model: gemini-2.5-pro` in `.phase2s.yaml`.
+
+### Option G — MiniMax
+
+```bash
+npm install -g @scanton/phase2s
+export MINIMAX_API_KEY=your-key-here
+export PHASE2S_PROVIDER=minimax
+phase2s
+```
+
+Get your key at [platform.minimax.io](https://platform.minimax.io/). Default model is `MiniMax-M2.5` — upgrade with `model: MiniMax-M2.7` in `.phase2s.yaml`.
 
 ---
 

@@ -1,6 +1,6 @@
 # Advanced Features
 
-> **Token-by-token streaming and tool-loop visibility require a direct API provider: `openai-api`, `anthropic`, `ollama`, `openrouter`, or `gemini`.**
+> **Token-by-token streaming and tool-loop visibility require a direct API provider: `openai-api`, `anthropic`, `ollama`, `openrouter`, `gemini`, or `minimax`.**
 >
 > If you're using a ChatGPT subscription (Option A / Codex CLI), you don't need this page for most things. Codex CLI already shows step-by-step messages for multi-step tasks (added v0.26.0). Come back when you want token-by-token streaming or model-per-skill routing.
 
