@@ -178,7 +178,7 @@ inputs:
 
 ### `/plan` skill improvement
 
-- [ ] Update `.phase2s/skills/plan/SKILL.md`: write plan to `.phase2s/plans/YYYY-MM-DD-HH-MM.md`, offer TODOS.md append (deferred — needs design on when to write vs show in chat)
+- [x] Update `.phase2s/skills/plan/SKILL.md`: shipped Sprint 16/17. Saves to `.phase2s/plans/YYYY-MM-DD-HH-MM-<slug>.md`. Asks "Append Phase 1 tasks to TODOS.md?" and appends if confirmed.
 
 ### Configurable tool allow/deny list
 
@@ -293,7 +293,7 @@ inputs:
 
 - [x] **MCP state server** — shipped Sprint 24 (v1.1.0). `phase2s__state_write/read/clear`.
 - [ ] **Parallel teams** — multiple agents working in parallel on subtasks (tmux-style workers)
-- [ ] **Notification gateway** — post-task notifications (Slack, email, webhook)
+- [x] **Notification gateway** — shipped Sprint 26 (v1.3.0). macOS + Slack. `--notify` flag, `PHASE2S_SLACK_WEBHOOK` env var.
 - [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview creates SKILL.md files from within a session.
 
 ---
