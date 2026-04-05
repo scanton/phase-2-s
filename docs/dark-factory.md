@@ -152,7 +152,34 @@ Adversarial review: APPROVED. Proceeding with execution.
 
 Use `--review-before-run` on new specs. Skip it on re-runs where you're iterating on a known-good spec.
 
-### Run logs
+### Get notified when it finishes
+
+Dark factory runs take 20–60 minutes. Add `--notify` to get a notification when the run completes:
+
+```bash
+phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md --notify
+```
+
+**On macOS:** a system notification appears automatically (via `osascript`, no extra setup).
+
+**On any platform (macOS, Linux, Windows):** set `PHASE2S_SLACK_WEBHOOK` and you'll get a Slack message:
+
+```bash
+export PHASE2S_SLACK_WEBHOOK=https://hooks.slack.com/services/...
+phase2s goal my-spec.md --notify
+```
+
+Or configure it permanently in `.phase2s.yaml`:
+
+```yaml
+notify:
+  slack: "https://hooks.slack.com/services/..."
+  mac: true  # default on macOS; set false to disable
+```
+
+If no channels are configured (Linux/Windows with no Slack webhook), `--notify` logs a warning pointing you to `PHASE2S_SLACK_WEBHOOK`.
+
+### Read the run report
 
 Every `phase2s goal` run writes a structured JSONL log to `.phase2s/runs/<timestamp>-<hash>.jsonl` relative to the spec file directory. The path is printed on exit:
 
@@ -160,7 +187,34 @@ Every `phase2s goal` run writes a structured JSONL log to `.phase2s/runs/<timest
 Run log: /your/project/.phase2s/runs/2026-04-05T12-00-00-a1b2c3d4.jsonl
 ```
 
-Each line is one event: `goal_started`, `subtask_started`, `subtask_completed`, `eval_started`, `eval_completed`, `criteria_checked`, `goal_completed`. Read it to see exactly what happened at each sub-task, including the first 2000 chars of eval output and a per-criterion pass/fail record.
+To read a human-readable summary:
+
+```bash
+phase2s report .phase2s/runs/2026-04-05T12-00-00-a1b2c3d4.jsonl
+```
+
+```
+Goal: rate-limiting.md
+
+  Attempt 1/3
+    ✓ Token bucket core      (8m 12s)
+    ✗ Express middleware     (11m 03s)
+  Eval: npm test
+
+  Criteria:
+    ✗ 100 req/min enforced
+
+  Attempt 2/3
+    ✓ Express middleware     (7m 22s)
+  Eval: npm test
+
+  Criteria:
+    ✓ 100 req/min enforced
+
+✓ Goal complete — 2 attempts — 26m 37s
+```
+
+The raw JSONL log contains everything at event granularity: `goal_started`, `subtask_started/completed`, `eval_started/completed`, `criteria_checked`, `goal_completed`. Read it directly if you need machine-readable detail (e.g., via `file_read` in Claude Code).
 
 The log survives process death — it's written incrementally, not at the end. If a run is interrupted, the log contains everything up to the interruption.
 

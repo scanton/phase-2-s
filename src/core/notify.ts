@@ -51,6 +51,14 @@ export async function sendNotification(
   if (useMac) promises.push(sendMacNotification(payload));
   if (slackUrl) promises.push(sendSlackNotification(payload, slackUrl));
 
+  if (promises.length === 0) {
+    console.warn(
+      "[phase2s notify] --notify set but no channels are active." +
+      " Set PHASE2S_SLACK_WEBHOOK for cross-platform notifications.",
+    );
+    return;
+  }
+
   const results = await Promise.allSettled(promises);
   for (const result of results) {
     if (result.status === "rejected") {

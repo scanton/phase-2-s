@@ -73,10 +73,11 @@ describe("formatDurationMs", () => {
 // ---------------------------------------------------------------------------
 
 describe("sendNotification", () => {
-  it("resolves without error when mac:false and no slack URL", async () => {
-    await expect(
-      sendNotification({ title: "test", success: true }, { mac: false }),
-    ).resolves.toBeUndefined();
+  it("warns to stderr when no channels are active (cross-platform safety)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await sendNotification({ title: "test", success: true }, { mac: false });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("PHASE2S_SLACK_WEBHOOK"));
+    warnSpy.mockRestore();
   });
 
   it("calls osascript when mac:true", async () => {
