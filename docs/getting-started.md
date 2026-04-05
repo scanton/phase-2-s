@@ -175,13 +175,21 @@ you > /satori add pagination to the search endpoint
 you > /investigate why does logout sometimes fail silently?
 ```
 
-List all available skills:
+List all available skills, or search by topic:
 
 ```bash
-phase2s skills
+phase2s skills               # list everything
+phase2s skills quality       # → /health, /qa, /audit
+phase2s skills deploy        # → /ship, /land-and-deploy
 ```
 
 See [docs/skills.md](skills.md) for the full reference.
+
+To keep Phase2S up to date:
+
+```bash
+phase2s upgrade
+```
 
 ---
 

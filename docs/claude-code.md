@@ -185,7 +185,7 @@ Claude caught both issues before writing a single line of code.
 
 ## Triggering the dark factory from Claude Code
 
-Phase2S v1.2.0 adds `phase2s__goal` — Claude Code can now run the dark factory directly, without you touching a terminal.
+Phase2S exposes `phase2s__goal` as an MCP tool — Claude Code can run the dark factory directly, without you touching a terminal.
 
 ```
 you: Build the pagination spec at .phase2s/specs/2026-04-04-pagination.md

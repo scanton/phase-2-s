@@ -480,14 +480,16 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
   - Each specialist has its own tool set and system prompt
 - [x] **Persistent memory across sessions** — done in Sprint 10. `loadLearnings()` + `formatLearningsForPrompt()` in `src/core/memory.ts`. Injected into system prompt via `AgentOptions.learnings`. CLI loads automatically from `.phase2s/memory/learnings.jsonl`. `/remember` skill writes new learnings.
 - [x] **Browser tool** — shipped Sprint 19 (v0.23.0). Headless Playwright browser. Used by `/qa` skill and available as a tool in the agent loop.
-- [x] **More provider support** — Anthropic Claude + local Ollama shipped in Sprint 14. Gemini deferred.
+- [x] **More provider support** — Anthropic + Ollama (Sprint 14), OpenRouter (Sprint 29), Gemini (Sprint 31 planned).
   - Provider interface already abstracted; just implement `chatStream()`
 - [x] **GitHub Actions integration** — shipped Sprint 20. `uses: scanton/phase2s@v1`. Requires API key for CI use.
+- [x] **Self-update** — shipped Sprint 30 (v1.7.0). `phase2s upgrade` checks npm registry, prompts to install. `--check` for CI.
+- [x] **Skills search** — shipped Sprint 30 (v1.7.0). `phase2s skills <query>` filters by name/description.
+- [ ] **`phase2s lint <spec.md>`** — validate a 5-pillar spec before running: missing sections, empty criteria, blank evalCommand. Saves the 20-minute dark-factory wait on a broken spec. (Sprint 31 planned)
+- [ ] **Gemini provider** — `provider: gemini`, `GEMINI_API_KEY`, `@google/generative-ai` SDK. Free tier available. `gemini-2.0-flash` default, `gemini-2.5-pro` for smart tier. (Sprint 31 planned)
+- [ ] **MiniMax provider** — `provider: minimax`, `MINIMAX_API_KEY`. OpenAI-compatible API surface.
 - [ ] **VS Code extension** — run skills from the editor sidebar
   - `/review` on current file, `/investigate` on selected error, `/plan` for a feature
-- [ ] **Gemini provider** — `provider: gemini`, `GEMINI_API_KEY`, `@google/generative-ai` SDK. Provider interface already abstracted.
-- [ ] **MiniMax provider** — `provider: minimax`, `MINIMAX_API_KEY`. OpenAI-compatible API surface.
-- [x] **OpenRouter provider** — shipped Sprint 29 (v1.6.0). `provider: openrouter`, `OPENROUTER_API_KEY`. Composition over OpenAIProvider. HTTP-Referer + X-Title headers injected. `phase2s init` wizard support. 6 tests.
 - [ ] **Telegram notifications** — `notify.telegram.token` + `notify.telegram.chatId`. Requires BotFather setup + `getUpdates` to find chat ID. Consider `phase2s init --telegram-setup` helper that calls `getUpdates` and prints the chat ID automatically.
 
 ---
