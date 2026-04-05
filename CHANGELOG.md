@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.21.0 — 2026-04-04
+
+Sprint 17: Multi-turn skills via `{{ASK:}}` inline prompts. Skills can now embed questions directly in their prompt template body.
+
+### What you can do now
+
+- **`{{ASK:}}` in SKILL.md templates** — embed a question anywhere in your skill's prompt body: `{{ASK: What concern should I focus on?}}`. In the REPL, Phase2S pauses and asks before sending to the model. Multiple questions are asked sequentially. Duplicate questions (same text appearing twice) are asked once and the answer is reused.
+- **Non-interactive safety** — `phase2s run` (one-shot), MCP tool calls, and non-TTY stdin all strip `{{ASK:}}` tokens automatically. One-shot and non-TTY warn to stderr. MCP surfaces a `PHASE2S_NOTE` in the tool result so Claude Code sees that interactive prompts were skipped.
+- **`--version` permanently fixed** — reads from `package.json` at runtime by walking up from the current file. Works from source (vitest / ts-node) and compiled output. No more hardcoded constant that drifts on bumps.
+
+### For contributors
+
+- **`src/skills/template.ts`** — four new exports: `extractAskTokens()`, `substituteAskValues()`, `stripAskTokens()`, plus the `AskToken` interface. Grammar: `{{ASK: prompt text}}` ends at first `}}`, no nesting, leading/trailing whitespace trimmed, duplicates deduplicated.
+- **`src/cli/index.ts`** — REPL path: extracts tokens, prompts user for each via readline, checks `process.stdin.isTTY` before entering the loop (non-TTY → strip + warn). One-shot path (`resolveSkillRouting`): strips tokens + warns to stderr.
+- **`src/mcp/server.ts`** — `tools/call` strips `{{ASK:}}` tokens and adds a `PHASE2S_NOTE` content item to the result when tokens were present, so the MCP caller sees degradation explicitly.
+- **314 tests** (up from 295). New: +13 template tests (`ask-tokens.test.ts`), +4 one-shot routing tests, +2 MCP degradation tests.
+
 ## v0.20.0 — 2026-04-04
 
 Sprint 16: `phase2s skills --json`, clean install (no deprecation warnings), accurate test counts.

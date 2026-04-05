@@ -146,6 +146,41 @@ All values are converted to strings before template substitution. A `boolean` in
 
 **One-shot mode (`phase2s run`)**: skill inputs are not prompted interactively. Unfilled `{{key}}` placeholders remain in the template — the model sees them as context and handles them gracefully.
 
+### `{{ASK:}}` inline prompts (optional)
+
+An alternative to `inputs:` for questions that belong in the body of the prompt rather than as named parameters. Write the question directly where the answer needs to appear:
+
+```
+Review the provided code for: {{ASK: What concern should I focus on? (e.g. security, performance, error handling)}}
+
+Be thorough. Severity levels: CRIT / WARN / NIT.
+```
+
+**How it works:**
+
+In **REPL mode**, Phase2S scans the template before running, finds all `{{ASK:}}` tokens, and prompts the user for each one in order. The answers are substituted back into the template and then the full prompt is sent to the model.
+
+Duplicate questions (same text appearing more than once) are asked once and the answer is reused for all occurrences.
+
+In **one-shot mode** (`phase2s run`) and **MCP mode** (Claude Code tool call), `{{ASK:}}` tokens are stripped silently. One-shot mode logs a warning to stderr. MCP mode adds a `PHASE2S_NOTE` to the tool result so the caller can see that interactive prompts were skipped.
+
+**Grammar:**
+
+- Token begins with `{{ASK:` (case-sensitive)
+- Prompt text is everything after the colon up to the first `}}`
+- No nesting — prompt text must not contain `}}`
+- Leading/trailing whitespace is trimmed
+
+**Compared to `inputs:`:**
+
+| | `inputs:` | `{{ASK:}}` |
+|--|-----------|------------|
+| Where declared | YAML frontmatter | Inline in prompt body |
+| MCP behaviour | Typed tool parameter | Stripped + PHASE2S_NOTE |
+| Best for | Required, named parameters | Contextual clarifications |
+
+Both can exist in the same skill. `inputs:` prompts run first, then `{{ASK:}}` tokens.
+
 ---
 
 ## Skill search order

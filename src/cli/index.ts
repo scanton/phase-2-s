@@ -1,22 +1,37 @@
 import { Command } from "commander";
 import { createInterface } from "node:readline";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { access, constants, readdir } from "node:fs/promises";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
 import { execSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { join, resolve, dirname } from "node:path";
 import chalk from "chalk";
 import { loadConfig, type Config } from "../core/config.js";
 import { Agent } from "../core/agent.js";
 import { Conversation } from "../core/conversation.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { loadAllSkills } from "../skills/index.js";
-import { substituteInputs, getUnfilledInputKeys } from "../skills/template.js";
+import { substituteInputs, getUnfilledInputKeys, extractAskTokens, substituteAskValues, stripAskTokens } from "../skills/template.js";
 import { log } from "../utils/logger.js";
 
 const _require = createRequire(import.meta.url);
-const VERSION: string = (_require("../../package.json") as { version: string }).version;
+
+// Walk up from the current file to find the package.json that owns this source.
+// Works from src/cli/ (vitest / ts-node) and dist/src/cli/ (compiled runtime).
+function findVersion(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 5; i++) {
+    try {
+      const pkg = _require(join(dir, "package.json")) as { name?: string; version?: string };
+      if (pkg.name === "@scanton/phase2s" && pkg.version) return pkg.version;
+    } catch { /* not here, keep walking up */ }
+    dir = dirname(dir);
+  }
+  return "0.0.0";
+}
+const VERSION = findVersion();
 
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
@@ -413,7 +428,31 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
           const answer = await nextLine();
           inputValues[key] = answer?.trim() ?? "";
         }
-        const substitutedTemplate = substituteInputs(skill.promptTemplate, inputValues, skill.inputs);
+        let substitutedTemplate = substituteInputs(skill.promptTemplate, inputValues, skill.inputs);
+
+        // Resolve {{ASK:}} tokens — inline questions embedded in the template body.
+        // Only in interactive (TTY) mode. Non-TTY stdin (piped/redirected) falls through
+        // to the same strip+warn path as one-shot mode.
+        const askTokens = extractAskTokens(substitutedTemplate);
+        if (askTokens.length > 0) {
+          if (process.stdin.isTTY) {
+            const answers = new Map<string, string>();
+            for (const token of askTokens) {
+              process.stdout.write(chalk.cyan(`  ${token.prompt} `));
+              const answer = await nextLine();
+              answers.set(token.prompt, answer?.trim() ?? "");
+            }
+            substitutedTemplate = substituteAskValues(substitutedTemplate, answers);
+          } else {
+            // Non-interactive stdin — strip tokens and warn so the user knows
+            const { result } = stripAskTokens(substitutedTemplate);
+            substitutedTemplate = result;
+            process.stderr.write(
+              `[phase2s] Skill '${skill.name}' has interactive {{ASK:}} prompts that were skipped (non-TTY stdin). Run interactively for full behaviour.\n`,
+            );
+          }
+        }
+
         const finalExpanded = substitutedTemplate + buildSkillContext(safeArgs);
 
         process.stdout.write(chalk.dim(`Running /${skill.name}${safeArgs ? ` on: ${safeArgs}` : ""}...\n`));
@@ -569,7 +608,15 @@ export function resolveSkillRouting(
 
   const skill = skills.find((s) => s.name === skillName);
   if (skill) {
-    const substitutedTemplate = substituteInputs(skill.promptTemplate, {}, skill.inputs);
+    let substitutedTemplate = substituteInputs(skill.promptTemplate, {}, skill.inputs);
+    // Strip {{ASK:}} tokens — one-shot mode is non-interactive.
+    const { result: stripped, stripped: hadAskTokens } = stripAskTokens(substitutedTemplate);
+    if (hadAskTokens) {
+      process.stderr.write(
+        `[phase2s] Skill '${skill.name}' has interactive {{ASK:}} prompts that were skipped in one-shot mode. Run interactively for full behaviour.\n`,
+      );
+    }
+    substitutedTemplate = stripped;
     const effectivePrompt = substitutedTemplate + buildSkillContext(args);
     return { effectivePrompt, modelOverride: skill.model, routedSkillName: skill.name, unknownSkillName: null };
   }

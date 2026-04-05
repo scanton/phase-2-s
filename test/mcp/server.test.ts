@@ -466,3 +466,52 @@ describe("skillToTool — Sprint 15 typed inputs", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// {{ASK:}} degradation in MCP tools/call
+// ---------------------------------------------------------------------------
+
+describe("tools/call — {{ASK:}} token handling", () => {
+  const ASK_SKILL: Skill = {
+    name: "interactive-skill",
+    description: "A skill with inline ASK prompts",
+    triggerPhrases: [],
+    promptTemplate: "Review for: {{ASK: What concern?}} — be thorough.",
+  };
+
+  it("strips {{ASK:}} tokens before executing and includes a degradation note in the result", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 1,
+      method: "tools/call",
+      params: { name: "phase2s__interactive_skill", arguments: { prompt: "check this" } },
+    };
+    const response = await handleRequest(request, [ASK_SKILL], process.cwd());
+    expect(response.result).toBeDefined();
+    const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
+    // Second content item carries the degradation note
+    expect(content.length).toBeGreaterThanOrEqual(2);
+    const note = content.find((c) => c.text.includes("PHASE2S_NOTE"));
+    expect(note).toBeDefined();
+    expect(note!.text).toContain("{{ASK:}}");
+  });
+
+  it("does not add a degradation note when the skill has no {{ASK:}} tokens", async () => {
+    const cleanSkill: Skill = {
+      name: "clean-skill",
+      description: "No ASK tokens",
+      triggerPhrases: [],
+      promptTemplate: "Review the file carefully.",
+    };
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 2,
+      method: "tools/call",
+      params: { name: "phase2s__clean_skill", arguments: { prompt: "src/auth.ts" } },
+    };
+    const response = await handleRequest(request, [cleanSkill], process.cwd());
+    const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
+    const note = content.find((c) => c.text.includes("PHASE2S_NOTE"));
+    expect(note).toBeUndefined();
+  });
+});

@@ -135,7 +135,7 @@ phase2s skills
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 295 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 314 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family, all 29 skills
@@ -158,6 +158,7 @@ phase2s skills
 - [x] `phase2s skills --json` — machine-readable skill list for scripts and tooling
 - [x] Clean install — no deprecation warnings from `npm install -g @scanton/phase2s`
 - [x] npm publish — `@scanton/phase2s` on npm, `npm install -g @scanton/phase2s`
+- [x] Multi-turn skills — `{{ASK: question?}}` inline prompts in SKILL.md templates
 - [ ] Real Codex streaming (JSONL stdout parsing)
 
 ---

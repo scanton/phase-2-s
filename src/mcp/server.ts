@@ -18,7 +18,7 @@ import { loadSkillsFromDir } from "../skills/loader.js";
 import { loadConfig } from "../core/config.js";
 import { Agent } from "../core/agent.js";
 import { Conversation } from "../core/conversation.js";
-import { substituteInputs } from "../skills/template.js";
+import { substituteInputs, stripAskTokens } from "../skills/template.js";
 import { join } from "node:path";
 import type { Skill } from "../skills/types.js";
 
@@ -254,7 +254,13 @@ export async function handleRequest(
         }
       }
     }
-    const substitutedTemplate = substituteInputs(skill.promptTemplate, inputValues, skill.inputs);
+    let substitutedTemplate = substituteInputs(skill.promptTemplate, inputValues, skill.inputs);
+
+    // Strip {{ASK:}} tokens — MCP cannot do interactive prompting.
+    // Surface degradation in the result so the caller knows questions were skipped.
+    const { result: strippedTemplate, stripped: hadAskTokens } = stripAskTokens(substitutedTemplate);
+    substitutedTemplate = strippedTemplate;
+
     // Prepend the (substituted) skill prompt to the user's content
     const fullPrompt = substitutedTemplate + (userPrompt ? `\n\n## Input\n\n${userPrompt}` : "");
 
@@ -275,12 +281,20 @@ export async function handleRequest(
         sessionConversations.set(skillName, agent.getConversation());
       }
 
+      // If {{ASK:}} tokens were stripped, surface a degradation note so the
+      // MCP caller (e.g. Claude Code) knows the skill ran without interactive input.
+      const content: Array<{ type: string; text: string }> = [{ type: "text", text }];
+      if (hadAskTokens) {
+        content.push({
+          type: "text",
+          text: `\n\n[PHASE2S_NOTE: This skill contains interactive {{ASK:}} prompts that were skipped in MCP mode. Run interactively via the Phase2S REPL for full behaviour.]`,
+        });
+      }
+
       return {
         jsonrpc: "2.0",
         id: request.id,
-        result: {
-          content: [{ type: "text", text }],
-        },
+        result: { content },
       };
     } catch (err) {
       return {
