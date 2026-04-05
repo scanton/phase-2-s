@@ -6,6 +6,19 @@ If you've never used GitHub Actions: they're automated tasks that GitHub runs fo
 
 ---
 
+## What you need first: an API key
+
+The GitHub Action **requires an Anthropic or OpenAI API key**. The ChatGPT subscription (`codex` provider) does not work in CI — it requires a browser login that can't happen on GitHub's servers.
+
+If you currently use Phase2S via a ChatGPT subscription, you can't use the action until you get an API key. Both options cost money per call (not a flat subscription):
+
+- [Anthropic Console](https://console.anthropic.com) — Claude models, pay per token
+- [OpenAI API](https://platform.openai.com) — GPT models, pay per token
+
+For occasional PR reviews, the cost is small — a few cents per run. For a high-volume repo, it adds up.
+
+---
+
 ## When is this actually useful?
 
 **For a solo developer:** The main value is that AI review happens even when you don't think to ask. Open a PR to your own repo and get a `/review` or `/adversarial` before you merge — while you're still in "making the change" mode, not "oh I should review that" mode two days later.

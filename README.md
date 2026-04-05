@@ -170,7 +170,7 @@ phase2s skills
 - [x] Shell completion — `eval "$(phase2s completion bash)"` for tab-complete in bash/zsh
 - [x] Tool allow/deny — `tools:` and `deny:` in `.phase2s.yaml` restrict agent tool access
 - [x] Headless browser tool — navigate, click, type, screenshot, evaluate JS via Playwright (opt-in: `browser: true`)
-- [x] GitHub Action — `uses: scanton/phase2s@v1` runs any skill in CI, posts results as PR comments and Step Summaries
+- [x] GitHub Action — `uses: scanton/phase2s@v1` runs any skill in CI, posts results as PR comments and Step Summaries (requires Anthropic or OpenAI API key — ChatGPT subscription doesn't work in CI)
 - [ ] Real Codex streaming (JSONL stdout parsing)
 
 ---
