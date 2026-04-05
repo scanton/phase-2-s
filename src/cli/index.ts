@@ -75,13 +75,27 @@ export async function main(argv: string[] = process.argv): Promise<void> {
   program
     .command("run <prompt>")
     .description("Run a single prompt and exit")
-    .action(async (prompt: string) => {
+    .option("--dry-run", "Show which skill and model would be used without executing")
+    .action(async (prompt: string, cmdOpts: { dryRun?: boolean }) => {
       const opts = program.opts();
       const config = await loadConfig({
         provider: opts.provider,
         model: opts.model,
         systemPrompt: opts.system,
       });
+      if (cmdOpts.dryRun) {
+        const skills = await loadAllSkills();
+        const { routedSkillName, unknownSkillName, modelOverride } = resolveSkillRouting(prompt, skills);
+        if (routedSkillName) {
+          const resolvedModel = modelOverride ?? config.model ?? "default";
+          console.log(`Would route to skill: ${routedSkillName} (model: ${resolvedModel})`);
+        } else if (unknownSkillName) {
+          console.log(`No skill named '${unknownSkillName}'. Would run as plain prompt.`);
+        } else {
+          console.log(`Would run as plain prompt (no skill prefix detected).`);
+        }
+        return;
+      }
       await oneShotMode(config, prompt);
     });
 
@@ -106,7 +120,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       }
       console.log(chalk.bold("\nAvailable skills:\n"));
       for (const skill of skills) {
-        console.log(`  ${chalk.cyan("/" + skill.name)} — ${skill.description || "(no description)"}`);
+        const tierBadge =
+          skill.model === "fast"
+            ? chalk.blue(" [fast]")
+            : skill.model === "smart"
+              ? chalk.yellow(" [smart]")
+              : "";
+        console.log(`  ${chalk.cyan("/" + skill.name)}${tierBadge} — ${skill.description || "(no description)"}`);
       }
       console.log();
     });
@@ -363,7 +383,13 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         const unfilledKeys = getUnfilledInputKeys(skill.promptTemplate, skill.inputs);
         for (const key of unfilledKeys) {
           const inputDef = skill.inputs![key];
-          process.stdout.write(chalk.cyan(`  ${inputDef.prompt} `));
+          const typeHint =
+            inputDef.type === "boolean"
+              ? " (yes/no)"
+              : inputDef.type === "enum" && inputDef.enum?.length
+                ? ` [${inputDef.enum.join("/")}]`
+                : "";
+          process.stdout.write(chalk.cyan(`  ${inputDef.prompt}${typeHint} `));
           const answer = await nextLine();
           inputValues[key] = answer?.trim() ?? "";
         }
