@@ -6,6 +6,22 @@
 
 ---
 
+## Sprint 29 (done) — Installation Health Check + OpenRouter Provider (v1.6.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.6.0 |
+| Tests | 540 (+24) |
+
+- [x] **`phase2s doctor`** — new diagnostic command. 5 pure check functions: `checkNodeVersion` (>= 20), `checkProviderBinary` (codex/ollama binary in PATH), `checkAuth` (API key for all 5 providers), `checkConfigFile` (valid YAML, known provider), `checkWorkDir` (.phase2s/ writable). `runDoctor()` loads existing config, runs checks, filters N/A, prints chalk ✓/✗ with fix instructions. 16 tests in `test/cli/doctor.test.ts`.
+- [x] **OpenRouter provider** — `src/providers/openrouter.ts`. Composition over `OpenAIProvider` with pre-configured OpenAI client pointing at `https://openrouter.ai/api/v1`. HTTP-Referer and X-Title headers injected for attribution. Model names use provider-prefixed slugs (`openai/gpt-4o`, `anthropic/claude-3-5-sonnet`). `OPENROUTER_API_KEY` env var or `openrouterApiKey` in config. Optional `openrouterBaseUrl` override. Default model: `openai/gpt-4o`. 6 tests in `test/providers/openrouter.test.ts`.
+- [x] **Config schema updates** — `openrouterApiKey`, `openrouterBaseUrl` fields in `src/core/config.ts`. Provider enum updated. Default model logic extended.
+- [x] **`phase2s init` wizard updates** — OpenRouter added as provider option (5). `checkPrerequisites` validates `sk-or-` prefix. Prompts for API key. `printNextSteps` links to `openrouter.ai/models`.
+- [x] **Shell completion** — `doctor` added to both bash COMPREPLY list and zsh subcommands array.
+- [x] **Docs** — `docs/configuration.md` (OpenRouter provider comments, `openrouterApiKey`/`openrouterBaseUrl` fields, env var table), `docs/getting-started.md` (Option E: OpenRouter + `phase2s doctor` health check section), `CHANGELOG.md` v1.6.0 entry.
+
+---
+
 ## Sprint 28 (done) — Notification Channels + Glob Tool Filtering (v1.5.0)
 
 | Metric | Value |
@@ -458,7 +474,7 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
   - `/review` on current file, `/investigate` on selected error, `/plan` for a feature
 - [ ] **Gemini provider** — `provider: gemini`, `GEMINI_API_KEY`, `@google/generative-ai` SDK. Provider interface already abstracted.
 - [ ] **MiniMax provider** — `provider: minimax`, `MINIMAX_API_KEY`. OpenAI-compatible API surface.
-- [ ] **OpenRouter provider** — `provider: openrouter`, single `OPENROUTER_API_KEY`, routes to any model (Claude, GPT-4o, Gemini, etc.). High value: one key, every model.
+- [x] **OpenRouter provider** — shipped Sprint 29 (v1.6.0). `provider: openrouter`, `OPENROUTER_API_KEY`. Composition over OpenAIProvider. HTTP-Referer + X-Title headers injected. `phase2s init` wizard support. 6 tests.
 - [ ] **Telegram notifications** — `notify.telegram.token` + `notify.telegram.chatId`. Requires BotFather setup + `getUpdates` to find chat ID. Consider `phase2s init --telegram-setup` helper that calls `getUpdates` and prints the chat ID automatically.
 
 ---

@@ -19,7 +19,7 @@ import { parse as parseYaml } from "yaml";
 // Types
 // ---------------------------------------------------------------------------
 
-export type Provider = "codex-cli" | "openai-api" | "anthropic" | "ollama";
+export type Provider = "codex-cli" | "openai-api" | "anthropic" | "ollama" | "openrouter";
 
 export interface InitConfig {
   provider: Provider;
@@ -29,6 +29,8 @@ export interface InitConfig {
   fastModel?: string;
   /** smart_model tier — optional. */
   smartModel?: string;
+  /** OpenRouter API key. Not written for other providers. */
+  openrouterApiKey?: string;
   /** Slack incoming webhook URL — optional. */
   slackWebhook?: string;
   /** Discord incoming webhook URL — optional. */
@@ -68,6 +70,15 @@ export function formatConfig(config: InitConfig): string {
     lines.push(`anthropicApiKey: "${config.apiKey}"`);
     lines.push("");
     lines.push("# Consider using ANTHROPIC_API_KEY env var instead of storing keys in config.");
+  }
+
+  if (config.provider === "openrouter" && config.openrouterApiKey) {
+    lines.push(`openrouterApiKey: "${config.openrouterApiKey}"`);
+    lines.push("");
+    lines.push("# Consider using OPENROUTER_API_KEY env var instead of storing keys in config.");
+    lines.push("# Model names use provider-prefixed slugs: openai/gpt-4o, anthropic/claude-3-5-sonnet,");
+    lines.push("# google/gemini-pro-1.5, meta-llama/llama-3.1-8b-instruct");
+    lines.push("# Browse all models at https://openrouter.ai/models");
   }
 
   const hasTiers = config.fastModel || config.smartModel;
@@ -142,6 +153,17 @@ export function checkPrerequisites(config: InitConfig): PrereqResult {
       }
       break;
     }
+    case "openrouter": {
+      if (config.openrouterApiKey && !config.openrouterApiKey.startsWith("sk-or-")) {
+        warnings.push("OpenRouter API key should start with 'sk-or-'. Double-check your key.");
+      }
+      if (!config.openrouterApiKey && !process.env.OPENROUTER_API_KEY) {
+        warnings.push(
+          "No API key provided. Set OPENROUTER_API_KEY or re-run phase2s init.",
+        );
+      }
+      break;
+    }
   }
 
   return { ok: warnings.length === 0, warnings };
@@ -178,6 +200,8 @@ export interface InitOptions {
   fastModel?: string;
   /** Smart model override. */
   smartModel?: string;
+  /** OpenRouter API key override. */
+  openrouterApiKey?: string;
   /** Slack webhook override. */
   slackWebhook?: string;
   /** Discord webhook override. */
@@ -199,13 +223,14 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
   if (options.nonInteractive) {
     // Non-interactive: assemble config from flags, validate, write.
     const providerRaw = options.provider ?? "codex-cli";
-    const validProviders: Provider[] = ["codex-cli", "openai-api", "anthropic", "ollama"];
+    const validProviders: Provider[] = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter"];
     if (!validProviders.includes(providerRaw as Provider)) {
       throw new Error(`Unknown provider: ${providerRaw}. Valid: ${validProviders.join(", ")}`);
     }
     config = {
       provider: providerRaw as Provider,
       apiKey: options.apiKey,
+      openrouterApiKey: options.openrouterApiKey,
       fastModel: options.fastModel,
       smartModel: options.smartModel,
       slackWebhook: options.slackWebhook,
@@ -249,13 +274,14 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
   console.log("    2  OpenAI API key");
   console.log("    3  Anthropic API key");
   console.log("    4  Local Ollama (no internet required)");
+  console.log("    5  OpenRouter (one key — Claude, GPT-4o, Gemini, and 50+ more)");
   console.log("");
 
   const providerToNum: Record<string, string> = {
-    "codex-cli": "1", "openai-api": "2", "anthropic": "3", "ollama": "4",
+    "codex-cli": "1", "openai-api": "2", "anthropic": "3", "ollama": "4", "openrouter": "5",
   };
   const numToProvider: Record<string, Provider> = {
-    "1": "codex-cli", "2": "openai-api", "3": "anthropic", "4": "ollama",
+    "1": "codex-cli", "2": "openai-api", "3": "anthropic", "4": "ollama", "5": "openrouter",
   };
   const defaultNum = providerToNum[String(existing.provider)] ?? "1";
 
@@ -275,6 +301,15 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
       : `  API key (${hint}): `;
     const key = await ask(prompt);
     config.apiKey = key || currentKey || undefined;
+  }
+
+  if (provider === "openrouter") {
+    const currentKey = String(existing.openrouterApiKey ?? "");
+    const prompt = currentKey
+      ? `  OpenRouter API key (current: ${currentKey.slice(0, 10)}...) [enter to keep]: `
+      : "  OpenRouter API key (sk-or-...): ";
+    const key = await ask(prompt);
+    config.openrouterApiKey = key || currentKey || undefined;
   }
 
   // --- Model tiers (optional) ---
@@ -378,6 +413,12 @@ function printNextSteps(provider: Provider): void {
     console.log("    1.  Pull a model (if not done):  ollama pull llama3.1:8b");
     console.log("    2.  Start the REPL:              phase2s");
     console.log("    3.  Or run a skill:              phase2s run \"/explain src/index.ts\"");
+  } else if (provider === "openrouter") {
+    console.log("    1.  Browse models:               https://openrouter.ai/models");
+    console.log("    2.  Set your model in .phase2s.yaml (default: openai/gpt-4o):");
+    console.log("        model: anthropic/claude-3-5-sonnet");
+    console.log("    3.  Start the REPL:              phase2s");
+    console.log("    4.  Or run a skill directly:     phase2s run \"/explain src/index.ts\"");
   } else {
     console.log("    1.  Start the REPL:              phase2s");
     console.log("    2.  Or run a skill directly:     phase2s run \"/explain src/index.ts\"");

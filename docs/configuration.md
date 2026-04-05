@@ -24,18 +24,22 @@ Full reference with all fields:
 
 ```yaml
 # LLM provider
-# codex-cli: uses your ChatGPT subscription via Codex CLI (default, no API key needed)
-# openai-api: direct OpenAI API access (requires OPENAI_API_KEY, per-token billing)
-# anthropic: Anthropic API (requires ANTHROPIC_API_KEY, defaults to claude-3-5-sonnet-20241022)
-# ollama: local Ollama server (no API key, defaults to llama3.1:8b, requires ollama serve)
+# codex-cli:   uses your ChatGPT subscription via Codex CLI (default, no API key needed)
+# openai-api:  direct OpenAI API access (requires OPENAI_API_KEY, per-token billing)
+# anthropic:   Anthropic API (requires ANTHROPIC_API_KEY, defaults to claude-3-5-sonnet-20241022)
+# ollama:      local Ollama server (no API key, defaults to llama3.1:8b, requires ollama serve)
+# openrouter:  OpenRouter gateway (requires OPENROUTER_API_KEY, 50+ models via one key)
 provider: codex-cli
 
 # Model to use
 # If not set: auto-detected from ~/.codex/config.toml (codex-cli provider)
-# or defaults to gpt-4o (openai-api), claude-3-5-sonnet-20241022 (anthropic), llama3.1:8b (ollama)
+# or defaults to gpt-4o (openai-api), claude-3-5-sonnet-20241022 (anthropic),
+# llama3.1:8b (ollama), openai/gpt-4o (openrouter)
 # model: gpt-4o
 # model: claude-3-5-sonnet-20241022
 # model: qwen2.5-coder:7b
+# model: openai/gpt-4o          # OpenRouter: use provider-prefixed slugs
+# model: anthropic/claude-3-5-sonnet
 
 # Model tier routing (openai-api and anthropic providers)
 # Skills declare 'model: fast' or 'model: smart' in their SKILL.md frontmatter.
@@ -56,6 +60,15 @@ provider: codex-cli
 # Change this if your Ollama server runs on a different host or port.
 # Warning: remote URLs will send prompts and tool results to that host.
 # ollamaBaseUrl: http://localhost:11434/v1
+
+# OpenRouter API key (openrouter provider only)
+# Falls back to OPENROUTER_API_KEY environment variable.
+# Get your key at https://openrouter.ai/keys
+# openrouterApiKey: sk-or-your-key-here
+
+# OpenRouter base URL (openrouter provider only, default https://openrouter.ai/api/v1)
+# Override for custom deployments or compatible gateways.
+# openrouterBaseUrl: https://openrouter.ai/api/v1
 
 # Max agent loop turns before stopping
 # The agent loop runs tool calls and feeds results back until no more tool calls.
@@ -122,7 +135,7 @@ All config file settings can be overridden with environment variables. Environme
 
 | Variable | Equivalent config field | Description |
 |----------|------------------------|-------------|
-| `PHASE2S_PROVIDER` | `provider` | `codex-cli`, `openai-api`, `anthropic`, or `ollama` |
+| `PHASE2S_PROVIDER` | `provider` | `codex-cli`, `openai-api`, `anthropic`, `ollama`, or `openrouter` |
 | `PHASE2S_MODEL` | `model` | Model name (e.g., `gpt-4o`, `o3`, `claude-3-5-sonnet-20241022`) |
 | `PHASE2S_FAST_MODEL` | `fast_model` | Fast tier model name |
 | `PHASE2S_SMART_MODEL` | `smart_model` | Smart tier model name |
@@ -135,6 +148,7 @@ All config file settings can be overridden with environment variables. Environme
 | `PHASE2S_CODEX_PATH` | — | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | — | API key for `openai-api` provider |
 | `ANTHROPIC_API_KEY` | — | API key for `anthropic` provider |
+| `OPENROUTER_API_KEY` | `openrouterApiKey` | API key for `openrouter` provider |
 
 ---
 

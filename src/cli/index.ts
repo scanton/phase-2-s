@@ -218,6 +218,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--non-interactive", "Skip prompts and use flag values (for CI)")
     .option("--provider <provider>", "Provider: codex-cli, openai-api, anthropic, ollama")
     .option("--api-key <key>", "API key for openai-api or anthropic provider")
+    .option("--openrouter-api-key <key>", "API key for openrouter provider")
     .option("--fast-model <model>", "Fast tier model name")
     .option("--smart-model <model>", "Smart tier model name")
     .option("--slack-webhook <url>", "Slack webhook URL for notifications")
@@ -227,6 +228,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       nonInteractive?: boolean;
       provider?: string;
       apiKey?: string;
+      openrouterApiKey?: string;
       fastModel?: string;
       smartModel?: string;
       slackWebhook?: string;
@@ -238,12 +240,22 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         nonInteractive: cmdOpts.nonInteractive,
         provider: cmdOpts.provider,
         apiKey: cmdOpts.apiKey,
+        openrouterApiKey: cmdOpts.openrouterApiKey,
         fastModel: cmdOpts.fastModel,
         smartModel: cmdOpts.smartModel,
         slackWebhook: cmdOpts.slackWebhook,
         discordWebhook: cmdOpts.discordWebhook,
         teamsWebhook: cmdOpts.teamsWebhook,
       });
+    });
+
+  // Installation health check
+  program
+    .command("doctor")
+    .description("Check Phase2S installation health — Node version, auth, config, working dir")
+    .action(async () => {
+      const { runDoctor } = await import("./doctor.js");
+      await runDoctor();
     });
 
   // Shell completion script generator
@@ -282,7 +294,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp goal report init completion" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run skills mcp goal report init doctor completion" -- "\$cur"))
     return
   fi
 
@@ -322,6 +334,7 @@ _phase2s() {
     'goal:Run a spec file autonomously (dark factory)'
     'report:Display a human-readable summary of a run log'
     'init:Interactive setup wizard — configure .phase2s.yaml'
+    'doctor:Check Phase2S installation health'
     'completion:Output shell completion script'
   )
 

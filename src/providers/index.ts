@@ -4,6 +4,7 @@ import { CodexProvider } from "./codex.js";
 import { OpenAIProvider } from "./openai.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { createOllamaProvider } from "./ollama.js";
+import { OpenRouterProvider } from "./openrouter.js";
 
 export function createProvider(config: Config): Provider {
   switch (config.provider) {
@@ -15,6 +16,8 @@ export function createProvider(config: Config): Provider {
       return new AnthropicProvider(config);
     case "ollama":
       return createOllamaProvider(config);
+    case "openrouter":
+      return new OpenRouterProvider(config);
     default:
       throw new Error(`Unknown provider: ${config.provider}`);
   }
@@ -22,3 +25,4 @@ export function createProvider(config: Config): Provider {
 
 export type { Provider, Message, ToolCall, ProviderEvent } from "./types.js";
 export type { OpenAIClientLike } from "./openai.js";
+export { OpenRouterProvider } from "./openrouter.js";

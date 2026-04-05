@@ -101,6 +101,29 @@ phase2s
 
 `ollama serve` must be running. `qwen2.5-coder:7b` is a good alternative if you want stronger tool-calling support on complex tasks.
 
+### Option E — OpenRouter (50+ models, one API key)
+
+```bash
+npm install -g @scanton/phase2s
+export OPENROUTER_API_KEY=sk-or-your-key-here
+export PHASE2S_PROVIDER=openrouter
+phase2s
+```
+
+Get your key at [openrouter.ai/keys](https://openrouter.ai/keys). Switch models on the fly with `-m anthropic/claude-3-5-sonnet` or set `model:` in `.phase2s.yaml`. All provider-prefixed slugs work: `openai/gpt-4o`, `google/gemini-pro-1.5`, etc.
+
+---
+
+## Verify your installation
+
+If something isn't working, run the health check:
+
+```bash
+phase2s doctor
+```
+
+It checks your Node.js version, provider binary, API key, config file, and working directory — then tells you exactly what to fix.
+
 ---
 
 ## Your first session

@@ -1,5 +1,44 @@
 # Changelog
 
+## v1.6.0 — 2026-04-05
+
+Installation health check + OpenRouter provider.
+
+### What's new
+
+- **`phase2s doctor`** — new diagnostic command that runs 5 health checks and tells you exactly what's wrong and how to fix it. Checks Node.js version (>= 20), provider binary availability (codex, ollama), API key / auth state for all providers, `.phase2s.yaml` validity, and `.phase2s/` working directory writability. Prints `✓`/`✗` per check with one-line fix instructions. Exits with a summary: "All checks passed" or "N issues found."
+- **OpenRouter provider** — `provider: openrouter` in `.phase2s.yaml` (or `PHASE2S_PROVIDER=openrouter` env var). Routes requests through [openrouter.ai](https://openrouter.ai) to 50+ models under a single API key. Model names use provider-prefixed slugs: `openai/gpt-4o`, `anthropic/claude-3-5-sonnet`, `google/gemini-pro-1.5`. Set `OPENROUTER_API_KEY` or `openrouterApiKey` in config. Optional `openrouterBaseUrl` for custom deployments. `phase2s init` wizard supports OpenRouter setup with prerequisite check and next-steps guidance.
+
+### Usage
+
+```bash
+# Run the health check
+phase2s doctor
+
+# OpenRouter via env vars
+export PHASE2S_PROVIDER=openrouter
+export OPENROUTER_API_KEY=sk-or-...
+phase2s run "explain this file"
+
+# OpenRouter with a specific model
+phase2s -m anthropic/claude-3-5-sonnet run "review src/core/agent.ts"
+
+# Set up interactively
+phase2s init
+# (select OpenRouter when prompted for provider)
+```
+
+```yaml
+# .phase2s.yaml — OpenRouter config
+provider: openrouter
+openrouterApiKey: "sk-or-..."
+model: "openai/gpt-4o"        # any OpenRouter model slug
+fast_model: "openai/gpt-4o-mini"
+smart_model: "anthropic/claude-3-5-sonnet"
+```
+
+---
+
 ## v1.5.0 — 2026-04-05
 
 Notification channels expansion + glob tool filtering.
