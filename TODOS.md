@@ -6,6 +6,19 @@
 
 ---
 
+## Sprint 30 (done) — Self-Update + Skills Search (v1.7.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.7.0 |
+| Tests | 559 (+19) |
+
+- [x] **`phase2s upgrade`** — checks npm registry for the latest version, prompts to run `npm install -g @scanton/phase2s`, live output during install. `--check` flag for CI non-interactive mode. Graceful failure when registry is unreachable. Pure functions: `parseVersion()`, `isUpdateAvailable()`, `checkLatestVersion()`. 12 tests in `test/cli/upgrade.test.ts`.
+- [x] **`phase2s skills [query]`** — optional positional search argument on the `skills` command. Case-insensitive substring match on skill name and description. Empty query = list all (backward compatible). "No skills match" message when query returns zero results. Works with `--json` for scripting. 7 tests added to `test/cli/skills-output.test.ts`.
+- [x] **Shell completion** — `upgrade` added to bash COMPREPLY list and zsh subcommands array.
+
+---
+
 ## Sprint 29 (done) — Installation Health Check + OpenRouter Provider (v1.6.0)
 
 | Metric | Value |

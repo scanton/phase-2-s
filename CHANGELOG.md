@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.7.0 — 2026-04-05
+
+Self-update command + skills search.
+
+### What's new
+
+- **`phase2s upgrade`** — checks npm registry for the latest version and offers to install it. Runs `npm install -g @scanton/phase2s` with live output when you say yes. `--check` flag for CI / non-interactive use (reports whether an update is available without prompting). Fails gracefully if the registry is unreachable. 12 tests.
+- **`phase2s skills [query]`** — optional search query on the `skills` command. Filters by skill name and description (case-insensitive substring match). `phase2s skills quality` returns `/health`, `/qa`, `/audit`. `phase2s skills ship` returns `/ship` and `/land-and-deploy`. Works with `--json` for scripting. When no skills match, prints a helpful message pointing back to `phase2s skills` for the full list. Fully backward compatible — no args still lists all skills. 7 tests.
+
+### Usage
+
+```bash
+# Check for updates and upgrade
+phase2s upgrade
+
+# Just check without prompting (CI-friendly)
+phase2s upgrade --check
+
+# Find skills related to a topic
+phase2s skills quality
+phase2s skills security
+phase2s skills deploy
+phase2s skills search    # try partial names too
+
+# JSON output with filter (for scripts)
+phase2s skills --json security
+```
+
+---
+
 ## v1.6.0 — 2026-04-05
 
 Installation health check + OpenRouter provider.

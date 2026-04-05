@@ -131,11 +131,19 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   // List available skills
   program
-    .command("skills")
-    .description("List available skills")
+    .command("skills [query]")
+    .description("List available skills, or filter with an optional search query")
     .option("--json", "Output as JSON")
-    .action(async (cmdOpts: { json?: boolean }) => {
-      const skills = await loadAllSkills();
+    .action(async (query: string | undefined, cmdOpts: { json?: boolean }) => {
+      let skills = await loadAllSkills();
+      if (query) {
+        const q = query.toLowerCase();
+        skills = skills.filter(
+          (s) =>
+            s.name.toLowerCase().includes(q) ||
+            (s.description?.toLowerCase().includes(q) ?? false),
+        );
+      }
       if (cmdOpts.json) {
         const output = skills.map((s) => ({
           name: s.name,
@@ -154,10 +162,17 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         return;
       }
       if (skills.length === 0) {
-        log.info("No skills found. Add skills to .phase2s/skills/ or ~/.phase2s/skills/");
+        if (query) {
+          console.log(chalk.yellow(`\n  No skills match "${query}". Try a broader term or run phase2s skills to list all.\n`));
+        } else {
+          log.info("No skills found. Add skills to .phase2s/skills/ or ~/.phase2s/skills/");
+        }
         return;
       }
-      console.log(chalk.bold("\nAvailable skills:\n"));
+      const header = query
+        ? chalk.bold(`\nSkills matching "${query}":\n`)
+        : chalk.bold("\nAvailable skills:\n");
+      console.log(header);
       for (const skill of skills) {
         const tierBadge =
           skill.model === "fast"
@@ -249,6 +264,16 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       });
     });
 
+  // Self-update command
+  program
+    .command("upgrade")
+    .description("Check for a newer version and offer to install it")
+    .option("--check", "Report whether an update is available without prompting")
+    .action(async (cmdOpts: { check?: boolean }) => {
+      const { runUpgrade } = await import("./upgrade.js");
+      await runUpgrade(VERSION, { check: cmdOpts.check });
+    });
+
   // Installation health check
   program
     .command("doctor")
@@ -294,7 +319,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp goal report init doctor completion" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run skills mcp goal report init upgrade doctor completion" -- "\$cur"))
     return
   fi
 
@@ -334,6 +359,7 @@ _phase2s() {
     'goal:Run a spec file autonomously (dark factory)'
     'report:Display a human-readable summary of a run log'
     'init:Interactive setup wizard — configure .phase2s.yaml'
+    'upgrade:Check for a newer version and offer to install it'
     'doctor:Check Phase2S installation health'
     'completion:Output shell completion script'
   )

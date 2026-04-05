@@ -228,7 +228,7 @@ phase2s skills --json # machine-readable for scripts
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 540 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, and installation health checks
+- [x] 559 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, installation health checks, self-update, and skills search
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -267,6 +267,8 @@ phase2s skills --json # machine-readable for scripts
 - [x] Glob/wildcard patterns in `tools` and `deny` config (`file_*` matches `file_read` and `file_write`)
 - [x] OpenRouter provider — 50+ models (GPT-4o, Claude, Gemini, Llama) under a single `OPENROUTER_API_KEY`
 - [x] `phase2s doctor` — installation health check: Node version, provider binary, auth, config, working dir
+- [x] `phase2s upgrade` — self-update: checks npm registry, prompts to install, `--check` for CI
+- [x] `phase2s skills [query]` — filter the skill list by name or description (`phase2s skills security`)
 
 ---
 
