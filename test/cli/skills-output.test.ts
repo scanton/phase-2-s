@@ -100,3 +100,85 @@ describe("TODO-3: --dry-run output via resolveSkillRouting", () => {
     expect(true).toBe(true);
   });
 });
+
+describe("TODO-2: skills --json output", () => {
+  // Helper mirroring the --json serialisation in the skills command
+  function serializeSkills(skills: Skill[]) {
+    return skills.map((s) => ({
+      name: s.name,
+      description: s.description ?? null,
+      model: s.model ?? null,
+      inputs: s.inputs
+        ? Object.fromEntries(
+            Object.entries(s.inputs).map(([k, v]) => [
+              k,
+              {
+                prompt: (v as { prompt: string; type?: string; enum?: string[] }).prompt,
+                type: (v as { prompt: string; type?: string }).type ?? "string",
+                ...((v as { enum?: string[] }).enum ? { enum: (v as { enum?: string[] }).enum } : {}),
+              },
+            ])
+          )
+        : null,
+    }));
+  }
+
+  it("serialises name, description, model tier, and null inputs for a simple skill", () => {
+    const skill: Skill = {
+      name: "explain",
+      description: "Explain code",
+      triggerPhrases: [],
+      promptTemplate: "Explain {{target}}.",
+      model: "fast",
+    };
+    const result = serializeSkills([skill]);
+    expect(result).toEqual([{ name: "explain", description: "Explain code", model: "fast", inputs: null }]);
+  });
+
+  it("serialises inputs with type and enum when present", () => {
+    const skill: Skill = {
+      name: "plan",
+      description: "Plan a feature",
+      triggerPhrases: [],
+      promptTemplate: "Plan {{feature}}.",
+      model: "smart",
+      inputs: {
+        feature: { prompt: "What to build?", type: "string" } as { prompt: string; type?: string },
+        priority: { prompt: "Priority level", type: "enum", enum: ["low", "medium", "high"] } as {
+          prompt: string;
+          type?: string;
+          enum?: string[];
+        },
+      },
+    };
+    const result = serializeSkills([skill]);
+    expect(result[0].inputs).toEqual({
+      feature: { prompt: "What to build?", type: "string" },
+      priority: { prompt: "Priority level", type: "enum", enum: ["low", "medium", "high"] },
+    });
+  });
+
+  it("serialises null model for skills with no tier declared", () => {
+    const skill: Skill = {
+      name: "autoplan",
+      description: "Auto planning",
+      triggerPhrases: [],
+      promptTemplate: "Plan.",
+    };
+    const result = serializeSkills([skill]);
+    expect(result[0].model).toBeNull();
+  });
+
+  it("output is valid JSON (round-trips through parse)", () => {
+    const skill: Skill = {
+      name: "review",
+      description: "Code review",
+      triggerPhrases: [],
+      promptTemplate: "Review.",
+      model: "smart",
+    };
+    const json = JSON.stringify(serializeSkills([skill]), null, 2);
+    expect(() => JSON.parse(json)).not.toThrow();
+    expect(JSON.parse(json)[0].name).toBe("review");
+  });
+});

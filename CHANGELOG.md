@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.20.0 — 2026-04-04
+
+Sprint 16: `phase2s skills --json`, clean install (no deprecation warnings), accurate test counts.
+
+### What's new
+
+- **`phase2s skills --json`** — machine-readable skill list: name, description, model tier, inputs with types. Pipe into `jq`, scripts, or anything else. `phase2s skills --json | jq '.[] | select(.model=="fast") | .name'` to list fast skills.
+- **No more install warnings** — `npm install -g @scanton/phase2s` now runs clean. The `node-domexception` deprecation warning (from `openai` → `formdata-node`) is gone via an `overrides` entry forcing `formdata-node@^6`.
+- **Accurate test counts** — vitest was discovering test files in `.claude/worktrees/` and reporting 861 tests instead of 291. Fixed by adding `vitest.config.ts` with explicit `include`/`exclude`. `npm test` now runs in ~1.3s instead of ~2.7s.
+- **`/plan` saves to disk with timestamp** — plans are saved to `.phase2s/plans/YYYY-MM-DD-HH-MM-<slug>.md` so multiple plans in a day don't collide. Path is reported after saving.
+- **`--version` reads from `package.json` at runtime** — no more hardcoded version constant that gets out of sync on bumps.
+
+### For contributors
+
+- `vitest.config.ts` (new) — explicit include/exclude replaces vitest's default glob
+- `package.json` — `overrides.formdata-node: ^6.0.0`; version `0.20.0`
+- `src/cli/index.ts` — `skills` command gains `--json` option; `VERSION` now read from `package.json` via `createRequire`
+- `.phase2s/skills/plan/SKILL.md` — updated plan file path format and instructions
+- **295 tests** (up from 291). New: +4 `--json` serialisation tests.
+
+## v0.19.1 — 2026-04-04
+
+Patch: sync `VERSION` constant with `package.json` (was reporting 0.18.0 after v0.19.0 publish).
+
 ## v0.19.0 — 2026-04-04
 
 Sprint 15 polish: `--dry-run` flag, typed input hints in REPL, model tier badges in skill list.

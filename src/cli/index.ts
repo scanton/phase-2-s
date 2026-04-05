@@ -114,8 +114,26 @@ export async function main(argv: string[] = process.argv): Promise<void> {
   program
     .command("skills")
     .description("List available skills")
-    .action(async () => {
+    .option("--json", "Output as JSON")
+    .action(async (cmdOpts: { json?: boolean }) => {
       const skills = await loadAllSkills();
+      if (cmdOpts.json) {
+        const output = skills.map((s) => ({
+          name: s.name,
+          description: s.description ?? null,
+          model: s.model ?? null,
+          inputs: s.inputs
+            ? Object.fromEntries(
+                Object.entries(s.inputs).map(([k, v]) => [
+                  k,
+                  { prompt: v.prompt, type: v.type ?? "string", ...(v.enum ? { enum: v.enum } : {}) },
+                ])
+              )
+            : null,
+        }));
+        console.log(JSON.stringify(output, null, 2));
+        return;
+      }
       if (skills.length === 0) {
         log.info("No skills found. Add skills to .phase2s/skills/ or ~/.phase2s/skills/");
         return;

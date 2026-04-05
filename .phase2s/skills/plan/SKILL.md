@@ -61,9 +61,9 @@ Do not start coding yet — plan first.
 
 ---
 
-After writing the plan, use the `file_write` tool to save it to `.phase2s/plans/PLAN-DATE.md` where DATE is today's date in YYYY-MM-DD format. Create the `.phase2s/plans/` directory if it doesn't exist.
+After writing the plan above, immediately use the `shell` tool to get the current datetime (`date +%Y-%m-%d-%H-%M`), then use the `file_write` tool to save the plan to `.phase2s/plans/<datetime>-<feature-slug>.md` (e.g. `2026-04-04-14-30-add-rate-limiting.md`). Create the directory first if needed (`shell: mkdir -p .phase2s/plans`). Tell the user the full path where the plan was saved.
 
-Then ask: "Append these tasks to TODOS.md? (yes/no)"
+Then ask: "Append Phase 1 tasks to TODOS.md? (yes/no)"
 If yes, use `file_read` to read TODOS.md, then use `file_write` to append the Phase 1 task checklist under a new section at the top of the active sprint.
 
 Be concrete. Name actual files that exist in the project. Show real commands. If something is unclear in the requirements, ask one clarifying question before proceeding.
