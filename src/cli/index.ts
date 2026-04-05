@@ -276,7 +276,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp completion" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run skills mcp goal report init completion" -- "\$cur"))
     return
   fi
 
@@ -313,6 +313,9 @@ _phase2s() {
     'run:Run a single prompt and exit'
     'skills:List available skills'
     'mcp:Start as an MCP server for Claude Code'
+    'goal:Run a spec file autonomously (dark factory)'
+    'report:Display a human-readable summary of a run log'
+    'init:Interactive setup wizard — configure .phase2s.yaml'
     'completion:Output shell completion script'
   )
 

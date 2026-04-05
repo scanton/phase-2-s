@@ -1,6 +1,14 @@
 # Configuration
 
-Phase2S configuration lives in `.phase2s.yaml` in your project root. Copy the example file to get started:
+Phase2S configuration lives in `.phase2s.yaml` in your project root. The fastest way to create one:
+
+```bash
+phase2s init
+```
+
+This runs an interactive wizard: pick your provider, enter your API key (if needed), optionally configure fast/smart model tiers and a Slack webhook. Takes under 60 seconds. Re-run anytime to update settings — existing values are pre-filled.
+
+If you prefer to write the file by hand, copy the example:
 
 ```bash
 cp .phase2s.yaml.example .phase2s.yaml

@@ -121,6 +121,7 @@ Once Phase2S is running as an MCP server, Claude Code gets a tool for every Phas
 | Phase2S skill | Claude Code tool name |
 |---|---|
 | `phase2s goal` | `phase2s__goal` |
+| `phase2s report` | `phase2s__report` |
 | `/adversarial` | `phase2s__adversarial` |
 | `/plan-review` | `phase2s__plan_review` |
 | `/consensus-plan` | `phase2s__consensus_plan` |
