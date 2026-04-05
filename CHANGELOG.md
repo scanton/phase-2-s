@@ -2,28 +2,16 @@
 
 ## v1.11.0 — 2026-04-05
 
-Bear art redesign. The bear now has ears.
+MiniMax provider + README refresh (bear mascot removed).
 
 ### What's new
 
-- **Bear face redesign** — Complete redesign of the ASCII art bear mascot. 7-line face with round ears, forehead, proper muzzle nose `(_)`, and chin. Fixed-frame architecture: 5 lines never change across poses, only eyes and mouth swap. Each pose is instantly recognizable as the same character. The bear actually looks like a teddy bear now.
-
-### Changed
-
-- Thinking pose is now a full 7-line bear face (was single-line `(o.o) thinking...` in v1.10.0)
-- All poses use the same fixed frame, making future pose additions trivial
-
----
-
-## v1.10.0 — 2026-04-05
-
-Bear mascot + MiniMax provider + README refresh.
-
-### What's new
-
-- **Bear mascot** — ASCII art white teddy bear with 5 poses: greeting (startup banner), thinking (single-line during agent work), success (skill completed), error (something broke), help (`/help` command). Width-adaptive: full 8-line art at 60+ cols, compact single-line at 40-59, text-only below 40. MCP-safe (suppressed in JSON-RPC mode). Configurable: `bear: false` in `.phase2s.yaml` or `--no-banner` flag. Architecture: `BearState` enum + `BearRenderer` interface for future animation.
 - **MiniMax provider** — `provider: minimax` in `.phase2s.yaml` (or `PHASE2S_PROVIDER=minimax`). Connects to MiniMax's OpenAI-compatible API at `api.minimax.io/v1/`. Default model `MiniMax-M2.5`. Set `MINIMAX_API_KEY` or `minimaxApiKey` in config. `phase2s init` wizard option 7 and `phase2s doctor` both handle MiniMax. 7 providers total.
 - **README refresh** — Providers comparison table. Features in Depth section covering: `phase2s lint`, `--dry-run`, live progress display, `phase2s report`, MCP state server, MCP report tool, headless browser, `--system` flag, `verifyCommand` config.
+
+### Removed
+
+- Bear mascot (shipped in v1.10.0, removed in v1.11.0). The ASCII art didn't meet the quality bar.
 
 ### Usage
 

@@ -55,7 +55,6 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     geminiBaseUrl: undefined,
     minimaxApiKey: "test-minimax-key-12345",
     minimaxBaseUrl: undefined,
-    bear: true,
     fast_model: undefined,
     smart_model: undefined,
     codexPath: "codex",

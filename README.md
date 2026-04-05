@@ -379,7 +379,6 @@ browser: true  # requires playwright installed
 - [x] Live dark factory progress: `[1/3] Running: Sub-task name` with elapsed time per sub-task
 - [x] `phase2s lint`: >8 sub-task warning and evalCommand PATH check
 - [x] MiniMax provider — MiniMax-M2.5 default, OpenAI-compatible endpoint, no new SDK dependency
-- [x] Bear mascot — ASCII art teddy bear with 5 poses (greeting, thinking, success, error, help), width-adaptive rendering, MCP-safe, configurable via `bear: false`
 
 ---
 
