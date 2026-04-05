@@ -162,22 +162,39 @@ phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md --notify
 
 **On macOS:** a system notification appears automatically (via `osascript`, no extra setup).
 
-**On any platform (macOS, Linux, Windows):** set `PHASE2S_SLACK_WEBHOOK` and you'll get a Slack message:
+**Cross-platform (macOS, Linux, Windows):** three webhook channels are supported. Set whichever one (or more) you use:
 
 ```bash
+# Slack
 export PHASE2S_SLACK_WEBHOOK=https://hooks.slack.com/services/...
+
+# Discord
+export PHASE2S_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
+
+# Microsoft Teams
+export PHASE2S_TEAMS_WEBHOOK=https://outlook.office.com/webhook/...
+
 phase2s goal my-spec.md --notify
 ```
 
-Or configure it permanently in `.phase2s.yaml`:
+Or configure channels permanently in `.phase2s.yaml`. The fastest way is `phase2s init`, which walks you through each channel interactively. To do it by hand:
 
 ```yaml
 notify:
-  slack: "https://hooks.slack.com/services/..."
+  slack: "https://hooks.slack.com/services/T.../B.../..."
+  discord: "https://discord.com/api/webhooks/.../..."
+  teams: "https://outlook.office.com/webhook/..."
   mac: true  # default on macOS; set false to disable
 ```
 
-If no channels are configured (Linux/Windows with no Slack webhook), `--notify` logs a warning pointing you to `PHASE2S_SLACK_WEBHOOK`.
+**Getting webhook URLs:**
+- **Slack:** Apps → Incoming Webhooks → Add New Webhook. Copy the `https://hooks.slack.com/services/...` URL.
+- **Discord:** Server Settings → Integrations → Webhooks → New Webhook. Copy the URL.
+- **Teams:** Channel → Connectors → Incoming Webhook → Configure. Copy the URL.
+
+All channels are fail-safe: errors go to stderr and never block the run. Multiple channels can be active simultaneously — useful for team projects where some members use Slack and others use Teams.
+
+If no channels are configured (Linux/Windows with no webhook set), `--notify` logs a warning pointing to the available env vars.
 
 ### Read the run report
 

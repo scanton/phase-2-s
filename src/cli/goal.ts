@@ -393,6 +393,8 @@ async function maybeNotify(
     : {
         mac: config.notify?.mac,
         slack: config.notify?.slack,
+        discord: config.notify?.discord,
+        teams: config.notify?.teams,
       };
 
   const payload = buildNotifyPayload(

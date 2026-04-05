@@ -68,6 +68,36 @@ describe("formatConfig", () => {
     expect(yaml).not.toContain("slack:");
   });
 
+  it("discordWebhook: included in notify block when set", () => {
+    const yaml = formatConfig({
+      provider: "codex-cli",
+      discordWebhook: "https://discord.com/api/webhooks/abc/xyz",
+    });
+    expect(yaml).toContain("notify:");
+    expect(yaml).toContain('discord: "https://discord.com/api/webhooks/abc/xyz"');
+  });
+
+  it("teamsWebhook: included in notify block when set", () => {
+    const yaml = formatConfig({
+      provider: "codex-cli",
+      teamsWebhook: "https://outlook.office.com/webhook/abc",
+    });
+    expect(yaml).toContain("notify:");
+    expect(yaml).toContain('teams: "https://outlook.office.com/webhook/abc"');
+  });
+
+  it("all three webhooks set: all appear in notify block", () => {
+    const yaml = formatConfig({
+      provider: "codex-cli",
+      slackWebhook: "https://hooks.slack.com/test",
+      discordWebhook: "https://discord.com/api/webhooks/test",
+      teamsWebhook: "https://outlook.office.com/webhook/test",
+    });
+    expect(yaml).toContain('slack: "https://hooks.slack.com/test"');
+    expect(yaml).toContain('discord: "https://discord.com/api/webhooks/test"');
+    expect(yaml).toContain('teams: "https://outlook.office.com/webhook/test"');
+  });
+
   it("always ends with newline", () => {
     const yaml = formatConfig({ provider: "ollama" });
     expect(yaml.endsWith("\n")).toBe(true);

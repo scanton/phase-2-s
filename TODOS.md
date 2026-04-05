@@ -6,6 +6,21 @@
 
 ---
 
+## Sprint 28 (done) — Notification Channels + Glob Tool Filtering (v1.5.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.5.0 |
+| Tests | 516 (+13) |
+
+- [x] **Discord notifications** — `notify.discord` in `.phase2s.yaml` or `PHASE2S_DISCORD_WEBHOOK`. Rich embeds with green/red color. `sendDiscordNotification()` in `src/core/notify.ts`.
+- [x] **Microsoft Teams notifications** — `notify.teams` in `.phase2s.yaml` or `PHASE2S_TEAMS_WEBHOOK`. MessageCard format with `themeColor`. `sendTeamsNotification()` in `src/core/notify.ts`.
+- [x] **`phase2s init` Discord + Teams prompts** — interactive wizard now asks for Discord and Teams webhook URLs. `--discord-webhook` and `--teams-webhook` flags for CI mode.
+- [x] **Glob/wildcard in `tools` and `deny`** — `*` wildcard in tool allow/deny lists. `file_*` matches `file_read` and `file_write`. No-match patterns warn at startup. `matchesPattern()` in `src/tools/registry.ts`.
+- [x] **Backlog additions** — Gemini, MiniMax, OpenRouter, Telegram providers added to long-term backlog.
+
+---
+
 ## Sprint 27 (done) — Onboarding Wizard (v1.4.0)
 
 | Metric | Value |
@@ -406,7 +421,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [x] **`glob` deprecation fix** — Fixed Sprint 15. Upgraded `glob` from `^11.0.0` to `^13.0.0` in package.json.
 - [x] **Anthropic Claude provider** — `src/providers/anthropic.ts` shipped in Sprint 14. `provider: anthropic` in `.phase2s.yaml`. Uses `@anthropic-ai/sdk@0.82.0`. All 29 skills work on Claude 3.5 Sonnet.
 - [x] **Skill inputs v2: typed parameters** — Add optional `type: "boolean" | "enum" | "number"` and `enum:` to inputs schema so MCP tool parameters can be typed. Shipping in Sprint 15 (v0.18.0).
-- [ ] **Skill inputs v2: glob/prefix matching in allow/deny** — `tools: ["file_*"]` pattern matching. v1 is exact-name only. Deferred from Sprint 13.
+- [x] **Skill inputs v2: glob/prefix matching in allow/deny** — shipped Sprint 28 (v1.5.0). `tools: ["file_*"]` pattern matching via `matchesPattern()` in registry.ts. `*` wildcard supported in both `tools` and `deny`. No-match patterns warn at startup.
 - [x] **Skill inputs v2: one-shot skill routing** — `phase2s run "/plan build auth"` detects skill prefix and routes through skill system. Shipping in Sprint 15 (v0.18.0).
 
 ---
@@ -441,6 +456,10 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [x] **GitHub Actions integration** — shipped Sprint 20. `uses: scanton/phase2s@v1`. Requires API key for CI use.
 - [ ] **VS Code extension** — run skills from the editor sidebar
   - `/review` on current file, `/investigate` on selected error, `/plan` for a feature
+- [ ] **Gemini provider** — `provider: gemini`, `GEMINI_API_KEY`, `@google/generative-ai` SDK. Provider interface already abstracted.
+- [ ] **MiniMax provider** — `provider: minimax`, `MINIMAX_API_KEY`. OpenAI-compatible API surface.
+- [ ] **OpenRouter provider** — `provider: openrouter`, single `OPENROUTER_API_KEY`, routes to any model (Claude, GPT-4o, Gemini, etc.). High value: one key, every model.
+- [ ] **Telegram notifications** — `notify.telegram.token` + `notify.telegram.chatId`. Requires BotFather setup + `getUpdates` to find chat ID. Consider `phase2s init --telegram-setup` helper that calls `getUpdates` and prints the chat ID automatically.
 
 ---
 

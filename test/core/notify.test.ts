@@ -120,4 +120,86 @@ describe("sendNotification", () => {
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
   });
+
+  it("calls fetch with correct Discord embed payload", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await sendNotification(
+      { title: "Goal complete", body: "2 attempts", success: true },
+      { mac: false, discord: "https://discord.com/api/webhooks/test" },
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://discord.com/api/webhooks/test",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { embeds: Array<{ title: string; color: number }> };
+    expect(body.embeds).toBeDefined();
+    expect(body.embeds[0].title).toContain("Goal complete");
+    expect(body.embeds[0].color).toBe(0x2ECC71); // green for success
+
+    vi.unstubAllGlobals();
+  });
+
+  it("Discord embed uses red color for failure", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await sendNotification(
+      { title: "Goal failed", success: false },
+      { mac: false, discord: "https://discord.com/api/webhooks/test" },
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { embeds: Array<{ color: number }> };
+    expect(body.embeds[0].color).toBe(0xE74C3C); // red for failure
+
+    vi.unstubAllGlobals();
+  });
+
+  it("calls fetch with correct Teams MessageCard payload", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await sendNotification(
+      { title: "Goal complete", body: "3 attempts", success: true },
+      { mac: false, teams: "https://outlook.office.com/webhook/test" },
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://outlook.office.com/webhook/test",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { "@type": string; title: string; themeColor: string };
+    expect(body["@type"]).toBe("MessageCard");
+    expect(body.title).toContain("Goal complete");
+    expect(body.themeColor).toBe("2ECC71"); // green for success
+
+    vi.unstubAllGlobals();
+  });
+
+  it("Teams MessageCard uses red themeColor for failure", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await sendNotification(
+      { title: "Goal failed", success: false },
+      { mac: false, teams: "https://outlook.office.com/webhook/test" },
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { themeColor: string };
+    expect(body.themeColor).toBe("E74C3C"); // red for failure
+
+    vi.unstubAllGlobals();
+  });
+
+  it("no-channels warning mentions Slack, Discord, and Teams", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await sendNotification({ title: "test", success: true }, { mac: false });
+    const warning = warnSpy.mock.calls[0][0] as string;
+    expect(warning).toContain("PHASE2S_SLACK_WEBHOOK");
+    expect(warning).toContain("PHASE2S_DISCORD_WEBHOOK");
+    expect(warning).toContain("PHASE2S_TEAMS_WEBHOOK");
+    warnSpy.mockRestore();
+  });
 });

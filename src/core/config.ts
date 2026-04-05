@@ -53,6 +53,8 @@ const configSchema = z.object({
   notify: z.object({
     mac: z.boolean().optional(),
     slack: z.string().optional(),
+    discord: z.string().optional(),
+    teams: z.string().optional(),
   }).optional(),
 });
 

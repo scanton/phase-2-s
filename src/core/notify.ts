@@ -4,8 +4,10 @@
  * Sends a post-run notification via:
  * 1. macOS system notification (osascript, zero deps, macOS-only)
  * 2. Slack webhook (PHASE2S_SLACK_WEBHOOK env var or config, uses native fetch)
+ * 3. Discord webhook (PHASE2S_DISCORD_WEBHOOK env var or config, uses native fetch)
+ * 4. Microsoft Teams webhook (PHASE2S_TEAMS_WEBHOOK env var or config, uses native fetch)
  *
- * Both channels are fail-safe: errors are logged to stderr but never thrown.
+ * All channels are fail-safe: errors are logged to stderr but never thrown.
  * Notifications should never block or fail a dark factory run.
  */
 
@@ -21,6 +23,10 @@ export interface NotifyOptions {
   mac?: boolean;
   /** Slack incoming webhook URL. Overrides PHASE2S_SLACK_WEBHOOK env var. */
   slack?: string;
+  /** Discord incoming webhook URL. Overrides PHASE2S_DISCORD_WEBHOOK env var. */
+  discord?: string;
+  /** Microsoft Teams incoming webhook URL. Overrides PHASE2S_TEAMS_WEBHOOK env var. */
+  teams?: string;
 }
 
 export interface NotifyPayload {
@@ -46,15 +52,20 @@ export async function sendNotification(
 ): Promise<void> {
   const useMac = options.mac ?? process.platform === "darwin";
   const slackUrl = options.slack ?? process.env.PHASE2S_SLACK_WEBHOOK;
+  const discordUrl = options.discord ?? process.env.PHASE2S_DISCORD_WEBHOOK;
+  const teamsUrl = options.teams ?? process.env.PHASE2S_TEAMS_WEBHOOK;
 
   const promises: Promise<void>[] = [];
   if (useMac) promises.push(sendMacNotification(payload));
   if (slackUrl) promises.push(sendSlackNotification(payload, slackUrl));
+  if (discordUrl) promises.push(sendDiscordNotification(payload, discordUrl));
+  if (teamsUrl) promises.push(sendTeamsNotification(payload, teamsUrl));
 
   if (promises.length === 0) {
     console.warn(
       "[phase2s notify] --notify set but no channels are active." +
-      " Set PHASE2S_SLACK_WEBHOOK for cross-platform notifications.",
+      " Set PHASE2S_SLACK_WEBHOOK, PHASE2S_DISCORD_WEBHOOK, or PHASE2S_TEAMS_WEBHOOK" +
+      " for cross-platform notifications.",
     );
     return;
   }
@@ -133,6 +144,42 @@ async function sendSlackNotification(payload: NotifyPayload, webhookUrl: string)
   });
   if (!response.ok) {
     throw new Error(`Slack webhook returned ${response.status} ${response.statusText}`);
+  }
+}
+
+async function sendDiscordNotification(payload: NotifyPayload, webhookUrl: string): Promise<void> {
+  // Use embeds for rich formatting: green (#2ECC71) on success, red (#E74C3C) on failure
+  const color = payload.success ? 0x2ECC71 : 0xE74C3C;
+  const embed: Record<string, unknown> = { title: payload.title, color };
+  if (payload.body) embed.description = payload.body;
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ embeds: [embed] }),
+  });
+  if (!response.ok) {
+    throw new Error(`Discord webhook returned ${response.status} ${response.statusText}`);
+  }
+}
+
+async function sendTeamsNotification(payload: NotifyPayload, webhookUrl: string): Promise<void> {
+  // MessageCard format — supported by all Teams incoming webhook connectors
+  const themeColor = payload.success ? "2ECC71" : "E74C3C";
+  const card: Record<string, unknown> = {
+    "@type": "MessageCard",
+    "@context": "https://schema.org/extensions",
+    themeColor,
+    summary: payload.title,
+    title: payload.title,
+  };
+  if (payload.body) card.text = payload.body;
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(card),
+  });
+  if (!response.ok) {
+    throw new Error(`Teams webhook returned ${response.status} ${response.statusText}`);
   }
 }
 

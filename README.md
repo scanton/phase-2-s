@@ -228,7 +228,7 @@ phase2s skills --json # machine-readable for scripts
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 503 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, and onboarding wizard
+- [x] 516 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, and glob tool filtering
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -262,7 +262,9 @@ phase2s skills --json # machine-readable for scripts
 - [x] Notification gateway — `phase2s goal --notify` sends macOS system notification + optional Slack webhook on completion
 - [x] `phase2s report <log.jsonl>` — chalk-colored run summary: sub-task timeline, durations, criteria verdicts, total time
 - [x] `phase2s__report` MCP tool — Claude Code can summarize a run log after triggering the dark factory
-- [x] `phase2s init` — interactive onboarding wizard: provider choice, API key, model tiers, Slack webhook, pre-fills from existing config
+- [x] `phase2s init` — interactive onboarding wizard: provider choice, API key, model tiers, Slack/Discord/Teams webhooks, pre-fills from existing config
+- [x] Discord + Microsoft Teams notification channels for dark factory runs (`--notify`)
+- [x] Glob/wildcard patterns in `tools` and `deny` config (`file_*` matches `file_read` and `file_write`)
 
 ---
 

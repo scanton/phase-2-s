@@ -1,5 +1,55 @@
 # Changelog
 
+## v1.5.0 — 2026-04-05
+
+Notification channels expansion + glob tool filtering.
+
+### What's new
+
+- **Discord notifications** — `notify.discord` in `.phase2s.yaml` or `PHASE2S_DISCORD_WEBHOOK` env var. Rich embeds with green/red color coding for success/failure. Works on macOS, Linux, and Windows.
+- **Microsoft Teams notifications** — `notify.teams` in `.phase2s.yaml` or `PHASE2S_TEAMS_WEBHOOK` env var. MessageCard format with color-coded `themeColor`. Works on macOS, Linux, and Windows.
+- **`phase2s init` wizard** — two new prompts for Discord and Teams webhook URLs. Pre-fills from existing config. `--discord-webhook` and `--teams-webhook` flags for non-interactive CI mode.
+- **Glob pattern matching in `tools` and `deny`** — `*` is now a wildcard in the tool allow/deny lists. `tools: ["file_*"]` allows `file_read` and `file_write` without listing them individually. `deny: ["*"]` blocks everything. Patterns that match no known tool produce a startup warning. Exact names still work as before — fully backward compatible.
+
+### Usage
+
+```bash
+# Discord via env var
+export PHASE2S_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
+phase2s goal my-spec.md --notify
+
+# Teams via env var
+export PHASE2S_TEAMS_WEBHOOK=https://outlook.office.com/webhook/...
+phase2s goal my-spec.md --notify
+
+# Set up interactively
+phase2s init
+
+# Non-interactive CI setup
+phase2s init --non-interactive --provider codex-cli \
+  --slack-webhook https://hooks.slack.com/... \
+  --discord-webhook https://discord.com/api/webhooks/... \
+  --teams-webhook https://outlook.office.com/webhook/...
+```
+
+```yaml
+# .phase2s.yaml — glob tool filtering
+tools:
+  - file_*   # file_read + file_write
+  - glob
+  - grep
+# shell is not listed, so it's blocked
+```
+
+### Tests
+
+516 passing (was 503, +13 new tests):
+- `test/core/registry.test.ts` — +5 glob matching tests: `file_*` allow, `*` allow-all, `file_*` deny, deny-overrides-allow with globs, no-match warns
+- `test/core/notify.test.ts` — +6 notification tests: Discord embed payload, Discord success/failure color, Teams MessageCard payload, Teams success/failure color, no-channel warning mentions all three env vars
+- `test/cli/init.test.ts` — +3 init tests: `discordWebhook` in formatConfig, `teamsWebhook` in formatConfig, all three webhooks together
+
+---
+
 ## v1.4.0 — 2026-04-05
 
 Interactive onboarding wizard — get from zero to configured in under 60 seconds.

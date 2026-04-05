@@ -31,6 +31,10 @@ export interface InitConfig {
   smartModel?: string;
   /** Slack incoming webhook URL — optional. */
   slackWebhook?: string;
+  /** Discord incoming webhook URL — optional. */
+  discordWebhook?: string;
+  /** Microsoft Teams incoming webhook URL — optional. */
+  teamsWebhook?: string;
 }
 
 export interface PrereqResult {
@@ -75,11 +79,14 @@ export function formatConfig(config: InitConfig): string {
     if (config.smartModel) lines.push(`smart_model: ${config.smartModel}`);
   }
 
-  if (config.slackWebhook) {
+  const hasNotify = config.slackWebhook || config.discordWebhook || config.teamsWebhook;
+  if (hasNotify) {
     lines.push("");
     lines.push("# Notifications — sent after dark factory runs (phase2s goal --notify)");
     lines.push("notify:");
-    lines.push(`  slack: "${config.slackWebhook}"`);
+    if (config.slackWebhook) lines.push(`  slack: "${config.slackWebhook}"`);
+    if (config.discordWebhook) lines.push(`  discord: "${config.discordWebhook}"`);
+    if (config.teamsWebhook) lines.push(`  teams: "${config.teamsWebhook}"`);
     lines.push("  # mac: true  # uncomment to enable macOS system notifications too");
   }
 
@@ -173,6 +180,10 @@ export interface InitOptions {
   smartModel?: string;
   /** Slack webhook override. */
   slackWebhook?: string;
+  /** Discord webhook override. */
+  discordWebhook?: string;
+  /** Microsoft Teams webhook override. */
+  teamsWebhook?: string;
 }
 
 export async function runInit(options: InitOptions = {}): Promise<void> {
@@ -198,6 +209,8 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
       fastModel: options.fastModel,
       smartModel: options.smartModel,
       slackWebhook: options.slackWebhook,
+      discordWebhook: options.discordWebhook,
+      teamsWebhook: options.teamsWebhook,
     };
   } else {
     const existingConfig = readExistingConfig(configPath);
@@ -287,10 +300,13 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
     }
   }
 
-  // --- Slack webhook (optional) ---
-  const existingSlack = String(
-    (existing.notify as Record<string, unknown> | undefined)?.slack ?? "",
-  );
+  // --- Notification webhooks (optional) ---
+  const existingNotify = (existing.notify as Record<string, unknown> | undefined) ?? {};
+  const existingSlack = String(existingNotify.slack ?? "");
+  const existingDiscord = String(existingNotify.discord ?? "");
+  const existingTeams = String(existingNotify.teams ?? "");
+
+  // Slack
   if (existingSlack) {
     const updateSlack = await ask(
       `  Slack webhook (current: ${existingSlack.slice(0, 35)}...) — update? (y/N): `,
@@ -303,9 +319,45 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
     }
   } else {
     const slack = await ask(
-      "  Slack webhook URL for notifications? (optional — press enter to skip): ",
+      "  Slack webhook URL? (optional — press enter to skip): ",
     );
     config.slackWebhook = slack || undefined;
+  }
+
+  // Discord
+  if (existingDiscord) {
+    const updateDiscord = await ask(
+      `  Discord webhook (current: ${existingDiscord.slice(0, 35)}...) — update? (y/N): `,
+    );
+    if (updateDiscord.toLowerCase().startsWith("y")) {
+      const discord = await ask("  New Discord webhook URL (or 'none' to remove): ");
+      config.discordWebhook = discord.toLowerCase() === "none" ? undefined : (discord || existingDiscord);
+    } else {
+      config.discordWebhook = existingDiscord;
+    }
+  } else {
+    const discord = await ask(
+      "  Discord webhook URL? (optional — press enter to skip): ",
+    );
+    config.discordWebhook = discord || undefined;
+  }
+
+  // Microsoft Teams
+  if (existingTeams) {
+    const updateTeams = await ask(
+      `  Teams webhook (current: ${existingTeams.slice(0, 35)}...) — update? (y/N): `,
+    );
+    if (updateTeams.toLowerCase().startsWith("y")) {
+      const teams = await ask("  New Teams webhook URL (or 'none' to remove): ");
+      config.teamsWebhook = teams.toLowerCase() === "none" ? undefined : (teams || existingTeams);
+    } else {
+      config.teamsWebhook = existingTeams;
+    }
+  } else {
+    const teams = await ask(
+      "  Microsoft Teams webhook URL? (optional — press enter to skip): ",
+    );
+    config.teamsWebhook = teams || undefined;
   }
 
   rl.close();

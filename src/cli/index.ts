@@ -221,6 +221,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--fast-model <model>", "Fast tier model name")
     .option("--smart-model <model>", "Smart tier model name")
     .option("--slack-webhook <url>", "Slack webhook URL for notifications")
+    .option("--discord-webhook <url>", "Discord webhook URL for notifications")
+    .option("--teams-webhook <url>", "Microsoft Teams webhook URL for notifications")
     .action(async (cmdOpts: {
       nonInteractive?: boolean;
       provider?: string;
@@ -228,6 +230,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       fastModel?: string;
       smartModel?: string;
       slackWebhook?: string;
+      discordWebhook?: string;
+      teamsWebhook?: string;
     }) => {
       const { runInit } = await import("./init.js");
       await runInit({
@@ -237,6 +241,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         fastModel: cmdOpts.fastModel,
         smartModel: cmdOpts.smartModel,
         slackWebhook: cmdOpts.slackWebhook,
+        discordWebhook: cmdOpts.discordWebhook,
+        teamsWebhook: cmdOpts.teamsWebhook,
       });
     });
 

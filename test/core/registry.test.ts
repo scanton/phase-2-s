@@ -175,4 +175,47 @@ describe("ToolRegistry.allowed()", () => {
     console.warn = origWarn;
     expect(warned.some((w) => w.includes("typo_tool"))).toBe(true);
   });
+
+  // ---------------------------------------------------------------------------
+  // Glob / wildcard pattern matching
+  // ---------------------------------------------------------------------------
+
+  it("glob allow: file_* matches file_read and file_write, not shell", () => {
+    const r = makeRegistry("file_read", "file_write", "shell");
+    const filtered = r.allowed(["file_*"]);
+    expect(filtered.names()).toContain("file_read");
+    expect(filtered.names()).toContain("file_write");
+    expect(filtered.names()).not.toContain("shell");
+  });
+
+  it("glob allow: * matches all tools", () => {
+    const r = makeRegistry("file_read", "file_write", "shell", "glob");
+    const filtered = r.allowed(["*"]);
+    expect(filtered.names()).toHaveLength(4);
+  });
+
+  it("glob deny: file_* removes both file tools, keeps shell", () => {
+    const r = makeRegistry("file_read", "file_write", "shell");
+    const filtered = r.allowed(undefined, ["file_*"]);
+    expect(filtered.names()).not.toContain("file_read");
+    expect(filtered.names()).not.toContain("file_write");
+    expect(filtered.names()).toContain("shell");
+  });
+
+  it("glob deny overrides glob allow: deny file_* beats allow file_*", () => {
+    const r = makeRegistry("file_read", "file_write", "shell");
+    const filtered = r.allowed(["file_*"], ["file_*"]);
+    expect(filtered.names()).toHaveLength(0);
+  });
+
+  it("glob allow with no match warns and returns empty", () => {
+    const r = makeRegistry("file_read", "shell");
+    const warned: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => warned.push(String(args[0]));
+    const filtered = r.allowed(["browser_*"]);
+    console.warn = origWarn;
+    expect(warned.some((w) => w.includes("browser_*"))).toBe(true);
+    expect(filtered.names()).toHaveLength(0);
+  });
 });

@@ -86,26 +86,32 @@ maxTurns: 50
 # Only the named tools are available to the agent. All others are blocked.
 # When omitted, all tools are available.
 # Available tools: file_read, file_write, shell, glob, grep
-# deny takes precedence over tools — a name in both lists is always blocked.
+# Supports * as a wildcard: file_* matches file_read and file_write.
+# deny takes precedence over tools — a pattern in both lists is always blocked.
 # tools:
-#   - file_read
+#   - file_*      # all file tools
 #   - glob
 #   - grep
 
 # Tool deny-list
 # The named tools are blocked even if they appear in tools.
 # deny always wins — it is a security control, not a preference.
-# Unknown names produce a warning at startup.
+# Supports * as a wildcard: file_* blocks file_read and file_write.
+# Patterns that match no known tool produce a warning at startup.
 # deny:
 #   - shell
 
 # Notification channels for dark factory runs (phase2s goal --notify)
 # mac: true sends a system notification via osascript (macOS only, default: true on macOS)
-# slack: Slack incoming webhook URL (cross-platform: macOS, Linux, Windows)
-# PHASE2S_SLACK_WEBHOOK env var can be used instead of setting slack here.
+# slack: Slack incoming webhook URL
+# discord: Discord incoming webhook URL
+# teams: Microsoft Teams incoming webhook URL
+# Each channel also has an env var equivalent (see Environment Variables section below).
 # notify:
 #   mac: true
 #   slack: "https://hooks.slack.com/services/T.../B.../..."
+#   discord: "https://discord.com/api/webhooks/.../..."
+#   teams: "https://outlook.office.com/webhook/..."
 ```
 
 ---
@@ -123,7 +129,9 @@ All config file settings can be overridden with environment variables. Environme
 | `PHASE2S_VERIFY_COMMAND` | `verifyCommand` | Satori verify command |
 | `PHASE2S_ALLOW_DESTRUCTIVE` | `allowDestructive` | `true`, `1`, or `yes` to allow |
 | `PHASE2S_BROWSER` | `browser` | `true`, `1`, or `yes` to enable Playwright headless browser tool |
-| `PHASE2S_SLACK_WEBHOOK` | `notify.slack` | Slack incoming webhook URL for dark factory run notifications (cross-platform) |
+| `PHASE2S_SLACK_WEBHOOK` | `notify.slack` | Slack incoming webhook URL for dark factory run notifications |
+| `PHASE2S_DISCORD_WEBHOOK` | `notify.discord` | Discord incoming webhook URL for dark factory run notifications |
+| `PHASE2S_TEAMS_WEBHOOK` | `notify.teams` | Microsoft Teams incoming webhook URL for dark factory run notifications |
 | `PHASE2S_CODEX_PATH` | — | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | — | API key for `openai-api` provider |
 | `ANTHROPIC_API_KEY` | — | API key for `anthropic` provider |
