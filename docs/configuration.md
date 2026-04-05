@@ -73,6 +73,23 @@ maxTurns: 50
 # When false (default): rm -rf, sudo, curl | sh, git push --force are blocked.
 # When true: all shell commands are allowed. Use with care.
 # allowDestructive: false
+
+# Tool allow-list
+# Only the named tools are available to the agent. All others are blocked.
+# When omitted, all tools are available.
+# Available tools: file_read, file_write, shell, glob, grep
+# deny takes precedence over tools — a name in both lists is always blocked.
+# tools:
+#   - file_read
+#   - glob
+#   - grep
+
+# Tool deny-list
+# The named tools are blocked even if they appear in tools.
+# deny always wins — it is a security control, not a preference.
+# Unknown names produce a warning at startup.
+# deny:
+#   - shell
 ```
 
 ---
@@ -190,6 +207,36 @@ phase2s
 No API keys. Everything runs on your machine after the initial model pull. `qwen2.5-coder:7b` and `llama3.1:8b` both support function calling. `llama3.2` (3B) may drop tool calls on complex prompts.
 
 If your Ollama server is on a different host, set `ollamaBaseUrl`. Note: remote URLs will send prompts and tool results to that host.
+
+---
+
+**Restricted tool access — read-only agent**
+
+Limit the agent to read-only tools. Useful for code review, analysis, and Q&A tasks where you don't want the model writing or executing anything.
+
+```yaml
+# .phase2s.yaml
+tools:
+  - file_read
+  - glob
+  - grep
+```
+
+With this config, `file_write` and `shell` are unavailable. The agent can read and search but not modify files or run commands. Skills that require write access (`/satori`, `/tdd`, `/debug`) will be limited in what they can do.
+
+**Restricted tool access — no shell execution**
+
+Allow file operations but block shell commands. Good for projects where shell access is sensitive (secrets in env, production credentials, etc.):
+
+```yaml
+# .phase2s.yaml
+deny:
+  - shell
+```
+
+`deny` overrides `tools` — a name in both lists is always blocked. Unknown tool names in either list produce a warning at startup so typos don't silently expand access.
+
+Available tool names: `file_read`, `file_write`, `shell`, `glob`, `grep`.
 
 ---
 

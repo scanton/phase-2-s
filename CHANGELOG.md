@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.22.0 — 2026-04-04
+
+Sprint 18: shell completion, tool allow/deny docs, version path fix.
+
+### What you can do now
+
+- **Shell completion** — `phase2s completion bash` and `phase2s completion zsh` output completion scripts. Add `eval "$(phase2s completion bash)"` to `~/.bashrc` (or zsh equivalent) and `phase2s run "/exp<TAB>"` completes to `/explain`. Subcommand completion and `--json` / `--dry-run` flags included.
+- **Tool allow/deny documented** — `tools:` and `deny:` in `.phase2s.yaml` have been live since Sprint 13 but were undocumented. Full reference and two "Common setups" examples added to `docs/configuration.md`: read-only agent (no `file_write` or `shell`) and no-shell agent (`deny: [shell]`).
+
+### For contributors
+
+- **`src/cli/index.ts`** — `completion <shell>` subcommand added. Outputs bash or zsh completion scripts that call `phase2s skills --json` dynamically so completions stay current as skills are added.
+- **`docs/configuration.md`** — `tools:` and `deny:` fields added to the YAML reference. Two new Common setups examples.
+- **320 tests** (up from 314). New: +6 completion tests.
+
 ## v0.21.0 — 2026-04-04
 
 Sprint 17: Multi-turn skills via `{{ASK:}}` inline prompts. Skills can now embed questions directly in their prompt template body.

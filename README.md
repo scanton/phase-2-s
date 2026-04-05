@@ -84,7 +84,14 @@ One-shot mode (no REPL):
 
 ```bash
 phase2s run "/explain src/core/agent.ts"   # routes through the explain skill
-phase2s run "explain what src/core/agent.ts does"  # plain prompt, no skill
+phase2s run --dry-run "/satori add auth"   # preview which skill + model, no execution
+```
+
+Tab completion (bash/zsh):
+
+```bash
+eval "$(phase2s completion bash)"          # add to ~/.bashrc for persistent completion
+phase2s run "/exp<TAB>"                    # completes to /explain
 ```
 
 Resume your last session:
@@ -135,7 +142,7 @@ phase2s skills
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 314 tests covering all tools, core modules, and agent integration (`npm test`)
+- [x] 320 tests covering all tools, core modules, and agent integration (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family, all 29 skills
@@ -159,6 +166,8 @@ phase2s skills
 - [x] Clean install — no deprecation warnings from `npm install -g @scanton/phase2s`
 - [x] npm publish — `@scanton/phase2s` on npm, `npm install -g @scanton/phase2s`
 - [x] Multi-turn skills — `{{ASK: question?}}` inline prompts in SKILL.md templates
+- [x] Shell completion — `eval "$(phase2s completion bash)"` for tab-complete in bash/zsh
+- [x] Tool allow/deny — `tools:` and `deny:` in `.phase2s.yaml` restrict agent tool access
 - [ ] Real Codex streaming (JSONL stdout parsing)
 
 ---

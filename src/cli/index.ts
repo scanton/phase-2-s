@@ -166,8 +166,109 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       console.log();
     });
 
+  // Shell completion script generator
+  program
+    .command("completion <shell>")
+    .description("Output shell completion script (bash | zsh). Source it to enable tab-completion.")
+    .action(async (shell: string) => {
+      switch (shell.toLowerCase()) {
+        case "bash":
+          process.stdout.write(BASH_COMPLETION);
+          break;
+        case "zsh":
+          process.stdout.write(ZSH_COMPLETION);
+          break;
+        default:
+          console.error(`Unsupported shell: ${shell}. Supported: bash, zsh`);
+          process.exit(1);
+      }
+    });
+
   await program.parseAsync(argv);
 }
+
+// ---------------------------------------------------------------------------
+// Shell completion scripts
+// ---------------------------------------------------------------------------
+
+const BASH_COMPLETION = `# phase2s bash completion
+# Add to ~/.bashrc or ~/.bash_profile:
+#   eval "$(phase2s completion bash)"
+
+_phase2s_complete() {
+  local cur="\${COMP_WORDS[COMP_CWORD]}"
+  local prev="\${COMP_WORDS[COMP_CWORD-1]}"
+  local subcmd="\${COMP_WORDS[1]}"
+
+  # Complete subcommands at position 1
+  if [[ \${COMP_CWORD} -eq 1 ]]; then
+    COMPREPLY=($(compgen -W "chat run skills mcp completion" -- "\$cur"))
+    return
+  fi
+
+  case "\$subcmd" in
+    run)
+      # Complete skill names when argument starts with /
+      if [[ "\$cur" == /* ]]; then
+        local skills
+        skills=$(phase2s skills --json 2>/dev/null | grep -o '"name": "[^"]*"' | sed 's/"name": "\\(.*\\)"/\\/\\1/')
+        COMPREPLY=($(compgen -W "\$skills" -- "\$cur"))
+      fi
+      ;;
+    completion)
+      COMPREPLY=($(compgen -W "bash zsh" -- "\$cur"))
+      ;;
+    skills)
+      COMPREPLY=($(compgen -W "--json" -- "\$cur"))
+      ;;
+  esac
+}
+
+complete -F _phase2s_complete phase2s
+`;
+
+const ZSH_COMPLETION = `#compdef phase2s
+# phase2s zsh completion
+# Add to ~/.zshrc:
+#   eval "$(phase2s completion zsh)"
+
+_phase2s() {
+  local -a subcommands
+  subcommands=(
+    'chat:Start an interactive REPL session'
+    'run:Run a single prompt and exit'
+    'skills:List available skills'
+    'mcp:Start as an MCP server for Claude Code'
+    'completion:Output shell completion script'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'subcommand' subcommands
+    return
+  fi
+
+  case "\${words[2]}" in
+    run)
+      # Complete skill names when argument starts with /
+      if [[ "\${words[CURRENT]}" == /* ]]; then
+        local -a skills
+        skills=(\${(f)"\$(phase2s skills --json 2>/dev/null | grep -o '"'"'\"name\": \"[^\"]*\"'"'"' | sed 's/\"name\": \"\\(.*\\)\"/\\/\\1/')"})
+        compadd -a skills
+      fi
+      ;;
+    completion)
+      local -a shells
+      shells=('bash:Bash completion script' 'zsh:Zsh completion script')
+      _describe 'shell' shells
+      ;;
+    skills)
+      _arguments '--json[Output as JSON]'
+      ;;
+  esac
+}
+
+_phase2s
+`;
 
 const UNDERSPEC_WORD_THRESHOLD = 15;
 

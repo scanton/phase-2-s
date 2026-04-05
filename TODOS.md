@@ -33,7 +33,7 @@ _Plan reviewed by `/autoplan` (CEO + Eng + DX). Approved 2026-04-04._
 
 ### Deferred from autoplan review
 
-- [ ] **TODO-1: CLI completion hints for one-shot mode** — tab-complete skill names in `phase2s run "/ski<TAB>"`. (human: ~2h / CC: ~10min) P3
+- [x] **TODO-1: CLI completion hints** — `phase2s completion bash` and `phase2s completion zsh` output shell completion scripts. Completes subcommands and dynamically fetches skill names via `phase2s skills --json` for the `run` subcommand. Add `eval "$(phase2s completion bash)"` to `~/.bashrc`.
 - [x] **TODO-2: `phase2s skills --json` output** — shipped v0.20.0
 - [x] **TODO-3: `--dry-run` flag for one-shot mode** — shipped v0.19.0
 - [x] **TODO-4: Typed inputs REPL rendering** — shipped v0.19.0
