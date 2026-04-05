@@ -19,7 +19,7 @@ import { parse as parseYaml } from "yaml";
 // Types
 // ---------------------------------------------------------------------------
 
-export type Provider = "codex-cli" | "openai-api" | "anthropic" | "ollama" | "openrouter" | "gemini";
+export type Provider = "codex-cli" | "openai-api" | "anthropic" | "ollama" | "openrouter" | "gemini" | "minimax";
 
 export interface InitConfig {
   provider: Provider;
@@ -33,6 +33,8 @@ export interface InitConfig {
   openrouterApiKey?: string;
   /** Gemini API key. Not written for other providers. */
   geminiApiKey?: string;
+  /** MiniMax API key. Not written for other providers. */
+  minimaxApiKey?: string;
   /** Slack incoming webhook URL — optional. */
   slackWebhook?: string;
   /** Discord incoming webhook URL — optional. */
@@ -89,6 +91,14 @@ export function formatConfig(config: InitConfig): string {
     lines.push("# Consider using GEMINI_API_KEY env var instead of storing keys in config.");
     lines.push("# Get a free key at https://aistudio.google.com/apikey — keys start with 'AIza'.");
     lines.push("# Default model: gemini-2.0-flash. Upgrade with: model: gemini-2.5-pro");
+  }
+
+  if (config.provider === "minimax" && config.minimaxApiKey) {
+    lines.push(`minimaxApiKey: "${config.minimaxApiKey}"`);
+    lines.push("");
+    lines.push("# Consider using MINIMAX_API_KEY env var instead of storing keys in config.");
+    lines.push("# Get a key at https://platform.minimax.io/");
+    lines.push("# Default model: MiniMax-M2.5. Upgrade with: model: MiniMax-M2.7");
   }
 
   const hasTiers = config.fastModel || config.smartModel;
@@ -185,6 +195,14 @@ export function checkPrerequisites(config: InitConfig): PrereqResult {
       }
       break;
     }
+    case "minimax": {
+      if (!config.minimaxApiKey && !process.env.MINIMAX_API_KEY) {
+        warnings.push(
+          "No API key provided. Set MINIMAX_API_KEY or re-run phase2s init. Get a key at https://platform.minimax.io/",
+        );
+      }
+      break;
+    }
   }
 
   return { ok: warnings.length === 0, warnings };
@@ -225,6 +243,8 @@ export interface InitOptions {
   openrouterApiKey?: string;
   /** Gemini API key override. */
   geminiApiKey?: string;
+  /** MiniMax API key override. */
+  minimaxApiKey?: string;
   /** Slack webhook override. */
   slackWebhook?: string;
   /** Discord webhook override. */
@@ -246,7 +266,7 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
   if (options.nonInteractive) {
     // Non-interactive: assemble config from flags, validate, write.
     const providerRaw = options.provider ?? "codex-cli";
-    const validProviders: Provider[] = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini"];
+    const validProviders: Provider[] = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini", "minimax"];
     if (!validProviders.includes(providerRaw as Provider)) {
       throw new Error(`Unknown provider: ${providerRaw}. Valid: ${validProviders.join(", ")}`);
     }
@@ -255,6 +275,7 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
       apiKey: options.apiKey,
       openrouterApiKey: options.openrouterApiKey,
       geminiApiKey: options.geminiApiKey,
+      minimaxApiKey: options.minimaxApiKey,
       fastModel: options.fastModel,
       smartModel: options.smartModel,
       slackWebhook: options.slackWebhook,
@@ -300,13 +321,14 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
   console.log("    4  Local Ollama (no internet required)");
   console.log("    5  OpenRouter (one key — Claude, GPT-4o, Gemini, and 50+ more)");
   console.log("    6  Google Gemini (free tier available — gemini-2.0-flash by default)");
+  console.log("    7  MiniMax (MiniMax-M2.5 by default)");
   console.log("");
 
   const providerToNum: Record<string, string> = {
-    "codex-cli": "1", "openai-api": "2", "anthropic": "3", "ollama": "4", "openrouter": "5", "gemini": "6",
+    "codex-cli": "1", "openai-api": "2", "anthropic": "3", "ollama": "4", "openrouter": "5", "gemini": "6", "minimax": "7",
   };
   const numToProvider: Record<string, Provider> = {
-    "1": "codex-cli", "2": "openai-api", "3": "anthropic", "4": "ollama", "5": "openrouter", "6": "gemini",
+    "1": "codex-cli", "2": "openai-api", "3": "anthropic", "4": "ollama", "5": "openrouter", "6": "gemini", "7": "minimax",
   };
   const defaultNum = providerToNum[String(existing.provider)] ?? "1";
 
@@ -344,6 +366,15 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
       : "  Gemini API key (AIza...) — get a free key at https://aistudio.google.com/apikey: ";
     const key = await ask(prompt);
     config.geminiApiKey = key || currentKey || undefined;
+  }
+
+  if (provider === "minimax") {
+    const currentKey = String(existing.minimaxApiKey ?? "");
+    const prompt = currentKey
+      ? `  MiniMax API key (current: ${currentKey.slice(0, 10)}...) [enter to keep]: `
+      : "  MiniMax API key — get a key at https://platform.minimax.io/: ";
+    const key = await ask(prompt);
+    config.minimaxApiKey = key || currentKey || undefined;
   }
 
   // --- Model tiers (optional) ---
@@ -457,6 +488,12 @@ function printNextSteps(provider: Provider): void {
     console.log("    1.  Verify your API key:         https://aistudio.google.com/apikey");
     console.log("    2.  Default model is gemini-2.0-flash. Upgrade in .phase2s.yaml:");
     console.log("        model: gemini-2.5-pro");
+    console.log("    3.  Start the REPL:              phase2s");
+    console.log("    4.  Or run a skill directly:     phase2s run \"/explain src/index.ts\"");
+  } else if (provider === "minimax") {
+    console.log("    1.  Verify your API key:         https://platform.minimax.io/");
+    console.log("    2.  Default model is MiniMax-M2.5. Upgrade in .phase2s.yaml:");
+    console.log("        model: MiniMax-M2.7");
     console.log("    3.  Start the REPL:              phase2s");
     console.log("    4.  Or run a skill directly:     phase2s run \"/explain src/index.ts\"");
   } else {
