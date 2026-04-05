@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.2.0 — 2026-04-05
+
+Dark factory as MCP tool — run logs + pre-execution adversarial review.
+
+### What's new
+
+- **`phase2s__goal` MCP tool** — Claude Code can now trigger the dark factory directly. Call `phase2s__goal` with a spec file path and get back the run summary + an absolute path to the structured JSONL run log. No terminal required. Long-running by design (20+ min); the MCP 2024-11-05 spec has no timeout requirement at the transport level.
+- **Structured JSONL run logs** — every dark factory run now writes a log to `<specDir>/.phase2s/runs/<timestamp>-<hash>.jsonl`. One event per line: `goal_started`, `subtask_started/completed`, `eval_started/completed`, `criteria_checked`, `goal_completed`. Claude can read it with `file_read` to see exactly what happened at each sub-task without guessing.
+- **Pre-execution adversarial review** — `phase2s__goal` accepts `reviewBeforeRun: true` (and `phase2s goal --review-before-run` on the CLI). Before a single line of code is written, the spec is challenged by a fresh GPT agent using the adversarial SKILL.md template. `CHALLENGED` or `NEEDS_CLARIFICATION` → halts and returns the full challenge response. `APPROVED` → proceeds. The review agent is a fresh `Agent` instance (not the satori implementation agent) to prevent context contamination.
+- **`runGoal()` no longer calls `process.exit()`** — it throws `Error` on failure instead. The CLI entry point in `index.ts` wraps it in try/catch and calls `process.exit()` there. `runGoal()` is now a proper function that can be called from both CLI and MCP without leaking process lifecycle.
+- **`GoalResult` extended** — `runLogPath: string`, `summary: string`, `challenged?: boolean`, `challengeResponse?: string` added. CLI prints `Run log: <path>` on exit.
+
+### Behavior details
+
+- Run logs live at `<specDir>/.phase2s/runs/<YYYY-MM-DDTHH-MM-SS>-<hash.slice(0,8)>.jsonl` relative to the spec file directory.
+- Log writes are synchronous and throw on failure (never silently dropped).
+- `reviewBeforeRun` is opt-in (default false). Quick iteration cycles are not slowed down.
+- `NEEDS_CLARIFICATION` is treated identically to `CHALLENGED` — both halt execution and set `challenged: true`.
+- The `phase2s__goal` MCP response includes the absolute run log path so Claude can call `file_read` directly without guessing cwd.
+- `buildAdversarialPrompt()` injects the spec's decomposition names + acceptance criteria as the "plan" to challenge, then appends the adversarial SKILL.md template.
+
+### Tests
+
+453 passing (was 433, +20 new tests):
+- `test/core/run-logger.test.ts` (new) — 10 tests covering RunLogger lazy init, JSONL format, close() path, filename format, throw on write failure
+- `test/cli/goal.test.ts` — 6 new tests: missing spec throws Error, buildAdversarialPrompt content, CHALLENGED halts run, NEEDS_CLARIFICATION halts run
+- `test/mcp/server.test.ts` — 3 new tests: GOAL_TOOL in tools/list, required specFile, empty specFile returns error
+
 ## v1.1.0 — 2026-04-05
 
 MCP state server + dark factory resumability.

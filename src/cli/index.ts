@@ -176,10 +176,21 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .description("Execute a spec file end-to-end: run sub-tasks, evaluate, retry until done")
     .option("--max-attempts <n>", "Maximum retry loops (default: 3)", "3")
     .option("--resume", "Resume from the last completed sub-task (reads state from .phase2s/state/)")
-    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean }) => {
+    .option("--review-before-run", "Run adversarial review on spec before executing")
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean }) => {
       const { runGoal } = await import("./goal.js");
-      const result = await runGoal(specFile, { maxAttempts: cmdOpts.maxAttempts, resume: cmdOpts.resume });
-      process.exit(result.success ? 0 : 1);
+      try {
+        const result = await runGoal(specFile, {
+          maxAttempts: cmdOpts.maxAttempts,
+          resume: cmdOpts.resume,
+          reviewBeforeRun: cmdOpts.reviewBeforeRun,
+        });
+        if (result.runLogPath) console.log(`Run log: ${result.runLogPath}`);
+        process.exit(result.success ? 0 : 1);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
     });
 
   // Shell completion script generator

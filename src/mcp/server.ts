@@ -20,6 +20,7 @@ import { Agent } from "../core/agent.js";
 import { Conversation } from "../core/conversation.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
 import { readRawState, writeRawState, clearRawState } from "../core/state.js";
+import { runGoal } from "../cli/goal.js";
 import { join } from "node:path";
 import type { Skill } from "../skills/types.js";
 
@@ -175,6 +176,48 @@ export const STATE_TOOLS: MCPTool[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Goal tool descriptor
+// ---------------------------------------------------------------------------
+
+/**
+ * MCP tool descriptor for the dark factory goal executor.
+ *
+ * LONG-RUNNING: dark factory runs can take 20+ minutes. The MCP 2024-11-05
+ * spec has no timeout requirement at the transport level, so synchronous
+ * execution is safe. Claude Code should not expect a fast response.
+ */
+export const GOAL_TOOL: MCPTool = {
+  name: "phase2s__goal",
+  description:
+    "Execute a spec file through the dark factory: optional adversarial pre-check, " +
+    "implement each sub-task via satori, evaluate, retry until done. " +
+    "LONG-RUNNING: may take 20+ minutes. Returns run summary + ABSOLUTE path to " +
+    "structured JSONL run log. Read the log with file_read for per-sub-task details.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      specFile: {
+        type: "string",
+        description: "Path to spec file (relative to project root or absolute).",
+      },
+      maxAttempts: {
+        type: "number",
+        description: "Max retry loops (default: 3).",
+      },
+      resume: {
+        type: "boolean",
+        description: "Resume from last completed sub-task.",
+      },
+      reviewBeforeRun: {
+        type: "boolean",
+        description: "Run adversarial review on spec before executing (recommended for new specs).",
+      },
+    },
+    required: ["specFile"],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Notification helpers
 // ---------------------------------------------------------------------------
 
@@ -274,7 +317,7 @@ export async function handleRequest(
     return {
       jsonrpc: "2.0",
       id: request.id,
-      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS] },
+      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL] },
     };
   }
 
@@ -285,6 +328,62 @@ export async function handleRequest(
     const params = request.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
     const toolName = params?.name ?? "";
     const args = params?.arguments ?? {};
+
+    // -----------------------------------------------------------------------
+    // Goal tool — dark factory executor.
+    // -----------------------------------------------------------------------
+    if (toolName === "phase2s__goal") {
+      const specFile = typeof args["specFile"] === "string" ? args["specFile"] : "";
+      if (!specFile) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: { code: -32602, message: "phase2s__goal: specFile is required" },
+        };
+      }
+      try {
+        const result = await runGoal(specFile, {
+          maxAttempts: typeof args["maxAttempts"] === "number" ? String(args["maxAttempts"]) : undefined,
+          resume: typeof args["resume"] === "boolean" ? args["resume"] : undefined,
+          reviewBeforeRun: typeof args["reviewBeforeRun"] === "boolean" ? args["reviewBeforeRun"] : undefined,
+        });
+
+        const passCount = Object.values(result.criteriaResults).filter(Boolean).length;
+        const totalCount = Object.keys(result.criteriaResults).length;
+        const status = result.challenged
+          ? (result.challengeResponse?.includes("NEEDS_CLARIFICATION") ? "needs_clarification" : "challenged")
+          : result.success
+            ? "success"
+            : "failed";
+
+        const lines = [
+          `Goal run: ${status}`,
+          `Spec: ${specFile}`,
+          `Attempts: ${result.attempts}`,
+          totalCount > 0 ? `Criteria: ${passCount}/${totalCount} passed` : "Criteria: (none defined)",
+          `Run log (absolute): ${result.runLogPath}`,
+        ];
+
+        if (result.challenged && result.challengeResponse) {
+          lines.push("", "Adversarial review response:", result.challengeResponse);
+        }
+
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: { content: [{ type: "text", text: lines.join("\n") }] },
+        };
+      } catch (err) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32603,
+            message: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
+    }
 
     // -----------------------------------------------------------------------
     // State tools — handled before skill lookup.
