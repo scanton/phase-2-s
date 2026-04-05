@@ -28,6 +28,7 @@ import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { parseSpec, type Spec, type SubTask } from "../core/spec-parser.js";
 import { computeSpecHash, readState, writeState, clearState, type GoalState } from "../core/state.js";
 import { RunLogger } from "../core/run-logger.js";
+import { sendNotification, buildNotifyPayload, type NotifyOptions } from "../core/notify.js";
 import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
 
@@ -38,6 +39,12 @@ export interface GoalOptions {
   maxAttempts?: string;
   resume?: boolean;
   reviewBeforeRun?: boolean;
+  /**
+   * If true, use notification config from loadConfig().
+   * If a NotifyOptions object, override with those settings.
+   * Notification is sent after the run completes (success, failure, or challenge).
+   */
+  notify?: boolean | NotifyOptions;
 }
 
 export interface GoalResult {
@@ -48,6 +55,8 @@ export interface GoalResult {
   runLogPath: string;
   /** One-liner summary for MCP response text. */
   summary: string;
+  /** Total wall-clock duration of the run in milliseconds. */
+  durationMs: number;
   /** true if pre-execution adversarial review halted the run. */
   challenged?: boolean;
   /** Full adversarial review text when challenged is true. */
@@ -75,6 +84,10 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
   // Initialise RunLogger now so we can capture the path even if we halt early.
   const logger = new RunLogger(specDir, specHash);
+  const startMs = Date.now();
+
+  // Load config early so it's available for all return paths (including early exits).
+  const config = await loadConfig();
 
   // -------------------------------------------------------------------------
   // State: load existing state when resuming, otherwise start fresh.
@@ -116,13 +129,16 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   if (spec.decomposition.length === 0 && spec.acceptanceCriteria.length === 0) {
     console.log("\nSpec has no sub-tasks and no acceptance criteria. Nothing to execute.");
     logger.log({ event: "goal_completed", success: true, attempts: 0 });
-    return {
+    const result: GoalResult = {
       success: true,
       attempts: 0,
       criteriaResults: {},
       runLogPath: logger.close(),
       summary: "Spec has no sub-tasks and no acceptance criteria.",
+      durationMs: Date.now() - startMs,
     };
+    await maybeNotify(options, config, result, basename(specPath));
+    return result;
   }
 
   // Warn on large specs
@@ -134,7 +150,6 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   }
 
   // Set up agent
-  const config = await loadConfig();
   const learningsList = await loadLearnings(process.cwd());
   const learningsStr = formatLearningsForPrompt(learningsList);
 
@@ -174,15 +189,18 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     if (verdict !== "APPROVED") {
       console.log(`\nSpec ${verdict} before execution. Adversarial review response:\n`);
       console.log(response);
-      return {
+      const result: GoalResult = {
         success: false,
         attempts: 0,
         criteriaResults: {},
         runLogPath: logger.close(),
         summary: `Spec ${verdict} before execution.`,
+        durationMs: Date.now() - startMs,
         challenged: true,
         challengeResponse: response,
       };
+      await maybeNotify(options, config, result, basename(specPath));
+      return result;
     }
 
     console.log("\nAdversarial review: APPROVED. Proceeding with execution.");
@@ -290,13 +308,16 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     if (spec.acceptanceCriteria.length === 0) {
       console.log("\nNo acceptance criteria defined. Eval output shown above.");
       logger.log({ event: "goal_completed", success: true, attempts: attempt });
-      return {
+      const result: GoalResult = {
         success: true,
         attempts: attempt,
         criteriaResults: {},
         runLogPath: logger.close(),
         summary: `Goal completed successfully after ${attempt} attempt(s).`,
+        durationMs: Date.now() - startMs,
       };
+      await maybeNotify(options, config, result, basename(specPath));
+      return result;
     }
 
     // Check acceptance criteria
@@ -311,13 +332,16 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       // Clean completion: remove state so stale state doesn't block future runs.
       clearState(specDir, specHash);
       logger.log({ event: "goal_completed", success: true, attempts: attempt });
-      return {
+      const result: GoalResult = {
         success: true,
         attempts: attempt,
         criteriaResults,
         runLogPath: logger.close(),
         summary: `All criteria passed after ${attempt} attempt(s).`,
+        durationMs: Date.now() - startMs,
       };
+      await maybeNotify(options, config, result, basename(specPath));
+      return result;
     }
 
     if (attempt < maxAttempts) {
@@ -336,13 +360,54 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     console.log(`  ✗ ${criterion}`);
   }
   logger.log({ event: "goal_completed", success: false, attempts: maxAttempts });
-  return {
+  const failResult: GoalResult = {
     success: false,
     attempts: maxAttempts,
     criteriaResults,
     runLogPath: logger.close(),
     summary: `Goal failed after ${maxAttempts} attempts. ${failingFinal.length} criteria not met.`,
+    durationMs: Date.now() - startMs,
   };
+  await maybeNotify(options, config, failResult, basename(specPath));
+  return failResult;
+}
+
+// ---------------------------------------------------------------------------
+// Notification helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a post-run notification if the caller requested one.
+ * Errors are swallowed — notification failures never surface to the user.
+ */
+async function maybeNotify(
+  options: GoalOptions,
+  config: import("../core/config.js").Config,
+  result: GoalResult,
+  specFile: string,
+): Promise<void> {
+  if (!options.notify) return;
+
+  const notifyOptions: NotifyOptions = typeof options.notify === "object"
+    ? options.notify
+    : {
+        mac: config.notify?.mac,
+        slack: config.notify?.slack,
+      };
+
+  const payload = buildNotifyPayload(
+    specFile,
+    result.success,
+    result.attempts,
+    result.challenged ?? false,
+    result.durationMs,
+  );
+
+  try {
+    await sendNotification(payload, notifyOptions);
+  } catch (err) {
+    console.error(`[phase2s notify] Notification failed: ${String(err)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

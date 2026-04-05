@@ -177,18 +177,36 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--max-attempts <n>", "Maximum retry loops (default: 3)", "3")
     .option("--resume", "Resume from the last completed sub-task (reads state from .phase2s/state/)")
     .option("--review-before-run", "Run adversarial review on spec before executing")
-    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean }) => {
+    .option("--notify", "Send a notification when the run completes (macOS + optional Slack webhook)")
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean }) => {
       const { runGoal } = await import("./goal.js");
       try {
         const result = await runGoal(specFile, {
           maxAttempts: cmdOpts.maxAttempts,
           resume: cmdOpts.resume,
           reviewBeforeRun: cmdOpts.reviewBeforeRun,
+          notify: cmdOpts.notify,
         });
         if (result.runLogPath) console.log(`Run log: ${result.runLogPath}`);
         process.exit(result.success ? 0 : 1);
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
+  // Run log report viewer
+  program
+    .command("report <logfile>")
+    .description("Display a human-readable summary of a dark factory run log (.jsonl)")
+    .action(async (logfile: string) => {
+      const { parseRunLog, buildRunReport, formatRunReport } = await import("./report.js");
+      try {
+        const events = parseRunLog(logfile);
+        const report = buildRunReport(events);
+        console.log(formatRunReport(report));
+      } catch (err) {
+        console.error(`Error reading run log: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
       }
     });

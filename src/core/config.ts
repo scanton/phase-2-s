@@ -44,6 +44,16 @@ const configSchema = z.object({
    * Default false — opt-in to avoid requiring playwright on every install.
    */
   browser: z.boolean().default(false),
+  /**
+   * Notification settings for dark factory runs.
+   * `mac: true` sends a macOS system notification via osascript (macOS only).
+   * `slack` is a Slack incoming webhook URL.
+   * Both are also configurable via PHASE2S_SLACK_WEBHOOK env var.
+   */
+  notify: z.object({
+    mac: z.boolean().optional(),
+    slack: z.string().optional(),
+  }).optional(),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };

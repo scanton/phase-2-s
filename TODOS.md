@@ -6,6 +6,23 @@
 
 ---
 
+## Sprint 26 (done) — Notification Gateway + Run Report Viewer (v1.3.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.3.0 |
+| Tests | 483 (+30) |
+
+- [x] **`phase2s goal --notify`** — sends macOS system notification via `osascript` (no deps) and/or Slack webhook (`PHASE2S_SLACK_WEBHOOK` env var or `notify.slack` in `.phase2s.yaml`) when a dark factory run completes. Both channels are fail-safe: errors go to stderr, never block the run. `notify` also available as `phase2s__goal` MCP parameter.
+- [x] **`phase2s report <log.jsonl>`** — chalk-colored run summary: spec filename, per-attempt sub-task timeline with durations (✓/✗), criteria verdicts, total time. Reads the JSONL run log written by Sprint 25's RunLogger.
+- [x] **`phase2s__report` MCP tool** — same report viewer as an MCP tool. Claude Code calls it with the `runLogPath` returned by `phase2s__goal` to see exactly what happened without reading raw JSONL.
+- [x] **`GoalResult.durationMs`** — total wall-clock run duration included in all goal results. Used by notifications and available to MCP callers.
+- [x] **`notify` config block** — `.phase2s.yaml` accepts `notify: { mac: true, slack: "..." }`.
+- [x] **`src/core/notify.ts`** — `sendNotification()`, `buildNotifyPayload()`, `formatDurationMs()`. Platform-agnostic, fail-safe.
+- [x] **`src/cli/report.ts`** — `parseRunLog()`, `buildRunReport()`, `formatRunReport()`. Pure functions — no side effects in parser, chalk in display layer only.
+
+---
+
 ## Sprint 25 (done) — Dark Factory as MCP Tool + Run Logs + Pre-Execution Adversarial Review (v1.2.0)
 
 | Metric | Value |
@@ -274,7 +291,7 @@ inputs:
 
 ### OMX Infrastructure backlog (not yet implemented)
 
-- [ ] **MCP state server** — shared state across agent turns via MCP protocol
+- [x] **MCP state server** — shipped Sprint 24 (v1.1.0). `phase2s__state_write/read/clear`.
 - [ ] **Parallel teams** — multiple agents working in parallel on subtasks (tmux-style workers)
 - [ ] **Notification gateway** — post-task notifications (Slack, email, webhook)
 - [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview creates SKILL.md files from within a session.
@@ -368,7 +385,7 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 - [x] **`/plan` skill improvement** — shipped Sprint 16/17. Saves to `.phase2s/plans/YYYY-MM-DD-HH-MM-<slug>.md` via `shell` + `file_write`. After writing, asks "Append Phase 1 tasks to TODOS.md?" and appends if confirmed. Structured checklist output format with phases and verify steps.
 - [x] **`/diff` skill** — done Sprint 5. Structured diff review with LOOKS GOOD / NEEDS REVIEW / RISKY verdict. v0.7.0.
 - [x] **Configurable tool allow/deny list** — fully implemented since Sprint 13. `tools:` and `deny:` in `.phase2s.yaml`. `ToolRegistry.allowed()` enforces deny-overrides-allow. Warns on unknown names at startup. Documented in `docs/configuration.md` (Sprint 18).
-- [ ] **Real Codex JSONL streaming** — Codex outputs JSONL on stdout; format is undocumented. Spike needed before committing. Would make long `/satori` runs feel faster.
+- [x] **Real Codex JSONL streaming** — Shipped Sprint 22 (v0.26.0). Step-by-step feedback for multi-step tasks.
 - [x] **`glob` deprecation fix** — Fixed Sprint 15. Upgraded `glob` from `^11.0.0` to `^13.0.0` in package.json.
 - [x] **Anthropic Claude provider** — `src/providers/anthropic.ts` shipped in Sprint 14. `provider: anthropic` in `.phase2s.yaml`. Uses `@anthropic-ai/sdk@0.82.0`. All 29 skills work on Claude 3.5 Sonnet.
 - [x] **Skill inputs v2: typed parameters** — Add optional `type: "boolean" | "enum" | "number"` and `enum:` to inputs schema so MCP tool parameters can be typed. Shipping in Sprint 15 (v0.18.0).
@@ -383,21 +400,19 @@ Ported from oh-my-codex (`$deep-interview` → `/deep-specify`, `$ai-slop-cleane
 
 These are the power features from oh-my-codex that go beyond SKILL.md. They require infrastructure changes to Phase2S's core.
 
-- [ ] **Agent tier routing** — LOW/STANDARD/THOROUGH tiers mapped to `fast_model`/`smart_model` in `.phase2s.yaml`. Skills declare their tier; agent picks the right model automatically. Foundation for model-per-skill.
+- [x] **Agent tier routing** — Shipped Sprint 15 (v0.18.0). `fast_model`/`smart_model` in `.phase2s.yaml`. `model: fast | smart` in SKILL.md frontmatter. 28 of 29 built-in skills declare a tier.
 - [x] **Persistent execution loop** (`$ralph` pattern) — shipped as `phase2s goal` (Sprint 21) + satori inner retry loop. `phase2s__goal` MCP tool (Sprint 25) makes it callable from Claude Code.
 - [x] **Consensus planning** (`$ralplan` pattern) — shipped as `/consensus-plan` skill (Sprint 13). `phase2s__consensus_plan` MCP tool available.
 - [ ] **Parallel team execution** (`$team` pattern) — spawn N parallel Codex workers in git worktrees via tmux. Phase2S spawns and coordinates, collects outputs. High complexity but unlocks parallel agent work.
 - [x] **MCP state server** — shipped Sprint 24 (v1.1.0). `phase2s__state_write/read/clear` in `src/core/state.ts` + `src/mcp/server.ts`.
-- [ ] **Notification gateway** — Telegram/Discord webhooks for long-running team operations. Alerts when a parallel run completes or errors. OMX uses OpenClaw.
+- [x] **Notification gateway** — shipped Sprint 26 (v1.3.0). macOS system notification + Slack webhook on dark factory completion. `--notify` CLI flag, `notify` MCP param, `notify:` config block.
 - [x] **Context snapshots** — implemented. `writeContextSnapshot()` in `cli/index.ts` writes `.phase2s/context/{ts}-{slug}.md` before each satori run (branch, recent commits, diff stat, verify command, task). The "mandatory for all prompts" framing was over-broad — satori is the right scope (long-running tasks where partial completion is the risk).
 - [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview (3 questions) generates a SKILL.md file via file-write. Creates `.phase2s/skills/<name>/SKILL.md` from within a session.
 - [x] **Underspecification gate** — implemented. `isUnderspecified()` in `cli/index.ts` checks prompt length (&lt;15 words, no file path). Gated on `requireSpecification: true` in `.phase2s.yaml`. User overrides with `force:` prefix. Documented in `docs/configuration.md` under "Safety mode for shared repos".
 
 ### General
 
-- [ ] **Multi-model routing** — use different models for different tasks
-  - Config: `fast_model: gpt-4o-mini`, `smart_model: o3`, `code_model: codex`
-  - Skills declare which tier they need; agent picks automatically
+- [x] **Multi-model routing** — Shipped Sprint 15 (v0.18.0). `fast_model`/`smart_model` config. Skills declare `model: fast | smart | <literal>`. `Agent.resolveModel()` maps tiers to configured models.
 - [x] **MCP server integration** — shipped Sprint 12. `phase2s mcp` exposes all 29 skills + state tools + goal tool as Claude Code tools. Configured via `.claude/settings.json`.
 - [ ] **oh-my-codex-style multi-agent** — route subtasks to specialized sub-agents
   - Orchestrator assigns tasks; specialist agents (coder, reviewer, tester) execute

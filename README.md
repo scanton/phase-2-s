@@ -228,7 +228,7 @@ phase2s skills --json # machine-readable for scripts
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 453 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, and MCP goal tool
+- [x] 483 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, and run report viewer
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -259,6 +259,9 @@ phase2s skills --json # machine-readable for scripts
 - [x] `phase2s__goal` MCP tool — Claude Code can trigger the dark factory directly, no terminal needed
 - [x] Structured JSONL run logs — per-sub-task observability at `.phase2s/runs/<timestamp>.jsonl`
 - [x] `--review-before-run` — adversarial pre-execution review before the dark factory starts
+- [x] Notification gateway — `phase2s goal --notify` sends macOS system notification + optional Slack webhook on completion
+- [x] `phase2s report <log.jsonl>` — chalk-colored run summary: sub-task timeline, durations, criteria verdicts, total time
+- [x] `phase2s__report` MCP tool — Claude Code can summarize a run log after triggering the dark factory
 
 ---
 

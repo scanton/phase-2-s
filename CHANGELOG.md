@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.3.0 — 2026-04-05
+
+Notification gateway + run report viewer — complete the fire-and-forget story for the dark factory.
+
+### What's new
+
+- **`phase2s goal --notify`** — after a dark factory run completes (success, failure, or challenged), send a notification. macOS system notification via `osascript` (no new deps). Optional Slack webhook via `PHASE2S_SLACK_WEBHOOK` env var or `notify.slack` in `.phase2s.yaml`. Both channels are fail-safe: errors go to stderr and never block the run.
+- **`phase2s report <logfile.jsonl>`** — parse and display a chalk-colored summary of a dark factory run log: spec filename, per-attempt sub-task timeline with durations (✓/✗), eval command, criteria verdicts, and total run time. Pass the path printed by `phase2s goal` as `Run log:`.
+- **`phase2s__report` MCP tool** — same report viewer exposed as an MCP tool. After Claude Code triggers `phase2s__goal`, it can call `phase2s__report` with the returned `runLogPath` to see exactly what happened.
+- **`GoalResult.durationMs`** — total wall-clock run duration now included in all goal results. Used by notifications and available to MCP callers.
+- **`notify` config block** — `.phase2s.yaml` accepts `notify: { mac: true, slack: "https://hooks.slack.com/..." }`. The `--notify` CLI flag enables the configured channels. `PHASE2S_SLACK_WEBHOOK` env var provides the Slack URL without config file changes.
+
+### Usage
+
+```bash
+# Run a spec with notifications enabled
+phase2s goal my-spec.md --notify --review-before-run
+
+# View a run log
+phase2s report .phase2s/runs/2026-04-05T10-30-00-a3f1b2c4.jsonl
+
+# Slack webhook via env var
+PHASE2S_SLACK_WEBHOOK=https://hooks.slack.com/services/... phase2s goal spec.md --notify
+```
+
+```yaml
+# .phase2s.yaml
+notify:
+  mac: true
+  slack: "https://hooks.slack.com/services/..."
+```
+
+### Tests
+
+483 passing (was 453, +30 new tests):
+- `test/core/notify.test.ts` (new) — 11 tests covering buildNotifyPayload variants, formatDurationMs, sendNotification no-op, osascript call, Slack fetch payload, error handling
+- `test/cli/report.test.ts` (new) — 11 tests covering parseRunLog, buildRunReport (sub-task durations, criteria, challenged, error), formatRunReport (success, failure, challenged)
+- `test/mcp/server.test.ts` — 4 new tests: REPORT_TOOL in tools/list, required logFile, empty logFile error, valid logFile returns report
+
+---
+
 ## v1.2.0 — 2026-04-05
 
 Dark factory as MCP tool — run logs + pre-execution adversarial review.

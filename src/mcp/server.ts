@@ -21,6 +21,7 @@ import { Conversation } from "../core/conversation.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
 import { readRawState, writeRawState, clearRawState } from "../core/state.js";
 import { runGoal } from "../cli/goal.js";
+import { parseRunLog, buildRunReport, formatRunReport } from "../cli/report.js";
 import { join } from "node:path";
 import type { Skill } from "../skills/types.js";
 
@@ -212,8 +213,30 @@ export const GOAL_TOOL: MCPTool = {
         type: "boolean",
         description: "Run adversarial review on spec before executing (recommended for new specs).",
       },
+      notify: {
+        type: "boolean",
+        description: "Send a notification when the run completes (macOS + PHASE2S_SLACK_WEBHOOK if set).",
+      },
     },
     required: ["specFile"],
+  },
+};
+
+export const REPORT_TOOL: MCPTool = {
+  name: "phase2s__report",
+  description:
+    "Parse and display a human-readable summary of a Phase2S dark factory run log (.jsonl). " +
+    "Shows per-attempt sub-task timeline with durations, criteria verdicts, and total run time. " +
+    "Use after phase2s__goal completes — pass the runLogPath returned by phase2s__goal.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      logFile: {
+        type: "string",
+        description: "Absolute path to the .jsonl run log file (returned by phase2s__goal as runLogPath).",
+      },
+    },
+    required: ["logFile"],
   },
 };
 
@@ -317,7 +340,7 @@ export async function handleRequest(
     return {
       jsonrpc: "2.0",
       id: request.id,
-      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL] },
+      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, REPORT_TOOL] },
     };
   }
 
@@ -346,6 +369,7 @@ export async function handleRequest(
           maxAttempts: typeof args["maxAttempts"] === "number" ? String(args["maxAttempts"]) : undefined,
           resume: typeof args["resume"] === "boolean" ? args["resume"] : undefined,
           reviewBeforeRun: typeof args["reviewBeforeRun"] === "boolean" ? args["reviewBeforeRun"] : undefined,
+          notify: typeof args["notify"] === "boolean" ? args["notify"] : undefined,
         });
 
         const passCount = Object.values(result.criteriaResults).filter(Boolean).length;
@@ -372,6 +396,39 @@ export async function handleRequest(
           jsonrpc: "2.0",
           id: request.id,
           result: { content: [{ type: "text", text: lines.join("\n") }] },
+        };
+      } catch (err) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32603,
+            message: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Report tool — dark factory run log viewer.
+    // -----------------------------------------------------------------------
+    if (toolName === "phase2s__report") {
+      const logFile = typeof args["logFile"] === "string" ? args["logFile"] : "";
+      if (!logFile) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: { code: -32602, message: "phase2s__report: logFile is required" },
+        };
+      }
+      try {
+        const events = parseRunLog(logFile);
+        const report = buildRunReport(events);
+        const text = formatRunReport(report);
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: { content: [{ type: "text", text }] },
         };
       } catch (err) {
         return {
