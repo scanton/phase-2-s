@@ -1,5 +1,84 @@
 # Changelog
 
+## v0.25.0 — 2026-04-04
+
+Sprint 21: Dark Factory v1 — `phase2s goal <spec.md>` executes a spec autonomously using your ChatGPT subscription.
+
+### What you can do now
+
+- **`phase2s goal <spec.md>`** — give Phase2S a spec file and have it run to completion. It reads your spec, executes each sub-task through `/satori` (implement + test + retry), runs your eval command, checks acceptance criteria, and retries failing sub-tasks with failure context. Stops when all criteria pass or max attempts are exhausted. No manual intervention during the loop.
+- **`--max-attempts <n>`** — control how many outer retry loops the executor runs (default: 3). Combined with satori's inner retries (3x per sub-task), a single spec execution can drive up to 9 implementation passes per sub-task.
+- **5-pillar spec format** — `/deep-specify` now outputs the structured 5-pillar format (Problem Statement, Acceptance Criteria, Constraint Architecture, Decomposition, Evaluation Design) saved to `.phase2s/specs/`. Any spec produced by `/deep-specify` is directly consumable by `phase2s goal` with no manual editing.
+- **Adversarial routing fixed** — CLAUDE.md now explicitly prohibits falling back to `codex exec` for adversarial review. `phase2s__adversarial` is always the correct tool. Codex CLI requires browser OAuth and fails silently in automated contexts.
+- **389 tests** — up from 365 (+24: spec parser, goal executor helpers, and runCommand).
+
+### Example
+
+```bash
+# Write a spec
+phase2s
+you > /deep-specify add pagination to the search endpoint
+
+# Execute it autonomously (uses your ChatGPT subscription)
+phase2s goal .phase2s/specs/2026-04-04-11-00-pagination.md
+```
+
+```
+Goal executor: Pagination for search endpoint
+Eval command: npm test
+Sub-tasks: 3
+Max attempts: 3
+
+=== Attempt 1/3 ===
+Running sub-task: Cursor-based pagination logic
+...
+Running evaluation: npm test
+  ✗ Returns correct next_cursor on paginated results
+  ✓ Returns 20 items per page by default
+
+Retrying 1 sub-task(s): Cursor-based pagination logic
+
+=== Attempt 2/3 ===
+Running sub-task: Cursor-based pagination logic
+...
+Running evaluation: npm test
+  ✓ Returns correct next_cursor on paginated results
+  ✓ Returns 20 items per page by default
+
+✓ All acceptance criteria met after 2 attempt(s).
+```
+
+### Spec format
+
+```markdown
+# Spec: {{title}}
+
+## Problem Statement
+{{what we're building and why}}
+
+## Acceptance Criteria
+1. {{testable criterion}}
+
+## Constraint Architecture
+**Must Do:** {{hard requirements}}
+**Cannot Do:** {{explicit non-goals}}
+**Should Prefer:** {{preferences}}
+**Should Escalate:** {{when to stop and ask}}
+
+## Decomposition
+### Sub-task 1: {{name}}
+- **Input:** {{input}}
+- **Output:** {{output}}
+- **Success criteria:** {{how to know done}}
+
+## Evaluation Design
+| Test Case | Input | Expected Output |
+|-----------|-------|-----------------|
+
+## Eval Command
+npm test
+```
+
 ## v0.24.0 — 2026-04-04
 
 Sprint 20: published GitHub Action — `uses: scanton/phase2s@v1`.

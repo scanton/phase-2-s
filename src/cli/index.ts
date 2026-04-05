@@ -170,6 +170,17 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       console.log();
     });
 
+  // Goal executor — dark factory mode
+  program
+    .command("goal <spec-file>")
+    .description("Execute a spec file end-to-end: run sub-tasks, evaluate, retry until done")
+    .option("--max-attempts <n>", "Maximum retry loops (default: 3)", "3")
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string }) => {
+      const { runGoal } = await import("./goal.js");
+      const result = await runGoal(specFile, { maxAttempts: cmdOpts.maxAttempts });
+      process.exit(result.success ? 0 : 1);
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")

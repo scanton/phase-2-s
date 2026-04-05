@@ -192,8 +192,8 @@ describe("Built-in skills — Sprint 7", () => {
     expect(skill.description.toLowerCase()).toMatch(/spec|clarif|ambig/);
     expect(skill.triggerPhrases).toContain("deep specify");
     expect(skill.triggerPhrases).toContain("clarify");
-    expect(skill.promptTemplate).toContain("NON-GOALS");
-    expect(skill.promptTemplate).toContain("spec");
+    expect(skill.promptTemplate).toContain("Acceptance Criteria");
+    expect(skill.promptTemplate).toContain("Decomposition");
   });
 
   it("docs: loads with correct triggers", () => {

@@ -1,0 +1,131 @@
+import { describe, it, expect } from "vitest";
+import { parseSpec } from "../../src/core/spec-parser.js";
+
+const FULL_SPEC = `# Spec: Rate Limiting
+
+Generated: 2026-04-04
+Spec ID: rate-limiting
+
+## Problem Statement
+Add token-bucket rate limiting to the API middleware. Protects against overuse.
+
+## Acceptance Criteria
+1. Authenticated users: 100 requests per minute, 429 on exceed
+2. Unauthenticated IPs: 20 requests per minute, 429 on exceed
+3. npm test passes after implementation
+
+## Constraint Architecture
+**Must Do:** Use in-memory store; add Retry-After header on 429
+**Cannot Do:** Redis backend; distributed rate limiting
+**Should Prefer:** Token bucket algorithm over sliding window
+**Should Escalate:** If existing middleware registration order is unclear
+
+## Decomposition
+### Sub-task 1: Token bucket implementation
+- **Input:** Request with user ID or IP
+- **Output:** RateLimiter class in src/utils/rate-limiter.ts
+- **Success criteria:** Unit tests for bucket fill/drain and 429 on exceed pass
+
+### Sub-task 2: Middleware integration
+- **Input:** RateLimiter class
+- **Output:** Middleware registered in src/app.ts
+- **Success criteria:** Integration tests with real HTTP requests pass
+
+## Evaluation Design
+| Test Case | Input | Expected Output |
+|-----------|-------|-----------------|
+| Auth user under limit | 50 requests | 200 for all |
+| Auth user over limit | 101 requests | 429 on 101st |
+
+## Eval Command
+npm test -- --grep "rate limiting"
+`;
+
+const MINIMAL_SPEC = `# Spec: Minimal
+
+## Problem Statement
+A minimal spec with no optional sections.
+
+## Acceptance Criteria
+1. Basic criterion
+`;
+
+describe("spec-parser", () => {
+  describe("parseSpec — full spec", () => {
+    it("parses title correctly", () => {
+      const spec = parseSpec(FULL_SPEC);
+      expect(spec.title).toBe("Rate Limiting");
+    });
+
+    it("parses problem statement", () => {
+      const spec = parseSpec(FULL_SPEC);
+      expect(spec.problemStatement).toContain("token-bucket rate limiting");
+    });
+
+    it("parses acceptance criteria as array", () => {
+      const spec = parseSpec(FULL_SPEC);
+      expect(spec.acceptanceCriteria).toHaveLength(3);
+      expect(spec.acceptanceCriteria[0]).toContain("100 requests per minute");
+      expect(spec.acceptanceCriteria[2]).toBe("npm test passes after implementation");
+    });
+
+    it("parses constraint architecture", () => {
+      const spec = parseSpec(FULL_SPEC);
+      expect(spec.constraints.mustDo).toContain("Use in-memory store");
+      expect(spec.constraints.cannotDo).toContain("Redis backend");
+      expect(spec.constraints.shouldPrefer).toContain("Token bucket algorithm over sliding window");
+      expect(spec.constraints.shouldEscalate.join("")).toContain("middleware registration order");
+    });
+
+    it("parses decomposition into sub-tasks", () => {
+      const spec = parseSpec(FULL_SPEC);
+      expect(spec.decomposition).toHaveLength(2);
+      expect(spec.decomposition[0].name).toBe("Token bucket implementation");
+      expect(spec.decomposition[0].input).toContain("user ID or IP");
+      expect(spec.decomposition[0].output).toContain("RateLimiter class");
+      expect(spec.decomposition[0].successCriteria).toContain("Unit tests");
+      expect(spec.decomposition[1].name).toBe("Middleware integration");
+    });
+
+    it("parses evaluation design as test cases", () => {
+      const spec = parseSpec(FULL_SPEC);
+      expect(spec.evaluationDesign).toHaveLength(2);
+      expect(spec.evaluationDesign[0].name).toBe("Auth user under limit");
+      expect(spec.evaluationDesign[0].input).toContain("50 requests");
+      expect(spec.evaluationDesign[0].expectedOutput).toContain("200");
+    });
+
+    it("extracts eval command from ## Eval Command section", () => {
+      const spec = parseSpec(FULL_SPEC);
+      expect(spec.evalCommand).toBe("npm test -- --grep \"rate limiting\"");
+    });
+  });
+
+  describe("parseSpec — partial specs (lenient behavior)", () => {
+    it("returns empty array for missing decomposition", () => {
+      const spec = parseSpec(MINIMAL_SPEC);
+      expect(spec.decomposition).toEqual([]);
+    });
+
+    it("returns empty array for missing evaluation design", () => {
+      const spec = parseSpec(MINIMAL_SPEC);
+      expect(spec.evaluationDesign).toEqual([]);
+    });
+
+    it("falls back to npm test when no eval command present", () => {
+      const spec = parseSpec(MINIMAL_SPEC);
+      expect(spec.evalCommand).toBe("npm test");
+    });
+
+    it("returns empty constraints when section is missing", () => {
+      const spec = parseSpec(MINIMAL_SPEC);
+      expect(spec.constraints.mustDo).toEqual([]);
+      expect(spec.constraints.cannotDo).toEqual([]);
+    });
+
+    it("returns Untitled Spec when no title found", () => {
+      const spec = parseSpec("## Problem Statement\nsome text");
+      expect(spec.title).toBe("Untitled Spec");
+    });
+  });
+});

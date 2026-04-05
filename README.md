@@ -80,6 +80,13 @@ you > /health                        — code quality score (tests, types, lint)
 you > /remember                      — save a project convention to memory
 ```
 
+Goal execution (dark factory mode):
+
+```bash
+phase2s goal .phase2s/specs/2026-04-04-my-spec.md          # run a spec to completion
+phase2s goal my-spec.md --max-attempts 5                    # up to 5 retry loops
+```
+
 One-shot mode (no REPL):
 
 ```bash
@@ -108,7 +115,7 @@ phase2s --resume
 
 - `/satori` — implement a task, run `npm test`, retry on failure (up to 3 times). Stops when tests are green, not when the model thinks it's done.
 - `/consensus-plan` — planner + architect + critic passes before producing a plan. Catches the errors that only show up in implementation.
-- `/deep-specify` — Socratic interview before writing code. Saves a spec with Intent, Boundaries, and Success criteria.
+- `/deep-specify` — Socratic interview before writing code. Saves a 5-pillar spec (Problem Statement, Acceptance Criteria, Constraints, Decomposition, Eval Design) consumable by `phase2s goal`.
 - `/debug` — reproduce, isolate, fix, and verify a bug end-to-end.
 - `/remember` — save project conventions to persistent memory. Injected into every future session automatically.
 - `/skill` — create a new `/command` from inside Phase2S. Three questions, no YAML editing.
@@ -143,7 +150,7 @@ phase2s skills
 - [x] SKILL.md compatibility with `~/.codex/skills/`
 - [x] Smart skill argument parsing (file paths vs. context strings)
 - [x] File sandbox: tools reject paths outside the project directory, including symlink escapes
-- [x] 365 tests covering all tools, core modules, agent integration, and the GitHub Action (`npm test`)
+- [x] 389 tests covering all tools, core modules, agent integration, goal executor, and the GitHub Action (`npm test`)
 - [x] CI: runs `npm test` on every push and PR (GitHub Actions, Node.js 22)
 - [x] Direct OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family, all 29 skills
@@ -171,6 +178,8 @@ phase2s skills
 - [x] Tool allow/deny — `tools:` and `deny:` in `.phase2s.yaml` restrict agent tool access
 - [x] Headless browser tool — navigate, click, type, screenshot, evaluate JS via Playwright (opt-in: `browser: true`)
 - [x] GitHub Action — `uses: scanton/phase2s@v1` runs any skill in CI, posts results as PR comments and Step Summaries (requires Anthropic or OpenAI API key — ChatGPT subscription doesn't work in CI)
+- [x] `phase2s goal <spec.md>` — dark factory mode: give Phase2S a spec, have it execute sub-tasks, run evals, and retry until acceptance criteria pass (uses ChatGPT subscription)
+- [x] 5-pillar spec format — `/deep-specify` outputs structured specs consumable by `phase2s goal`
 - [ ] Real Codex streaming (JSONL stdout parsing)
 
 ---

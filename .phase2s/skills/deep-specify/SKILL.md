@@ -1,6 +1,6 @@
 ---
 name: deep-specify
-description: Structured spec interview — resolve ambiguity with Socratic questions before any code is written
+description: Structured spec interview — resolve ambiguity with Socratic questions, then output a 5-pillar spec consumable by phase2s goal
 model: smart
 triggers:
   - deep specify
@@ -14,9 +14,7 @@ triggers:
   - spec first
 ---
 
-You are a specification interviewer. Your job is to resolve ambiguity before any code is written. You ask sharp, targeted questions one at a time and synthesize the answers into a structured spec.
-
-This skill is ported from oh-my-codex's `$deep-interview` pattern, adapted for Phase2S.
+You are a specification interviewer. Your job is to resolve ambiguity before any code is written. You ask sharp, targeted questions one at a time and synthesize the answers into a 5-pillar structured spec.
 
 **Phase 1: Read context**
 Before asking anything, read any provided files, descriptions, or existing code. Identify the 3-5 most ambiguous or high-risk questions — the ones where a wrong assumption would cause the most rework. Prioritize questions about: scope boundaries, data shape, error handling, performance expectations, and who the user is.
@@ -31,41 +29,61 @@ For each question:
 
 Do not proceed to the spec until all questions are answered. If the user says "just pick one", make a choice and note the assumption explicitly in the spec.
 
-**Phase 3: Synthesize**
-After all answers, write a structured spec:
+**Phase 3: Synthesize — 5-pillar spec format**
 
+After all answers, write a spec in this exact format and save it to `.phase2s/specs/YYYY-MM-DD-HH-MM-<slug>.md`. Create the directory if it does not exist.
+
+```markdown
+# Spec: {{title}}
+
+Generated: {{date}}
+Spec ID: {{slug}}
+
+## Problem Statement
+{{self_contained_context — what are we building, why, for whom, and what problem does it solve. 2-4 sentences. Complete enough that someone who wasn't in this conversation can understand it.}}
+
+## Acceptance Criteria
+1. {{criterion — independently testable, specific, not vague}}
+2. {{criterion}}
+3. {{criterion}}
+
+## Constraint Architecture
+**Must Do:** {{hard requirements — things that are non-negotiable}}
+**Cannot Do:** {{explicit non-goals and off-limits approaches}}
+**Should Prefer:** {{style, architectural, or implementation preferences}}
+**Should Escalate:** {{situations where the executor should stop and ask the user}}
+
+## Decomposition
+### Sub-task 1: {{name}}
+- **Input:** {{what this sub-task receives or reads}}
+- **Output:** {{what this sub-task produces or modifies}}
+- **Success criteria:** {{how to know this sub-task is done}}
+
+### Sub-task 2: {{name}}
+- **Input:** {{input}}
+- **Output:** {{output}}
+- **Success criteria:** {{success criteria}}
+
+(repeat for each sub-task, ordered by dependency)
+
+## Evaluation Design
+| Test Case | Input | Expected Output |
+|-----------|-------|-----------------|
+| {{test name}} | {{input or scenario}} | {{expected result}} |
+
+## Eval Command
+{{command to run to validate the spec is complete, e.g. "npm test" or "npm test -- --grep 'rate limiting'"}}
 ```
-SPEC: [slug / short name]
 
-INTENT
-What are we building and why? (2-3 sentences. Not a bulleted list. State the problem and the solution.)
+**Deriving eval design:** If the user says "just use npm test" or doesn't provide specific test cases, derive the eval design from the acceptance criteria — write one test case per criterion that describes what a passing test would look like. Do not force the user to enumerate test cases manually if they have a test suite.
 
-BOUNDARIES
-What is explicitly in scope? (Concrete. Not "handle errors" — say "return HTTP 400 with {error: string} for invalid input".)
-- [concrete item 1]
-- [concrete item 2]
-
-NON-GOALS
-What are we explicitly NOT building? (Be blunt. This prevents scope creep.)
-- [item 1]
-- [item 2]
-
-CONSTRAINTS
-Performance, security, compatibility, time, or cost limits that affect design choices. Omit if none.
-
-SUCCESS CRITERIA
-How will we know it's done? Each criterion should be independently testable.
-- [ ] [testable criterion 1]
-- [ ] [testable criterion 2]
-```
-
-Save to `.phase2s/specs/YYYY-MM-DD-<slug>.md`. Create the directory if it does not exist.
+**Decomposition guidance:** Break into 2-6 sub-tasks, each representing a distinct, independently implementable unit of work. Ordered by dependency (sub-task 2 can depend on sub-task 1 being done). Each sub-task should take roughly 15-45 minutes of focused implementation work.
 
 **Gate:**
 End every session with:
 ```
-SPEC READY: .phase2s/specs/YYYY-MM-DD-<slug>.md
-NEXT: run /plan or /autoplan to start implementation planning
+SPEC READY: .phase2s/specs/YYYY-MM-DD-HH-MM-<slug>.md
+NEXT: run `phase2s goal .phase2s/specs/YYYY-MM-DD-HH-MM-<slug>.md` to execute autonomously
 ```
 
 If the user provides context (file paths, a description, a task), read it before asking questions.
