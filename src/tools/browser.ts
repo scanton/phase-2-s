@@ -145,7 +145,7 @@ async function navigateTo(url: string, cwd: string): Promise<ToolResult> {
   session.page = page;
 
   const consoleErrors: string[] = [];
-  page.on("console", (msg) => {
+  page.on("console", (msg: import("playwright").ConsoleMessage) => {
     if (msg.type() === "error") consoleErrors.push(msg.text());
   });
 
