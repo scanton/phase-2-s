@@ -223,12 +223,116 @@ phase2s skills --json # machine-readable for scripts
 
 ---
 
+## Providers
+
+| Provider | Auth | Default Model | Setup |
+|----------|------|---------------|-------|
+| ChatGPT subscription | Browser login | gpt-4o | `codex auth` (one time) |
+| OpenAI API | `OPENAI_API_KEY` | gpt-4o | `phase2s init` |
+| Anthropic | `ANTHROPIC_API_KEY` | claude-3-5-sonnet | `phase2s init` |
+| Ollama | Local (no auth) | llama3.1:8b | `ollama pull llama3.1:8b` |
+| OpenRouter | `OPENROUTER_API_KEY` | openai/gpt-4o | `phase2s init` |
+| Google Gemini | `GEMINI_API_KEY` | gemini-2.0-flash | Free tier at aistudio.google.com |
+| MiniMax | `MINIMAX_API_KEY` | MiniMax-M2.5 | `phase2s init` |
+
+---
+
+## Features in Depth
+
+### Dark Factory Tools
+
+**Validate before you run:**
+
+```bash
+# Check your spec for structural issues before a 20-minute agent run
+phase2s lint specs/add-rate-limiting.md
+
+# Only run if lint passes
+phase2s lint specs/add-rate-limiting.md && phase2s goal specs/add-rate-limiting.md
+```
+
+`phase2s lint` catches missing titles, empty problem statements, specs with no sub-tasks, missing acceptance criteria, and warns about specs with 8+ sub-tasks or default eval commands.
+
+**Preview the plan without running it:**
+
+```bash
+# See the decomposition tree without making any LLM calls
+phase2s goal specs/add-rate-limiting.md --dry-run
+```
+
+Shows the parsed spec title, sub-task list, acceptance criteria, and eval command. No tokens spent.
+
+**Live progress during execution:**
+
+```
+[1/3] Running: Cursor-based pagination logic (42s)
+[2/3] Running: API response format update (18s)
+[3/3] Running: Frontend page controls (31s)
+```
+
+Real-time subtask progress with elapsed time per sub-task, so you know where the agent is.
+
+**Review completed runs:**
+
+```bash
+# Chalk-colored timeline of a dark factory run
+phase2s report .phase2s/runs/2026-04-05-goal-abc123.jsonl
+```
+
+Shows sub-task timeline, attempt counts, criteria verdicts, and total duration.
+
+### MCP Integration
+
+Phase2S runs as an MCP server, exposing all skills as Claude Code tools. [Setup guide →](docs/claude-code.md)
+
+Beyond skills, the MCP server provides:
+
+**State server** — durable key-value store for Claude Code workflows:
+
+```
+# Claude Code can persist state across tool calls
+phase2s__state_write({ key: "deploy_status", value: "in_progress" })
+phase2s__state_read({ key: "deploy_status" })  # → "in_progress"
+phase2s__state_clear({ key: "deploy_status" })
+```
+
+**Run report via MCP** — Claude Code can summarize dark factory results:
+
+```
+phase2s__report({ runLogPath: ".phase2s/runs/2026-04-05-goal-abc123.jsonl" })
+```
+
+### Tools and Configuration
+
+**Custom system prompt:**
+
+```bash
+# Append a custom instruction to every agent session
+phase2s --system "Always prefer Python for scripting tasks"
+```
+
+**Custom verification command** — configure what `/satori` runs to check your work:
+
+```yaml
+# .phase2s.yaml
+verifyCommand: pytest tests/ -x  # or: go test ./... or: npm test
+```
+
+**Headless browser** — enable for the `/qa` skill to test web apps:
+
+```yaml
+# .phase2s.yaml
+browser: true  # requires playwright installed
+```
+
+---
+
 ## Roadmap
 
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 589 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, and lint PATH checks
+- [x] 600+ tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, bear mascot, installation health checks, self-update, skills search, spec linting, dark factory dry-run, and lint PATH checks
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -274,6 +378,8 @@ phase2s skills --json # machine-readable for scripts
 - [x] `phase2s goal --dry-run` — parse and display the spec decomposition tree without making a single LLM call
 - [x] Live dark factory progress: `[1/3] Running: Sub-task name` with elapsed time per sub-task
 - [x] `phase2s lint`: >8 sub-task warning and evalCommand PATH check
+- [x] MiniMax provider — MiniMax-M2.5 default, OpenAI-compatible endpoint, no new SDK dependency
+- [x] Bear mascot — ASCII art teddy bear with 5 poses (greeting, thinking, success, error, help), width-adaptive rendering, MCP-safe, configurable via `bear: false`
 
 ---
 

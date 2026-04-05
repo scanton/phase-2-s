@@ -30,12 +30,14 @@ Full reference with all fields:
 # ollama:      local Ollama server (no API key, defaults to llama3.1:8b, requires ollama serve)
 # openrouter:  OpenRouter gateway (requires OPENROUTER_API_KEY, 50+ models via one key)
 # gemini:      Google Gemini (requires GEMINI_API_KEY, free tier available, defaults to gemini-2.0-flash)
+# minimax:     MiniMax API (requires MINIMAX_API_KEY, defaults to MiniMax-M2.5)
 provider: codex-cli
 
 # Model to use
 # If not set: auto-detected from ~/.codex/config.toml (codex-cli provider)
 # or defaults to gpt-4o (openai-api), claude-3-5-sonnet-20241022 (anthropic),
-# llama3.1:8b (ollama), openai/gpt-4o (openrouter), gemini-2.0-flash (gemini)
+# llama3.1:8b (ollama), openai/gpt-4o (openrouter), gemini-2.0-flash (gemini),
+# MiniMax-M2.5 (minimax)
 # model: gpt-4o
 # model: claude-3-5-sonnet-20241022
 # model: qwen2.5-coder:7b
@@ -80,6 +82,18 @@ provider: codex-cli
 # Gemini base URL (gemini provider only, default https://generativelanguage.googleapis.com/v1beta/openai/)
 # Override for custom endpoints or enterprise deployments.
 # geminiBaseUrl: https://generativelanguage.googleapis.com/v1beta/openai/
+
+# MiniMax API key (minimax provider only)
+# Get a key at https://platform.minimax.io/
+# minimaxApiKey: your-key-here
+
+# MiniMax base URL (minimax provider only, default https://api.minimax.io/v1/)
+# minimaxBaseUrl: https://api.minimax.io/v1/
+
+# Bear mascot (default: true)
+# Shows ASCII art bear at startup, on skill completion, and during help.
+# Set to false to disable all bear rendering.
+# bear: true
 
 # Max agent loop turns before stopping
 # The agent loop runs tool calls and feeds results back until no more tool calls.

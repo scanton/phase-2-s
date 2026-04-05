@@ -151,6 +151,19 @@ export function checkAuth(
       };
     }
 
+    case "minimax": {
+      const key = (config.minimaxApiKey as string | undefined) ?? process.env.MINIMAX_API_KEY;
+      const present = Boolean(key);
+      return {
+        name: "MiniMax API key",
+        ok: present,
+        detail: present ? "set" : "missing",
+        fix: present
+          ? undefined
+          : "Set MINIMAX_API_KEY or run phase2s init. Get a key at https://platform.minimax.io/",
+      };
+    }
+
     case "ollama":
       return { name: "auth", ok: true, detail: "N/A (no auth required)" };
 
@@ -176,7 +189,7 @@ export function checkConfigFile(configPath: string): CheckResult {
     const raw = readFileSync(configPath, "utf8");
     const parsed = parseYaml(raw) as Record<string, unknown> | null;
     const provider = parsed?.provider as string | undefined;
-    const knownProviders = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini"];
+    const knownProviders = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini", "minimax"];
     if (provider && !knownProviders.includes(provider)) {
       return {
         name: ".phase2s.yaml",

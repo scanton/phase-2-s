@@ -5,7 +5,7 @@ import { parse as parseYaml } from "yaml";
 import { parse as parseToml } from "@iarna/toml";
 
 const configSchema = z.object({
-  provider: z.enum(["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini"]).default("codex-cli"),
+  provider: z.enum(["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini", "minimax"]).default("codex-cli"),
   /**
    * Model to use. For codex-cli provider, defaults to whatever is in
    * ~/.codex/config.toml so the user's existing Codex setup is respected.
@@ -32,6 +32,12 @@ const configSchema = z.object({
   geminiApiKey: z.string().optional(),
   /** Gemini base URL (default https://generativelanguage.googleapis.com/v1beta/openai/). Override for custom endpoints. */
   geminiBaseUrl: z.string().optional(),
+  /** MiniMax API key. Falls back to MINIMAX_API_KEY environment variable. Get a key at https://platform.minimax.io/ */
+  minimaxApiKey: z.string().optional(),
+  /** MiniMax base URL (default https://api.minimax.io/v1/). Override for custom endpoints. */
+  minimaxBaseUrl: z.string().optional(),
+  /** Bear mascot toggle. Set to false to disable the bear. Default true. */
+  bear: z.boolean().default(true),
   codexPath: z.string().default("codex"),
   systemPrompt: z.string().optional(),
   maxTurns: z.number().default(50),
@@ -101,6 +107,7 @@ export async function loadConfig(overrides?: Partial<z.infer<typeof configSchema
   if (process.env.ANTHROPIC_API_KEY) envConfig.anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   if (process.env.OPENROUTER_API_KEY) envConfig.openrouterApiKey = process.env.OPENROUTER_API_KEY;
   if (process.env.GEMINI_API_KEY) envConfig.geminiApiKey = process.env.GEMINI_API_KEY;
+  if (process.env.MINIMAX_API_KEY) envConfig.minimaxApiKey = process.env.MINIMAX_API_KEY;
   if (process.env.PHASE2S_PROVIDER) envConfig.provider = process.env.PHASE2S_PROVIDER;
   if (process.env.PHASE2S_MODEL) envConfig.model = process.env.PHASE2S_MODEL;
   if (process.env.PHASE2S_CODEX_PATH) envConfig.codexPath = process.env.PHASE2S_CODEX_PATH;
@@ -151,5 +158,6 @@ async function resolveDefaultModel(provider: string): Promise<string> {
   if (provider === "ollama") return "llama3.1:8b"; // user must have this model pulled
   if (provider === "openrouter") return "openai/gpt-4o"; // most common OpenRouter model
   if (provider === "gemini") return "gemini-2.0-flash"; // fast default; gemini-2.5-pro for smart tier
+  if (provider === "minimax") return "MiniMax-M2.5"; // default; MiniMax-M2.7 for smart tier
   return "gpt-4o"; // openai-api default
 }

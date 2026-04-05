@@ -6,6 +6,7 @@ import { createProvider, type Provider } from "../providers/index.js";
 import { createDefaultRegistry, type ToolRegistry } from "../tools/index.js";
 import { buildSystemPrompt } from "../utils/prompt.js";
 import { log } from "../utils/logger.js";
+import { bear, BearState } from "../bear/index.js";
 
 const execAsync = promisify(exec);
 
@@ -122,6 +123,8 @@ export class Agent {
 
     while (turns < this.maxTurns) {
       turns++;
+
+      if (turns === 1) bear.render(BearState.thinking);
 
       this.conversation.trimToTokenBudget();
 

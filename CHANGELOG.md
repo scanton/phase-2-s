@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.10.0 — 2026-04-05
+
+Bear mascot + MiniMax provider + README refresh.
+
+### What's new
+
+- **Bear mascot** — ASCII art white teddy bear with 5 poses: greeting (startup banner), thinking (single-line during agent work), success (skill completed), error (something broke), help (`/help` command). Width-adaptive: full 8-line art at 60+ cols, compact single-line at 40-59, text-only below 40. MCP-safe (suppressed in JSON-RPC mode). Configurable: `bear: false` in `.phase2s.yaml` or `--no-banner` flag. Architecture: `BearState` enum + `BearRenderer` interface for future animation.
+- **MiniMax provider** — `provider: minimax` in `.phase2s.yaml` (or `PHASE2S_PROVIDER=minimax`). Connects to MiniMax's OpenAI-compatible API at `api.minimax.io/v1/`. Default model `MiniMax-M2.5`. Set `MINIMAX_API_KEY` or `minimaxApiKey` in config. `phase2s init` wizard option 7 and `phase2s doctor` both handle MiniMax. 7 providers total.
+- **README refresh** — Providers comparison table. Features in Depth section covering: `phase2s lint`, `--dry-run`, live progress display, `phase2s report`, MCP state server, MCP report tool, headless browser, `--system` flag, `verifyCommand` config.
+
+### Usage
+
+```bash
+# Bear greets you at startup (disable with --no-banner or bear: false in config)
+phase2s
+phase2s --no-banner
+
+# MiniMax provider
+export MINIMAX_API_KEY="your-key"
+phase2s init  # choose option 7
+```
+
+---
+
 ## v1.9.0 — 2026-04-05
 
 Dark factory visibility: dry-run mode, live progress, and richer lint checks.
