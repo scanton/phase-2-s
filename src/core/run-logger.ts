@@ -16,7 +16,7 @@ import { join, resolve } from "node:path";
 // ---------------------------------------------------------------------------
 
 export type RunEvent =
-  | { event: "goal_started"; specFile: string; specHash: string; subTaskCount: number; maxAttempts: number; resuming: boolean }
+  | { event: "goal_started"; specFile: string; specHash: string; subTaskCount: number; maxAttempts: number; resuming: boolean; parallel?: boolean; levels?: number }
   | { event: "plan_review_started" }
   | { event: "plan_review_completed"; verdict: "APPROVED" | "CHALLENGED" | "NEEDS_CLARIFICATION"; response: string }
   | { event: "attempt_started"; attempt: number }
@@ -25,8 +25,15 @@ export type RunEvent =
   | { event: "eval_started"; command: string }
   | { event: "eval_completed"; output: string }
   | { event: "criteria_checked"; results: Record<string, boolean>; failing: string[] }
-  | { event: "goal_completed"; success: boolean; attempts: number }
-  | { event: "goal_error"; message: string };
+  | { event: "goal_completed"; success: boolean; attempts: number; parallel?: boolean; wallClockMs?: number; sequentialEstimateMs?: number }
+  | { event: "goal_error"; message: string }
+  // Parallel execution events
+  | { event: "level_started"; level: number; subtaskCount: number; workerCount: number }
+  | { event: "level_completed"; level: number; durationMs: number; mergedCount: number; failedCount: number }
+  | { event: "worker_started"; level: number; index: number; name: string; worktreePath: string }
+  | { event: "worker_completed"; level: number; index: number; status: "passed" | "failed"; durationMs: number }
+  | { event: "merge_started"; level: number; index: number }
+  | { event: "merge_completed"; level: number; index: number; status: "success" | "conflict"; conflictFiles?: string[] };
 
 // ---------------------------------------------------------------------------
 // RunLogger

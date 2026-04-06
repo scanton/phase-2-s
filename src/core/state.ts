@@ -38,6 +38,23 @@ export interface GoalState {
   attempt: number;
   /** key = sub-task index (0-based string) */
   subTaskResults: Record<string, SubTaskResult>;
+
+  // -- Parallel execution state --
+  /** Whether this run uses parallel execution. */
+  parallel?: boolean;
+  /** Execution levels that have fully completed (all workers merged). */
+  completedLevels?: number[];
+  /** The level currently being executed. */
+  currentLevel?: number;
+  /** Per-level worker tracking for resume. */
+  levelWorkers?: Record<string, LevelWorkerState[]>;
+}
+
+export interface LevelWorkerState {
+  subtaskIndex: number;
+  subtaskName: string;
+  status: "pending" | "running" | "completed" | "failed";
+  worktreePath?: string;
 }
 
 // ---------------------------------------------------------------------------
