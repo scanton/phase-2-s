@@ -57,6 +57,8 @@ export interface GoalOptions {
   parallel?: boolean;
   /** Force sequential execution (overrides auto-detect). */
   sequential?: boolean;
+  /** Enable multi-agent orchestrator mode (role-aware, context-passing). */
+  orchestrator?: boolean;
   /** Max concurrent workers per level (1-8, default 3). */
   workers?: number;
   /** Enable tmux dashboard for visual progress. */
@@ -284,6 +286,77 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     }
 
     console.log("\nAdversarial review: APPROVED. Proceeding with execution.");
+  }
+
+  // -------------------------------------------------------------------------
+  // ORCHESTRATOR execution path
+  // -------------------------------------------------------------------------
+  const hasRoleAnnotations = spec.decomposition.some(t => t.role !== undefined);
+  const useOrchestrator = !options.sequential && (options.orchestrator || hasRoleAnnotations);
+
+  if (useOrchestrator) {
+    if (hasRoleAnnotations && !options.orchestrator) {
+      console.log(chalk.cyan(`Orchestrator mode activated: ${spec.decomposition.filter(t => t.role !== undefined).length} subtasks have role annotations. Use --sequential to disable.`));
+    }
+
+    try {
+      const { compile } = await import('../orchestrator/spec-compiler.js');
+      const { runOrchestrator } = await import('../orchestrator/orchestrator.js');
+      const { executeOrchestratorLevel } = await import('../goal/parallel-executor.js');
+
+      const { jobs, levels } = compile(spec.decomposition);
+
+      console.log(chalk.cyan(`\nStarting orchestrator execution (${jobs.length} jobs, ${levels.length} levels)...`));
+
+      const orchResult = await runOrchestrator(levels, jobs, {
+        specHash,
+        logger,
+        executeLevelFn: executeOrchestratorLevel,
+      });
+
+      logger.log({
+        event: 'goal_completed',
+        success: orchResult.totalFailed === 0,
+        attempts: 1,
+      });
+
+      const orchSuccess = orchResult.totalFailed === 0 && orchResult.totalSkipped === 0;
+
+      if (orchSuccess) {
+        console.log(chalk.green(`\nOrchestrator: all ${orchResult.totalCompleted} jobs completed.`));
+      } else {
+        console.log(chalk.red(`\nOrchestrator: ${orchResult.totalFailed} failed, ${orchResult.totalSkipped} skipped, ${orchResult.totalCompleted} completed.`));
+      }
+
+      const orchGoalResult: GoalResult = {
+        success: orchSuccess,
+        attempts: 1,
+        criteriaResults: {},
+        runLogPath: logger.close(),
+        summary: orchSuccess
+          ? `Orchestrator completed: ${orchResult.totalCompleted} jobs.`
+          : `Orchestrator: ${orchResult.totalFailed} failed, ${orchResult.totalSkipped} skipped.`,
+        durationMs: Date.now() - startMs,
+      };
+
+      await maybeNotify(options, config, orchGoalResult, basename(specPath));
+      return orchGoalResult;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`\nOrchestrator error: ${message}`));
+      logger.log({ event: 'goal_error', message });
+
+      const orchErrResult: GoalResult = {
+        success: false,
+        attempts: 1,
+        criteriaResults: {},
+        runLogPath: logger.close(),
+        summary: `Orchestrator failed: ${message}`,
+        durationMs: Date.now() - startMs,
+      };
+      await maybeNotify(options, config, orchErrResult, basename(specPath));
+      return orchErrResult;
+    }
   }
 
   // -------------------------------------------------------------------------
