@@ -2,11 +2,11 @@
 
 ## v1.14.0 — 2026-04-06
 
-P1 bug fixes for parallel dark factory + spec eval judge.
+Score your spec against the diff, and three bug fixes for parallel dark factory runs.
 
 ### What's new
 
-- **Spec Eval Judge** (`src/eval/judge.ts`) — `judgeRun(specPath, diff, config)` reads a spec's acceptance criteria, compares against a git diff, and produces a per-criterion coverage map with a derived 0-10 score. Score formula: `(met×1.0 + partial×0.5) / total × 10`. Never throws, returns `score: null` on any failure. Diff truncated at 40,000 chars to prevent token limit errors.
+- **Spec Eval Judge** — reads your spec's acceptance criteria, compares them against a git diff, and produces a per-criterion coverage map with a derived 0-10 score (`src/eval/judge.ts`). Score formula: `(met×1.0 + partial×0.5) / total × 10`. Never throws, returns `score: null` on any failure. Diff truncated at 40,000 chars to stay within model context.
 - **`phase2s judge <spec.md> --diff <file>`** — Standalone CLI subcommand. Prints a JUDGE REPORT block to stdout. Exits 1 if score < 7 (for CI integration). Also accepts diff via stdin: `git diff HEAD~1 | phase2s judge spec.md`.
 - **`phase2s goal --judge`** — Runs the judge automatically after each attempt. Captures `baseRef` before any agent execution, computes `git diff baseRef..HEAD`, calls `judgeRun`, and logs an `eval_judged` JSONL event.
 - **`eval_judged` event in run logs** — New event type in `RunEvent` union: `score`, `verdict`, `criteria[]`, `diffStats`. Rendered as a JUDGE REPORT block by `phase2s report`.
