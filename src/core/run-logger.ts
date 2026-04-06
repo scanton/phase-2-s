@@ -34,6 +34,13 @@ export type RunEvent =
   | { event: "worker_completed"; level: number; index: number; status: "passed" | "failed"; durationMs: number }
   | { event: "merge_started"; level: number; index: number }
   | { event: "merge_completed"; level: number; index: number; status: "success" | "conflict"; conflictFiles?: string[] }
+  // Orchestrator events
+  | { event: 'orchestrator_started'; specHash: string; totalJobs: number; levelCount: number }
+  | { event: 'job_promoted'; specHash: string; subtaskId: string; role: string; level: number }
+  | { event: 'job_routed'; specHash: string; subtaskId: string; role: string; systemPromptLength: number }
+  | { event: 'orchestrator_context_missing'; specHash: string; subtaskId: string; level: number }
+  | { event: 'orchestrator_replan'; specHash: string; failedSubtaskId: string; skippedSubtaskIds: string[]; remainingJobCount: number }
+  | { event: 'orchestrator_completed'; specHash: string; totalCompleted: number; totalFailed: number; totalSkipped: number; durationMs: number }
   // Spec eval judge
   | {
       event: "eval_judged";

@@ -12,7 +12,7 @@
  *   level-context.ts → context injection for workers
  */
 
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import chalk from "chalk";
 import { Agent } from "../core/agent.js";
@@ -33,6 +33,7 @@ import {
   mergeLevel as mergeLevelWorktrees,
   type LevelMergeResult,
 } from "./merge-strategy.js";
+import type { SubtaskJob, OrchestratorLevelResult } from '../orchestrator/types.js';
 
 // ---------------------------------------------------------------------------
 // Worktree mutex — serializes prune+add per repo to prevent concurrent races
@@ -520,6 +521,95 @@ function buildWorkerPrompt(subtask: SubTask, spec: Spec, levelContext: string): 
   parts.push("\nImplement this task. Make all necessary code changes. Ensure tests pass.");
 
   return parts.join("\n");
+}
+
+/**
+ * Execute a level of SubtaskJobs for the orchestrator.
+ * Each job gets an Agent with job.systemPromptPrefix as its system prompt.
+ * Workers are in-process Agent instances — no subprocess spawning.
+ * Returns OrchestratorLevelResult[] with stdout captured for sentinel extraction.
+ *
+ * Named executeOrchestratorLevel to avoid collision with private executeLevel() above.
+ */
+export async function executeOrchestratorLevel(
+  jobs: SubtaskJob[],
+): Promise<OrchestratorLevelResult[]> {
+  const cwd = process.cwd();
+
+  // Hoist shared reads outside Promise.all to avoid N redundant file reads per level
+  const [config, learningsList] = await Promise.all([loadConfig(), loadLearnings(cwd)]);
+  const learnings = formatLearningsForPrompt(learningsList);
+
+  return Promise.all(jobs.map(async (job, batchIdx): Promise<OrchestratorLevelResult> => {
+    const slug = makeWorktreeSlug(`orch${Date.now().toString(36).slice(-4)}`, batchIdx);
+
+    const wt = createWorktree(cwd, slug);
+    if ('error' in wt) {
+      return { subtaskId: job.id, status: 'failed', error: wt.error };
+    }
+
+    try {
+      symlinkNodeModules(cwd, wt.worktreePath);
+    } catch (err) {
+      // symlink failed — clean up worktree and fail this job rather than rejecting Promise.all
+      removeWorktree(cwd, slug);
+      return { subtaskId: job.id, status: 'failed', error: err instanceof Error ? err.message : String(err) };
+    }
+
+    const outputChunks: string[] = [];
+    let workerError: unknown = null;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      const agent = new Agent({
+        config,
+        learnings,
+        cwd: wt.worktreePath,
+        systemPrompt: job.systemPromptPrefix || undefined,
+      });
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error('TIMEOUT')), WORKER_TIMEOUT_MS);
+      });
+
+      await Promise.race([
+        agent.run(job.prompt, { onDelta: (chunk) => { outputChunks.push(chunk); } }),
+        timeoutPromise,
+      ]);
+    } catch (err) {
+      workerError = err;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+
+    // Commit worker changes (execFileSync avoids shell injection from job.title)
+    try {
+      execSync('git add -A', { cwd: wt.worktreePath, encoding: 'utf8', stdio: 'pipe' });
+      try {
+        execSync('git diff --cached --quiet', { cwd: wt.worktreePath, encoding: 'utf8', stdio: 'pipe' });
+        // exit 0 → no staged changes, nothing to commit
+      } catch {
+        // exit non-zero → staged changes exist → commit
+        execFileSync('git', ['commit', '-m', `orchestrator: ${job.title}`], {
+          cwd: wt.worktreePath, encoding: 'utf8', stdio: 'pipe',
+        });
+      }
+    } catch { /* no changes to commit */ }
+
+    removeWorktree(cwd, slug);
+
+    const stdout = outputChunks.join('');
+    if (workerError) {
+      return {
+        subtaskId: job.id,
+        status: 'failed',
+        error: workerError instanceof Error ? workerError.message : String(workerError),
+        stdout,
+      };
+    }
+
+    return { subtaskId: job.id, status: 'completed', stdout };
+  }));
 }
 
 export function makeWorktreeSlug(specHash: string, index: number): string {
