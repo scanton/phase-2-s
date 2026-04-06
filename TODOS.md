@@ -37,7 +37,7 @@
 | Metric | Value |
 |--------|-------|
 | Version | v1.14.0 |
-| Tests | 702 (+25 from v1.13.0) |
+| Tests | 702 (+41 from v1.13.0) |
 
 - [x] **Fix timer leak in `executeWorker()` timeout path** — `clearTimeout(timeoutHandle)` in `finally` block. Named `timeoutHandle` variable captured before `Promise.race`. **Completed:** v1.14.0 (2026-04-06)
 
