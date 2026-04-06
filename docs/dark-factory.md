@@ -464,6 +464,8 @@ This may take a while and consume significant ChatGPT usage.
 
 **Declare file ownership for parallelism.** When running with `--parallel`, the dependency graph is built from which files each sub-task touches. Add `**Files:** src/foo.ts, src/bar.ts` to a sub-task to declare this explicitly — it overrides the regex heuristic and prevents false conflicts. Sub-tasks that share no files run in parallel; sub-tasks that share files are serialized automatically.
 
+**Assign roles for multi-agent orchestration.** Add `**Role:** architect`, `**Role:** implementer`, `**Role:** tester`, or `**Role:** reviewer` to a sub-task body. Phase2S auto-detects role annotations and activates the multi-agent orchestrator, which routes each subtask to a role-appropriate worker with a tailored system prompt. Architect workers emit structured context that gets injected into downstream workers' prompts automatically. Use `--orchestrator` to force orchestrator mode on any spec even without annotations (all subtasks default to `implementer`).
+
 **Eval command should be deterministic.** `npm test` is good. A test that flakes randomly will cause false failures and unnecessary retries. Fix flaky tests before running `phase2s goal`.
 
 **Smaller specs work better.** A spec with 2-3 sub-tasks and 3-4 criteria is much more reliable than one with 8 sub-tasks and 12 criteria. Break large features into multiple specs and run them sequentially.
@@ -518,6 +520,55 @@ Goal: my-spec.md (parallel)
 ```
 
 Sub-tasks that cannot be parallelized (they share files or form a dependency chain) are automatically serialized. Phase2S degrades gracefully: if a cycle is detected in the dependency graph, the whole spec runs sequentially without error.
+
+---
+
+## Multi-agent orchestration
+
+Add `**Role:**` annotations to route subtasks to specialized workers, each with a purpose-built system prompt.
+
+```markdown
+### Sub-task 1: Design the data model
+**Role:** architect
+**Input:** Feature requirements
+**Output:** `src/models/payment.ts` — type definitions and schema
+**Success criteria:** Types exported; downstream subtasks can import without circular deps
+
+### Sub-task 2: Implement the payment service
+**Role:** implementer
+**Input:** Payment model types from Sub-task 1
+**Output:** `src/services/payment.ts`
+**Success criteria:** All methods covered by unit tests
+
+### Sub-task 3: Write integration tests
+**Role:** tester
+**Input:** Payment service from Sub-task 2
+**Output:** `test/services/payment.test.ts`
+**Success criteria:** At least one test per public method; all pass
+```
+
+The four roles:
+
+| Role | Prompt focus |
+|------|-------------|
+| `architect` | System design, interfaces, contracts, what downstream workers need to know |
+| `implementer` | Concrete implementation, file changes, making tests pass |
+| `tester` | Test coverage, edge cases, assertions |
+| `reviewer` | Code quality, correctness, standards compliance |
+
+**Architect context passing.** Architect workers are expected to end their output with a `<!-- CONTEXT -->` sentinel followed by a structured summary of what they designed — interfaces, file paths, key decisions. The orchestrator captures everything after the sentinel (up to 4096 bytes) and injects it into each downstream worker's system prompt as `Prior context from upstream subtask '...'`. This is how an architect's design decisions reach implementers and testers without manual copy-paste.
+
+**Activation.** Phase2S auto-detects role annotations and activates orchestrator mode. Use `--orchestrator` to force it on any spec, even without annotations (all subtasks default to `implementer`):
+
+```bash
+# Auto-detected when **Role:** annotations are present
+phase2s goal my-spec.md
+
+# Force orchestrator mode (subtasks default to implementer)
+phase2s goal my-spec.md --orchestrator
+```
+
+If a subtask fails, the orchestrator skips all transitively dependent subtasks. Independent subtasks continue unaffected. The `orchestrator_replan`, `job_routed`, `job_promoted`, and `orchestrator_context_missing` events appear in the run log.
 
 ---
 

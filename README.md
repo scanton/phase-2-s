@@ -334,7 +334,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 702 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, and spec eval judge
+- [x] 761 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, and multi-agent orchestrator
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -386,6 +386,7 @@ browser: true  # requires playwright installed
 - [x] `phase2s judge <spec.md> --diff <file>` — spec eval judge: compares acceptance criteria against a git diff, produces a per-criterion coverage map and a 0-10 score. Exits 1 if score < 7 (CI integration). Also accepts diff via stdin: `git diff HEAD~1 | phase2s judge spec.md`
 - [x] `phase2s goal --judge` — runs the spec eval judge automatically after each attempt, emits `eval_judged` event to the run log, and renders a JUDGE REPORT block in `phase2s report` output
 - [x] P1 parallel executor fixes — timer leak in `executeWorker()` (clearTimeout in finally), stash pop correctness (named stash + pop by ref instead of always `stash@{0}`), concurrent worktree prune race (promise-chain mutex per repo)
+- [x] Multi-agent orchestrator — `**Role:** architect|implementer|tester|reviewer` annotations in specs route subtasks to role-appropriate workers, each with a tailored system prompt. Architect workers pass structured context downstream via a `<!-- CONTEXT -->` sentinel. `--orchestrator` flag forces orchestrator mode on any spec. Auto-detected when role annotations are present.
 
 ---
 
