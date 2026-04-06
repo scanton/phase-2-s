@@ -35,6 +35,26 @@ import {
 } from "./merge-strategy.js";
 
 // ---------------------------------------------------------------------------
+// Worktree mutex — serializes prune+add per repo to prevent concurrent races
+// ---------------------------------------------------------------------------
+
+const worktreeLocks = new Map<string, Promise<void>>();
+
+async function withWorktreeLock(repoPath: string, fn: () => Promise<void>): Promise<void> {
+  const prev = worktreeLocks.get(repoPath) ?? Promise.resolve();
+  const next = prev.then(fn);
+  worktreeLocks.set(repoPath, next.catch(() => {}));
+  return next;
+}
+
+/**
+ * Clear all worktree locks. Call in beforeEach in tests that exercise the mutex.
+ */
+export function resetWorktreeLocks(): void {
+  worktreeLocks.clear();
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -103,8 +123,8 @@ export async function executeParallel(
   // Get base commit for level context
   const baseCommit = getHeadCommit(cwd);
 
-  // Pre-flight: stash if dirty
-  const stashed = stashIfDirty(cwd);
+  // Pre-flight: stash if dirty (named stash with specHash to avoid index-based ambiguity)
+  const stashed = stashIfDirty(cwd, specHash);
 
   // Optional tmux dashboard
   const dashboard = options.dashboard
@@ -147,7 +167,7 @@ export async function executeParallel(
       }
     }
   } finally {
-    if (stashed) unstash(cwd);
+    if (stashed) unstash(cwd, specHash);
     if (dashboard) teardownDashboard(dashboard);
   }
 
@@ -346,9 +366,13 @@ async function executeWorker(
     // Resume: reuse existing worktree
     wt = { worktreePath: persistedWorker.worktreePath, branchName: `parallel/${slug}` };
   } else if (persistedWorker?.worktreePath && !existsSync(persistedWorker.worktreePath)) {
-    // Path recorded but directory missing — prune and recreate
-    try { execSync("git worktree prune", { cwd, stdio: "pipe" }); } catch { /* ok */ }
-    wt = createWorktree(cwd, slug);
+    // Path recorded but directory missing — prune and recreate (serialized per repo to avoid race)
+    let pruneResult: { worktreePath: string; branchName: string } | { error: string } = { error: "not started" };
+    await withWorktreeLock(cwd, async () => {
+      try { execSync("git worktree prune", { cwd, stdio: "pipe" }); } catch { /* ok */ }
+      pruneResult = createWorktree(cwd, slug);
+    });
+    wt = pruneResult;
   } else {
     // Normal fresh worktree creation
     wt = createWorktree(cwd, slug);
@@ -403,10 +427,11 @@ async function executeWorker(
   // Execute satori in the worktree
   const outputChunks: string[] = [];
   let workerError: unknown = null;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error(`Worker timeout after ${WORKER_TIMEOUT_MS / 1000}s`)), WORKER_TIMEOUT_MS);
+      timeoutHandle = setTimeout(() => reject(new Error(`Worker timeout after ${WORKER_TIMEOUT_MS / 1000}s`)), WORKER_TIMEOUT_MS);
     });
 
     const runPromise = agent.run(prompt, {
@@ -421,6 +446,8 @@ async function executeWorker(
     await Promise.race([runPromise, timeoutPromise]);
   } catch (err) {
     workerError = err;
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 
   const output = outputChunks.join("");
