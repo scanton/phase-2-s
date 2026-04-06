@@ -54,9 +54,10 @@ export function compile(subtasks: SubTask[]): CompileResult {
 }
 
 export function slugify(name: string): string {
-  return name
+  const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 60);
+  return slug || 'subtask';
 }

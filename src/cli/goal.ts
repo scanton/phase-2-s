@@ -316,7 +316,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
       logger.log({
         event: 'goal_completed',
-        success: orchResult.totalFailed === 0,
+        success: orchResult.totalFailed === 0 && orchResult.totalSkipped === 0,
         attempts: 1,
       });
 

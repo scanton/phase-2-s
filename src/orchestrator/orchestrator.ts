@@ -6,7 +6,7 @@
  * architect results, and handles failures with transitive skipping.
  */
 
-import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { SubtaskJob, OrchestratorLevelResult } from './types.js';
@@ -15,8 +15,8 @@ import type { RunLogger } from '../core/run-logger.js';
 
 /** Max bytes per upstream context file injection. Matches FAILURE_CONTEXT_MAX_BYTES in parallel-executor.ts */
 const CONTEXT_MAX_BYTES = 4096;
-/** Sentinel string — single source of truth is ARCHITECT_CONTEXT_SENTINEL in role-prompts.ts */
-const CONTEXT_SENTINEL = ARCHITECT_CONTEXT_SENTINEL;
+/** Max bytes for the total systemPromptPrefix across all injected upstream chunks. */
+const SYSTEM_PROMPT_MAX_BYTES = 16384;
 
 /** Truncate text to at most maxBytes UTF-8 bytes; appends '(truncated)' if cut. */
 function truncateToBytes(text: string, maxBytes: number): string {
@@ -108,8 +108,7 @@ export async function runOrchestrator(
   // Context files produced by completed architect jobs: id -> absolute path
   const contextFiles = new Map<string, string>();
 
-  const contextDir = join(tmpdir(), `phase2s-context-${specHash}-${Date.now()}`);
-  mkdirSync(contextDir, { recursive: true });
+  const contextDir = mkdtempSync(join(tmpdir(), 'phase2s-context-'));
 
   logger.log({
     event: 'orchestrator_started',
@@ -120,15 +119,18 @@ export async function runOrchestrator(
 
   if (levels.length === 0 && allJobs.length > 0) {
     // Defensive: no levels produced but jobs exist — likely a buildDependencyGraph edge case
-    logger.log({ event: 'goal_error', specHash, message: 'orchestrator received 0 levels for non-empty job list' } as never);
+    logger.log({ event: 'goal_error', message: 'orchestrator received 0 levels for non-empty job list' });
   }
 
   try {
     for (let levelIdx = 0; levelIdx < levels.length; levelIdx++) {
       const levelJobs = levels[levelIdx];
 
-      // Filter out skipped jobs from this level
-      const activeJobs = levelJobs.filter(job => jobStatus.get(job.id) !== 'skipped');
+      // Filter out skipped, failed, and already-completed jobs from this level
+      const activeJobs = levelJobs.filter(job => {
+        const s = jobStatus.get(job.id);
+        return s !== 'skipped' && s !== 'failed' && s !== 'completed';
+      });
 
       if (activeJobs.length === 0) {
         continue;
@@ -152,7 +154,7 @@ export async function runOrchestrator(
           }
         }
 
-        job.systemPromptPrefix = prefix;
+        job.systemPromptPrefix = truncateToBytes(prefix, SYSTEM_PROMPT_MAX_BYTES);
 
         logger.log({
           event: 'job_routed',
@@ -187,10 +189,11 @@ export async function runOrchestrator(
           // Sentinel extraction (architect only)
           const job = jobById.get(result.subtaskId);
           if (job?.role === 'architect' && result.stdout) {
-            const sentinelIdx = result.stdout.indexOf(CONTEXT_SENTINEL);
+            const sentinelIdx = result.stdout.indexOf(ARCHITECT_CONTEXT_SENTINEL);
             if (sentinelIdx !== -1) {
-              const raw = result.stdout.slice(sentinelIdx + CONTEXT_SENTINEL.length).trim();
-              const ctxPath = join(contextDir, `context-${result.subtaskId}.md`);
+              const raw = result.stdout.slice(sentinelIdx + ARCHITECT_CONTEXT_SENTINEL.length).trim();
+              // Use job.id (always a safe slug) rather than result.subtaskId (caller-supplied)
+              const ctxPath = join(contextDir, `context-${job.id}.md`);
               try {
                 writeFileSync(ctxPath, truncateToBytes(raw, CONTEXT_MAX_BYTES), 'utf8');
                 result.contextFile = ctxPath;  // expose to caller via result object

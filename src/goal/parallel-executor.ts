@@ -569,7 +569,7 @@ export async function executeOrchestratorLevel(
       });
 
       const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => reject(new Error('TIMEOUT')), WORKER_TIMEOUT_MS);
+        timeoutHandle = setTimeout(() => reject(new Error(`Worker timeout after ${WORKER_TIMEOUT_MS / 1000}s`)), WORKER_TIMEOUT_MS);
       });
 
       await Promise.race([
@@ -584,9 +584,9 @@ export async function executeOrchestratorLevel(
 
     // Commit worker changes (execFileSync avoids shell injection from job.title)
     try {
-      execSync('git add -A', { cwd: wt.worktreePath, encoding: 'utf8', stdio: 'pipe' });
+      execFileSync('git', ['add', '-A'], { cwd: wt.worktreePath, encoding: 'utf8', stdio: 'pipe' });
       try {
-        execSync('git diff --cached --quiet', { cwd: wt.worktreePath, encoding: 'utf8', stdio: 'pipe' });
+        execFileSync('git', ['diff', '--cached', '--quiet'], { cwd: wt.worktreePath, encoding: 'utf8', stdio: 'pipe' });
         // exit 0 → no staged changes, nothing to commit
       } catch {
         // exit non-zero → staged changes exist → commit
