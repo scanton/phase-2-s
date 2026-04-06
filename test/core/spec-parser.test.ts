@@ -128,4 +128,74 @@ describe("spec-parser", () => {
       expect(spec.title).toBe("Untitled Spec");
     });
   });
+
+  // -------------------------------------------------------------------------
+  // files: field (Sprint 35 — parallel execution dependency detection)
+  // -------------------------------------------------------------------------
+
+  describe("files: annotation", () => {
+    it("parses files: field as comma-separated list", () => {
+      const markdown = `# Spec: Test
+## Decomposition
+### Sub-task 1: Create API
+- **Input:** API spec
+- **Output:** Routes
+- **Success criteria:** Tests pass
+- **Files:** src/api/routes.ts, src/api/middleware.ts
+`;
+      const spec = parseSpec(markdown);
+      expect(spec.decomposition[0].files).toEqual(["src/api/routes.ts", "src/api/middleware.ts"]);
+    });
+
+    it("parses files: with backtick-wrapped paths", () => {
+      const markdown = `# Spec: Test
+## Decomposition
+### Sub-task 1: Create helper
+- **Input:** None
+- **Output:** Helper module
+- **Success criteria:** Tests pass
+- **Files:** \`src/util/helper.ts\`, \`test/util/helper.test.ts\`
+`;
+      const spec = parseSpec(markdown);
+      expect(spec.decomposition[0].files).toEqual(["src/util/helper.ts", "test/util/helper.test.ts"]);
+    });
+
+    it("omits files field when not present in spec", () => {
+      const markdown = `# Spec: Test
+## Decomposition
+### Sub-task 1: Simple task
+- **Input:** None
+- **Output:** Done
+- **Success criteria:** Works
+`;
+      const spec = parseSpec(markdown);
+      expect(spec.decomposition[0].files).toBeUndefined();
+    });
+
+    it("handles semicolon-separated file lists", () => {
+      const markdown = `# Spec: Test
+## Decomposition
+### Sub-task 1: Multi-file
+- **Input:** None
+- **Output:** Done
+- **Success criteria:** Works
+- **Files:** src/a.ts; src/b.ts; src/c.ts
+`;
+      const spec = parseSpec(markdown);
+      expect(spec.decomposition[0].files).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+    });
+
+    it("handles File: (singular) annotation", () => {
+      const markdown = `# Spec: Test
+## Decomposition
+### Sub-task 1: Single file
+- **Input:** None
+- **Output:** Done
+- **Success criteria:** Works
+- **File:** src/single.ts
+`;
+      const spec = parseSpec(markdown);
+      expect(spec.decomposition[0].files).toEqual(["src/single.ts"]);
+    });
+  });
 });

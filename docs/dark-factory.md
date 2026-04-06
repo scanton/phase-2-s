@@ -406,13 +406,62 @@ This may take a while and consume significant ChatGPT usage.
 
 **Acceptance criteria should be independently testable.** Each criterion should describe something you can check mechanically. "The feature works" is not a criterion. "npm test passes after implementation" is.
 
-**Sub-tasks should be sequentially independent.** Sub-task 2 can depend on sub-task 1's output, but they shouldn't both try to modify the same file at the same time. The executor runs them in order.
+**Declare file ownership for parallelism.** When running with `--parallel`, the dependency graph is built from which files each sub-task touches. Add `**Files:** src/foo.ts, src/bar.ts` to a sub-task to declare this explicitly — it overrides the regex heuristic and prevents false conflicts. Sub-tasks that share no files run in parallel; sub-tasks that share files are serialized automatically.
 
 **Eval command should be deterministic.** `npm test` is good. A test that flakes randomly will cause false failures and unnecessary retries. Fix flaky tests before running `phase2s goal`.
 
 **Smaller specs work better.** A spec with 2-3 sub-tasks and 3-4 criteria is much more reliable than one with 8 sub-tasks and 12 criteria. Break large features into multiple specs and run them sequentially.
 
 **Use the Constraint Architecture section.** "Must Do" and "Cannot Do" are injected into every sub-task's prompt. If you have an architectural requirement (use this library, don't touch that file), put it here.
+
+---
+
+## Parallel execution
+
+When your spec has 3 or more independent sub-tasks, Phase2S can run them in parallel inside git worktrees — each worker gets its own isolated branch, implements its sub-task, and merges back at the level boundary.
+
+```bash
+# Auto-detected (3+ independent subtasks)
+phase2s goal my-spec.md
+
+# Force parallel (any spec)
+phase2s goal my-spec.md --parallel
+
+# Force sequential (opt out)
+phase2s goal my-spec.md --sequential
+
+# Control concurrency (default 3, max 8)
+phase2s goal my-spec.md --parallel --workers 5
+
+# Live tmux dashboard (requires tmux)
+phase2s goal my-spec.md --parallel --dashboard
+```
+
+How it works:
+
+1. Phase2S builds a dependency graph from the `**Files:**` annotations in your spec (or infers them from descriptions with regex).
+2. It groups independent sub-tasks into execution levels via topological sort.
+3. Each level's sub-tasks run in parallel in separate git worktrees. Workers get a git diff summary of what prior levels changed, so each worker understands what's already been built.
+4. At each level boundary, workers merge back into the main branch in spec order. If two workers modified the same file in conflicting ways, the merge halts with a clear conflict report.
+
+The `phase2s report` output includes per-level timing and a wall-clock vs sequential estimate with savings:
+
+```
+Goal: my-spec.md (parallel)
+
+  Level 0 (3 workers)
+    ✓ Create API routes     (4m 12s)  [worker 0]
+    ✓ Add database schema   (3m 44s)  [worker 1]
+    ✓ Write unit tests      (2m 58s)  [worker 2]
+  Level merge: 12s
+
+  Level 1 (1 worker)
+    ✓ Wire everything       (6m 03s)
+
+✓ Goal complete — 1 attempt — 11m 07s (est. 17m sequential — 35% faster)
+```
+
+Sub-tasks that cannot be parallelized (they share files or form a dependency chain) are automatically serialized. Phase2S degrades gracefully: if a cycle is detected in the dependency graph, the whole spec runs sequentially without error.
 
 ---
 
@@ -444,7 +493,6 @@ That's it. Spec in. Feature out.
 
 ## What `phase2s goal` can't do yet
 
-- **Parallel sub-tasks.** Sub-tasks run sequentially. Parallel execution is deferred because concurrent agents writing to the same files cause conflicts.
 - **Multi-repo changes.** The executor works in the current directory only.
 - **Non-deterministic evals.** If your test suite is flaky or non-deterministic, retries won't be reliable.
 - **Specs larger than the context window.** Very long specs (thousands of lines) may hit model context limits. Keep specs focused.

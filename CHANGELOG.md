@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.12.0 — 2026-04-05
+
+Parallel dark factory execution. Spec-aware parallelism with dependency analysis, git worktrees, and optional tmux dashboard.
+
+### What's new
+
+- **Parallel execution** — `phase2s goal --parallel spec.md` or auto-detected when 3+ independent subtasks. Subtasks run in parallel inside git worktrees, merged at level boundaries. Max 3 default workers (`--workers N` to override, 1-8 range).
+- **Dependency graph** — Hybrid file-reference detection: explicit `files:` annotation in spec (highest priority) or regex heuristic from subtask descriptions. Kahn's algorithm for topological sort with cycle detection.
+- **Auto-detect** — When a spec has 3+ independent subtasks, parallel mode is enabled automatically. Use `--sequential` to force sequential mode.
+- **Dry-run visualization** — `phase2s goal --parallel --dry-run spec.md` shows the execution plan as an ASCII diagram with levels and dependencies.
+- **Level context injection** — Each parallel worker receives a git diff summary of what prior levels changed, compensating for the loss of shared conversation history.
+- **Merge conflict detection** — Same-file conflicts halt the pipeline with clear error reporting. Different-file changes merge cleanly.
+- **tmux dashboard** (optional) — `--dashboard` flag shows live progress per worker in tmux panes.
+- **Parallel run reports** — `phase2s report` shows per-level timing, merge timing, and wall-clock savings vs sequential estimate.
+- **Resume** — `--resume --parallel` resumes from the last completed level.
+- **Doctor checks** — `phase2s doctor` now checks for tmux and git worktree support.
+
+### Spec format addition
+
+Subtasks can now include an optional `**Files:**` annotation for explicit dependency declaration:
+
+```markdown
+### Sub-task 1: Create API routes
+- **Input:** API spec
+- **Output:** Route handlers
+- **Success criteria:** Tests pass
+- **Files:** src/api/routes.ts, src/api/middleware.ts
+```
+
+When present, `files:` overrides the regex heuristic for dependency analysis.
+
+### Stats
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.12.0 |
+| Tests | 646 (+51) |
+| New files | 5 (src/goal/) |
+| Modified files | 7 |
+
 ## v1.11.0 — 2026-04-05
 
 MiniMax provider + README refresh (bear mascot removed).

@@ -27,11 +27,14 @@ import { Agent } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { parseSpec, type Spec, type SubTask } from "../core/spec-parser.js";
-import { computeSpecHash, readState, writeState, clearState, type GoalState } from "../core/state.js";
+import { computeSpecHash, readState, writeState, clearState, type GoalState, type LevelWorkerState } from "../core/state.js";
 import { RunLogger } from "../core/run-logger.js";
 import { sendNotification, buildNotifyPayload, type NotifyOptions } from "../core/notify.js";
 import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
+import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-graph.js";
+import { executeParallel, type ParallelResult } from "../goal/parallel-executor.js";
+import { cleanAllWorktrees } from "../goal/merge-strategy.js";
 
 /** Cap on bytes stored for failureContext per sub-task. */
 const FAILURE_CONTEXT_MAX_BYTES = 4096;
@@ -48,6 +51,17 @@ export interface GoalOptions {
   notify?: boolean | NotifyOptions;
   /** If true, print the decomposition tree and exit without making any LLM calls. */
   dryRun?: boolean;
+  // -- Parallel execution options --
+  /** Enable parallel execution. Auto-detected when 3+ independent subtasks. */
+  parallel?: boolean;
+  /** Force sequential execution (overrides auto-detect). */
+  sequential?: boolean;
+  /** Max concurrent workers per level (1-8, default 3). */
+  workers?: number;
+  /** Enable tmux dashboard for visual progress. */
+  dashboard?: boolean;
+  /** Remove stale worktrees before starting. */
+  clean?: boolean;
 }
 
 export interface GoalResult {
@@ -89,10 +103,43 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
   const startMs = Date.now();
 
+  // -------------------------------------------------------------------------
+  // Parallel detection: analyze dependencies to determine execution mode.
+  // -------------------------------------------------------------------------
+  const depResult = spec.decomposition.length >= 2
+    ? buildDependencyGraph(spec.decomposition)
+    : null;
+
+  const independentCount = depResult
+    ? depResult.levels.filter(l => l.subtaskIndices.length > 1).reduce((sum, l) => sum + l.subtaskIndices.length, 0)
+    : 0;
+
+  // Auto-detect: parallel when 3+ independent subtasks, unless --sequential
+  const useParallel = options.sequential
+    ? false
+    : options.parallel
+      ? true
+      : (independentCount >= 3 && !depResult?.hasCycles);
+
+  const maxWorkers = Math.max(1, Math.min(8, options.workers ?? 3));
+
+  // Clean stale worktrees if requested
+  if (options.clean) {
+    cleanAllWorktrees(process.cwd());
+  }
+
   // Dry-run: print the decomposition tree and exit immediately — zero LLM calls,
   // zero file handles opened. Must be before RunLogger construction.
   if (options.dryRun) {
     printDryRunTree(spec);
+    // If parallel, also show the dependency graph visualization
+    if (depResult && useParallel) {
+      console.log("\n" + formatExecutionLevels(depResult, spec.decomposition));
+    } else if (depResult) {
+      console.log("\nParallel analysis: " + (depResult.hasCycles
+        ? "cycles detected, would run sequentially"
+        : `${independentCount} independent subtask${independentCount !== 1 ? "s" : ""} (need 3+ for auto-parallel)`));
+    }
     return {
       success: true,
       attempts: 0,
@@ -135,6 +182,8 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     subTaskCount: spec.decomposition.length,
     maxAttempts,
     resuming: resume,
+    parallel: useParallel,
+    levels: depResult?.levels.length,
   });
 
   console.log(`\nGoal executor: ${spec.title}`);
@@ -142,6 +191,9 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   console.log(`Sub-tasks: ${spec.decomposition.length}`);
   console.log(`Acceptance criteria: ${spec.acceptanceCriteria.length}`);
   console.log(`Max attempts: ${maxAttempts}`);
+  if (useParallel && depResult) {
+    console.log(chalk.cyan(`Mode: parallel (${depResult.levels.length} levels, max ${maxWorkers} workers)`));
+  }
   if (resume) {
     const doneCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
     console.log(`Resuming: ${doneCount}/${spec.decomposition.length} sub-tasks already completed`);
@@ -228,7 +280,103 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   }
 
   // -------------------------------------------------------------------------
-  // Main execution loop
+  // PARALLEL execution path
+  // -------------------------------------------------------------------------
+  if (useParallel && depResult) {
+    console.log(chalk.cyan("\nStarting parallel execution..."));
+
+    // Mark state as parallel
+    state.parallel = true;
+    state.completedLevels = state.completedLevels ?? [];
+    writeState(specDir, specHash, state);
+
+    try {
+      const parallelResult = await executeParallel(depResult, {
+        maxWorkers,
+        dashboard: !!options.dashboard,
+        spec,
+        specDir,
+        specHash,
+        state,
+        logger,
+        attempt: 1,
+        satoriRetries,
+        satoriModel,
+      });
+
+      // After parallel execution, run eval command
+      console.log(chalk.cyan("\nRunning evaluation..."));
+      logger.log({ event: "eval_started", command: spec.evalCommand });
+      const evalOutput = await runCommand(spec.evalCommand);
+      logger.log({ event: "eval_completed", output: evalOutput.slice(0, 4096) });
+
+      // Check criteria
+      const evalAgent = new Agent({ config, learnings: learningsStr });
+      const criteriaResults = await checkCriteria(spec.acceptanceCriteria, evalOutput, evalAgent);
+      const failing = Object.entries(criteriaResults).filter(([, v]) => !v).map(([k]) => k);
+
+      logger.log({ event: "criteria_checked", results: criteriaResults, failing });
+
+      const success = failing.length === 0;
+
+      logger.log({
+        event: "goal_completed",
+        success,
+        attempts: 1,
+        parallel: true,
+        wallClockMs: parallelResult.totalDurationMs,
+        sequentialEstimateMs: parallelResult.sequentialEstimateMs,
+      });
+
+      // Print summary
+      if (success) {
+        console.log(chalk.green("\nAll acceptance criteria passed."));
+      } else {
+        console.log(chalk.red(`\n${failing.length} acceptance criteria failed:`));
+        for (const f of failing) console.log(chalk.red(`  - ${f}`));
+      }
+
+      const savings = parallelResult.sequentialEstimateMs > 0
+        ? Math.round((1 - parallelResult.totalDurationMs / parallelResult.sequentialEstimateMs) * 100)
+        : 0;
+      console.log(chalk.cyan(`\nParallel execution: ${(parallelResult.totalDurationMs / 1000).toFixed(1)}s wall clock`));
+      if (savings > 0) {
+        console.log(chalk.cyan(`Sequential estimate: ${(parallelResult.sequentialEstimateMs / 1000).toFixed(1)}s (~${savings}% faster)`));
+      }
+
+      const result: GoalResult = {
+        success,
+        attempts: 1,
+        criteriaResults,
+        runLogPath: logger.close(),
+        summary: success
+          ? `All criteria passed (parallel, ${parallelResult.levels.length} levels, ${savings}% faster).`
+          : `${failing.length} criteria failed after parallel execution.`,
+        durationMs: Date.now() - startMs,
+      };
+
+      await maybeNotify(options, config, result, basename(specPath));
+      return result;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`\nParallel execution error: ${message}`));
+      logger.log({ event: "goal_error", message });
+
+      const result: GoalResult = {
+        success: false,
+        attempts: 1,
+        criteriaResults: {},
+        runLogPath: logger.close(),
+        summary: `Parallel execution failed: ${message}`,
+        durationMs: Date.now() - startMs,
+      };
+      await maybeNotify(options, config, result, basename(specPath));
+      return result;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // SEQUENTIAL execution loop (original behavior)
   // -------------------------------------------------------------------------
   const agent = new Agent({ config, learnings: learningsStr });
 
