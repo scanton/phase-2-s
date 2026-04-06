@@ -34,7 +34,8 @@ import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
 import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-graph.js";
 import { executeParallel, type ParallelResult } from "../goal/parallel-executor.js";
-import { cleanAllWorktrees } from "../goal/merge-strategy.js";
+import { cleanAllWorktrees, getHeadSha, getDiff } from "../goal/merge-strategy.js";
+import { judgeRun } from "../eval/judge.js";
 
 /** Cap on bytes stored for failureContext per sub-task. */
 const FAILURE_CONTEXT_MAX_BYTES = 4096;
@@ -62,6 +63,8 @@ export interface GoalOptions {
   dashboard?: boolean;
   /** Remove stale worktrees before starting. */
   clean?: boolean;
+  /** Run spec eval judge after the run and emit eval_judged to the log. */
+  judge?: boolean;
 }
 
 export interface GoalResult {
@@ -100,6 +103,10 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   const spec = parseSpec(markdown);
   const maxAttempts = Math.max(1, parseInt(options.maxAttempts ?? "3", 10) || 3);
   const resume = !!options.resume;
+
+  // Capture HEAD SHA before any agent execution — used for --judge diff boundary
+  const cwd = process.cwd();
+  const baseRef = options.judge ? getHeadSha(cwd) : "";
 
   const startMs = Date.now();
 
@@ -344,6 +351,9 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         console.log(chalk.cyan(`Sequential estimate: ${(parallelResult.sequentialEstimateMs / 1000).toFixed(1)}s (~${savings}% faster)`));
       }
 
+      // Opt-in spec eval judge
+      await maybeJudge(options, specPath, baseRef, cwd, config, specHash, logger);
+
       const result: GoalResult = {
         success,
         attempts: 1,
@@ -510,6 +520,8 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       // Clean completion: remove state so stale state doesn't block future runs.
       clearState(specDir, specHash);
       logger.log({ event: "goal_completed", success: true, attempts: attempt });
+      // Opt-in spec eval judge
+      await maybeJudge(options, specPath, baseRef, cwd, config, specHash, logger);
       const result: GoalResult = {
         success: true,
         attempts: attempt,
@@ -538,6 +550,8 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     console.log(`  ✗ ${criterion}`);
   }
   logger.log({ event: "goal_completed", success: false, attempts: maxAttempts });
+  // Opt-in spec eval judge (even on failure — shows partial coverage)
+  await maybeJudge(options, specPath, baseRef, cwd, config, specHash, logger);
   const failResult: GoalResult = {
     success: false,
     attempts: maxAttempts,
@@ -548,6 +562,46 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   };
   await maybeNotify(options, config, failResult, basename(specPath));
   return failResult;
+}
+
+// ---------------------------------------------------------------------------
+// Judge helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the spec eval judge (--judge flag). Emits eval_judged to the logger.
+ * Never throws — judge errors are swallowed to avoid failing a successful goal run.
+ */
+async function maybeJudge(
+  options: GoalOptions,
+  specPath: string,
+  baseRef: string,
+  cwd: string,
+  config: import("../core/config.js").Config,
+  specHash: string,
+  logger: RunLogger,
+): Promise<void> {
+  if (!options.judge) return;
+  try {
+    const diff = getDiff(baseRef, "HEAD", cwd);
+    const result = await judgeRun(specPath, diff, config);
+    logger.log({
+      event: "eval_judged",
+      runId: specHash,
+      ts: new Date().toISOString(),
+      score: result.score,
+      verdict: result.verdict,
+      criteria: result.criteria,
+      diffStats: result.diffStats,
+    });
+    if (result.score !== null) {
+      console.log(chalk.cyan(`\nJudge score: ${result.score}/10 — ${result.verdict}`));
+    } else {
+      console.log(chalk.dim(`\nJudge: ${result.verdict}`));
+    }
+  } catch {
+    // Never surface judge errors to the caller
+  }
 }
 
 // ---------------------------------------------------------------------------

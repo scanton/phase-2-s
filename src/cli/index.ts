@@ -199,7 +199,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--workers <n>", "Max concurrent workers per level (1-8, default 3)")
     .option("--dashboard", "Show live tmux dashboard during parallel execution")
     .option("--clean", "Remove stale worktrees before starting")
-    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean; parallel?: boolean; sequential?: boolean; workers?: string; dashboard?: boolean; clean?: boolean }) => {
+    .option("--judge", "Run spec eval judge after completion and emit eval_judged to the log")
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean; parallel?: boolean; sequential?: boolean; workers?: string; dashboard?: boolean; clean?: boolean; judge?: boolean }) => {
       const { runGoal } = await import("./goal.js");
       try {
         const result = await runGoal(specFile, {
@@ -213,9 +214,52 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           workers: cmdOpts.workers ? parseInt(cmdOpts.workers, 10) : undefined,
           dashboard: cmdOpts.dashboard,
           clean: cmdOpts.clean,
+          judge: cmdOpts.judge,
         });
         if (!result.dryRun && result.runLogPath) console.log(`Run log: ${result.runLogPath}`);
         process.exit(result.success ? 0 : 1);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
+  // Spec eval judge — standalone diff-aware coverage map
+  program
+    .command("judge <spec-file>")
+    .description("Judge a spec run: compare acceptance criteria against a git diff and produce a coverage score")
+    .option("--diff <file>", "Path to a diff file (alternatively pipe diff to stdin)")
+    .action(async (specFile: string, cmdOpts: { diff?: string }) => {
+      const { judgeRun, formatJudgeReport } = await import("../eval/judge.js");
+      const { loadConfig } = await import("../core/config.js");
+      const { basename } = await import("node:path");
+      const { readFileSync } = await import("node:fs");
+
+      let diff: string;
+      if (cmdOpts.diff) {
+        try {
+          diff = readFileSync(cmdOpts.diff, "utf8");
+        } catch (err) {
+          console.error(`Error reading diff file: ${err instanceof Error ? err.message : String(err)}`);
+          console.error("Usage: phase2s judge <spec.md> --diff <file>");
+          process.exit(1);
+        }
+      } else if (!process.stdin.isTTY) {
+        // Read from stdin
+        diff = readFileSync("/dev/stdin", "utf8");
+      } else {
+        console.error("Error: provide a diff via --diff <file> or pipe to stdin");
+        console.error("Usage: phase2s judge <spec.md> --diff <file>");
+        console.error("       git diff HEAD~1 | phase2s judge <spec.md>");
+        process.exit(1);
+      }
+
+      try {
+        const config = await loadConfig();
+        const result = await judgeRun(specFile, diff, config);
+        console.log(formatJudgeReport(basename(specFile), result));
+        // Exit 1 if score < 7 (or 0 if score >= 7 or score is null)
+        if (result.score !== null && result.score < 7) process.exit(1);
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err));
         process.exit(1);
@@ -344,7 +388,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp goal report init upgrade lint doctor completion" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run skills mcp goal judge report init upgrade lint doctor completion" -- "\$cur"))
     return
   fi
 

@@ -159,3 +159,50 @@ describe("formatRunReport", () => {
     expect(output).not.toContain("Attempt");
   });
 });
+
+// ---------------------------------------------------------------------------
+// eval_judged event — judge score block in report
+// ---------------------------------------------------------------------------
+
+describe("formatRunReport — eval_judged integration", () => {
+  const JUDGE_EVENT: TimestampedEvent = {
+    event: "eval_judged",
+    runId: "abc123",
+    ts: ts(43000),
+    score: 7.5,
+    verdict: "Core timeout mechanism addressed correctly. SIGINT cleanup missing.",
+    criteria: [
+      { text: "worker timeout emits status: failed", status: "met", evidence: "src/goal/parallel-executor.ts:247", confidence: 0.9 },
+      { text: "clearTimeout called on completion", status: "partial", evidence: "src/goal/parallel-executor.ts:261", confidence: 0.7 },
+      { text: "stash restored on SIGINT", status: "missed", evidence: "(none found in diff)", confidence: 0.95 },
+    ],
+    diffStats: { filesChanged: 3, insertions: 47, deletions: 12 },
+  };
+
+  it("renders judge score block when eval_judged event is present", () => {
+    const events: TimestampedEvent[] = [
+      ...MINIMAL_EVENTS,
+      JUDGE_EVENT,
+    ];
+    const report = buildRunReport(events);
+    expect(report.judgeResult).toBeDefined();
+    expect(report.judgeResult?.score).toBe(7.5);
+
+    const output = formatRunReport(report);
+    expect(output).toContain("JUDGE REPORT");
+    expect(output).toContain("7.5 / 10");
+    expect(output).toContain("worker timeout emits status: failed");
+    expect(output).toContain("Core timeout mechanism addressed correctly");
+  });
+
+  it("renders gracefully when eval_judged event is absent — no judge block, no crash", () => {
+    // MINIMAL_EVENTS has no eval_judged
+    const report = buildRunReport(MINIMAL_EVENTS);
+    expect(report.judgeResult).toBeUndefined();
+
+    const output = formatRunReport(report);
+    expect(output).not.toContain("JUDGE REPORT");
+    // Report still renders normally
+    expect(output).toContain("Goal complete");
+  });
+});

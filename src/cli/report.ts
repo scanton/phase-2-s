@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import chalk from "chalk";
 import type { RunEvent } from "../core/run-logger.js";
+import { formatJudgeReport, type JudgeResult } from "../eval/judge.js";
 
 // ---------------------------------------------------------------------------
 // Structured report types
@@ -60,6 +61,8 @@ export interface RunReport {
   levels?: LevelReport[];
   wallClockMs?: number;
   sequentialEstimateMs?: number;
+  // Spec eval judge result (present when --judge was used)
+  judgeResult?: JudgeResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +200,15 @@ export function buildRunReport(events: Array<RunEvent & { ts: string }>): RunRep
         break;
       }
 
+      case "eval_judged":
+        report.judgeResult = {
+          score: event.score,
+          verdict: event.verdict,
+          criteria: event.criteria,
+          diffStats: event.diffStats,
+        };
+        break;
+
       default:
         // plan_review_started, eval_completed, worker_*, merge_* — no action needed for report
         break;
@@ -287,6 +299,12 @@ export function formatRunReport(report: RunReport): string {
         lines.push(chalk.cyan(`    Saved: ~${savings}%`));
       }
     }
+  }
+
+  // Judge score block (only when eval_judged event is present)
+  if (report.judgeResult) {
+    lines.push("");
+    lines.push(formatJudgeReport(basename(report.specFile), report.judgeResult));
   }
 
   return lines.join("\n");

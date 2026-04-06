@@ -33,7 +33,17 @@ export type RunEvent =
   | { event: "worker_started"; level: number; index: number; name: string; worktreePath: string }
   | { event: "worker_completed"; level: number; index: number; status: "passed" | "failed"; durationMs: number }
   | { event: "merge_started"; level: number; index: number }
-  | { event: "merge_completed"; level: number; index: number; status: "success" | "conflict"; conflictFiles?: string[] };
+  | { event: "merge_completed"; level: number; index: number; status: "success" | "conflict"; conflictFiles?: string[] }
+  // Spec eval judge
+  | {
+      event: "eval_judged";
+      runId: string;               // specHash — for v1.15.0 regression diffing
+      ts: string;
+      score: number | null;
+      verdict: string;
+      criteria: Array<{ text: string; status: "met" | "partial" | "missed"; evidence: string; confidence: number }>;
+      diffStats: { filesChanged: number; insertions: number; deletions: number };
+    };
 
 // ---------------------------------------------------------------------------
 // RunLogger

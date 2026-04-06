@@ -232,14 +232,15 @@ export function symlinkNodeModules(cwd: string, worktreePath: string): boolean {
 
 /**
  * Stash uncommitted changes if the working tree is dirty.
+ * Uses a named stash "phase2s-<runId>" to avoid index-based ambiguity.
  * Returns true if a stash was created.
  */
-export function stashIfDirty(cwd: string): boolean {
+export function stashIfDirty(cwd: string, runId: string): boolean {
   try {
     const status = execSync("git status --porcelain", { cwd, encoding: "utf8" }).trim();
     if (!status) return false;
 
-    execSync("git stash push -m 'phase2s-parallel-auto-stash'", { cwd, stdio: "pipe" });
+    execSync(`git stash push --message "phase2s-${runId}"`, { cwd, stdio: "pipe" });
     return true;
   } catch {
     return false;
@@ -247,16 +248,43 @@ export function stashIfDirty(cwd: string): boolean {
 }
 
 /**
- * Pop the auto-stash if one was created.
+ * Pop the Phase2S stash created by stashIfDirty.
+ * Finds the entry by name and pops it by ref — safe even if the user
+ * has pre-existing stash entries at lower indices.
  */
-export function unstash(cwd: string): void {
+export function unstash(cwd: string, runId: string): void {
   try {
-    const list = execSync("git stash list", { cwd, encoding: "utf8" });
-    if (list.includes("phase2s-parallel-auto-stash")) {
-      execSync("git stash pop", { cwd, stdio: "pipe" });
+    const target = `phase2s-${runId}`;
+    const list = execSync('git stash list --format="%gd %s"', { cwd, encoding: "utf8" });
+    for (const line of list.trim().split("\n")) {
+      if (line.includes(target)) {
+        // line format: "stash@{N} On branch: phase2s-<runId>" or similar
+        const ref = line.split(" ")[0]; // e.g. stash@{1}
+        execSync(`git stash pop ${ref}`, { cwd, stdio: "pipe" });
+        return;
+      }
     }
   } catch {
     // Ignore stash errors
+  }
+}
+
+/**
+ * Return the current HEAD commit SHA.
+ */
+export function getHeadSha(cwd: string): string {
+  return execSync("git rev-parse HEAD", { cwd, encoding: "utf8" }).trim();
+}
+
+/**
+ * Return the git diff between two refs as a string.
+ * Returns empty string if the diff command fails (e.g. no commits yet).
+ */
+export function getDiff(baseRef: string, headRef: string, cwd: string): string {
+  try {
+    return execSync(`git diff ${baseRef} ${headRef}`, { cwd, encoding: "utf8" });
+  } catch {
+    return "";
   }
 }
 

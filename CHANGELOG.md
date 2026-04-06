@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.14.0 — 2026-04-06
+
+P1 bug fixes for parallel dark factory + spec eval judge.
+
+### What's new
+
+- **Spec Eval Judge** (`src/eval/judge.ts`) — `judgeRun(specPath, diff, config)` reads a spec's acceptance criteria, compares against a git diff, and produces a per-criterion coverage map with a derived 0-10 score. Score formula: `(met×1.0 + partial×0.5) / total × 10`. Never throws, returns `score: null` on any failure. Diff truncated at 40,000 chars to prevent token limit errors.
+- **`phase2s judge <spec.md> --diff <file>`** — Standalone CLI subcommand. Prints a JUDGE REPORT block to stdout. Exits 1 if score < 7 (for CI integration). Also accepts diff via stdin: `git diff HEAD~1 | phase2s judge spec.md`.
+- **`phase2s goal --judge`** — Runs the judge automatically after each attempt. Captures `baseRef` before any agent execution, computes `git diff baseRef..HEAD`, calls `judgeRun`, and logs an `eval_judged` JSONL event.
+- **`eval_judged` event in run logs** — New event type in `RunEvent` union: `score`, `verdict`, `criteria[]`, `diffStats`. Rendered as a JUDGE REPORT block by `phase2s report`.
+- **Fix: timer leak in `executeWorker()`** — `clearTimeout(timeoutHandle)` now always called in `finally` block. Previous: successful workers left a live 10-minute timer, delaying `process.exit` in CI.
+- **Fix: `unstash()` popping wrong stash entry** — Now uses named stash (`git stash push --message "phase2s-<runId>"`) and pops by ref (`stash@{N}`) instead of always popping `stash@{0}`. User's pre-existing stash entries are never touched.
+- **Fix: concurrent `git worktree prune` race** — Promise-chain mutex (`Map<string, Promise<void>>`) serializes prune+add per repo. Multiple workers racing on the same repo no longer cause one to fail with "worktree already exists".
+
+### Stats
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.14.0 |
+| Tests | 702 (+41) |
+| New files | 4 (`src/eval/judge.ts`, `test/eval/judge.test.ts`, `test/cli/goal-judge.test.ts`, `test/cli/judge-cli.test.ts`) |
+| Modified files | 6 (`parallel-executor.ts`, `merge-strategy.ts`, `run-logger.ts`, `goal.ts`, `index.ts`, `report.ts`) |
+
 ## v1.13.0 — 2026-04-05
 
 Integration test coverage for the parallel infrastructure + `--resume --parallel` hardening.
