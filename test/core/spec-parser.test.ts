@@ -199,3 +199,113 @@ describe("spec-parser", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Role annotation parsing
+// ---------------------------------------------------------------------------
+
+describe("Role annotation parsing", () => {
+  it("parses **Role:** architect", () => {
+    const markdown = `# Spec: Role Test
+## Decomposition
+### Sub-task 1: Design schema
+- **Input:** None
+- **Output:** Schema
+- **Success criteria:** Done
+- **Role:** architect
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].role).toBe("architect");
+  });
+
+  it("parses **Role:** tester", () => {
+    const markdown = `# Spec: Role Test
+## Decomposition
+### Sub-task 1: Write tests
+- **Input:** None
+- **Output:** Tests
+- **Success criteria:** Done
+- **Role:** tester
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].role).toBe("tester");
+  });
+
+  it("parses **Role:** reviewer", () => {
+    const markdown = `# Spec: Role Test
+## Decomposition
+### Sub-task 1: Review code
+- **Input:** None
+- **Output:** Review
+- **Success criteria:** Done
+- **Role:** reviewer
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].role).toBe("reviewer");
+  });
+
+  it("parses **Role:** implementer", () => {
+    const markdown = `# Spec: Role Test
+## Decomposition
+### Sub-task 1: Implement feature
+- **Input:** None
+- **Output:** Code
+- **Success criteria:** Done
+- **Role:** implementer
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].role).toBe("implementer");
+  });
+
+  it("parses role case-insensitively (ARCHITECT → architect)", () => {
+    const markdown = `# Spec: Role Test
+## Decomposition
+### Sub-task 1: Design something
+- **Input:** None
+- **Output:** Design
+- **Success criteria:** Done
+- **Role:** ARCHITECT
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].role).toBe("architect");
+  });
+
+  it("no role annotation → role === undefined", () => {
+    const markdown = `# Spec: Role Test
+## Decomposition
+### Sub-task 1: No role here
+- **Input:** None
+- **Output:** Output
+- **Success criteria:** Done
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].role).toBeUndefined();
+  });
+
+  it("multiple subtasks with different roles parsed correctly", () => {
+    const markdown = `# Spec: Multi Role
+## Decomposition
+### Sub-task 1: Design
+- **Input:** Req
+- **Output:** Design
+- **Success criteria:** OK
+- **Role:** architect
+
+### Sub-task 2: Implement
+- **Input:** Design
+- **Output:** Code
+- **Success criteria:** OK
+- **Role:** implementer
+
+### Sub-task 3: Test
+- **Input:** Code
+- **Output:** Tests
+- **Success criteria:** OK
+- **Role:** tester
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].role).toBe("architect");
+    expect(spec.decomposition[1].role).toBe("implementer");
+    expect(spec.decomposition[2].role).toBe("tester");
+  });
+});
