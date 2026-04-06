@@ -230,6 +230,47 @@ export function checkWorkDir(dirPath: string): CheckResult {
   }
 }
 
+/**
+ * Check if tmux is available (for --dashboard flag on parallel execution).
+ * This check is advisory — tmux is optional.
+ */
+export function checkTmux(): CheckResult {
+  try {
+    const result = spawnSync("which", ["tmux"], { encoding: "utf8" });
+    if (result?.status === 0) {
+      return { name: "tmux", ok: true, detail: "available (for --dashboard)" };
+    }
+  } catch {
+    // spawnSync can fail in sandboxed environments
+  }
+  return {
+    name: "tmux",
+    ok: false,
+    detail: "not found (optional — needed for --dashboard flag on parallel execution)",
+    fix: "Install tmux: brew install tmux (macOS) or apt install tmux (Linux)",
+  };
+}
+
+/**
+ * Check if git worktrees are supported (for parallel execution).
+ */
+export function checkGitWorktree(): CheckResult {
+  try {
+    const result = spawnSync("git", ["worktree", "list"], { encoding: "utf8" });
+    if (result?.status === 0) {
+      return { name: "git worktree", ok: true, detail: "supported" };
+    }
+  } catch {
+    // spawnSync can fail in sandboxed environments
+  }
+  return {
+    name: "git worktree",
+    ok: false,
+    detail: "not available",
+    fix: "Ensure git >= 2.5 is installed for parallel execution support",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // runDoctor — entry point
 // ---------------------------------------------------------------------------
@@ -260,6 +301,8 @@ export async function runDoctor(): Promise<void> {
     checkAuth(provider, existingConfig),
     checkConfigFile(configPath),
     checkWorkDir(resolve(".phase2s")),
+    checkTmux(),
+    checkGitWorktree(),
   ];
 
   // Filter out N/A checks (provider binary for non-binary providers)

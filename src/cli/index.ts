@@ -194,7 +194,12 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--review-before-run", "Run adversarial review on spec before executing")
     .option("--notify", "Send a notification when the run completes (macOS + optional Slack webhook)")
     .option("--dry-run", "Parse and display the spec decomposition tree without running anything")
-    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean }) => {
+    .option("--parallel", "Enable parallel execution of independent subtasks")
+    .option("--sequential", "Force sequential execution (overrides auto-detect)")
+    .option("--workers <n>", "Max concurrent workers per level (1-8, default 3)")
+    .option("--dashboard", "Show live tmux dashboard during parallel execution")
+    .option("--clean", "Remove stale worktrees before starting")
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean; parallel?: boolean; sequential?: boolean; workers?: string; dashboard?: boolean; clean?: boolean }) => {
       const { runGoal } = await import("./goal.js");
       try {
         const result = await runGoal(specFile, {
@@ -203,6 +208,11 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           reviewBeforeRun: cmdOpts.reviewBeforeRun,
           notify: cmdOpts.notify,
           dryRun: cmdOpts.dryRun,
+          parallel: cmdOpts.parallel,
+          sequential: cmdOpts.sequential,
+          workers: cmdOpts.workers ? parseInt(cmdOpts.workers, 10) : undefined,
+          dashboard: cmdOpts.dashboard,
+          clean: cmdOpts.clean,
         });
         if (!result.dryRun && result.runLogPath) console.log(`Run log: ${result.runLogPath}`);
         process.exit(result.success ? 0 : 1);
