@@ -15,6 +15,41 @@
 
 ---
 
+## Sprint 36 (next) — Parallel Dark Factory: Test Coverage + Resume Hardening
+
+> **Priority: P0 — ship immediately after v1.12.0 lands.**
+> These gaps were identified in the v1.12.0 pre-landing review. All are integration-test shaped (real temp git repos, not unit mocks).
+
+- [ ] **Test `executeParallel()` behavior** — timeout rejection → `status: "failed"`, level failure halts subsequent levels, `completedLevels` skipped on resume, `unstash` called even when a level throws (test the `finally` block). Currently zero behavior tests for the function that runs 90% of parallel execution.
+- [ ] **Test `mergeWorktree()` conflict path** — create two branches modifying the same file, verify conflict detection returns `status: "conflict"` with correct `conflictFiles`, verify `git merge --abort` restores clean state.
+- [ ] **Test `stashIfDirty` / `unstash`** — dirty working tree → stash created → `unstash` pops it. Clean tree → no stash created.
+- [ ] **Test `buildLevelContext()` success path** — real temp repo with two commits; verify returned string contains changed filenames, "N files changed" prose, and truncates correctly at 4096 bytes.
+- [ ] **Test `updateWorkerPane` / `updateStatusBar`** — inactive dashboard (no-op), text with double-quote characters (escape verification).
+- [ ] **Harden `--resume` with parallel** — `makeWorktreeSlug` uses `Math.random()`, so existing worktrees can't be located by name on resume. Populate `LevelWorkerState.worktreePath` when creating worktrees so resume can detect and reuse them. Consider deterministic slug (specHash + index) as an option.
+
+---
+
+## Sprint 35 (done) — Parallel Dark Factory (v1.12.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.12.0 |
+| Tests | 646 (+51) |
+
+- [x] **Parallel execution** — `phase2s goal --parallel` or auto-detected. Git worktrees, max 3 workers.
+- [x] **Dependency graph** — Hybrid (explicit `files:` + regex). Kahn's algorithm, cycle detection.
+- [x] **Level context injection** — Git diff summary for parallel workers.
+- [x] **Merge strategy** — Sequential merge at level boundaries. Same-file conflict halts.
+- [x] **tmux dashboard** — Optional `--dashboard` flag.
+- [x] **Auto-detect parallel** — 3+ independent subtasks triggers parallel mode.
+- [x] **Dry-run visualization** — Execution level diagram.
+- [x] **Parallel run reports** — Per-level timing, wall-clock savings.
+- [x] **Resume** — Level-based resume with `--resume --parallel`.
+- [x] **Doctor** — tmux + git worktree checks.
+- [x] **Spec format** — `**Files:**` annotation for explicit dependency declaration.
+
+---
+
 ## Sprint 31 (done) — Spec Linting + Gemini Provider (v1.8.0)
 
 | Metric | Value |
@@ -379,7 +414,7 @@ inputs:
 ### OMX Infrastructure backlog (not yet implemented)
 
 - [x] **MCP state server** — shipped Sprint 24 (v1.1.0). `phase2s__state_write/read/clear`.
-- [ ] **Parallel teams** — multiple agents working in parallel on subtasks (tmux-style workers)
+- [x] **Parallel teams** — shipped Sprint 35 (v1.12.0). Spec-aware leveled parallelism.
 - [x] **Notification gateway** — shipped Sprint 26 (v1.3.0). macOS + Slack. `--notify` flag, `PHASE2S_SLACK_WEBHOOK` env var.
 - [x] **`/skill` meta-skill** — done in Sprint 10. Guided interview creates SKILL.md files from within a session.
 
@@ -490,7 +525,7 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [x] **Agent tier routing** — Shipped Sprint 15 (v0.18.0). `fast_model`/`smart_model` in `.phase2s.yaml`. `model: fast | smart` in SKILL.md frontmatter. 28 of 29 built-in skills declare a tier.
 - [x] **Persistent execution loop** (`$ralph` pattern) — shipped as `phase2s goal` (Sprint 21) + satori inner retry loop. `phase2s__goal` MCP tool (Sprint 25) makes it callable from Claude Code.
 - [x] **Consensus planning** (`$ralplan` pattern) — shipped as `/consensus-plan` skill (Sprint 13). `phase2s__consensus_plan` MCP tool available.
-- [ ] **Parallel team execution** (`$team` pattern) — spawn N parallel Codex workers in git worktrees via tmux. Phase2S spawns and coordinates, collects outputs. High complexity but unlocks parallel agent work.
+- [x] **Parallel team execution** (`$team` pattern) — shipped Sprint 35 (v1.12.0). Spec-aware leveled parallelism with git worktrees, dependency graph, merge strategy, optional tmux dashboard.
 - [x] **MCP state server** — shipped Sprint 24 (v1.1.0). `phase2s__state_write/read/clear` in `src/core/state.ts` + `src/mcp/server.ts`.
 - [x] **Notification gateway** — shipped Sprint 26 (v1.3.0). macOS system notification + Slack webhook on dark factory completion. `--notify` CLI flag, `notify` MCP param, `notify:` config block.
 - [x] **Context snapshots** — implemented. `writeContextSnapshot()` in `cli/index.ts` writes `.phase2s/context/{ts}-{slug}.md` before each satori run (branch, recent commits, diff stat, verify command, task). The "mandatory for all prompts" framing was over-broad — satori is the right scope (long-running tasks where partial completion is the risk).
@@ -517,7 +552,8 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [x] **Live dark factory progress** — shipped Sprint 32 (v1.9.0). `[1/3] Running: Sub-task name` (cyan) and `Done in Xs` per sub-task. Retries shown in yellow. Makes long runs observable.
 - [x] **`phase2s lint` >8 sub-task warning** — shipped Sprint 32 (v1.9.0). Large specs are unreliable; lint warns and suggests breaking into smaller specs. 1 test.
 - [x] **`phase2s lint` evalCommand PATH check** — shipped Sprint 32 (v1.9.0). Warns immediately if the eval binary (e.g. `pytest`) is not on PATH. Skipped for default `npm test`. 3 tests.
-- [ ] **MiniMax provider** — `provider: minimax`, `MINIMAX_API_KEY`. OpenAI-compatible API surface.
+- [x] **MiniMax provider** — shipped Sprint 32-34 (v1.11.0). Composition over OpenAI, `api.minimax.io/v1/`, MiniMax-M2.5 default.
+- [ ] **Multi-provider parallel workers** — Per-subtask model routing for parallel execution. Different workers use different providers based on task complexity. Depends on Sprint 35 parallel infrastructure.
 - [ ] **VS Code extension** — run skills from the editor sidebar
   - `/review` on current file, `/investigate` on selected error, `/plan` for a feature
 - [ ] **Telegram notifications** — `notify.telegram.token` + `notify.telegram.chatId`. Requires BotFather setup + `getUpdates` to find chat ID. Consider `phase2s init --telegram-setup` helper that calls `getUpdates` and prints the chat ID automatically.
