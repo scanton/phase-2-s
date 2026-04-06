@@ -70,7 +70,8 @@ export function commitFile(
 ): void {
   writeFileSync(join(cwd, filename), content);
   execSync("git add -A", { cwd, stdio: "pipe" });
-  execSync(`git commit -m "${message ?? `add ${filename}`}"`, { cwd, stdio: "pipe" });
+  const msg = (message ?? `add ${filename}`).replace(/"/g, '\\"');
+  execSync(`git commit -m "${msg}"`, { cwd, stdio: "pipe" });
 }
 
 /**

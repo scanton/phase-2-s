@@ -39,12 +39,9 @@
   After `test/goal/helpers.ts` ships in v1.13.0, migrate them to use isolated temp repos for
   better test hygiene. Low priority — tests pass fine as-is. Depends on: helpers.ts (v1.13.0).
 
-- [ ] **Harden `commitFile()` in test harness against shell injection** — `test/goal/helpers.ts:74`
-  uses a template literal to build the `git commit -m` shell command. A filename or message
-  containing `"`, `;`, or `$` would break or inject into the command. Current callers all use
-  safe strings, but the pattern is fragile for future test authors. Fix: escape the message
-  before interpolation (`msg.replace(/"/g, '\\"')`) or switch to `spawnSync` with an args array.
-  Low priority — no current test uses an unsafe filename. Depends on: v1.13.0 shipping.
+- [x] **Harden `commitFile()` in test harness against shell injection** — `test/goal/helpers.ts:74`
+  fixed: message/filename now escaped with `.replace(/"/g, '\\"')` before shell interpolation.
+  **Completed:** v1.13.0 (2026-04-05)
 
 ---
 
