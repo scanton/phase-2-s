@@ -29,6 +29,8 @@ export interface SubTask {
   successCriteria: string;
   /** Optional explicit file list for parallel dependency analysis. Overrides regex heuristic. */
   files?: string[];
+  /** Optional role annotation from **Role:** X in subtask body. undefined if not present (NOT defaulted here). */
+  role?: 'architect' | 'implementer' | 'tester' | 'reviewer';
 }
 
 export interface TestCase {
@@ -185,6 +187,15 @@ function extractDecomposition(lines: string[]): SubTask[] {
         .filter((f) => f.length > 0);
       continue;
     }
+
+    const role = line.match(/^\s*-?\s*\*\*Role:\*\*\s*(.+)/i);
+    if (role) {
+      const roleValue = role[1].trim().toLowerCase();
+      if (roleValue === 'architect' || roleValue === 'implementer' || roleValue === 'tester' || roleValue === 'reviewer') {
+        current.role = roleValue;
+      }
+      continue;
+    }
   }
 
   if (current?.name) subtasks.push(completeSubTask(current));
@@ -200,6 +211,9 @@ function completeSubTask(partial: Partial<SubTask>): SubTask {
   };
   if (partial.files && partial.files.length > 0) {
     result.files = partial.files;
+  }
+  if (partial.role !== undefined) {
+    result.role = partial.role;
   }
   return result;
 }
