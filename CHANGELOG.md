@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.13.0 — 2026-04-05
+
+Integration test coverage for the parallel infrastructure + `--resume --parallel` hardening.
+
+### What's new
+
+- **`--resume --parallel` now works reliably** — `makeWorktreeSlug()` is now deterministic (`ph2s-<specHash8>-<index>` instead of a random suffix). Worktree paths are written to state on creation, so a resumed run finds existing worktrees instead of creating new ones with different names.
+- **Shared integration test harness** (`test/goal/helpers.ts`) — `makeTempRepo()`, `commitFile()`, `commitManyFiles()`, `makeConflictingBranches()`, `withTempRepo()`. Real git repos, not mocked `execSync`. All future parallel test suites get these helpers for free.
+- **`executeParallel()` behavior tests** — timeout rejection, level failure halts, `completedLevels` skip on resume, `unstash` called in finally.
+- **`mergeWorktree()` conflict detection tests** — two branches modifying the same file → `status: "conflict"` + `conflictFiles`, `git merge --abort` restores clean state.
+- **`stashIfDirty` / `unstash` integration tests** — dirty tracked file → stash created, clean tree → no stash, unstash restores content, unstash on clean tree is a no-op.
+- **`buildLevelContext()` real-repo tests** — filename + "files changed" in output, truncation at 4096 bytes with `(truncated)` marker, empty diff returns `""`.
+- **`updateWorkerPane` / `updateStatusBar` tests** — inactive dashboard no-throw, double-quote escaping verification.
+
+### Stats
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.13.0 |
+| Tests | 661 (+15) |
+| New files | 1 (`test/goal/helpers.ts`) |
+| Modified files | 6 |
+
+### Upgrade note
+
+In-progress `phase2s goal --parallel` runs from v1.12.0 are not resumable across this upgrade. Worktree slugs changed from random to deterministic — a v1.12.0 state file references slugs that no longer match. Restart interrupted runs from scratch after upgrading.
+
 ## v1.12.0 — 2026-04-05
 
 Parallel dark factory execution. Spec-aware parallelism with dependency analysis, git worktrees, and optional tmux dashboard.

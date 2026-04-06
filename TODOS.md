@@ -15,17 +15,20 @@
 
 ---
 
-## Sprint 36 (next) — Parallel Dark Factory: Test Coverage + Resume Hardening
+## Sprint 36 (done) — Parallel Dark Factory: Test Coverage + Resume Hardening (v1.13.0)
 
-> **Priority: P0 — ship immediately after v1.12.0 lands.**
-> These gaps were identified in the v1.12.0 pre-landing review. All are integration-test shaped (real temp git repos, not unit mocks).
+| Metric | Value |
+|--------|-------|
+| Version | v1.13.0 |
+| Tests | 661 (+15) |
 
-- [ ] **Test `executeParallel()` behavior** — timeout rejection → `status: "failed"`, level failure halts subsequent levels, `completedLevels` skipped on resume, `unstash` called even when a level throws (test the `finally` block). Currently zero behavior tests for the function that runs 90% of parallel execution.
-- [ ] **Test `mergeWorktree()` conflict path** — create two branches modifying the same file, verify conflict detection returns `status: "conflict"` with correct `conflictFiles`, verify `git merge --abort` restores clean state.
-- [ ] **Test `stashIfDirty` / `unstash`** — dirty working tree → stash created → `unstash` pops it. Clean tree → no stash created.
-- [ ] **Test `buildLevelContext()` success path** — real temp repo with two commits; verify returned string contains changed filenames, "N files changed" prose, and truncates correctly at 4096 bytes.
-- [ ] **Test `updateWorkerPane` / `updateStatusBar`** — inactive dashboard (no-op), text with double-quote characters (escape verification).
-- [ ] **Harden `--resume` with parallel** — `makeWorktreeSlug` uses `Math.random()`, so existing worktrees can't be located by name on resume. Populate `LevelWorkerState.worktreePath` when creating worktrees so resume can detect and reuse them. Consider deterministic slug (specHash + index) as an option.
+- [x] **Test `executeParallel()` behavior** — timeout rejection → `status: "failed"`, level failure halts subsequent levels, `completedLevels` skipped on resume, `unstash` called even when a level throws (test the `finally` block).
+- [x] **Test `mergeWorktree()` conflict path** — two branches modifying the same file → `status: "conflict"` + `conflictFiles`, `git merge --abort` restores clean state.
+- [x] **Test `stashIfDirty` / `unstash`** — dirty working tree → stash created → `unstash` pops it. Clean tree → no stash created.
+- [x] **Test `buildLevelContext()` success path** — real temp repo with two commits; returned string contains filenames and "N files changed" prose; truncates at 4096 bytes with `(truncated)` marker.
+- [x] **Test `updateWorkerPane` / `updateStatusBar`** — inactive dashboard (no-op), double-quote escaping verified.
+- [x] **Harden `--resume` with parallel** — `makeWorktreeSlug` is now deterministic (`ph2s-<specHash8>-<index>`). `LevelWorkerState.worktreePath` populated on creation; resume lookup reuses existing worktrees by path.
+- [x] **Shared test harness** (`test/goal/helpers.ts`) — `makeTempRepo()`, `commitFile()`, `commitManyFiles()`, `makeConflictingBranches()`, `withTempRepo()`. Real git repos.
 
 ---
 
@@ -35,6 +38,13 @@
   existing edge-case tests (bad hash, bad dir, HEAD..HEAD) run against the live project repo.
   After `test/goal/helpers.ts` ships in v1.13.0, migrate them to use isolated temp repos for
   better test hygiene. Low priority — tests pass fine as-is. Depends on: helpers.ts (v1.13.0).
+
+- [ ] **Harden `commitFile()` in test harness against shell injection** — `test/goal/helpers.ts:74`
+  uses a template literal to build the `git commit -m` shell command. A filename or message
+  containing `"`, `;`, or `$` would break or inject into the command. Current callers all use
+  safe strings, but the pattern is fragile for future test authors. Fix: escape the message
+  before interpolation (`msg.replace(/"/g, '\\"')`) or switch to `spawnSync` with an args array.
+  Low priority — no current test uses an unsafe filename. Depends on: v1.13.0 shipping.
 
 ---
 
