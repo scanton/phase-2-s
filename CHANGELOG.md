@@ -17,10 +17,18 @@ Multi-agent orchestrator: role-aware spec compilation, deterministic state machi
 
 ### Fixed
 
-- Shell injection hardening in `executeOrchestratorLevel` — commit message now uses `execFileSync` array form to avoid metacharacter expansion in subtask titles.
-- UTF-8 multibyte boundary safe truncation — context content now truncated with `Buffer.slice()` instead of `String.slice()` to avoid splitting codepoints.
-- DFS cycle guard — `computeSkippedIds` now uses a visited set to prevent infinite loop on invariant-violating `dependsOn` cycles.
+- Shell injection hardening in `executeOrchestratorLevel` — `git add -A` and `git diff --cached --quiet` now use `execFileSync` array form alongside the existing `git commit` call. No shell-expanded paths.
+- UTF-8 multibyte boundary safe truncation — context content truncated with `Buffer.slice()` instead of `String.slice()` to avoid splitting codepoints.
+- DFS cycle guard — `computeSkippedIds` uses a visited set to prevent infinite loop on invariant-violating `dependsOn` cycles.
 - `symlinkNodeModules` errors in orchestrator workers now return `status: 'failed'` instead of rejecting the whole `Promise.all`.
+- `mkdtempSync` for context temp dir — replaced deterministic `tmpdir/phase2s-context-<hash>-<timestamp>` with `mkdtempSync` to prevent concurrent process collision on the same spec.
+- Orchestrator context path uses `job.id` (safe slug) instead of `result.subtaskId` (caller-supplied via injected `executeLevelFn`) — closes a theoretical path traversal vector in the context file name.
+- `activeJobs` filter now also excludes `failed` and `completed` jobs in addition to `skipped` — defensive guard against re-running jobs on resume or unexpected level replay.
+- Removed unnecessary `CONTEXT_SENTINEL` alias — `ARCHITECT_CONTEXT_SENTINEL` from `role-prompts.ts` is the single source of truth and is now used directly in the orchestrator.
+- `slugify()` fallback — returns `'subtask'` for names that produce an empty slug (e.g. `"---"`), preventing empty-string `job.id` collisions in the `jobById` map.
+- Worker timeout message — now emits `"Worker timeout after Xs"` consistent with `executeWorker`, making run logs grep-consistent.
+- `goal_completed` log event — `success` field now uses `totalFailed === 0 && totalSkipped === 0`, matching `GoalResult.success`. Previous: log said success even when subtasks were skipped.
+- Total system prompt cap — `job.systemPromptPrefix` is now capped at 16 KB across all injected upstream context chunks (each chunk was already capped at 4 KB, but accumulation was unbounded).
 
 ## v1.14.0 — 2026-04-06
 
