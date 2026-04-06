@@ -47,6 +47,30 @@
 
 - [x] **Spec Eval Judge** — `src/eval/judge.ts`: `judgeRun(specPath, diff, config)` produces coverage map + 0-10 score. Score formula: `(met×1.0 + partial×0.5) / total × 10`. Error contract: never throws. `phase2s judge <spec.md> --diff <file>` CLI subcommand. `--judge` flag on `goal` command. `eval_judged` JSONL event. `formatJudgeReport` in report CLI. **Completed:** v1.14.0 (2026-04-06)
 
+---
+
+## Sprint 38 (done) — Multi-Agent Orchestrator (v1.15.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.15.0 |
+| Tests | 761 (+59 from v1.14.0) |
+
+- [x] **Multi-agent orchestrator state machine** — `src/orchestrator/orchestrator.ts`: deterministic routing, no LLM calls. Iterates pre-computed execution levels, injects role-specific system prompts. **Completed:** v1.15.0 (2026-04-06)
+- [x] **Role annotations in specs** — `**Role:** architect|implementer|tester|reviewer` parsed by `spec-parser.ts`. Auto-detected by `goal.ts`. **Completed:** v1.15.0 (2026-04-06)
+- [x] **Architect context passing** — `<!-- CONTEXT -->` sentinel extraction, 4096-byte cap, `contextDir` tmp cleanup (try/finally). **Completed:** v1.15.0 (2026-04-06)
+- [x] **Transitive DFS skip** — `computeSkippedIds()` with cycle guard. Independent subtasks unaffected. **Completed:** v1.15.0 (2026-04-06)
+- [x] **`replanOnFailure()` stub** — logs `orchestrator_replan` event, returns unchanged. Sprint 39: LLM call. **Completed:** v1.15.0 (2026-04-06)
+- [x] **`phase2s goal --orchestrator` flag** — explicit activation. **Completed:** v1.15.0 (2026-04-06)
+- [x] **6 new run-log events** — `orchestrator_started`, `job_promoted`, `job_routed`, `orchestrator_context_missing`, `orchestrator_replan`, `orchestrator_completed`. **Completed:** v1.15.0 (2026-04-06)
+- [x] **Backward compatible** — specs without role annotations run as v1.14.0. **Completed:** v1.15.0 (2026-04-06)
+
+### Sprint 38 → Sprint 39 upgrade paths (captured from eng review)
+
+- [ ] **Orchestrator auto-detect warning** — When `tasks.some(t => t.role !== undefined)` activates orchestrator mode, print: "Orchestrator mode activated: N subtasks have role annotations. Use --sequential to disable." Currently activates silently. Low priority but good DX.
+
+- [ ] **Migrate architect context to structured JSON output block** — Sprint 38 uses `<!-- CONTEXT -->` sentinel in freeform LLM output. Sprint 39 re-planning needs to parse architect decisions. Free-form markdown is hard to parse reliably. Migrate to a structured output format (e.g., JSON block) when re-planning is in scope. Candidate: `\`\`\`context-json\n{"decisions": [...]}\n\`\`\`` as the sentinel format.
+
 ### P2 — Test hygiene (carried forward)
 
 - [ ] **Migrate `level-context.test.ts` edge-case tests to use `makeTempRepo()`** — The
