@@ -37,6 +37,14 @@ export interface AttemptReport {
   criteria: Array<{ criterion: string; passed: boolean }>;
 }
 
+export interface LevelReport {
+  level: number;
+  workerCount: number;
+  durationMs?: number;
+  mergedCount: number;
+  failedCount: number;
+}
+
 export interface RunReport {
   specFile: string;
   maxAttempts: number;
@@ -47,6 +55,11 @@ export interface RunReport {
   finalAttempts: number;
   durationMs?: number;
   error?: string;
+  // Parallel execution metrics
+  parallel?: boolean;
+  levels?: LevelReport[];
+  wallClockMs?: number;
+  sequentialEstimateMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +99,7 @@ export function buildRunReport(events: Array<RunEvent & { ts: string }>): RunRep
   // Track start times for duration computation
   const subtaskStartTimes = new Map<string, Date>(); // key: `${attempt}:${index}`
   const subtaskNames = new Map<number, string>();    // key: index
+  const levelWorkerCounts = new Map<number, number>(); // key: level number
 
   for (const raw of events) {
     const ts = new Date(raw.ts);
@@ -152,14 +166,39 @@ export function buildRunReport(events: Array<RunEvent & { ts: string }>): RunRep
         if (startTs) {
           report.durationMs = ts.getTime() - startTs.getTime();
         }
+        if (event.parallel) {
+          report.parallel = true;
+          report.wallClockMs = event.wallClockMs;
+          report.sequentialEstimateMs = event.sequentialEstimateMs;
+        }
         break;
 
       case "goal_error":
         report.error = event.message;
         break;
 
+      // Parallel execution events
+      case "level_started": {
+        if (!report.levels) report.levels = [];
+        report.parallel = true;
+        levelWorkerCounts.set(event.level, event.workerCount);
+        break;
+      }
+
+      case "level_completed": {
+        if (!report.levels) report.levels = [];
+        report.levels.push({
+          level: event.level,
+          workerCount: levelWorkerCounts.get(event.level) ?? 0,
+          durationMs: event.durationMs,
+          mergedCount: event.mergedCount,
+          failedCount: event.failedCount,
+        });
+        break;
+      }
+
       default:
-        // plan_review_started, eval_completed — no action needed for report
+        // plan_review_started, eval_completed, worker_*, merge_* — no action needed for report
         break;
     }
   }
@@ -227,6 +266,27 @@ export function formatRunReport(report: RunReport): string {
     lines.push(`\n${chalk.red("✗")} ${chalk.bold("Goal failed")} — ${attemptsStr}${dur}`);
   } else {
     lines.push(`\n${chalk.dim("Goal did not run.")}`);
+  }
+
+  // Parallel metrics
+  if (report.parallel && report.levels && report.levels.length > 0) {
+    lines.push("");
+    lines.push(chalk.cyan("  Parallel execution:"));
+    for (const level of report.levels) {
+      const levelDur = level.durationMs !== undefined ? ` (${formatDuration(level.durationMs)})` : "";
+      const status = level.failedCount > 0
+        ? chalk.red(`${level.mergedCount} merged, ${level.failedCount} failed`)
+        : chalk.green(`${level.mergedCount} merged`);
+      lines.push(`    Level ${level.level}: ${status}${chalk.dim(levelDur)}`);
+    }
+    if (report.wallClockMs && report.sequentialEstimateMs && report.sequentialEstimateMs > 0) {
+      const savings = Math.round((1 - report.wallClockMs / report.sequentialEstimateMs) * 100);
+      lines.push(`\n    Wall clock: ${formatDuration(report.wallClockMs)}`);
+      lines.push(`    Sequential estimate: ${formatDuration(report.sequentialEstimateMs)}`);
+      if (savings > 0) {
+        lines.push(chalk.cyan(`    Saved: ~${savings}%`));
+      }
+    }
   }
 
   return lines.join("\n");

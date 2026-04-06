@@ -27,6 +27,8 @@ export interface SubTask {
   input: string;
   output: string;
   successCriteria: string;
+  /** Optional explicit file list for parallel dependency analysis. Overrides regex heuristic. */
+  files?: string[];
 }
 
 export interface TestCase {
@@ -174,6 +176,15 @@ function extractDecomposition(lines: string[]): SubTask[] {
 
     const success = line.match(/^\s*-\s*\*\*Success criteria?:\*\*\s*(.+)/i);
     if (success) { current.successCriteria = success[1].trim(); continue; }
+
+    const files = line.match(/^\s*-\s*\*\*Files?:\*\*\s*(.+)/i);
+    if (files) {
+      current.files = files[1].trim()
+        .split(/[,;]/)
+        .map((f) => f.replace(/^[`"'\s]+|[`"'\s]+$/g, "").trim())
+        .filter((f) => f.length > 0);
+      continue;
+    }
   }
 
   if (current?.name) subtasks.push(completeSubTask(current));
@@ -181,12 +192,16 @@ function extractDecomposition(lines: string[]): SubTask[] {
 }
 
 function completeSubTask(partial: Partial<SubTask>): SubTask {
-  return {
+  const result: SubTask = {
     name: partial.name ?? "Unnamed sub-task",
     input: partial.input ?? "",
     output: partial.output ?? "",
     successCriteria: partial.successCriteria ?? "",
   };
+  if (partial.files && partial.files.length > 0) {
+    result.files = partial.files;
+  }
+  return result;
 }
 
 function extractEvaluationDesign(lines: string[]): TestCase[] {

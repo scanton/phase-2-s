@@ -249,3 +249,31 @@ describe("checkWorkDir", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// checkTmux (Sprint 35 — parallel execution)
+// ---------------------------------------------------------------------------
+
+describe("checkTmux", () => {
+  it("returns a CheckResult with name 'tmux'", async () => {
+    const { checkTmux } = await import("../../src/cli/doctor.js");
+    const result = checkTmux();
+    expect(result.name).toBe("tmux");
+    // Result depends on whether tmux is installed in the test environment
+    expect(typeof result.ok).toBe("boolean");
+    expect(result.detail).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkGitWorktree (Sprint 35 — parallel execution)
+// ---------------------------------------------------------------------------
+
+describe("checkGitWorktree", () => {
+  it("returns a CheckResult with name 'git worktree'", async () => {
+    const { checkGitWorktree } = await import("../../src/cli/doctor.js");
+    const result = checkGitWorktree();
+    expect(result.name).toBe("git worktree");
+    expect(typeof result.ok).toBe("boolean");
+  });
+});
