@@ -284,9 +284,65 @@ Goal: rate-limiting.md
 ✓ Goal complete — 2 attempts — 26m 37s
 ```
 
-The raw JSONL log contains everything at event granularity: `goal_started`, `subtask_started/completed`, `eval_started/completed`, `criteria_checked`, `goal_completed`. Read it directly if you need machine-readable detail (e.g., via `file_read` in Claude Code).
+The raw JSONL log contains everything at event granularity: `goal_started`, `subtask_started/completed`, `eval_started/completed`, `criteria_checked`, `eval_judged`, `goal_completed`. Read it directly if you need machine-readable detail (e.g., via `file_read` in Claude Code).
 
 The log survives process death — it's written incrementally, not at the end. If a run is interrupted, the log contains everything up to the interruption.
+
+### Score your spec against a diff
+
+`phase2s judge` compares your spec's acceptance criteria against a git diff and tells you how well the implementation covered them — criterion by criterion, with a 0-10 score.
+
+```bash
+# Score a completed run
+git diff HEAD~1 | phase2s judge .phase2s/specs/my-spec.md
+
+# Or pass a diff file directly
+phase2s judge .phase2s/specs/my-spec.md --diff changes.diff
+```
+
+Output:
+
+```
+JUDGE REPORT: my-spec.md
+═══════════════════════════════════
+
+Score: 8.5 / 10
+
+Criteria:
+  ✓ met        Authenticated users: 100 req/min, 429 + Retry-After header on exceed
+               evidence: src/middleware/rate-limit.ts:23
+               confidence: 0.95
+  ✓ met        npm test passes after implementation
+               evidence: (passing test suite)
+               confidence: 0.9
+  ~ partial    Unauthenticated IPs: 20 req/min, 429 + Retry-After
+               evidence: src/middleware/rate-limit.ts:44 (limit set, header missing)
+               confidence: 0.75
+  ✗ missed     All existing tests continue to pass
+               evidence: (none found in diff)
+               confidence: 0.8
+
+Diff stats: 3 files changed, 87 insertions, 2 deletions
+```
+
+Exit code 0 if score ≥ 7, exit code 1 if score < 7. Use in CI to gate merges:
+
+```bash
+git diff main | phase2s judge specs/rate-limiting.md || exit 1
+```
+
+**Score during a goal run** — add `--judge` to run the judge automatically after every attempt:
+
+```bash
+phase2s goal specs/rate-limiting.md --judge
+```
+
+The judge score appears in the terminal output and is captured as an `eval_judged` event in the run log, rendered by `phase2s report`:
+
+```
+✓ Goal complete — 2 attempts — 26m 37s
+Judge: 8.5/10 — All key criteria met, Retry-After header partially implemented.
+```
 
 ---
 
