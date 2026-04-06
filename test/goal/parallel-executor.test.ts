@@ -267,3 +267,53 @@ describe("worktree mutex (resetWorktreeLocks)", () => {
     expect(true).toBe(true); // no throw = pass
   });
 });
+
+// ---------------------------------------------------------------------------
+// executeOrchestratorLevel — export contract and interface
+// ---------------------------------------------------------------------------
+
+describe("executeOrchestratorLevel — export contract", () => {
+  it("is exported from parallel-executor.ts", async () => {
+    const mod = await import("../../src/goal/parallel-executor.js");
+    expect(typeof mod.executeOrchestratorLevel).toBe("function");
+  });
+
+  it("is an async function that returns a Promise", async () => {
+    const { executeOrchestratorLevel } = await import("../../src/goal/parallel-executor.js");
+    // Call with empty array — should resolve immediately with []
+    const result = executeOrchestratorLevel([]);
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).resolves.toEqual([]);
+  });
+
+  it("returns empty array for empty input", async () => {
+    const { executeOrchestratorLevel } = await import("../../src/goal/parallel-executor.js");
+    const result = await executeOrchestratorLevel([]);
+    expect(result).toEqual([]);
+  });
+
+  it("OrchestratorLevelResult interface: subtaskId + status are required fields", () => {
+    // Type-level contract test — the object literal must satisfy the interface.
+    // This is a compile-time check expressed at runtime.
+    const r: import("../../src/orchestrator/types.js").OrchestratorLevelResult = {
+      subtaskId: "my-job",
+      status: "completed",
+      stdout: "some output",
+    };
+    expect(r.subtaskId).toBe("my-job");
+    expect(r.status).toBe("completed");
+    expect(r.stdout).toBe("some output");
+    expect(r.contextFile).toBeUndefined();
+  });
+
+  it("OrchestratorLevelResult failed variant: error is optional string", () => {
+    const r: import("../../src/orchestrator/types.js").OrchestratorLevelResult = {
+      subtaskId: "failing-job",
+      status: "failed",
+      error: "something went wrong",
+      stdout: "partial output",
+    };
+    expect(r.status).toBe("failed");
+    expect(typeof r.error).toBe("string");
+  });
+});

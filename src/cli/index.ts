@@ -196,11 +196,12 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--dry-run", "Parse and display the spec decomposition tree without running anything")
     .option("--parallel", "Enable parallel execution of independent subtasks")
     .option("--sequential", "Force sequential execution (overrides auto-detect)")
+    .option("--orchestrator", "Enable multi-agent orchestrator mode (role-aware, context-passing)")
     .option("--workers <n>", "Max concurrent workers per level (1-8, default 3)")
     .option("--dashboard", "Show live tmux dashboard during parallel execution")
     .option("--clean", "Remove stale worktrees before starting")
     .option("--judge", "Run spec eval judge after completion and emit eval_judged to the log")
-    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean; parallel?: boolean; sequential?: boolean; workers?: string; dashboard?: boolean; clean?: boolean; judge?: boolean }) => {
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean; parallel?: boolean; sequential?: boolean; orchestrator?: boolean; workers?: string; dashboard?: boolean; clean?: boolean; judge?: boolean }) => {
       const { runGoal } = await import("./goal.js");
       try {
         const result = await runGoal(specFile, {
@@ -211,6 +212,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           dryRun: cmdOpts.dryRun,
           parallel: cmdOpts.parallel,
           sequential: cmdOpts.sequential,
+          orchestrator: cmdOpts.orchestrator,
           workers: cmdOpts.workers ? parseInt(cmdOpts.workers, 10) : undefined,
           dashboard: cmdOpts.dashboard,
           clean: cmdOpts.clean,

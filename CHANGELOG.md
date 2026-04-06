@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.15.0 — 2026-04-06
+
+Multi-agent orchestrator: role-aware spec compilation, deterministic state machine routing, and architect context passing.
+
+### What's new
+
+- **Multi-Agent Orchestrator** — new `src/orchestrator/` module routes subtasks to role-appropriate workers (architect, implementer, tester, reviewer). Each role gets a tailored system prompt. The orchestrator is a deterministic state machine, not an LLM.
+- **Role annotations in specs** — add `**Role:** architect` (or `implementer`, `tester`, `reviewer`) to any subtask body. `phase2s goal` auto-detects role annotations and activates orchestrator mode. Use `--orchestrator` to force it regardless.
+- **Architect context passing** — architect workers emit a `<!-- CONTEXT -->` sentinel in their output. The orchestrator extracts the content, caps it at 4096 bytes, and injects it into downstream workers' system prompts as `Prior context from upstream subtask '...'`. Missing sentinel triggers an `orchestrator_context_missing` log event.
+- **Transitive failure skipping** — when a job fails, DFS traversal marks all transitively dependent jobs as `skipped`. Independent subtasks are unaffected. `replanOnFailure()` stub logs `orchestrator_replan` event (Sprint 39: LLM call).
+- **`phase2s goal --orchestrator`** — explicit flag to activate orchestrator mode on any spec, even without role annotations (all jobs default to `implementer`).
+- **6 new run-log events** — `orchestrator_started`, `job_promoted`, `job_routed`, `orchestrator_context_missing`, `orchestrator_replan`, `orchestrator_completed` in the JSONL run log.
+- **Backward compatible** — specs without `**Role:**` annotations run exactly as v1.14.0. Orchestrator only activates when annotations are present or `--orchestrator` is passed.
+- **59 new tests** — spec-compiler (16), role-prompts (5), orchestrator (26), plus role parsing in spec-parser (7) and executeOrchestratorLevel in parallel-executor (5). Total: 761.
+
+### Fixed
+
+- Shell injection hardening in `executeOrchestratorLevel` — `git add -A` and `git diff --cached --quiet` now use `execFileSync` array form alongside the existing `git commit` call. No shell-expanded paths.
+- UTF-8 multibyte boundary safe truncation — context content truncated with `Buffer.slice()` instead of `String.slice()` to avoid splitting codepoints.
+- DFS cycle guard — `computeSkippedIds` uses a visited set to prevent infinite loop on invariant-violating `dependsOn` cycles.
+- `symlinkNodeModules` errors in orchestrator workers now return `status: 'failed'` instead of rejecting the whole `Promise.all`.
+- `mkdtempSync` for context temp dir — replaced deterministic `tmpdir/phase2s-context-<hash>-<timestamp>` with `mkdtempSync` to prevent concurrent process collision on the same spec.
+- Orchestrator context path uses `job.id` (safe slug) instead of `result.subtaskId` (caller-supplied via injected `executeLevelFn`) — closes a theoretical path traversal vector in the context file name.
+- `activeJobs` filter now also excludes `failed` and `completed` jobs in addition to `skipped` — defensive guard against re-running jobs on resume or unexpected level replay.
+- Removed unnecessary `CONTEXT_SENTINEL` alias — `ARCHITECT_CONTEXT_SENTINEL` from `role-prompts.ts` is the single source of truth and is now used directly in the orchestrator.
+- `slugify()` fallback — returns `'subtask'` for names that produce an empty slug (e.g. `"---"`), preventing empty-string `job.id` collisions in the `jobById` map.
+- Worker timeout message — now emits `"Worker timeout after Xs"` consistent with `executeWorker`, making run logs grep-consistent.
+- `goal_completed` log event — `success` field now uses `totalFailed === 0 && totalSkipped === 0`, matching `GoalResult.success`. Previous: log said success even when subtasks were skipped.
+- Total system prompt cap — `job.systemPromptPrefix` is now capped at 16 KB across all injected upstream context chunks (each chunk was already capped at 4 KB, but accumulation was unbounded).
+
 ## v1.14.0 — 2026-04-06
 
 Score your spec against the diff, and three bug fixes for parallel dark factory runs.

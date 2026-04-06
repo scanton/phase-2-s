@@ -350,6 +350,15 @@ Commands:
     --review-before-run    Adversarial challenge before execution starts
     --resume               Resume from last completed sub-task
     --notify               Send notification on completion
+    --parallel             Enable parallel execution (auto-detected on 3+ independent subtasks)
+    --sequential           Force sequential execution (overrides auto-detect)
+    --orchestrator         Enable multi-agent orchestrator mode (role-aware, context-passing)
+    --workers <n>          Max concurrent workers per level (1-8, default 3)
+    --dashboard            Show live tmux dashboard during parallel execution
+    --clean                Remove stale worktrees before starting
+    --judge                Run spec eval judge after completion; emits eval_judged to run log
+  judge <spec.md>          Score a spec's acceptance criteria against a git diff (0-10)
+    --diff <file>          Path to a diff file (alternative: pipe diff via stdin)
   skills [query]           List available skills (optional search query)
   lint <spec.md>           Validate a spec file before running it
   report <log.jsonl>       Show a formatted run summary
