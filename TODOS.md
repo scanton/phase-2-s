@@ -32,7 +32,29 @@
 
 ---
 
-## Sprint 37 (P2 backlog — after v1.13.0)
+## Sprint 37 (backlog — after v1.13.0)
+
+### P1 — Fix before next parallel dark factory run
+
+- [ ] **Fix timer leak in `executeWorker()` timeout path** (`src/goal/parallel-executor.ts`) —
+  The `setTimeout` handle is never cleared when the worker completes normally. Every successful
+  worker leaves a live timer until the process exits, which delays `process.exit` by up to 10
+  minutes in the worst case (CI). Fix: capture the return value of `setTimeout` and call
+  `clearTimeout(timeoutId)` in the `finally` block of `executeWorker`. Adversarial finding #1.
+
+- [ ] **Fix `unstash()` popping wrong stash entry** (`src/goal/parallel-executor.ts`) —
+  `unstash()` calls `git stash pop` which always pops `stash@{0}`. If the user had a pre-existing
+  stash entry before Phase2S ran, the Phase2S stash may be at `stash@{1}` or deeper. Fix:
+  before stashing, record the stash count (`git stash list | wc -l`), then `unstash()` uses
+  `git stash pop stash@{<recorded-index>}` to target the correct entry. Adversarial finding #4.
+
+- [ ] **Fix concurrent `git worktree prune` race** (`src/goal/parallel-executor.ts`) —
+  When multiple workers simultaneously detect a missing worktree directory and all call
+  `git worktree prune` + `git worktree add` at the same moment, one succeeds and the others
+  throw. Fix: add a per-repo async lock (or serialize the `prune` + `add` block with a
+  `Mutex`/`p-limit(1)`) so only one caller prunes and recreates at a time. Adversarial finding #8.
+
+### P2 — Test hygiene
 
 - [ ] **Migrate `level-context.test.ts` edge-case tests to use `makeTempRepo()`** — The
   existing edge-case tests (bad hash, bad dir, HEAD..HEAD) run against the live project repo.
