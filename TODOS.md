@@ -29,6 +29,15 @@
 
 ---
 
+## Sprint 37 (P2 backlog — after v1.13.0)
+
+- [ ] **Migrate `level-context.test.ts` edge-case tests to use `makeTempRepo()`** — The
+  existing edge-case tests (bad hash, bad dir, HEAD..HEAD) run against the live project repo.
+  After `test/goal/helpers.ts` ships in v1.13.0, migrate them to use isolated temp repos for
+  better test hygiene. Low priority — tests pass fine as-is. Depends on: helpers.ts (v1.13.0).
+
+---
+
 ## Sprint 35 (done) — Parallel Dark Factory (v1.12.0)
 
 | Metric | Value |
