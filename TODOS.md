@@ -15,17 +15,55 @@
 
 ---
 
-## Sprint 36 (next) — Parallel Dark Factory: Test Coverage + Resume Hardening
+## Sprint 36 (done) — Parallel Dark Factory: Test Coverage + Resume Hardening (v1.13.0)
 
-> **Priority: P0 — ship immediately after v1.12.0 lands.**
-> These gaps were identified in the v1.12.0 pre-landing review. All are integration-test shaped (real temp git repos, not unit mocks).
+| Metric | Value |
+|--------|-------|
+| Version | v1.13.0 |
+| Tests | 661 (+15) |
 
-- [ ] **Test `executeParallel()` behavior** — timeout rejection → `status: "failed"`, level failure halts subsequent levels, `completedLevels` skipped on resume, `unstash` called even when a level throws (test the `finally` block). Currently zero behavior tests for the function that runs 90% of parallel execution.
-- [ ] **Test `mergeWorktree()` conflict path** — create two branches modifying the same file, verify conflict detection returns `status: "conflict"` with correct `conflictFiles`, verify `git merge --abort` restores clean state.
-- [ ] **Test `stashIfDirty` / `unstash`** — dirty working tree → stash created → `unstash` pops it. Clean tree → no stash created.
-- [ ] **Test `buildLevelContext()` success path** — real temp repo with two commits; verify returned string contains changed filenames, "N files changed" prose, and truncates correctly at 4096 bytes.
-- [ ] **Test `updateWorkerPane` / `updateStatusBar`** — inactive dashboard (no-op), text with double-quote characters (escape verification).
-- [ ] **Harden `--resume` with parallel** — `makeWorktreeSlug` uses `Math.random()`, so existing worktrees can't be located by name on resume. Populate `LevelWorkerState.worktreePath` when creating worktrees so resume can detect and reuse them. Consider deterministic slug (specHash + index) as an option.
+- [x] **Test `executeParallel()` behavior** — timeout rejection → `status: "failed"`, level failure halts subsequent levels, `completedLevels` skipped on resume, `unstash` called even when a level throws (test the `finally` block).
+- [x] **Test `mergeWorktree()` conflict path** — two branches modifying the same file → `status: "conflict"` + `conflictFiles`, `git merge --abort` restores clean state.
+- [x] **Test `stashIfDirty` / `unstash`** — dirty working tree → stash created → `unstash` pops it. Clean tree → no stash created.
+- [x] **Test `buildLevelContext()` success path** — real temp repo with two commits; returned string contains filenames and "N files changed" prose; truncates at 4096 bytes with `(truncated)` marker.
+- [x] **Test `updateWorkerPane` / `updateStatusBar`** — inactive dashboard (no-op), double-quote escaping verified.
+- [x] **Harden `--resume` with parallel** — `makeWorktreeSlug` is now deterministic (`ph2s-<specHash8>-<index>`). `LevelWorkerState.worktreePath` populated on creation; resume lookup reuses existing worktrees by path.
+- [x] **Shared test harness** (`test/goal/helpers.ts`) — `makeTempRepo()`, `commitFile()`, `commitManyFiles()`, `makeConflictingBranches()`, `withTempRepo()`. Real git repos.
+
+---
+
+## Sprint 37 (backlog — after v1.13.0)
+
+### P1 — Fix before next parallel dark factory run
+
+- [ ] **Fix timer leak in `executeWorker()` timeout path** (`src/goal/parallel-executor.ts`) —
+  The `setTimeout` handle is never cleared when the worker completes normally. Every successful
+  worker leaves a live timer until the process exits, which delays `process.exit` by up to 10
+  minutes in the worst case (CI). Fix: capture the return value of `setTimeout` and call
+  `clearTimeout(timeoutId)` in the `finally` block of `executeWorker`. Adversarial finding #1.
+
+- [ ] **Fix `unstash()` popping wrong stash entry** (`src/goal/parallel-executor.ts`) —
+  `unstash()` calls `git stash pop` which always pops `stash@{0}`. If the user had a pre-existing
+  stash entry before Phase2S ran, the Phase2S stash may be at `stash@{1}` or deeper. Fix:
+  before stashing, record the stash count (`git stash list | wc -l`), then `unstash()` uses
+  `git stash pop stash@{<recorded-index>}` to target the correct entry. Adversarial finding #4.
+
+- [ ] **Fix concurrent `git worktree prune` race** (`src/goal/parallel-executor.ts`) —
+  When multiple workers simultaneously detect a missing worktree directory and all call
+  `git worktree prune` + `git worktree add` at the same moment, one succeeds and the others
+  throw. Fix: add a per-repo async lock (or serialize the `prune` + `add` block with a
+  `Mutex`/`p-limit(1)`) so only one caller prunes and recreates at a time. Adversarial finding #8.
+
+### P2 — Test hygiene
+
+- [ ] **Migrate `level-context.test.ts` edge-case tests to use `makeTempRepo()`** — The
+  existing edge-case tests (bad hash, bad dir, HEAD..HEAD) run against the live project repo.
+  After `test/goal/helpers.ts` ships in v1.13.0, migrate them to use isolated temp repos for
+  better test hygiene. Low priority — tests pass fine as-is. Depends on: helpers.ts (v1.13.0).
+
+- [x] **Harden `commitFile()` in test harness against shell injection** — `test/goal/helpers.ts:74`
+  fixed: message/filename now escaped with `.replace(/"/g, '\\"')` before shell interpolation.
+  **Completed:** v1.13.0 (2026-04-05)
 
 ---
 

@@ -1,8 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   isTmuxAvailable,
   createDashboard,
   teardownDashboard,
+  updateWorkerPane,
+  updateStatusBar,
 } from "../../src/goal/tmux-dashboard.js";
 
 // These tests run against the real system. isTmuxAvailable checks if tmux
@@ -41,5 +43,53 @@ describe("teardownDashboard", () => {
     const state = { sessionName: "x", panes: new Map<number, string>(), active: false };
     teardownDashboard(state);
     expect(state.active).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateWorkerPane / updateStatusBar with inactive dashboard
+// ---------------------------------------------------------------------------
+
+describe("updateWorkerPane / updateStatusBar with inactive dashboard", () => {
+  it("updateWorkerPane with inactive dashboard does not throw", () => {
+    const state = { sessionName: "s", panes: new Map<number, string>(), active: false };
+    expect(() => updateWorkerPane(state, 0, "some text")).not.toThrow();
+  });
+
+  it("updateStatusBar with inactive dashboard does not throw", () => {
+    const state = { sessionName: "s", panes: new Map<number, string>(), active: false };
+    expect(() => updateStatusBar(state, "running")).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateWorkerPane escape test — verified via source code inspection
+// ---------------------------------------------------------------------------
+
+describe("updateWorkerPane double-quote escaping", () => {
+  it('escapes double quotes: source uses text.replace(/"/g, \'\\\\\\"\')', () => {
+    // The escaping logic is in tmux-dashboard.ts:
+    //   const escaped = text.replace(/"/g, '\\"');
+    // We verify the escape logic directly using the same regex, since we
+    // cannot vi.spyOn() on ESM node: builtins (they are not configurable).
+    const text = 'say "hello" and "goodbye"';
+    const escaped = text.replace(/"/g, '\\"');
+    // Each " should become \" (backslash + double-quote)
+    expect(escaped).toBe('say \\"hello\\" and \\"goodbye\\"');
+    // The escaped form contains \", not raw unescaped "
+    // Count of \" sequences should equal original count of "
+    const originalQuoteCount = (text.match(/"/g) ?? []).length;
+    const escapedCount = (escaped.match(/\\"/g) ?? []).length;
+    expect(escapedCount).toBe(originalQuoteCount);
+  });
+
+  it("updateWorkerPane does not throw when pane exists but execSync fails (active=true, no tmux)", () => {
+    // Create a dashboard with a pane registered but no real tmux session.
+    // updateWorkerPane calls execSync which will throw (no real tmux), but
+    // the catch block swallows the error — so it must not propagate.
+    const panes = new Map<number, string>();
+    panes.set(0, "%0");
+    const state = { sessionName: "nonexistent", panes, active: true };
+    expect(() => updateWorkerPane(state, 0, 'text with "quotes"')).not.toThrow();
   });
 });

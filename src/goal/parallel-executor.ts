@@ -13,6 +13,7 @@
  */
 
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import chalk from "chalk";
 import { Agent } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
@@ -282,8 +283,8 @@ async function executeLevel(
   }
 
   // Cleanup worktrees for this level
-  for (const { index, subtask } of subtasks) {
-    const slug = makeWorktreeSlug(subtask.name, index);
+  for (const { index } of subtasks) {
+    const slug = makeWorktreeSlug(specHash, index);
     removeWorktree(cwd, slug);
   }
 
@@ -320,9 +321,9 @@ async function executeWorker(
   level: number,
   options: WorkerOptions,
 ): Promise<WorkerResult> {
-  const { cwd, spec, logger, attempt, levelContext, satoriRetries, satoriModel, dashboardState, workerIndexInBatch } = options;
+  const { cwd, spec, specDir, specHash, state, logger, attempt, levelContext, satoriRetries, satoriModel, dashboardState, workerIndexInBatch } = options;
   const start = Date.now();
-  const slug = makeWorktreeSlug(subtask.name, index);
+  const slug = makeWorktreeSlug(specHash, index);
 
   console.log(chalk.yellow(`  [Worker ${index}] Starting: ${subtask.name}`));
   if (dashboardState) updateWorkerPane(dashboardState, workerIndexInBatch, `[Worker ${index}] ${subtask.name}`);
@@ -335,8 +336,24 @@ async function executeWorker(
     worktreePath: `${cwd}/.worktrees/${slug}`,
   });
 
-  // Create worktree
-  const wt = createWorktree(cwd, slug);
+  // Check for persisted worktree path from a previous run
+  const persistedWorkers = state.levelWorkers?.[String(level)];
+  const persistedWorker = persistedWorkers?.find(w => w.subtaskIndex === index);
+
+  let wt: { worktreePath: string; branchName: string } | { error: string };
+
+  if (persistedWorker?.worktreePath && existsSync(persistedWorker.worktreePath)) {
+    // Resume: reuse existing worktree
+    wt = { worktreePath: persistedWorker.worktreePath, branchName: `parallel/${slug}` };
+  } else if (persistedWorker?.worktreePath && !existsSync(persistedWorker.worktreePath)) {
+    // Path recorded but directory missing — prune and recreate
+    try { execSync("git worktree prune", { cwd, stdio: "pipe" }); } catch { /* ok */ }
+    wt = createWorktree(cwd, slug);
+  } else {
+    // Normal fresh worktree creation
+    wt = createWorktree(cwd, slug);
+  }
+
   if ("error" in wt) {
     console.log(chalk.red(`  [Worker ${index}] Failed to create worktree: ${wt.error}`));
     return {
@@ -348,6 +365,24 @@ async function executeWorker(
       error: wt.error,
     };
   }
+
+  // Write state BEFORE first await — serializes correctly on Node.js event loop
+  // (multiple concurrent workers; sync operations before first await don't interleave)
+  state.levelWorkers ??= {};
+  state.levelWorkers[String(level)] ??= [];
+  const existingEntry = state.levelWorkers[String(level)].find(w => w.subtaskIndex === index);
+  if (existingEntry) {
+    existingEntry.status = "running";
+    existingEntry.worktreePath = wt.worktreePath;
+  } else {
+    state.levelWorkers[String(level)].push({
+      subtaskIndex: index,
+      subtaskName: subtask.name,
+      status: "running",
+      worktreePath: wt.worktreePath,
+    });
+  }
+  writeState(specDir, specHash, state);
 
   // Symlink node_modules
   symlinkNodeModules(cwd, wt.worktreePath);
@@ -460,14 +495,8 @@ function buildWorkerPrompt(subtask: SubTask, spec: Spec, levelContext: string): 
   return parts.join("\n");
 }
 
-export function makeWorktreeSlug(subtaskName: string, index: number): string {
-  const slug = subtaskName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  const short = Math.random().toString(36).slice(2, 8);
-  return `${slug}-${index}-${short}`;
+export function makeWorktreeSlug(specHash: string, index: number): string {
+  return `ph2s-${specHash.slice(0, 8)}-${index}`;
 }
 
 function getHeadCommit(cwd: string): string {
