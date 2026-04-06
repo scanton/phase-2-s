@@ -129,6 +129,8 @@ Write a spec. Run one command. Come back when it's done.
 
 It keeps going until all criteria pass or it runs out of attempts.
 
+When your spec has 3 or more independent sub-tasks, Phase2S runs them in parallel inside git worktrees — each worker gets its own isolated branch, and Phase2S merges everything back at level boundaries. A 3-sub-task spec that used to take 30 minutes can finish in 12.
+
 ```bash
 # Write the spec interactively
 phase2s
@@ -332,7 +334,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 600+ tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, bear mascot, installation health checks, self-update, skills search, spec linting, dark factory dry-run, and lint PATH checks
+- [x] 646 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, and level context injection
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -379,6 +381,7 @@ browser: true  # requires playwright installed
 - [x] Live dark factory progress: `[1/3] Running: Sub-task name` with elapsed time per sub-task
 - [x] `phase2s lint`: >8 sub-task warning and evalCommand PATH check
 - [x] MiniMax provider — MiniMax-M2.5 default, OpenAI-compatible endpoint, no new SDK dependency
+- [x] Parallel dark factory execution — leveled parallelism via git worktrees, auto-detected on 3+ independent subtasks, `--parallel`/`--sequential`/`--workers N`/`--dashboard` flags, hybrid file-based dependency analysis, sequential merge with conflict halt, level context injection, parallel run reports
 
 ---
 
