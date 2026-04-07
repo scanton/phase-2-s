@@ -98,6 +98,7 @@ describe('runOrchestrator — happy path', () => {
       totalCompleted: 2,
       totalFailed: 0,
       totalSkipped: 0,
+      suspectCount: 0,
     }));
   });
 
@@ -110,6 +111,17 @@ describe('runOrchestrator — happy path', () => {
     const result = await runOrchestrator(levels, jobs, { specHash: 'h', logger, executeLevelFn });
 
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('suspectCount is 0 when all jobs succeed', async () => {
+    const jobs = [makeJob({ id: 'j1' }), makeJob({ id: 'j2' })];
+    const levels = [[jobs[0], jobs[1]]];
+    const logger = makeMockLogger();
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) => js.map(j => makeSuccessResult(j.id)));
+
+    const result = await runOrchestrator(levels, jobs, { specHash: 'h', logger, executeLevelFn });
+
+    expect(result.suspectCount).toBe(0);
   });
 });
 
@@ -128,7 +140,7 @@ describe('runOrchestrator — sentinel extraction', () => {
       const results: OrchestratorLevelResult[] = js.map(j => ({
         subtaskId: j.id,
         status: 'completed' as const,
-        stdout: 'Some output\n<!-- CONTEXT -->\nUse interface Foo { x: number }',
+        stdout: 'Some output\n```context-json\n{"decisions":[],"activeFiles":["src/foo.ts"],"constraintsForDownstream":["Use interface Foo"]}\n```',
       }));
       capturedResults = results;
       return results;
@@ -207,7 +219,7 @@ describe('runOrchestrator — upstream context injection', () => {
         results.push({
           subtaskId: j.id,
           status: 'completed' as const,
-          stdout: j.id === 'arch' ? 'Here are my decisions.\n<!-- CONTEXT -->\nUse FooInterface everywhere.' : '',
+          stdout: j.id === 'arch' ? 'Here are my decisions.\n```context-json\n{"decisions":[{"component":"API","decision":"Use FooInterface","rationale":"consistency"}],"activeFiles":[],"constraintsForDownstream":["Use FooInterface everywhere"]}\n```' : '',
         });
       }
       return results;
@@ -259,7 +271,7 @@ describe('runOrchestrator — context byte cap', () => {
         results.push({
           subtaskId: j.id,
           status: 'completed' as const,
-          stdout: j.id === 'arch-big' ? `<!-- CONTEXT -->\n${bigContent}` : '',
+          stdout: j.id === 'arch-big' ? `\`\`\`context-json\n{"decisions":[],"activeFiles":["src/big.ts"],"constraintsForDownstream":["${bigContent}"]}\n\`\`\`` : '',
         });
       }
       return results;
@@ -335,7 +347,7 @@ describe('runOrchestrator — failure handling', () => {
     expect(result.totalSkipped).toBe(0);
   });
 
-  it('replanOnFailure stub → orchestrator_replan event logged', async () => {
+  it('replanOnFailure with no provider → orchestrator_replan_failed event logged', async () => {
     const job = makeJob({ id: 'plan-fail', title: 'Plan Fail' });
     const levels = [[job]];
     const logger = makeMockLogger();
@@ -344,10 +356,11 @@ describe('runOrchestrator — failure handling', () => {
       js.map(j => makeFailResult(j.id, 'something broke'))
     );
 
+    // No provider configured → Sprint 39 stub fallback: logs orchestrator_replan_failed
     await runOrchestrator(levels, [job], { specHash: 'replan1', logger, executeLevelFn });
 
     expect(logger.log).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'orchestrator_replan',
+      event: 'orchestrator_replan_failed',
       failedSubtaskId: 'plan-fail',
     }));
   });
@@ -484,5 +497,93 @@ describe('computeSkippedIds', () => {
     ];
     const skipped = computeSkippedIds('a', jobs);
     expect(skipped).not.toContain('c');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 39: integration — replan path, completedJobs, suspect state
+// ---------------------------------------------------------------------------
+
+describe('runOrchestrator — Sprint 39 integration', () => {
+  it('replan path triggered when level fails (orchestrator_replan_result logged)', async () => {
+    const jobA = makeJob({ id: 'job-a' });
+    const jobB = makeJob({ id: 'job-b' });
+    const jobs = [jobA, jobB];
+    const levels = [[jobA], [jobB]];
+    const logger = makeMockLogger();
+
+    const mockProvider = {
+      name: 'mock',
+      async *chatStream() {
+        yield { type: 'text', content: '{"delta":[]}' };
+        yield { type: 'done', stopReason: 'stop' };
+      },
+    };
+
+    const executeLevelFn = vi.fn()
+      .mockResolvedValueOnce([makeFailResult('job-a', 'oops')])
+      .mockResolvedValueOnce([makeSuccessResult('job-b')]);
+
+    await runOrchestrator(levels, jobs, {
+      specHash: 'int1',
+      logger,
+      executeLevelFn,
+      provider: mockProvider as import('../../src/providers/types.js').Provider,
+      config: { model: 'gpt-4o', smart_model: 'gpt-4o' } as import('../../src/core/config.js').Config,
+    });
+
+    expect(logger.log).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'orchestrator_replan_result',
+      failedSubtaskId: 'job-a',
+    }));
+  });
+
+  it('completedJobs accumulator populates correctly', async () => {
+    const jobA = makeJob({ id: 'acc-a' });
+    const jobB = makeJob({ id: 'acc-b' });
+    const jobC = makeJob({ id: 'acc-c', dependsOn: ['acc-b'] });
+    const jobs = [jobA, jobB, jobC];
+    const levels = [[jobA, jobB], [jobC]];
+    const logger = makeMockLogger();
+
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) =>
+      js.map(j => makeSuccessResult(j.id))
+    );
+
+    const result = await runOrchestrator(levels, jobs, { specHash: 'acc1', logger, executeLevelFn });
+    // All three completed — accumulator worked correctly
+    expect(result.totalCompleted).toBe(3);
+  });
+
+  it('suspect state visible post-replan: orchestrator_replan_result contains suspectCount > 0', async () => {
+    const jobA = makeJob({ id: 'susp-a', role: 'architect' });
+    const jobB = makeJob({ id: 'susp-b', dependsOn: ['susp-a'] });
+    const jobs = [jobA, jobB];
+    const levels = [[jobA], [jobB]];
+    const logger = makeMockLogger();
+
+    const mockProvider = {
+      name: 'mock',
+      async *chatStream() {
+        yield { type: 'text', content: '{"delta":[]}' };
+        yield { type: 'done', stopReason: 'stop' };
+      },
+    };
+
+    const executeLevelFn = vi.fn()
+      .mockResolvedValueOnce([makeSuccessResult('susp-a', '')])
+      .mockResolvedValueOnce([makeFailResult('susp-b', 'fail')]);
+
+    await runOrchestrator(levels, jobs, {
+      specHash: 'susp1',
+      logger,
+      executeLevelFn,
+      provider: mockProvider as import('../../src/providers/types.js').Provider,
+      config: { model: 'gpt-4o', smart_model: 'gpt-4o' } as import('../../src/core/config.js').Config,
+    });
+
+    const replanResult = (logger.events as Array<{ event: string; suspectCount?: number }>)
+      .find(e => e.event === 'orchestrator_replan_result');
+    expect(replanResult?.suspectCount).toBeGreaterThan(0);
   });
 });

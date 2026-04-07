@@ -65,11 +65,27 @@
 - [x] **6 new run-log events** — `orchestrator_started`, `job_promoted`, `job_routed`, `orchestrator_context_missing`, `orchestrator_replan`, `orchestrator_completed`. **Completed:** v1.15.0 (2026-04-06)
 - [x] **Backward compatible** — specs without role annotations run as v1.14.0. **Completed:** v1.15.0 (2026-04-06)
 
-### Sprint 38 → Sprint 39 upgrade paths (captured from eng review)
+---
+
+## Sprint 39 (done) — Live Re-Planning + Structured Architect Context (v1.16.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.16.0 |
+| Tests | 821 (+60 from v1.15.0) |
+
+- [x] **Live re-planning** — `replanOnFailure()` upgraded from stub to real LLM call. Prompt includes failure details, remaining jobs, architect context. Response validated via `schemaGate`. Delta merged back, completed IDs filtered, `buildLevels()` re-levels. **Completed:** v1.16.0 (2026-04-06)
+- [x] **`schemaGate<T>(fn, validate, retries)`** — new `src/core/schema-gate.ts`. JSON extraction + type predicate validation with retry loop. **Completed:** v1.16.0 (2026-04-06)
+- [x] **Structured architect context** — `src/orchestrator/architect-context.ts`: `parseArchitectContext()` extracts ````context-json` block. `ARCHITECT_CONTEXT_JSON_SENTINEL` replaces `<!-- CONTEXT -->` sentinel. **Completed:** v1.16.0 (2026-04-06)
+- [x] **Backward contamination DFS** — `computeSuspectIds()` walks completed ancestors after failure. `suspectCount` in `OrchestratorResult` and `orchestrator_completed` event. **Completed:** v1.16.0 (2026-04-06)
+- [x] **`filteredCompletedCount`** — replaces misleading `orchestrator_replan_failed` for filtered delta IDs. **Completed:** v1.16.0 (2026-04-06)
+- [x] **`isDeltaResponse` slug validation** — path traversal prevention: `SAFE_JOB_ID_RE` + `dependsOn` element type check. **Completed:** v1.16.0 (2026-04-06)
+- [x] **`allJobs` staleness fix** — `[...jobById.values()]` used for DFS, skip-sync, and remaining-pending. Delta-added jobs visible to all post-replan operations. **Completed:** v1.16.0 (2026-04-06)
+- [x] **Migrate architect context to structured JSON output block** — Sprint 38 `<!-- CONTEXT -->` → Sprint 39 ````context-json` fence. **Completed:** v1.16.0 (2026-04-06)
+
+### Sprint 39 → Sprint 40 upgrade paths
 
 - [ ] **Orchestrator auto-detect warning** — When `tasks.some(t => t.role !== undefined)` activates orchestrator mode, print: "Orchestrator mode activated: N subtasks have role annotations. Use --sequential to disable." Currently activates silently. Low priority but good DX.
-
-- [ ] **Migrate architect context to structured JSON output block** — Sprint 38 uses `<!-- CONTEXT -->` sentinel in freeform LLM output. Sprint 39 re-planning needs to parse architect decisions. Free-form markdown is hard to parse reliably. Migrate to a structured output format (e.g., JSON block) when re-planning is in scope. Candidate: `\`\`\`context-json\n{"decisions": [...]}\n\`\`\`` as the sentinel format.
 
 ### P2 — Test hygiene (carried forward)
 
