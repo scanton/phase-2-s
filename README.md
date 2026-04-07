@@ -334,7 +334,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 850 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, and live re-planning
+- [x] 850 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, and Telegram notification channel
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -388,6 +388,9 @@ browser: true  # requires playwright installed
 - [x] P1 parallel executor fixes — timer leak in `executeWorker()` (clearTimeout in finally), stash pop correctness (named stash + pop by ref instead of always `stash@{0}`), concurrent worktree prune race (promise-chain mutex per repo)
 - [x] Multi-agent orchestrator — `**Role:** architect|implementer|tester|reviewer` annotations in specs route subtasks to role-appropriate workers, each with a tailored system prompt. Architect workers emit a structured ````context-json` block that downstream workers receive in their system prompts. `--orchestrator` flag forces orchestrator mode on any spec. Auto-detected when role annotations are present.
 - [x] Live re-planning — when a subtask fails, the orchestrator calls the LLM with a structured prompt describing the failure, remaining jobs, and architect context. The response (`DeltaResponse`) is validated and merged back; `buildLevels()` re-levels the revised plan. Backward contamination DFS flags completed ancestors whose outputs the failed job consumed (`suspectCount` in the run log). Path traversal protection on all LLM-generated job IDs.
+- [x] Telegram notification channel — `sendTelegramNotification()` in `notify.ts`, configurable via `PHASE2S_TELEGRAM_BOT_TOKEN` + `PHASE2S_TELEGRAM_CHAT_ID` env vars or `notify.telegram` in `.phase2s.yaml`. `phase2s init --telegram-setup` wizard calls `getUpdates`, picks the most recent chat, and prints the ready-to-paste YAML snippet.
+- [x] `model:` spec annotation for parallel workers — subtasks declare `model: fast`, `model: smart`, or a literal model name. `resolveSubtaskModel()` maps aliases to configured tiers and falls back to the outer `--model` flag.
+- [x] Byte-aware context truncation — `level-context.ts` uses `Buffer.from(context,'utf8').subarray(0,limit).toString('utf8')` instead of `String.slice()`. Fixes silent byte overrun with emoji or CJK filenames.
 
 ---
 
