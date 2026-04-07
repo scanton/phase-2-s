@@ -215,7 +215,7 @@ phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md --notify
 
 **On macOS:** a system notification appears automatically (via `osascript`, no extra setup).
 
-**Cross-platform (macOS, Linux, Windows):** three webhook channels are supported. Set whichever one (or more) you use:
+**Cross-platform (macOS, Linux, Windows):** four webhook channels are supported. Set whichever one (or more) you use:
 
 ```bash
 # Slack
@@ -227,6 +227,10 @@ export PHASE2S_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
 # Microsoft Teams
 export PHASE2S_TEAMS_WEBHOOK=https://outlook.office.com/webhook/...
 
+# Telegram
+export PHASE2S_TELEGRAM_BOT_TOKEN=1234567890:ABCdef...
+export PHASE2S_TELEGRAM_CHAT_ID=-1001234567890
+
 phase2s goal my-spec.md --notify
 ```
 
@@ -237,15 +241,19 @@ notify:
   slack: "https://hooks.slack.com/services/T.../B.../..."
   discord: "https://discord.com/api/webhooks/.../..."
   teams: "https://outlook.office.com/webhook/..."
+  telegram:
+    token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ-abc12345678"
+    chatId: "-1001234567890"
   mac: true  # default on macOS; set false to disable
 ```
 
-**Getting webhook URLs:**
+**Getting webhook URLs / chat IDs:**
 - **Slack:** Apps → Incoming Webhooks → Add New Webhook. Copy the `https://hooks.slack.com/services/...` URL.
 - **Discord:** Server Settings → Integrations → Webhooks → New Webhook. Copy the URL.
 - **Teams:** Channel → Connectors → Incoming Webhook → Configure. Copy the URL.
+- **Telegram:** Create a bot via [@BotFather](https://t.me/botfather) to get a token. Then run `phase2s init --telegram-setup` — it calls `getUpdates`, finds your most recent chat, and prints the ready-to-paste YAML.
 
-All channels are fail-safe: errors go to stderr and never block the run. Multiple channels can be active simultaneously — useful for team projects where some members use Slack and others use Teams.
+All channels are fail-safe: errors go to stderr and never block the run. Multiple channels can be active simultaneously — useful for team projects where some members use Slack and others use Teams or Telegram.
 
 If no channels are configured (Linux/Windows with no webhook set), `--notify` logs a warning pointing to the available env vars.
 
@@ -465,6 +473,8 @@ This may take a while and consume significant ChatGPT usage.
 **Declare file ownership for parallelism.** When running with `--parallel`, the dependency graph is built from which files each sub-task touches. Add `**Files:** src/foo.ts, src/bar.ts` to a sub-task to declare this explicitly — it overrides the regex heuristic and prevents false conflicts. Sub-tasks that share no files run in parallel; sub-tasks that share files are serialized automatically.
 
 **Assign roles for multi-agent orchestration.** Add `**Role:** architect`, `**Role:** implementer`, `**Role:** tester`, or `**Role:** reviewer` to a sub-task body. Phase2S auto-detects role annotations and activates the multi-agent orchestrator, which routes each subtask to a role-appropriate worker with a tailored system prompt. Architect workers emit structured context that gets injected into downstream workers' prompts automatically. Use `--orchestrator` to force orchestrator mode on any spec even without annotations (all subtasks default to `implementer`).
+
+**Route subtasks to different models with `model:`.** Add `model: fast`, `model: smart`, or a literal model name (e.g., `model: gpt-4o`) to a sub-task body. `fast` and `smart` resolve to the configured tier models from `.phase2s.yaml`. Useful for parallel specs where some subtasks need deep reasoning (architecture, review) and others just need speed (boilerplate, docs). Falls back to the outer `--model` flag if no annotation is present.
 
 **Eval command should be deterministic.** `npm test` is good. A test that flakes randomly will cause false failures and unnecessary retries. Fix flaky tests before running `phase2s goal`.
 

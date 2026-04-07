@@ -215,7 +215,7 @@ run log?
 **Parameters:**
 - `specFile` (required) — path to the spec `.md` file
 - `reviewBeforeRun` (optional, boolean) — run adversarial review before execution; challenged specs stop before any code is written
-- `notify` (optional, boolean) — send a notification on completion via all configured channels (`notify.slack`, `notify.discord`, `notify.teams` in `.phase2s.yaml`, or the corresponding env vars)
+- `notify` (optional, boolean) — send a notification on completion via all configured channels (`notify.slack`, `notify.discord`, `notify.teams`, `notify.telegram` in `.phase2s.yaml`, or the corresponding env vars)
 
 **With adversarial pre-check:**
 
