@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.17.0 — 2026-04-07
+
+Test hygiene: `level-context.test.ts` is now fully isolated — all tests run against temp repos instead of the live project repo. TODOS.md housekeeping.
+
+### Changed
+
+- **`level-context.test.ts` fully isolated** — all 6 tests now use `withTempRepo()` instead of `process.cwd()`. The two describe blocks are consolidated into one. No live-repo dependency remains in the file. Test count: 821 → 820 (one duplicate HEAD-equals-HEAD test removed during consolidation).
+- **TODOS.md housekeeping** — orchestrator auto-detect warning marked complete (was shipped in v1.15.0 but left open); `level-context.test.ts` migration marked complete.
+
 ## v1.16.0 — 2026-04-06
 
 Live re-planning after subtask failure, structured architect context JSON, and path-traversal hardening for LLM-generated job IDs.
