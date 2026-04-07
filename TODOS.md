@@ -639,9 +639,7 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 
 - [x] **Multi-model routing** — Shipped Sprint 15 (v0.18.0). `fast_model`/`smart_model` config. Skills declare `model: fast | smart | <literal>`. `Agent.resolveModel()` maps tiers to configured models.
 - [x] **MCP server integration** — shipped Sprint 12. `phase2s mcp` exposes all 29 skills + state tools + goal tool as Claude Code tools. Configured via `.claude/settings.json`.
-- [ ] **oh-my-codex-style multi-agent** — route subtasks to specialized sub-agents
-  - Orchestrator assigns tasks; specialist agents (coder, reviewer, tester) execute
-  - Each specialist has its own tool set and system prompt
+- [x] **oh-my-codex-style multi-agent** — shipped Sprint 38/39 (v1.15.0–v1.16.0). Orchestrator routes subtasks to role-aware workers (architect, implementer, tester, reviewer), each with a tailored system prompt. Live re-planning on failure (LLM-driven delta merge). Backward contamination DFS. Path-traversal hardening on job IDs.
 - [x] **Persistent memory across sessions** — done in Sprint 10. `loadLearnings()` + `formatLearningsForPrompt()` in `src/core/memory.ts`. Injected into system prompt via `AgentOptions.learnings`. CLI loads automatically from `.phase2s/memory/learnings.jsonl`. `/remember` skill writes new learnings.
 - [x] **Browser tool** — shipped Sprint 19 (v0.23.0). Headless Playwright browser. Used by `/qa` skill and available as a tool in the agent loop.
 - [x] **More provider support** — Anthropic + Ollama (Sprint 14), OpenRouter (Sprint 29), Gemini (Sprint 31).
