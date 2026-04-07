@@ -348,4 +348,17 @@ describe("resolveSubtaskModel", () => {
   it("'fast' with no fast_model in config returns fallback", () => {
     expect(resolveSubtaskModel("fast", {}, "fallback-model")).toBe("fallback-model");
   });
+
+  it("'smart' with no smart_model in config returns fallback", () => {
+    expect(resolveSubtaskModel("smart", {}, "fallback-model")).toBe("fallback-model");
+  });
+
+  it("unknown literal annotation passes through and emits console.warn", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = resolveSubtaskModel("totally-unknown-xyz", config);
+    expect(result).toBe("totally-unknown-xyz");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Unknown model annotation"));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("totally-unknown-xyz"));
+    warnSpy.mockRestore();
+  });
 });

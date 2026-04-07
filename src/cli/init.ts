@@ -487,6 +487,9 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
 /** Max number of getUpdates retries when the bot has no messages yet. */
 const TELEGRAM_MAX_RETRIES = 3;
 
+/** Timeout in ms for each Telegram Bot API fetch call. */
+const TELEGRAM_FETCH_TIMEOUT_MS = 10_000;
+
 /**
  * Interactive wizard to discover a Telegram chat ID.
  *
@@ -505,17 +508,23 @@ export async function runTelegramSetup(): Promise<void> {
   // askSecret suppresses keystroke echo so the token isn't visible to observers.
   // Uses readline's internal _writeToOutput hook — the standard Node.js pattern
   // for password prompts without pulling in a separate library.
+  // _writeToOutput is undocumented but stable across Node.js 18/20/22; we guard
+  // against its absence so future Node.js versions degrade gracefully (no masking,
+  // but no crash either).
   const askSecret = (q: string): Promise<string> => {
     let muted = false;
-    const origWrite = (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput.bind(rl);
-    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
-      if (muted && s && s !== '\r\n' && s !== '\n' && s !== '\r') return;
-      origWrite(s);
-    };
+    const rawIface = rl as unknown as { _writeToOutput?: (s: string) => void };
+    const origWrite: (s: string) => void = rawIface._writeToOutput?.bind(rl) ?? (() => {});
+    if (rawIface._writeToOutput) {
+      rawIface._writeToOutput = (s: string) => {
+        if (muted && s && s !== '\r\n' && s !== '\n' && s !== '\r') return;
+        origWrite(s);
+      };
+    }
     return new Promise((resolve) => {
       rl.question(q, (a) => {
         muted = false;
-        (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = origWrite;
+        if (rawIface._writeToOutput) rawIface._writeToOutput = origWrite;
         process.stdout.write('\n');
         resolve(a.trim());
       });
@@ -541,7 +550,7 @@ export async function runTelegramSetup(): Promise<void> {
     let data: unknown;
     try {
       const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), 10_000);
+      const timer = setTimeout(() => ac.abort(), TELEGRAM_FETCH_TIMEOUT_MS);
       let resp: Response;
       try {
         resp = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { signal: ac.signal });
@@ -578,10 +587,25 @@ export async function runTelegramSetup(): Promise<void> {
       }
     }
 
-    // Pick the entry with the highest update_id (most recent)
-    type Update = { update_id: number; message?: { chat?: { id: number } } };
+    // Pick the entry with the highest update_id (most recent) that contains a chat ID.
+    // Telegram can return callback_query, channel_post, edited_message, etc. in getUpdates —
+    // not just plain message events. We check multiple fields to handle all update types.
+    type Update = {
+      update_id: number;
+      message?: { chat?: { id: number } };
+      channel_post?: { chat?: { id: number } };
+      edited_message?: { chat?: { id: number } };
+      callback_query?: { message?: { chat?: { id: number } } };
+    };
     const sorted = (result as Update[]).sort((a, b) => b.update_id - a.update_id);
-    const chatIdNum = sorted[0]?.message?.chat?.id;
+    const chatIdNum = sorted
+      .map(u =>
+        u.message?.chat?.id ??
+        u.channel_post?.chat?.id ??
+        u.edited_message?.chat?.id ??
+        u.callback_query?.message?.chat?.id
+      )
+      .find(id => id !== undefined);
     if (chatIdNum === undefined) {
       rl.close();
       console.error(chalk.red("\n  Could not parse chat ID from updates. Try sending a text message to your bot."));

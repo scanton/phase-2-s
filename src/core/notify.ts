@@ -203,6 +203,9 @@ async function sendTeamsNotification(payload: NotifyPayload, webhookUrl: string)
   }
 }
 
+/** Timeout in ms for each Telegram Bot API fetch call. */
+const TELEGRAM_FETCH_TIMEOUT_MS = 10_000;
+
 /**
  * Send a Telegram notification via the Bot API.
  *
@@ -218,7 +221,7 @@ export async function sendTelegramNotification(
     : payload.title;
   const url = `https://api.telegram.org/bot${opts.token}/sendMessage`;
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 10_000);
+  const timer = setTimeout(() => ac.abort(), TELEGRAM_FETCH_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetch(url, {

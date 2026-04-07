@@ -102,6 +102,40 @@ describe("formatConfig", () => {
     const yaml = formatConfig({ provider: "ollama" });
     expect(yaml.endsWith("\n")).toBe(true);
   });
+
+  it("telegramToken + telegramChatId: telegram block included in notify", () => {
+    const yaml = formatConfig({
+      provider: "codex-cli",
+      telegramToken: "123456:ABC-DEF",
+      telegramChatId: "-1001234567890",
+    });
+    expect(yaml).toContain("notify:");
+    expect(yaml).toContain("telegram:");
+    expect(yaml).toContain('token: "123456:ABC-DEF"');
+    expect(yaml).toContain('chatId: "-1001234567890"');
+  });
+
+  it("telegramToken without telegramChatId: notify block is absent (partial config ignored)", () => {
+    const yaml = formatConfig({
+      provider: "codex-cli",
+      telegramToken: "123456:ABC-DEF",
+    });
+    // Neither token nor chatId appears — partial config must not emit a broken YAML block
+    expect(yaml).not.toContain("telegram:");
+    expect(yaml).not.toContain("notify:");
+  });
+
+  it("telegram alongside webhooks: all channels appear in notify block", () => {
+    const yaml = formatConfig({
+      provider: "codex-cli",
+      slackWebhook: "https://hooks.slack.com/test",
+      telegramToken: "tok",
+      telegramChatId: "42",
+    });
+    expect(yaml).toContain('slack: "https://hooks.slack.com/test"');
+    expect(yaml).toContain("telegram:");
+    expect(yaml).toContain('token: "tok"');
+  });
 });
 
 // ---------------------------------------------------------------------------

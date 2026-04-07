@@ -500,7 +500,12 @@ async function executeWorker(
 // Model resolution
 // ---------------------------------------------------------------------------
 
-/** Known model name prefixes used to detect potential typos in literal annotations. */
+/**
+ * Known model name prefixes used to detect potential typos in literal `model:` annotations.
+ * Intentionally a best-effort heuristic, not an authoritative allowlist — unrecognized
+ * values pass through with a console.warn (they may be valid provider-specific IDs).
+ * Update this list when adding new provider support to keep warnings accurate.
+ */
 const KNOWN_MODEL_PREFIXES = ["gpt-", "claude-", "o1", "o3", "gemini-", "deepseek-", "minimax", "openai/", "anthropic/", "google/"];
 
 /**

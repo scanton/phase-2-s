@@ -306,4 +306,22 @@ describe("sendNotification with Telegram channel", () => {
     expect(warning).toContain("PHASE2S_TELEGRAM_BOT_TOKEN");
     warnSpy.mockRestore();
   });
+
+  it("sendNotification swallows Telegram API error and logs to stderr (fail-safe)", async () => {
+    // All channels are fail-safe: errors should never throw out of sendNotification.
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: "Internal Server Error" });
+    vi.stubGlobal("fetch", mockFetch);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      sendNotification(
+        { title: "done", success: true },
+        { mac: false, telegram: { token: "tok", chatId: "42" } },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
 });

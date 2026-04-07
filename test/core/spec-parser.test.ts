@@ -404,4 +404,34 @@ model: smart
     const spec = parseSpec(markdown);
     expect(spec.decomposition[0].model).toBe("fast");
   });
+
+  it("bare 'model: X' after free-form prose is NOT parsed as annotation (pastMetadata guard)", () => {
+    // The line 'model: gpt-4' appears after free-form prose (pastMetadata=true).
+    // It must be treated as prose, not a model annotation.
+    const markdown = `# Spec: Model Annotation
+## Decomposition
+### Sub-task 1: Prose task
+- **Input:** source
+- **Output:** result
+- **Success criteria:** done
+This task uses model: gpt-4 in its implementation details.
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBeUndefined();
+  });
+
+  it("bold **Model:** annotation after free-form prose is still parsed (unambiguous form)", () => {
+    // Bold form is unambiguous regardless of position in the subtask body.
+    const markdown = `# Spec: Model Annotation
+## Decomposition
+### Sub-task 1: Late annotation
+- **Input:** source
+- **Output:** result
+- **Success criteria:** done
+Some free-form description here.
+- **Model:** smart
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBe("smart");
+  });
 });
