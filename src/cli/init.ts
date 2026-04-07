@@ -502,11 +502,32 @@ export async function runTelegramSetup(): Promise<void> {
   const ask = (q: string): Promise<string> =>
     new Promise((resolve) => rl.question(q, (a) => resolve(a.trim())));
 
+  // askSecret suppresses keystroke echo so the token isn't visible to observers.
+  // Uses readline's internal _writeToOutput hook — the standard Node.js pattern
+  // for password prompts without pulling in a separate library.
+  const askSecret = (q: string): Promise<string> => {
+    let muted = false;
+    const origWrite = (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput.bind(rl);
+    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
+      if (muted && s && s !== '\r\n' && s !== '\n' && s !== '\r') return;
+      origWrite(s);
+    };
+    return new Promise((resolve) => {
+      rl.question(q, (a) => {
+        muted = false;
+        (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = origWrite;
+        process.stdout.write('\n');
+        resolve(a.trim());
+      });
+      muted = true;
+    });
+  };
+
   console.log(chalk.bold("\n  Telegram setup wizard\n"));
   console.log("  This wizard finds your Telegram chat ID so you can receive phase2s notifications.");
   console.log("  You'll need a bot token from @BotFather (https://t.me/BotFather).\n");
 
-  const token = await ask("  Enter your bot token (from BotFather): ");
+  const token = await askSecret("  Enter your bot token (from BotFather): ");
 
   if (!token) {
     rl.close();
@@ -519,7 +540,14 @@ export async function runTelegramSetup(): Promise<void> {
   for (let attempt = 0; attempt < TELEGRAM_MAX_RETRIES; attempt++) {
     let data: unknown;
     try {
-      const resp = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 10_000);
+      let resp: Response;
+      try {
+        resp = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { signal: ac.signal });
+      } finally {
+        clearTimeout(timer);
+      }
       if (!resp.ok) {
         rl.close();
         console.error(chalk.red(`\n  Invalid token — check BotFather (HTTP ${resp.status}).`));
@@ -528,7 +556,10 @@ export async function runTelegramSetup(): Promise<void> {
       data = await resp.json();
     } catch (err) {
       rl.close();
-      console.error(chalk.red(`\n  Network error: ${err instanceof Error ? err.message : String(err)}`));
+      const msg = err instanceof Error && err.name === 'AbortError'
+        ? 'Request timed out after 10s — check your network connection.'
+        : err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`\n  Network error: ${msg}`));
       return;
     }
 

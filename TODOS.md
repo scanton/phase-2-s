@@ -6,6 +6,26 @@
 
 ---
 
+## Sprint 41 (done) — Telegram Notifications, Byte-Aware Truncation, Model Annotation (v1.18.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.18.0 |
+| Tests | 841 (+21 from v1.17.0) |
+
+- [x] **Byte-aware truncation in `level-context.ts`** — replaced `String.slice()` with `Buffer.from().subarray().toString()` to avoid splitting multibyte emoji at the 4096-byte boundary. 3-byte headroom for U+FFFD replacement character. **Completed:** v1.18.0 (2026-04-07)
+- [x] **Telegram notification channel** — `notify.telegram.token` + `notify.telegram.chatId` in config. `sendTelegramNotification()` in `notify.ts`. Env var fallback: `PHASE2S_TELEGRAM_BOT_TOKEN` / `PHASE2S_TELEGRAM_CHAT_ID`. `sendNotification()` routes to Telegram when configured. **Completed:** v1.18.0 (2026-04-07)
+- [x] **`phase2s init --telegram-setup` wizard** — interactive wizard: prompts for bot token (masked echo), calls `getUpdates` to discover chat ID, prints YAML snippet. 3 retries if no messages received yet. **Completed:** v1.18.0 (2026-04-07)
+- [x] **`model:` annotation in specs** — `model: fast|smart|<literal>` parsed by `spec-parser.ts`. `resolveSubtaskModel()` in `parallel-executor.ts` maps `fast` → `config.fast_model`, `smart` → `config.smart_model`, literals pass through. Per-subtask model routing in parallel workers. **Completed:** v1.18.0 (2026-04-07)
+- [x] **Zod schema: `notify.telegram` field** — Zod's default `parse()` strips unknown keys. Added `telegram` to notify schema so config-file-based Telegram is not silently dropped. **Completed:** v1.18.0 (2026-04-07) *(review fix)*
+- [x] **`goal.ts`: pass `notify.telegram` to `sendNotification()`** — `notifyOptions` object was missing `telegram: config.notify?.telegram`. Fixed. **Completed:** v1.18.0 (2026-04-07) *(review fix)*
+- [x] **Token masking in wizard** — `askSecret()` helper using readline's `_writeToOutput` hook suppresses keystroke echo while user types bot token. **Completed:** v1.18.0 (2026-04-07) *(review fix)*
+- [x] **10s timeout on Telegram fetch calls** — `AbortController` with 10s timeout in both `sendTelegramNotification()` and wizard `getUpdates` calls. Timeout error reported clearly. **Completed:** v1.18.0 (2026-04-07) *(review fix)*
+- [x] **`model:` annotation position restriction** — bare `model: X` annotation only matched in the structured metadata block (before free-form body text). Bold `**Model:** X` still matches anywhere (unambiguous). Prevents false matches in prose like "this uses model: X". **Completed:** v1.18.0 (2026-04-07) *(review fix)*
+- [x] **tiktoken won't-fix** — token estimation via `~4 chars/token` is conservative and safe. Adding 2MB wasm binary for marginal precision gain is not worth it. Documented in Known Issues. **Completed:** v1.18.0 (2026-04-07)
+
+---
+
 ## Sprint 32-34 (done) — MiniMax Provider, README Refresh (v1.11.0)
 
 - [x] MiniMax provider: composition over OpenAI, `https://api.minimax.io/v1/`, MiniMax-M2.5 default
@@ -625,10 +645,10 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - [x] **`phase2s lint` >8 sub-task warning** — shipped Sprint 32 (v1.9.0). Large specs are unreliable; lint warns and suggests breaking into smaller specs. 1 test.
 - [x] **`phase2s lint` evalCommand PATH check** — shipped Sprint 32 (v1.9.0). Warns immediately if the eval binary (e.g. `pytest`) is not on PATH. Skipped for default `npm test`. 3 tests.
 - [x] **MiniMax provider** — shipped Sprint 32-34 (v1.11.0). Composition over OpenAI, `api.minimax.io/v1/`, MiniMax-M2.5 default.
-- [ ] **Multi-provider parallel workers** — Per-subtask model routing for parallel execution. Different workers use different providers based on task complexity. Depends on Sprint 35 parallel infrastructure.
+- [x] **Multi-provider parallel workers** — Per-subtask model routing via `model:` spec annotation. `resolveSubtaskModel()` maps `fast`/`smart` to config tiers; literals pass through. Shipped Sprint 41 (v1.18.0).
 - [ ] **VS Code extension** — run skills from the editor sidebar
   - `/review` on current file, `/investigate` on selected error, `/plan` for a feature
-- [ ] **Telegram notifications** — `notify.telegram.token` + `notify.telegram.chatId`. Requires BotFather setup + `getUpdates` to find chat ID. Consider `phase2s init --telegram-setup` helper that calls `getUpdates` and prints the chat ID automatically.
+- [x] **Telegram notifications** — `notify.telegram.token` + `notify.telegram.chatId`. `phase2s init --telegram-setup` wizard with masked token input, `getUpdates` chat ID discovery, 10s fetch timeout. Shipped Sprint 41 (v1.18.0).
 
 ---
 

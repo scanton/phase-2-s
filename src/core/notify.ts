@@ -217,11 +217,19 @@ export async function sendTelegramNotification(
     ? `${payload.title}\n${payload.body}`
     : payload.title;
   const url = `https://api.telegram.org/bot${opts.token}/sendMessage`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: opts.chatId, text }),
-  });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 10_000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: opts.chatId, text }),
+      signal: ac.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!response.ok) {
     throw new Error(`Telegram API returned ${response.status} ${response.statusText}`);
   }
