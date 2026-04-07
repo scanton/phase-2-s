@@ -637,7 +637,7 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - `codex.ts`: prompt is passed as a CLI argument — arg injection risk if prompt contains `--flags` ← fixed in Sprint 5 (`"--"` separator)
 - `shell.ts`: warns on destructive commands but doesn't block them ← fixed in Sprint 3
 - `openai.ts`: doesn't handle `finish_reason: "length"` (silently drops truncated responses) ← fixed in Sprint 3
-- `conversation.ts`: token estimation is ~4 chars/token — rough; use `tiktoken` for precision
+- [x] `conversation.ts`: token estimation is ~4 chars/token — won't fix. The estimate errs conservatively (over-counts tokens → trims earlier → safe direction). Adding a 2MB wasm binary for marginal precision improvement is not worth the dependency cost.
 - `file-read.ts`, `file-write.ts`: sandbox uses `resolve()` not `realpath()` — symlinks inside the project that point outside cwd bypass the sandbox. ← fixed in Sprint 5 (`assertInSandbox()` with `realpath()`)
 - No integration tests (only unit tests so far) ← fixed in Sprint 3 (8 agent integration tests)
 - CI added (GitHub Actions, Node.js 22) — no deploy step yet (CLI tool)
