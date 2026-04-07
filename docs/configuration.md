@@ -139,12 +139,17 @@ maxTurns: 50
 # slack: Slack incoming webhook URL
 # discord: Discord incoming webhook URL
 # teams: Microsoft Teams incoming webhook URL
+# telegram.token: Telegram bot token (get from @BotFather). Run `phase2s init --telegram-setup` to find your chat ID automatically.
+# telegram.chatId: Telegram chat or group ID (string, may be negative for groups/channels)
 # Each channel also has an env var equivalent (see Environment Variables section below).
 # notify:
 #   mac: true
 #   slack: "https://hooks.slack.com/services/T.../B.../..."
 #   discord: "https://discord.com/api/webhooks/.../..."
 #   teams: "https://outlook.office.com/webhook/..."
+#   telegram:
+#     token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ-abc12345678"
+#     chatId: "-1001234567890"
 ```
 
 ---
@@ -165,6 +170,8 @@ All config file settings can be overridden with environment variables. Environme
 | `PHASE2S_SLACK_WEBHOOK` | `notify.slack` | Slack incoming webhook URL for dark factory run notifications |
 | `PHASE2S_DISCORD_WEBHOOK` | `notify.discord` | Discord incoming webhook URL for dark factory run notifications |
 | `PHASE2S_TEAMS_WEBHOOK` | `notify.teams` | Microsoft Teams incoming webhook URL for dark factory run notifications |
+| `PHASE2S_TELEGRAM_BOT_TOKEN` | `notify.telegram.token` | Telegram bot token (from @BotFather) for dark factory run notifications |
+| `PHASE2S_TELEGRAM_CHAT_ID` | `notify.telegram.chatId` | Telegram chat ID (string; run `phase2s init --telegram-setup` to find it) |
 | `PHASE2S_CODEX_PATH` | — | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | — | API key for `openai-api` provider |
 | `ANTHROPIC_API_KEY` | — | API key for `anthropic` provider |
