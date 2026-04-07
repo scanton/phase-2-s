@@ -556,7 +556,7 @@ The four roles:
 | `tester` | Test coverage, edge cases, assertions |
 | `reviewer` | Code quality, correctness, standards compliance |
 
-**Architect context passing.** Architect workers are expected to end their output with a `<!-- CONTEXT -->` sentinel followed by a structured summary of what they designed — interfaces, file paths, key decisions. The orchestrator captures everything after the sentinel (up to 4096 bytes) and injects it into each downstream worker's system prompt as `Prior context from upstream subtask '...'`. This is how an architect's design decisions reach implementers and testers without manual copy-paste.
+**Architect context passing.** Architect workers end their output with a ` ```context-json ` block containing a structured JSON summary of what they designed — interfaces, file paths, key decisions. The orchestrator parses this block (up to 4096 bytes) and injects it into each downstream worker's system prompt as `Prior context from upstream subtask '...'`. This is how an architect's design decisions reach implementers and testers without manual copy-paste. If the block is missing, an `orchestrator_context_missing` event is logged and execution continues.
 
 **Activation.** Phase2S auto-detects role annotations and activates orchestrator mode. Use `--orchestrator` to force it on any spec, even without annotations (all subtasks default to `implementer`):
 
@@ -568,7 +568,7 @@ phase2s goal my-spec.md
 phase2s goal my-spec.md --orchestrator
 ```
 
-If a subtask fails, the orchestrator skips all transitively dependent subtasks. Independent subtasks continue unaffected. The `orchestrator_replan`, `job_routed`, `job_promoted`, and `orchestrator_context_missing` events appear in the run log.
+If a subtask fails, the orchestrator skips all transitively dependent subtasks and calls the LLM to produce a revised plan (`orchestrator_replan_result` event). The delta is validated, merged, and re-leveled — execution continues with the revised plan. Independent subtasks continue unaffected. The `orchestrator_replan_result`, `orchestrator_replan_failed`, `job_routed`, `job_promoted`, and `orchestrator_context_missing` events appear in the run log.
 
 ---
 
