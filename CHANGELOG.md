@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.16.0 — 2026-04-06
+
+Live re-planning after subtask failure, structured architect context JSON, and path-traversal hardening for LLM-generated job IDs.
+
+### What's new
+
+- **Live re-planning** — when a subtask fails, the orchestrator calls the LLM with a structured prompt describing the failure, remaining jobs, and architect context. The revised plan (a `delta` of new or updated jobs) is validated with 2 retries, merged back, and re-leveled — execution continues rather than stopping. New jobs added by the LLM are registered immediately so skip-sync and downstream DFS see them.
+- **Validated LLM output (`schemaGate<T>`)** — new `src/core/schema-gate.ts` utility. Extracts JSON from the LLM response, validates it with a type predicate, and retries up to N times with the previous error injected. The re-planner uses this to get a structurally valid delta before accepting it.
+- **Structured architect context** — architect workers now emit a ` ```context-json ` block with a typed JSON summary of their design decisions. `parseArchitectContext()` extracts and validates the block. The re-planner receives a structured `ArchitectContext` object instead of freeform text, making re-plan prompts more reliable.
+- **`context-json` sentinel replaces `<!-- CONTEXT -->`** — all role prompts updated. Backward-compatible: the old sentinel still works for downstream file injection.
+- **Backward contamination flagging** — after re-planning, the orchestrator walks backward from the failed job through completed ancestors (DFS) and flags them as `suspect`. Suspect count is logged to `orchestrator_replan_result.suspectCount` and returned in the final result. Useful for post-run audits when a failure may have consumed unreliable upstream output.
+- **`filteredCompletedCount` on re-plan result** — `orchestrator_replan_result` now includes `filteredCompletedCount: number` (how many completed IDs the model included in delta, filtered server-side). Replaces a misleading `orchestrator_replan_failed` event that was previously emitted for this case.
+- **Named re-plan constants** — `REPLAN_REMAINING_SHOWN_JOBS = 5` and `REPLAN_SCHEMA_GATE_RETRIES = 2` replace magic numbers.
+
+### Security
+
+- **`isDeltaResponse` slug validation** — delta job `id` fields are now validated against `/^[a-z0-9][a-z0-9-]*$/` before acceptance. LLM-generated IDs containing `../`, absolute paths, or spaces are rejected, preventing path traversal when the ID is used in context file construction.
+- **`dependsOn` element typing** — `isDeltaResponse` now validates that every element of `dependsOn` is a `string` (previously only checked `Array.isArray`).
+
+### Fixed
+
+- `allJobs` staleness — orchestrator now uses `[...jobById.values()]` instead of the original `allJobs` parameter for DFS, skip-sync, and remaining-pending filtering. Delta-added jobs are visible to all post-re-plan operations.
+- Dead `orchestrator_replan` event removed from `RunEvent` union (replaced by `orchestrator_replan_result` and `orchestrator_replan_failed`).
+- `OrchestratorResult` and `orchestrator_completed` now include `suspectCount`.
+
+### Stats
+
+| Metric | Value |
+|--------|-------|
+| New source files | 2 (`schema-gate.ts`, `architect-context.ts`) |
+| New test files | 2 (`replan.test.ts`, `types.test.ts`) |
+| Tests | 821 (+60 from v1.15.0) |
+
 ## v1.15.0 — 2026-04-06
 
 Multi-agent orchestrator: role-aware spec compilation, deterministic state machine routing, and architect context passing.

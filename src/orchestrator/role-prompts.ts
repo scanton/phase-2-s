@@ -2,10 +2,12 @@
  * Role-specific system prompt prefixes for orchestrator workers.
  */
 
+import { ARCHITECT_CONTEXT_JSON_SENTINEL, formatArchitectContextInstructions } from './architect-context.js';
+
 export type Role = 'architect' | 'implementer' | 'tester' | 'reviewer';
 
-/** Sentinel string that architect workers emit to signal context output follows. */
-export const ARCHITECT_CONTEXT_SENTINEL = '<!-- CONTEXT -->';
+// Re-export for consumers that previously imported ARCHITECT_CONTEXT_SENTINEL from here.
+export { ARCHITECT_CONTEXT_JSON_SENTINEL };
 
 export const ROLE_PROMPTS: Record<Role, string> = {
   architect: `You are an architect. Your job is to make design decisions and establish constraints that downstream workers must respect.
@@ -15,9 +17,7 @@ Focus on:
 - Architectural decisions with rationale
 - Constraints implementers must follow
 
-At the end of your response, output a section starting with exactly this sentinel line:
-<!-- CONTEXT -->
-Then write a concise summary of your architectural decisions that implementers need to know. This context will be injected into their system prompts.`,
+${formatArchitectContextInstructions()}`,
 
   implementer: `You are an implementer. Your job is to write correct, working code.
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ROLE_PROMPTS, type Role } from '../../src/orchestrator/role-prompts.js';
+import { ROLE_PROMPTS, ARCHITECT_CONTEXT_JSON_SENTINEL, type Role } from '../../src/orchestrator/role-prompts.js';
 
 const EXPECTED_ROLES: Role[] = ['architect', 'implementer', 'tester', 'reviewer'];
 
@@ -10,8 +10,8 @@ describe('ROLE_PROMPTS', () => {
     }
   });
 
-  it('architect prompt contains the sentinel comment', () => {
-    expect(ROLE_PROMPTS.architect).toContain('<!-- CONTEXT -->');
+  it('architect prompt contains the context-json sentinel (Sprint 39: replaces <!-- CONTEXT -->)', () => {
+    expect(ROLE_PROMPTS.architect).toContain(ARCHITECT_CONTEXT_JSON_SENTINEL);
   });
 
   it('each role prompt is a non-empty string', () => {
@@ -21,10 +21,10 @@ describe('ROLE_PROMPTS', () => {
     }
   });
 
-  it('non-architect roles do NOT contain the sentinel comment', () => {
+  it('non-architect roles do NOT contain the context-json sentinel', () => {
     const nonArchitectRoles: Role[] = ['implementer', 'tester', 'reviewer'];
     for (const role of nonArchitectRoles) {
-      expect(ROLE_PROMPTS[role]).not.toContain('<!-- CONTEXT -->');
+      expect(ROLE_PROMPTS[role]).not.toContain(ARCHITECT_CONTEXT_JSON_SENTINEL);
     }
   });
 

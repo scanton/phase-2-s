@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { compile, slugify } from '../../src/orchestrator/spec-compiler.js';
+import { compile, buildLevels, slugify } from '../../src/orchestrator/spec-compiler.js';
 import type { SubTask } from '../../src/core/spec-parser.js';
+import type { SubtaskJob } from '../../src/orchestrator/types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -155,5 +156,76 @@ describe('slugify', () => {
 
   it('collapses multiple special chars into one dash', () => {
     expect(slugify('foo!!!bar')).toBe('foo-bar');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildLevels — Sprint 39 (Kahn's on ID graph)
+// ---------------------------------------------------------------------------
+
+function makeJob(id: string, dependsOn: string[] = []): SubtaskJob {
+  return {
+    id,
+    title: id,
+    role: 'implementer',
+    prompt: '',
+    files: [],
+    criteria: [],
+    dependsOn,
+    systemPromptPrefix: '',
+  };
+}
+
+describe('buildLevels', () => {
+  it('empty input → []', () => {
+    expect(buildLevels([])).toEqual([]);
+  });
+
+  it('all independent (no dependsOn) → single level containing all jobs', () => {
+    const jobs = [makeJob('a'), makeJob('b'), makeJob('c')];
+    const levels = buildLevels(jobs);
+    expect(levels).toHaveLength(1);
+    expect(levels[0].map(j => j.id).sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('serial chain A→B→C → 3 levels in correct order', () => {
+    const a = makeJob('a');
+    const b = makeJob('b', ['a']);
+    const c = makeJob('c', ['b']);
+    const levels = buildLevels([a, b, c]);
+    expect(levels).toHaveLength(3);
+    expect(levels[0].map(j => j.id)).toEqual(['a']);
+    expect(levels[1].map(j => j.id)).toEqual(['b']);
+    expect(levels[2].map(j => j.id)).toEqual(['c']);
+  });
+
+  it('diamond (A→B, A→C, B→D, C→D) → 3 levels', () => {
+    const a = makeJob('a');
+    const b = makeJob('b', ['a']);
+    const c = makeJob('c', ['a']);
+    const d = makeJob('d', ['b', 'c']);
+    const levels = buildLevels([a, b, c, d]);
+    expect(levels).toHaveLength(3);
+    expect(levels[0].map(j => j.id)).toEqual(['a']);
+    expect(levels[1].map(j => j.id).sort()).toEqual(['b', 'c']);
+    expect(levels[2].map(j => j.id)).toEqual(['d']);
+  });
+
+  it('cycle detected → fallback: all cycled jobs in final level (no crash)', () => {
+    // A→B→A cycle; C is independent
+    const a = makeJob('a', ['b']);
+    const b = makeJob('b', ['a']);
+    const c = makeJob('c');
+    const levels = buildLevels([a, b, c]);
+    // c is in first level (no deps), a+b are in fallback level
+    expect(levels.length).toBeGreaterThanOrEqual(2);
+    const allIds = levels.flat().map(j => j.id);
+    expect(allIds).toContain('a');
+    expect(allIds).toContain('b');
+    expect(allIds).toContain('c');
+    // c must appear before a and b (or alongside — depends on fallback position)
+    const cLevel = levels.findIndex(l => l.some(j => j.id === 'c'));
+    const aLevel = levels.findIndex(l => l.some(j => j.id === 'a'));
+    expect(cLevel).toBeLessThan(aLevel);
   });
 });

@@ -53,6 +53,72 @@ export function compile(subtasks: SubTask[]): CompileResult {
   return { jobs, levels };
 }
 
+/**
+ * Build execution levels from SubtaskJob[] using Kahn's algorithm on the
+ * ID-based dependsOn graph.
+ *
+ * This is NOT a wrapper around buildDependencyGraph() — that function operates
+ * on SubTask[] and derives dependencies from file references. Here, dependsOn
+ * is already populated as string[] IDs on each SubtaskJob.
+ *
+ * Cycle detection: any jobs with non-zero in-degree after processing are put
+ * in a final fallback level (conservative — avoids crash).
+ */
+export function buildLevels(jobs: SubtaskJob[]): SubtaskJob[][] {
+  if (jobs.length === 0) return [];
+
+  const byId = new Map(jobs.map(j => [j.id, j]));
+
+  // Only count in-degree from dependencies that exist in this job set
+  // (completed jobs may still appear in dependsOn — filter them out)
+  const inDegree = new Map<string, number>();
+  for (const j of jobs) {
+    inDegree.set(j.id, 0);
+  }
+  for (const j of jobs) {
+    for (const dep of j.dependsOn) {
+      if (byId.has(dep)) {
+        inDegree.set(j.id, (inDegree.get(j.id) ?? 0) + 1);
+      }
+    }
+  }
+
+  // Adjacency: dep → list of jobs that depend on it
+  const adj = new Map<string, string[]>();
+  for (const j of jobs) {
+    for (const dep of j.dependsOn) {
+      if (byId.has(dep)) {
+        if (!adj.has(dep)) adj.set(dep, []);
+        adj.get(dep)!.push(j.id);
+      }
+    }
+  }
+
+  const levels: SubtaskJob[][] = [];
+  let queue = jobs.filter(j => (inDegree.get(j.id) ?? 0) === 0);
+
+  while (queue.length > 0) {
+    levels.push(queue);
+    const next: SubtaskJob[] = [];
+    for (const j of queue) {
+      for (const depId of adj.get(j.id) ?? []) {
+        const deg = (inDegree.get(depId) ?? 0) - 1;
+        inDegree.set(depId, deg);
+        if (deg === 0) next.push(byId.get(depId)!);
+      }
+    }
+    queue = next;
+  }
+
+  // Cycle fallback: remaining jobs with non-zero in-degree go in one final level
+  const remaining = jobs.filter(j => (inDegree.get(j.id) ?? 0) > 0);
+  if (remaining.length > 0) {
+    levels.push(remaining);
+  }
+
+  return levels;
+}
+
 export function slugify(name: string): string {
   const slug = name
     .toLowerCase()
