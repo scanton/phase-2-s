@@ -554,10 +554,10 @@ export async function runTelegramSetup(): Promise<void> {
 
   for (let attempt = 0; attempt < TELEGRAM_MAX_RETRIES; attempt++) {
     let data: unknown;
+    let resp: Response;
     try {
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), TELEGRAM_FETCH_TIMEOUT_MS);
-      let resp: Response;
       try {
         resp = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { signal: ac.signal });
       } finally {
@@ -568,13 +568,21 @@ export async function runTelegramSetup(): Promise<void> {
         console.error(chalk.red(`\n  Invalid token — check BotFather (HTTP ${resp.status}).`));
         return;
       }
-      data = await resp.json();
     } catch (err) {
       rl.close();
       const msg = err instanceof Error && err.name === 'AbortError'
         ? 'Request timed out after 10s — check your network connection.'
         : err instanceof Error ? err.message : String(err);
       console.error(chalk.red(`\n  Network error: ${msg}`));
+      return;
+    }
+    try {
+      data = await resp!.json();
+    } catch (err) {
+      rl.close();
+      console.error(chalk.red(
+        "\n  Telegram returned an unexpected response (non-JSON). The API may be down or the bot token may be invalid."
+      ));
       return;
     }
 

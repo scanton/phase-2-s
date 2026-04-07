@@ -8,11 +8,12 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, accessSync, mkdirSync, constants } from "node:fs";
+import { existsSync, accessSync, mkdirSync, constants, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import chalk from "chalk";
 import { parse as parseYaml } from "yaml";
 import { readFileSync } from "node:fs";
+import { bundledTemplatesDir } from "../skills/loader.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -271,6 +272,35 @@ export function checkGitWorktree(): CheckResult {
   };
 }
 
+/**
+ * Check that bundled spec templates directory is present and non-empty.
+ */
+export function checkTemplatesDir(): CheckResult {
+  const dir = bundledTemplatesDir();
+  if (!existsSync(dir)) {
+    return {
+      name: "Spec templates",
+      ok: false,
+      detail: "Bundled templates directory not found",
+      fix: "Reinstall phase2s: npm install -g @scanton/phase2s",
+    };
+  }
+  const files = readdirSync(dir).filter((f: string) => f.endsWith(".md"));
+  if (files.length === 0) {
+    return {
+      name: "Spec templates",
+      ok: false,
+      detail: "Templates directory exists but contains no templates",
+      fix: "Reinstall phase2s: npm install -g @scanton/phase2s",
+    };
+  }
+  return {
+    name: "Spec templates",
+    ok: true,
+    detail: `${files.length} bundled templates found`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // runDoctor — entry point
 // ---------------------------------------------------------------------------
@@ -301,6 +331,7 @@ export async function runDoctor(): Promise<void> {
     checkAuth(provider, existingConfig),
     checkConfigFile(configPath),
     checkWorkDir(resolve(".phase2s")),
+    checkTemplatesDir(),
     checkTmux(),
     checkGitWorktree(),
   ];

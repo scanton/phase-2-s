@@ -227,6 +227,14 @@ export async function sendTelegramNotification(
   const text = payload.body
     ? `${payload.title}\n${payload.body}`
     : payload.title;
+  // Telegram Bot API rejects messages >4096 bytes (UTF-8). Truncate byte-aware — JS string
+  // length counts code units, not bytes; emoji-heavy text can exceed 4096 bytes even with
+  // text.length ≤ 4090. Buffer.byteLength() gives the true byte count.
+  const TELEGRAM_MAX_BYTES = 4090;
+  const ELLIPSIS = "\u2026"; // U+2026 HORIZONTAL ELLIPSIS, 3 bytes UTF-8
+  const truncatedText = Buffer.byteLength(text, "utf8") > TELEGRAM_MAX_BYTES
+    ? Buffer.from(text).subarray(0, TELEGRAM_MAX_BYTES - 3).toString("utf8") + ELLIPSIS
+    : text;
   const url = `https://api.telegram.org/bot${opts.token}/sendMessage`;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TELEGRAM_FETCH_TIMEOUT_MS);
@@ -235,7 +243,7 @@ export async function sendTelegramNotification(
     response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: opts.chatId, text }),
+      body: JSON.stringify({ chat_id: opts.chatId, text: truncatedText }),
       signal: ac.signal,
     });
   } finally {
