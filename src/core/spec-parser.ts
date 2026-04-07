@@ -31,6 +31,8 @@ export interface SubTask {
   files?: string[];
   /** Optional role annotation from **Role:** X in subtask body. undefined if not present (NOT defaulted here). */
   role?: 'architect' | 'implementer' | 'tester' | 'reviewer';
+  /** Optional model annotation from 'model: X' on the line immediately after the subtask heading. */
+  model?: string;
 }
 
 export interface TestCase {
@@ -159,12 +161,17 @@ function extractDecomposition(lines: string[]): SubTask[] {
 
   const subtasks: SubTask[] = [];
   let current: Partial<SubTask> | null = null;
+  // Track when we've passed the structured metadata block (Input/Output/etc.) and
+  // entered free-form body text. The bare `model: X` annotation is only valid in
+  // the metadata block; the bold `**Model:** X` form is unambiguous anywhere.
+  let pastMetadata = false;
 
   for (const line of sectionLines) {
     const subTaskHeader = line.match(/^###\s+Sub-task\s+\d+:\s*(.+)/i);
     if (subTaskHeader) {
       if (current?.name) subtasks.push(completeSubTask(current));
       current = { name: subTaskHeader[1].trim(), input: "", output: "", successCriteria: "" };
+      pastMetadata = false;
       continue;
     }
 
@@ -196,6 +203,23 @@ function extractDecomposition(lines: string[]): SubTask[] {
       }
       continue;
     }
+
+    // Bold form (`- **Model:** X`) is unambiguous — match anywhere in the subtask.
+    // Bare form (`model: X`) is only valid in the structured metadata block, before
+    // any free-form body text, to avoid false matches like "uses model: X in production".
+    const modelBold = line.match(/^\s*-?\s*\*\*Model:\*\*\s*(.+)/i);
+    const modelBare = !pastMetadata ? line.match(/^\s*-?\s*model:\s*(.+)/i) : null;
+    const model = modelBold ?? modelBare;
+    if (model) {
+      current.model = model[1].trim();
+      continue;
+    }
+
+    // Non-empty, non-comment lines that didn't match any metadata pattern mark the
+    // end of the structured block. Subsequent bare `model:` mentions are prose, not annotations.
+    if (line.trim() && !line.match(/^\s*#+\s/)) {
+      pastMetadata = true;
+    }
   }
 
   if (current?.name) subtasks.push(completeSubTask(current));
@@ -214,6 +238,9 @@ function completeSubTask(partial: Partial<SubTask>): SubTask {
   }
   if (partial.role !== undefined) {
     result.role = partial.role;
+  }
+  if (partial.model !== undefined) {
+    result.model = partial.model;
   }
   return result;
 }

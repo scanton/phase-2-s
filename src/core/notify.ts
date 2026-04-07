@@ -6,6 +6,7 @@
  * 2. Slack webhook (PHASE2S_SLACK_WEBHOOK env var or config, uses native fetch)
  * 3. Discord webhook (PHASE2S_DISCORD_WEBHOOK env var or config, uses native fetch)
  * 4. Microsoft Teams webhook (PHASE2S_TEAMS_WEBHOOK env var or config, uses native fetch)
+ * 5. Telegram bot (PHASE2S_TELEGRAM_BOT_TOKEN + PHASE2S_TELEGRAM_CHAT_ID env vars or config)
  *
  * All channels are fail-safe: errors are logged to stderr but never thrown.
  * Notifications should never block or fail a dark factory run.
@@ -18,6 +19,13 @@ import { basename } from "node:path";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface TelegramOptions {
+  /** Bot token from BotFather (e.g. "123456:ABC-DEF..."). */
+  token: string;
+  /** Chat ID to send to (e.g. "-1001234567890"). */
+  chatId: string;
+}
+
 export interface NotifyOptions {
   /** Show macOS system notification. Defaults to true on darwin, false elsewhere. */
   mac?: boolean;
@@ -27,6 +35,8 @@ export interface NotifyOptions {
   discord?: string;
   /** Microsoft Teams incoming webhook URL. Overrides PHASE2S_TEAMS_WEBHOOK env var. */
   teams?: string;
+  /** Telegram bot token + chat ID. Overrides PHASE2S_TELEGRAM_BOT_TOKEN / PHASE2S_TELEGRAM_CHAT_ID env vars. */
+  telegram?: TelegramOptions;
 }
 
 export interface NotifyPayload {
@@ -55,16 +65,26 @@ export async function sendNotification(
   const discordUrl = options.discord ?? process.env.PHASE2S_DISCORD_WEBHOOK;
   const teamsUrl = options.teams ?? process.env.PHASE2S_TEAMS_WEBHOOK;
 
+  // Telegram: prefer explicit options, fall back to env vars
+  const telegramToken = options.telegram?.token ?? process.env.PHASE2S_TELEGRAM_BOT_TOKEN;
+  const telegramChatId = options.telegram?.chatId ?? process.env.PHASE2S_TELEGRAM_CHAT_ID;
+  const telegramOpts: TelegramOptions | undefined =
+    (telegramToken && telegramChatId)
+      ? { token: telegramToken, chatId: telegramChatId }
+      : undefined;
+
   const promises: Promise<void>[] = [];
   if (useMac) promises.push(sendMacNotification(payload));
   if (slackUrl) promises.push(sendSlackNotification(payload, slackUrl));
   if (discordUrl) promises.push(sendDiscordNotification(payload, discordUrl));
   if (teamsUrl) promises.push(sendTeamsNotification(payload, teamsUrl));
+  if (telegramOpts) promises.push(sendTelegramNotification(payload, telegramOpts));
 
   if (promises.length === 0) {
     console.warn(
       "[phase2s notify] --notify set but no channels are active." +
-      " Set PHASE2S_SLACK_WEBHOOK, PHASE2S_DISCORD_WEBHOOK, or PHASE2S_TEAMS_WEBHOOK" +
+      " Set PHASE2S_SLACK_WEBHOOK, PHASE2S_DISCORD_WEBHOOK, PHASE2S_TEAMS_WEBHOOK," +
+      " or PHASE2S_TELEGRAM_BOT_TOKEN + PHASE2S_TELEGRAM_CHAT_ID" +
       " for cross-platform notifications.",
     );
     return;
@@ -180,6 +200,49 @@ async function sendTeamsNotification(payload: NotifyPayload, webhookUrl: string)
   });
   if (!response.ok) {
     throw new Error(`Teams webhook returned ${response.status} ${response.statusText}`);
+  }
+}
+
+/** Timeout in ms for each Telegram Bot API fetch call. */
+const TELEGRAM_FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Send a Telegram notification via the Bot API.
+ *
+ * API: POST https://api.telegram.org/bot{TOKEN}/sendMessage
+ * Body: { chat_id, text }
+ */
+/** Pattern for valid Telegram bot tokens issued by BotFather: {digits}:{alphanumeric_35+}. */
+const TELEGRAM_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]{35,}$/;
+
+export async function sendTelegramNotification(
+  payload: NotifyPayload,
+  opts: TelegramOptions,
+): Promise<void> {
+  if (!TELEGRAM_TOKEN_PATTERN.test(opts.token)) {
+    throw new Error(
+      `Invalid Telegram token format. Expected format: 123456:ABCdef... Got: ${opts.token.slice(0, 8)}...`
+    );
+  }
+  const text = payload.body
+    ? `${payload.title}\n${payload.body}`
+    : payload.title;
+  const url = `https://api.telegram.org/bot${opts.token}/sendMessage`;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), TELEGRAM_FETCH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: opts.chatId, text }),
+      signal: ac.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!response.ok) {
+    throw new Error(`Telegram API returned ${response.status} ${response.statusText}`);
   }
 }
 

@@ -41,6 +41,10 @@ export interface InitConfig {
   discordWebhook?: string;
   /** Microsoft Teams incoming webhook URL — optional. */
   teamsWebhook?: string;
+  /** Telegram bot token (from BotFather). */
+  telegramToken?: string;
+  /** Telegram chat ID to send to. */
+  telegramChatId?: string;
 }
 
 export interface PrereqResult {
@@ -110,7 +114,7 @@ export function formatConfig(config: InitConfig): string {
     if (config.smartModel) lines.push(`smart_model: ${config.smartModel}`);
   }
 
-  const hasNotify = config.slackWebhook || config.discordWebhook || config.teamsWebhook;
+  const hasNotify = config.slackWebhook || config.discordWebhook || config.teamsWebhook || (config.telegramToken && config.telegramChatId);
   if (hasNotify) {
     lines.push("");
     lines.push("# Notifications — sent after dark factory runs (phase2s goal --notify)");
@@ -118,6 +122,11 @@ export function formatConfig(config: InitConfig): string {
     if (config.slackWebhook) lines.push(`  slack: "${config.slackWebhook}"`);
     if (config.discordWebhook) lines.push(`  discord: "${config.discordWebhook}"`);
     if (config.teamsWebhook) lines.push(`  teams: "${config.teamsWebhook}"`);
+    if (config.telegramToken && config.telegramChatId) {
+      lines.push("  telegram:");
+      lines.push(`    token: "${config.telegramToken}"`);
+      lines.push(`    chatId: "${config.telegramChatId}"`);
+    }
     lines.push("  # mac: true  # uncomment to enable macOS system notifications too");
   }
 
@@ -251,9 +260,16 @@ export interface InitOptions {
   discordWebhook?: string;
   /** Microsoft Teams webhook override. */
   teamsWebhook?: string;
+  /** Run the interactive Telegram bot setup wizard instead of normal init. */
+  telegramSetup?: boolean;
 }
 
 export async function runInit(options: InitOptions = {}): Promise<void> {
+  if (options.telegramSetup) {
+    await runTelegramSetup();
+    return;
+  }
+
   const configPath = resolve(".phase2s.yaml");
   const existing = existsSync(configPath);
 
@@ -462,6 +478,162 @@ async function promptConfig(existing: Record<string, unknown>): Promise<InitConf
 
   rl.close();
   return config;
+}
+
+// ---------------------------------------------------------------------------
+// Telegram setup wizard
+// ---------------------------------------------------------------------------
+
+/** Max number of getUpdates retries when the bot has no messages yet. */
+const TELEGRAM_MAX_RETRIES = 3;
+
+/** Timeout in ms for each Telegram Bot API fetch call. */
+const TELEGRAM_FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Interactive wizard to discover a Telegram chat ID.
+ *
+ * Flow:
+ * 1. Prompt for bot token (from BotFather)
+ * 2. Call getUpdates — non-200 = invalid token, bail
+ * 3. If result array is empty, ask user to message the bot, retry (max 3x)
+ * 4. Pick the entry with the highest update_id (most recent)
+ * 5. Print chat ID + YAML snippet
+ */
+export async function runTelegramSetup(): Promise<void> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q: string): Promise<string> =>
+    new Promise((resolve) => rl.question(q, (a) => resolve(a.trim())));
+
+  // askSecret suppresses keystroke echo so the token isn't visible to observers.
+  // Uses readline's internal _writeToOutput hook — the standard Node.js pattern
+  // for password prompts without pulling in a separate library.
+  // _writeToOutput is undocumented but stable across Node.js 18/20/22; we guard
+  // against its absence so future Node.js versions degrade gracefully (no masking,
+  // but no crash either).
+  const askSecret = (q: string): Promise<string> => {
+    let muted = false;
+    const rawIface = rl as unknown as { _writeToOutput?: (s: string) => void };
+    const origWrite: (s: string) => void = rawIface._writeToOutput?.bind(rl) ?? (() => {});
+    if (rawIface._writeToOutput) {
+      rawIface._writeToOutput = (s: string) => {
+        if (muted && s && s !== '\r\n' && s !== '\n' && s !== '\r') return;
+        origWrite(s);
+      };
+    }
+    return new Promise((resolve) => {
+      rl.question(q, (a) => {
+        muted = false;
+        if (rawIface._writeToOutput) rawIface._writeToOutput = origWrite;
+        process.stdout.write('\n');
+        resolve(a.trim());
+      });
+      muted = true;
+    });
+  };
+
+  console.log(chalk.bold("\n  Telegram setup wizard\n"));
+  console.log("  This wizard finds your Telegram chat ID so you can receive phase2s notifications.");
+  console.log("  You'll need a bot token from @BotFather (https://t.me/BotFather).\n");
+
+  const token = await askSecret("  Enter your bot token (from BotFather): ");
+
+  if (!token) {
+    rl.close();
+    console.error(chalk.red("  No token provided. Run phase2s init --telegram-setup to try again."));
+    return;
+  }
+
+  if (!/^\d+:[A-Za-z0-9_-]{35,}$/.test(token)) {
+    rl.close();
+    console.error(chalk.red("  Token format looks wrong. BotFather tokens look like: 123456789:ABCdef...\n  Copy the token exactly as BotFather sent it."));
+    return;
+  }
+
+  let chatId: string | undefined;
+
+  for (let attempt = 0; attempt < TELEGRAM_MAX_RETRIES; attempt++) {
+    let data: unknown;
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), TELEGRAM_FETCH_TIMEOUT_MS);
+      let resp: Response;
+      try {
+        resp = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { signal: ac.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!resp.ok) {
+        rl.close();
+        console.error(chalk.red(`\n  Invalid token — check BotFather (HTTP ${resp.status}).`));
+        return;
+      }
+      data = await resp.json();
+    } catch (err) {
+      rl.close();
+      const msg = err instanceof Error && err.name === 'AbortError'
+        ? 'Request timed out after 10s — check your network connection.'
+        : err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`\n  Network error: ${msg}`));
+      return;
+    }
+
+    const result = (data as { result?: unknown[] }).result ?? [];
+    if (result.length === 0) {
+      if (attempt < TELEGRAM_MAX_RETRIES - 1) {
+        console.log(chalk.yellow("\n  No messages received. Send any message to your bot, then press Enter to retry..."));
+        // Reuse the same readline interface — closing and reopening on the same process.stdin
+        // destroys the stream on Node 18+, making subsequent reads return empty immediately.
+        await ask("");
+        continue;
+      } else {
+        rl.close();
+        console.error(chalk.red("\n  Timed out — message your bot and re-run phase2s init --telegram-setup."));
+        return;
+      }
+    }
+
+    // Pick the entry with the highest update_id (most recent) that contains a chat ID.
+    // Telegram can return callback_query, channel_post, edited_message, etc. in getUpdates —
+    // not just plain message events. We check multiple fields to handle all update types.
+    type Update = {
+      update_id: number;
+      message?: { chat?: { id: number } };
+      channel_post?: { chat?: { id: number } };
+      edited_message?: { chat?: { id: number } };
+      callback_query?: { message?: { chat?: { id: number } } };
+    };
+    const sorted = (result as Update[]).sort((a, b) => b.update_id - a.update_id);
+    const chatIdNum = sorted
+      .map(u =>
+        u.message?.chat?.id ??
+        u.channel_post?.chat?.id ??
+        u.edited_message?.chat?.id ??
+        u.callback_query?.message?.chat?.id
+      )
+      .find(id => id !== undefined);
+    if (chatIdNum === undefined) {
+      rl.close();
+      console.error(chalk.red("\n  Could not parse chat ID from updates. Try sending a text message to your bot."));
+      return;
+    }
+    chatId = String(chatIdNum);
+    break;
+  }
+
+  rl.close();
+  if (!chatId) return;
+
+  console.log(chalk.green(`\n  Your chat ID: ${chatId}`));
+  console.log("");
+  console.log("  Add to .phase2s.yaml:");
+  console.log(chalk.cyan("  notify:"));
+  console.log(chalk.cyan("    telegram:"));
+  console.log(chalk.cyan(`      token: "${token}"`));
+  console.log(chalk.cyan(`      chatId: "${chatId}"`));
+  console.log("");
+  console.log(chalk.dim("  Or set env vars: PHASE2S_TELEGRAM_BOT_TOKEN and PHASE2S_TELEGRAM_CHAT_ID"));
+  console.log("");
 }
 
 // ---------------------------------------------------------------------------

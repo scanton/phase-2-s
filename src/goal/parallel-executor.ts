@@ -425,6 +425,9 @@ async function executeWorker(
     cwd: wt.worktreePath,
   });
 
+  // Resolve per-subtask model (subtask.model annotation overrides outer satoriModel)
+  const workerModel = resolveSubtaskModel(subtask.model, config, satoriModel);
+
   // Execute satori in the worktree
   const outputChunks: string[] = [];
   let workerError: unknown = null;
@@ -436,7 +439,7 @@ async function executeWorker(
     });
 
     const runPromise = agent.run(prompt, {
-      modelOverride: satoriModel,
+      modelOverride: workerModel,
       maxRetries: satoriRetries,
       verifyCommand: spec.evalCommand,
       onDelta: (chunk) => {
@@ -491,6 +494,41 @@ async function executeWorker(
     output,
     worktreeBranch: wt.branchName,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Model resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Known model name prefixes used to detect potential typos in literal `model:` annotations.
+ * Intentionally a best-effort heuristic, not an authoritative allowlist — unrecognized
+ * values pass through with a console.warn (they may be valid provider-specific IDs).
+ * Update this list when adding new provider support to keep warnings accurate.
+ */
+const KNOWN_MODEL_PREFIXES = ["gpt-", "claude-", "o1", "o3", "gemini-", "deepseek-", "minimax", "openai/", "anthropic/", "google/"];
+
+/**
+ * Resolve a subtask's model annotation against config.
+ *
+ * - "fast" → config.fast_model (undefined if not set)
+ * - "smart" → config.smart_model (undefined if not set)
+ * - literal string → passthrough, with a warning if it doesn't look like a known model
+ * - undefined → falls back to the outer satoriModel option
+ */
+export function resolveSubtaskModel(
+  annotation: string | undefined,
+  config: { fast_model?: string; smart_model?: string },
+  fallback?: string,
+): string | undefined {
+  if (!annotation) return fallback;
+  if (annotation === "fast") return config.fast_model ?? fallback;
+  if (annotation === "smart") return config.smart_model ?? fallback;
+  // Literal model name passthrough — warn if it doesn't look like a known format
+  if (!KNOWN_MODEL_PREFIXES.some(p => annotation.startsWith(p))) {
+    console.warn(`[phase2s] Unknown model annotation: "${annotation}". Passing through — check your spec.`);
+  }
+  return annotation;
 }
 
 // ---------------------------------------------------------------------------

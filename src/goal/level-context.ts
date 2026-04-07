@@ -13,6 +13,14 @@ import { execSync } from "node:child_process";
 const MAX_CONTEXT_BYTES = 4096;
 
 /**
+ * Headroom subtracted from the byte limit before truncation.
+ * Node.js `Buffer.subarray(0,N).toString('utf8')` replaces a partial multibyte
+ * sequence at the cut point with U+FFFD (3 bytes in UTF-8). Reserving 3 bytes
+ * guarantees the final string stays within MAX_CONTEXT_BYTES in all cases.
+ */
+const TRUNCATION_HEADROOM_BYTES = 3;
+
+/**
  * Build a context summary describing what prior levels changed.
  *
  * @param cwd         Working directory (project root, not worktree).
@@ -48,9 +56,14 @@ export function buildLevelContext(cwd: string, baseCommit: string): string {
     context += `\n${fileList.length} file${fileList.length > 1 ? "s" : ""} changed by prior execution levels.\n`;
     context += "Your subtask should work with these changes already in place.\n";
 
-    // Truncate if too large
+    // Truncate if too large — use byte-aware slicing so multibyte characters
+    // (emoji, CJK filenames) don't push the result over the byte limit.
     if (Buffer.byteLength(context, "utf8") > MAX_CONTEXT_BYTES) {
-      context = context.slice(0, MAX_CONTEXT_BYTES - 50) + "\n... (truncated)\n";
+      const SUFFIX = "\n... (truncated)\n";
+      const suffixBytes = Buffer.byteLength(SUFFIX, "utf8");
+      const limit = MAX_CONTEXT_BYTES - suffixBytes - TRUNCATION_HEADROOM_BYTES;
+      const buf = Buffer.from(context, "utf8");
+      context = buf.subarray(0, limit).toString("utf8") + SUFFIX;
     }
 
     return context;

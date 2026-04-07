@@ -309,3 +309,129 @@ describe("Role annotation parsing", () => {
     expect(spec.decomposition[2].role).toBe("tester");
   });
 });
+
+// ---------------------------------------------------------------------------
+// model: annotation (Sprint 41 — multi-provider parallel workers)
+// ---------------------------------------------------------------------------
+
+describe("model: annotation", () => {
+  it("parses 'model: fast' annotation → subtask.model = 'fast'", () => {
+    const markdown = `# Spec: Model Annotation
+## Decomposition
+### Sub-task 1: Quick task
+model: fast
+- **Input:** source
+- **Output:** result
+- **Success criteria:** done
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBe("fast");
+  });
+
+  it("parses 'model: smart' annotation → subtask.model = 'smart'", () => {
+    const markdown = `# Spec: Model Annotation
+## Decomposition
+### Sub-task 1: Complex analysis
+model: smart
+- **Input:** source
+- **Output:** result
+- **Success criteria:** done
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBe("smart");
+  });
+
+  it("parses literal model name passthrough", () => {
+    const markdown = `# Spec: Model Annotation
+## Decomposition
+### Sub-task 1: Custom model task
+model: claude-3-haiku-20240307
+- **Input:** source
+- **Output:** result
+- **Success criteria:** done
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBe("claude-3-haiku-20240307");
+  });
+
+  it("subtask without model annotation → model === undefined", () => {
+    const markdown = `# Spec: Model Annotation
+## Decomposition
+### Sub-task 1: No model
+- **Input:** source
+- **Output:** result
+- **Success criteria:** done
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBeUndefined();
+  });
+
+  it("multiple subtasks with different model annotations parsed independently", () => {
+    const markdown = `# Spec: Multi Model
+## Decomposition
+### Sub-task 1: Fast task
+model: fast
+- **Input:** A
+- **Output:** B
+- **Success criteria:** OK
+
+### Sub-task 2: Smart task
+model: smart
+- **Input:** B
+- **Output:** C
+- **Success criteria:** OK
+
+### Sub-task 3: Default task
+- **Input:** C
+- **Output:** D
+- **Success criteria:** OK
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBe("fast");
+    expect(spec.decomposition[1].model).toBe("smart");
+    expect(spec.decomposition[2].model).toBeUndefined();
+  });
+
+  it("parses **Model:** bold annotation format", () => {
+    const markdown = `# Spec: Model Annotation
+## Decomposition
+### Sub-task 1: Bold format
+- **Model:** fast
+- **Input:** source
+- **Output:** result
+- **Success criteria:** done
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBe("fast");
+  });
+
+  it("bare 'model: X' after free-form prose is NOT parsed as annotation (pastMetadata guard)", () => {
+    // The line 'model: gpt-4' appears after free-form prose (pastMetadata=true).
+    // It must be treated as prose, not a model annotation.
+    const markdown = `# Spec: Model Annotation
+## Decomposition
+### Sub-task 1: Prose task
+- **Input:** source
+- **Output:** result
+- **Success criteria:** done
+This task uses model: gpt-4 in its implementation details.
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBeUndefined();
+  });
+
+  it("bold **Model:** annotation after free-form prose is still parsed (unambiguous form)", () => {
+    // Bold form is unambiguous regardless of position in the subtask body.
+    const markdown = `# Spec: Model Annotation
+## Decomposition
+### Sub-task 1: Late annotation
+- **Input:** source
+- **Output:** result
+- **Success criteria:** done
+Some free-form description here.
+- **Model:** smart
+`;
+    const spec = parseSpec(markdown);
+    expect(spec.decomposition[0].model).toBe("smart");
+  });
+});

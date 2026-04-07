@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { makeWorktreeSlug, resetWorktreeLocks } from "../../src/goal/parallel-executor.js";
+import { makeWorktreeSlug, resetWorktreeLocks, resolveSubtaskModel } from "../../src/goal/parallel-executor.js";
 import { stashIfDirty, unstash } from "../../src/goal/merge-strategy.js";
 import { makeTempRepo, commitFile, withTempRepo } from "./helpers.js";
 import { writeFileSync } from "node:fs";
@@ -315,5 +315,50 @@ describe("executeOrchestratorLevel — export contract", () => {
     };
     expect(r.status).toBe("failed");
     expect(typeof r.error).toBe("string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveSubtaskModel (Sprint 41 — multi-provider per-subtask model routing)
+// ---------------------------------------------------------------------------
+
+describe("resolveSubtaskModel", () => {
+  const config = { fast_model: "gpt-4o-mini", smart_model: "o3" };
+
+  it("'fast' annotation resolves to config.fast_model", () => {
+    expect(resolveSubtaskModel("fast", config)).toBe("gpt-4o-mini");
+  });
+
+  it("'smart' annotation resolves to config.smart_model", () => {
+    expect(resolveSubtaskModel("smart", config)).toBe("o3");
+  });
+
+  it("literal model name passes through unchanged", () => {
+    expect(resolveSubtaskModel("claude-3-haiku-20240307", config)).toBe("claude-3-haiku-20240307");
+  });
+
+  it("undefined annotation returns fallback", () => {
+    expect(resolveSubtaskModel(undefined, config, "default-model")).toBe("default-model");
+  });
+
+  it("undefined annotation with no fallback returns undefined", () => {
+    expect(resolveSubtaskModel(undefined, config)).toBeUndefined();
+  });
+
+  it("'fast' with no fast_model in config returns fallback", () => {
+    expect(resolveSubtaskModel("fast", {}, "fallback-model")).toBe("fallback-model");
+  });
+
+  it("'smart' with no smart_model in config returns fallback", () => {
+    expect(resolveSubtaskModel("smart", {}, "fallback-model")).toBe("fallback-model");
+  });
+
+  it("unknown literal annotation passes through and emits console.warn", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = resolveSubtaskModel("totally-unknown-xyz", config);
+    expect(result).toBe("totally-unknown-xyz");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Unknown model annotation"));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("totally-unknown-xyz"));
+    warnSpy.mockRestore();
   });
 });

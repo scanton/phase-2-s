@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.18.0 — 2026-04-07
+
+Sprint 41 small backlog sweep: Telegram notifications, byte-aware truncation fix, multi-provider parallel workers via `model:` spec annotation, tiktoken marked won't-fix.
+
+### What's new
+
+- **Telegram notification channel** — `sendTelegramNotification()` added to `notify.ts`. Configurable via `PHASE2S_TELEGRAM_BOT_TOKEN` + `PHASE2S_TELEGRAM_CHAT_ID` env vars or `notify.telegram` in `.phase2s.yaml`.
+- **`phase2s init --telegram-setup` wizard** — interactive wizard that calls `getUpdates`, picks the most recent chat by `update_id`, prints the chat ID and ready-to-paste YAML snippet. Handles invalid tokens, empty results (up to 3 retries), and multiple chats.
+- **`model:` spec annotation for parallel workers** — subtasks can declare `model: fast`, `model: smart`, or a literal model name. `resolveSubtaskModel()` maps aliases to configured tiers and falls back to the outer `--model` flag.
+- **Byte-aware context truncation** — `level-context.ts` now uses `Buffer.from(context,'utf8').subarray(0,limit).toString('utf8')` instead of `String.slice()`. Fixes silent byte overrun with emoji or CJK filenames.
+
+### Fixed
+
+- `level-context.ts` truncation used JS string code units, not bytes. Emoji filenames could push output past `MAX_CONTEXT_BYTES`.
+
+### Closed as wont-fix
+
+- `conversation.ts` token estimation: errs conservatively (safe direction). 2MB wasm dep not worth marginal precision gain.
+
+### Tests
+
+820 → 850 (30 new tests across `level-context`, `notify`, `spec-parser`, and `parallel-executor`).
+
+
 ## v1.17.0 — 2026-04-07
 
 Test hygiene: `level-context.test.ts` is now fully isolated — all tests run against temp repos instead of the live project repo. TODOS.md housekeeping.

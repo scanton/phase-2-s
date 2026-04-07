@@ -700,6 +700,7 @@ async function maybeNotify(
         slack: config.notify?.slack,
         discord: config.notify?.discord,
         teams: config.notify?.teams,
+        telegram: config.notify?.telegram,
       };
 
   const payload = buildNotifyPayload(
