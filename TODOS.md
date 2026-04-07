@@ -85,14 +85,15 @@
 
 ### Sprint 39 → Sprint 40 upgrade paths
 
-- [ ] **Orchestrator auto-detect warning** — When `tasks.some(t => t.role !== undefined)` activates orchestrator mode, print: "Orchestrator mode activated: N subtasks have role annotations. Use --sequential to disable." Currently activates silently. Low priority but good DX.
+- [x] **Orchestrator auto-detect warning** — When `tasks.some(t => t.role !== undefined)` activates orchestrator mode, print: "Orchestrator mode activated: N subtasks have role annotations. Use --sequential to disable." Currently activates silently. Low priority but good DX. **Completed:** v1.15.0 (2026-04-06)
 
 ### P2 — Test hygiene (carried forward)
 
-- [ ] **Migrate `level-context.test.ts` edge-case tests to use `makeTempRepo()`** — The
+- [x] **Migrate `level-context.test.ts` edge-case tests to use `makeTempRepo()`** — The
   existing edge-case tests (bad hash, bad dir, HEAD..HEAD) run against the live project repo.
   After `test/goal/helpers.ts` ships in v1.13.0, migrate them to use isolated temp repos for
   better test hygiene. Low priority — tests pass fine as-is. Depends on: helpers.ts (v1.13.0).
+  **Completed:** v1.17.0 (2026-04-07)
 
 - [x] **Harden `commitFile()` in test harness against shell injection** — `test/goal/helpers.ts:74`
   fixed: message/filename now escaped with `.replace(/"/g, '\\"')` before shell interpolation.

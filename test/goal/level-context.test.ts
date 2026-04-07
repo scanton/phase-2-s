@@ -1,42 +1,32 @@
 import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
 import { buildLevelContext } from "../../src/goal/level-context.js";
-import { makeTempRepo, commitFile, commitManyFiles, withTempRepo } from "./helpers.js";
-
-// These tests run against the real git repo. buildLevelContext calls git
-// commands, so tests verify behavior with the actual repo state.
+import { commitFile, commitManyFiles, withTempRepo } from "./helpers.js";
 
 describe("buildLevelContext", () => {
-  it("returns empty string when comparing HEAD to itself (no changes)", () => {
-    // HEAD..HEAD has no diff — should return empty
-    const ctx = buildLevelContext(process.cwd(), "HEAD");
-    expect(ctx).toBe("");
-  });
-
-  it("returns empty string for invalid commit hash", () => {
-    // Bad hash — git command fails, function returns empty gracefully
-    const ctx = buildLevelContext(process.cwd(), "0000000000000000000000000000000000000000");
-    expect(ctx).toBe("");
+  it("returns empty string for invalid commit hash", async () => {
+    await withTempRepo(async (cwd) => {
+      // Bad hash — git command fails, function returns empty gracefully
+      const ctx = buildLevelContext(cwd, "0000000000000000000000000000000000000000");
+      expect(ctx).toBe("");
+    });
   });
 
   it("returns empty string for nonexistent directory", () => {
+    // Path doesn't exist — no live repo dependency
     const ctx = buildLevelContext("/nonexistent/path", "HEAD");
     expect(ctx).toBe("");
   });
 
-  it("is a pure function (no side effects)", () => {
-    // Calling twice with same args returns same result
-    const a = buildLevelContext(process.cwd(), "HEAD");
-    const b = buildLevelContext(process.cwd(), "HEAD");
-    expect(a).toBe(b);
+  it("is a pure function (no side effects)", async () => {
+    await withTempRepo(async (cwd) => {
+      // Calling twice with same args returns same result
+      const a = buildLevelContext(cwd, "HEAD");
+      const b = buildLevelContext(cwd, "HEAD");
+      expect(a).toBe(b);
+    });
   });
-});
 
-// ---------------------------------------------------------------------------
-// Integration tests using real temp repos
-// ---------------------------------------------------------------------------
-
-describe("buildLevelContext with real temp repos", () => {
   it("returns context containing filename and 'files changed' after a commit", async () => {
     await withTempRepo(async (cwd) => {
       // Capture the initial commit hash as our base
