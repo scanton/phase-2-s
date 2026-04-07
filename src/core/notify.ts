@@ -232,8 +232,12 @@ export async function sendTelegramNotification(
   // text.length ≤ 4090. Buffer.byteLength() gives the true byte count.
   const TELEGRAM_MAX_BYTES = 4090;
   const ELLIPSIS = "\u2026"; // U+2026 HORIZONTAL ELLIPSIS, 3 bytes UTF-8
+  // Worst-case multibyte expansion: cutting after 1 byte of a multi-byte sequence causes
+  // Buffer.toString('utf8') to emit U+FFFD (3 bytes) replacing the orphan byte — a net +2
+  // byte expansion at the cut point. Subtract 6 (3 for FFFD headroom + 3 for ellipsis) so
+  // the final string is guaranteed ≤ TELEGRAM_MAX_BYTES in all cases.
   const truncatedText = Buffer.byteLength(text, "utf8") > TELEGRAM_MAX_BYTES
-    ? Buffer.from(text).subarray(0, TELEGRAM_MAX_BYTES - 3).toString("utf8") + ELLIPSIS
+    ? Buffer.from(text).subarray(0, TELEGRAM_MAX_BYTES - 6).toString("utf8") + ELLIPSIS
     : text;
   const url = `https://api.telegram.org/bot${opts.token}/sendMessage`;
   const ac = new AbortController();

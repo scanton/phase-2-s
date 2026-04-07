@@ -285,7 +285,18 @@ export function checkTemplatesDir(): CheckResult {
       fix: "Reinstall phase2s: npm install -g @scanton/phase2s",
     };
   }
-  const files = readdirSync(dir).filter((f: string) => f.endsWith(".md"));
+  let files: string[];
+  try {
+    files = readdirSync(dir).filter((f: string) => f.endsWith(".md"));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code ?? "unknown";
+    return {
+      name: "Spec templates",
+      ok: false,
+      detail: `Templates directory not readable (${code})`,
+      fix: "Check directory permissions or reinstall: npm install -g @scanton/phase2s",
+    };
+  }
   if (files.length === 0) {
     return {
       name: "Spec templates",
