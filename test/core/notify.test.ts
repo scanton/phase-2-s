@@ -208,6 +208,9 @@ describe("sendNotification", () => {
 // sendTelegramNotification (Sprint 41)
 // ---------------------------------------------------------------------------
 
+// Valid-format bot token for tests. BotFather format: {digits}:{35+ alphanumeric/_-}
+const VALID_BOT_TOKEN = "7654321098:AABBCCDDEEFFAABBCCDDEEFFAABBCCDDEEF";
+
 describe("sendTelegramNotification", () => {
   it("posts correct body to Telegram Bot API", async () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true });
@@ -215,11 +218,11 @@ describe("sendTelegramNotification", () => {
 
     await sendTelegramNotification(
       { title: "✓ my-spec: complete", body: "2 attempts (1m 30s)", success: true },
-      { token: "123456:ABC-DEF", chatId: "-1001234567890" },
+      { token: VALID_BOT_TOKEN, chatId: "-1001234567890" },
     );
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.telegram.org/bot123456:ABC-DEF/sendMessage",
+      `https://api.telegram.org/bot${VALID_BOT_TOKEN}/sendMessage`,
       expect.objectContaining({ method: "POST" }),
     );
     const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { chat_id: string; text: string };
@@ -236,7 +239,7 @@ describe("sendTelegramNotification", () => {
     await expect(
       sendTelegramNotification(
         { title: "done", success: true },
-        { token: "tok", chatId: "123" },
+        { token: VALID_BOT_TOKEN, chatId: "123" },
       ),
     ).resolves.toBeUndefined();
 
@@ -247,14 +250,24 @@ describe("sendTelegramNotification", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 401, statusText: "Unauthorized" });
     vi.stubGlobal("fetch", mockFetch);
 
+    // Use a valid-format token so token validation passes and the 401 error is exercised.
+    await expect(
+      sendTelegramNotification(
+        { title: "done", success: true },
+        { token: VALID_BOT_TOKEN, chatId: "123" },
+      ),
+    ).rejects.toThrow("401");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("throws on invalid token format (fails before fetch)", async () => {
     await expect(
       sendTelegramNotification(
         { title: "done", success: true },
         { token: "bad-token", chatId: "123" },
       ),
-    ).rejects.toThrow("401");
-
-    vi.unstubAllGlobals();
+    ).rejects.toThrow("Invalid Telegram token format");
   });
 
   it("omits body field when payload.body is absent (text = title only)", async () => {
@@ -263,7 +276,7 @@ describe("sendTelegramNotification", () => {
 
     await sendTelegramNotification(
       { title: "⚠ challenged", success: false },
-      { token: "tok", chatId: "123" },
+      { token: VALID_BOT_TOKEN, chatId: "123" },
     );
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { text: string };
@@ -288,7 +301,7 @@ describe("sendNotification with Telegram channel", () => {
 
     await sendNotification(
       { title: "done", success: true },
-      { mac: false, telegram: { token: "tok", chatId: "42" } },
+      { mac: false, telegram: { token: VALID_BOT_TOKEN, chatId: "42" } },
     );
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -316,7 +329,7 @@ describe("sendNotification with Telegram channel", () => {
     await expect(
       sendNotification(
         { title: "done", success: true },
-        { mac: false, telegram: { token: "tok", chatId: "42" } },
+        { mac: false, telegram: { token: VALID_BOT_TOKEN, chatId: "42" } },
       ),
     ).resolves.toBeUndefined();
 

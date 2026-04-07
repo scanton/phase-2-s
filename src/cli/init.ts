@@ -544,6 +544,12 @@ export async function runTelegramSetup(): Promise<void> {
     return;
   }
 
+  if (!/^\d+:[A-Za-z0-9_-]{35,}$/.test(token)) {
+    rl.close();
+    console.error(chalk.red("  Token format looks wrong. BotFather tokens look like: 123456789:ABCdef...\n  Copy the token exactly as BotFather sent it."));
+    return;
+  }
+
   let chatId: string | undefined;
 
   for (let attempt = 0; attempt < TELEGRAM_MAX_RETRIES; attempt++) {

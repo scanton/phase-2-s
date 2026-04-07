@@ -212,10 +212,18 @@ const TELEGRAM_FETCH_TIMEOUT_MS = 10_000;
  * API: POST https://api.telegram.org/bot{TOKEN}/sendMessage
  * Body: { chat_id, text }
  */
+/** Pattern for valid Telegram bot tokens issued by BotFather: {digits}:{alphanumeric_35+}. */
+const TELEGRAM_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]{35,}$/;
+
 export async function sendTelegramNotification(
   payload: NotifyPayload,
   opts: TelegramOptions,
 ): Promise<void> {
+  if (!TELEGRAM_TOKEN_PATTERN.test(opts.token)) {
+    throw new Error(
+      `Invalid Telegram token format. Expected format: 123456:ABCdef... Got: ${opts.token.slice(0, 8)}...`
+    );
+  }
   const text = payload.body
     ? `${payload.title}\n${payload.body}`
     : payload.title;
