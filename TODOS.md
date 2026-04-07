@@ -6,12 +6,23 @@
 
 ---
 
+## Backlog — Post-Sprint 41 adversarial review findings
+
+Found after v1.18.0 merged. Target: next sweep sprint.
+
+- [ ] **`resolveSubtaskModel` case normalization** — `model: Fast` and `model: FAST` fall through to the literal-passthrough branch and emit a console.warn instead of resolving to `config.fast_model`. Fix: lowercase annotation before alias comparison. Medium priority.
+- [ ] **Telegram 4096-char limit** — `sendTelegramNotification()` does not truncate `text` before sending. Long spec names + verbose run summaries can exceed Telegram's 4096-char limit, causing HTTP 400. Notification silently dropped. Fix: `text.slice(0, 4090) + (text.length > 4090 ? '…' : '')` before fetch. Medium priority.
+- [ ] **`resp.json()` SyntaxError misleading message** — if Telegram CDN returns an HTML error page, `resp.json()` throws `SyntaxError: Unexpected token '<'`. Caught as generic "Network error" in the wizard. Fix: add SyntaxError branch or wrap `resp.json()` in its own try. Low priority.
+- [ ] **`TRUNCATION_HEADROOM_BYTES` comment wrong** — comment says "worst case split at byte 3 → +3 expansion". Actual worst case is 1 orphan byte → U+FFFD (+2). Code is correct; comment is wrong. Fix: update comment to say "+2 expansion, 3-byte reserve gives 1 byte margin". Trivial.
+
+---
+
 ## Sprint 41 (done) — Telegram Notifications, Byte-Aware Truncation, Model Annotation (v1.18.0)
 
 | Metric | Value |
 |--------|-------|
 | Version | v1.18.0 |
-| Tests | 841 (+21 from v1.17.0) |
+| Tests | 850 (+30 from v1.17.0) |
 
 - [x] **Byte-aware truncation in `level-context.ts`** — replaced `String.slice()` with `Buffer.from().subarray().toString()` to avoid splitting multibyte emoji at the 4096-byte boundary. 3-byte headroom for U+FFFD replacement character. **Completed:** v1.18.0 (2026-04-07)
 - [x] **Telegram notification channel** — `notify.telegram.token` + `notify.telegram.chatId` in config. `sendTelegramNotification()` in `notify.ts`. Env var fallback: `PHASE2S_TELEGRAM_BOT_TOKEN` / `PHASE2S_TELEGRAM_CHAT_ID`. `sendNotification()` routes to Telegram when configured. **Completed:** v1.18.0 (2026-04-07)
