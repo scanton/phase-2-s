@@ -48,9 +48,16 @@ export function buildLevelContext(cwd: string, baseCommit: string): string {
     context += `\n${fileList.length} file${fileList.length > 1 ? "s" : ""} changed by prior execution levels.\n`;
     context += "Your subtask should work with these changes already in place.\n";
 
-    // Truncate if too large
+    // Truncate if too large — use byte-aware slicing so multibyte characters
+    // (emoji, CJK filenames) don't push the result over the byte limit.
     if (Buffer.byteLength(context, "utf8") > MAX_CONTEXT_BYTES) {
-      context = context.slice(0, MAX_CONTEXT_BYTES - 50) + "\n... (truncated)\n";
+      const SUFFIX = "\n... (truncated)\n";
+      const suffixBytes = Buffer.byteLength(SUFFIX, "utf8");
+      // Subtract 3 extra bytes: worst-case a 4-byte emoji split at byte 3 produces
+      // a 3-byte U+FFFD replacement character, keeping total within MAX_CONTEXT_BYTES.
+      const limit = MAX_CONTEXT_BYTES - suffixBytes - 3;
+      const buf = Buffer.from(context, "utf8");
+      context = buf.subarray(0, limit).toString("utf8") + SUFFIX;
     }
 
     return context;

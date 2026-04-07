@@ -66,3 +66,54 @@ describe("buildLevelContext", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Byte-aware truncation (Sprint 41 — fix multibyte character handling)
+// ---------------------------------------------------------------------------
+
+describe("buildLevelContext — byte-aware truncation", () => {
+  it("truncates correctly when filenames contain multibyte characters (emoji)", async () => {
+    await withTempRepo(async (cwd) => {
+      const baseCommit = execSync("git rev-parse HEAD", { cwd, encoding: "utf8" }).trim();
+
+      // Create files with emoji in their names (each emoji = 4 bytes in UTF-8)
+      // 80 files with emoji names pushes the diff stat past 4096 bytes
+      for (let i = 0; i < 80; i++) {
+        const name = `file-🚀-emoji-${"x".repeat(30)}-${i}.ts`;
+        const { writeFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        writeFileSync(join(cwd, name), `export const v${i} = ${i};\n`);
+      }
+      execSync(`git add -A && git commit -m 'add emoji files'`, { cwd, shell: "/bin/sh" });
+
+      const ctx = buildLevelContext(cwd, baseCommit);
+
+      // Must stay within 4096 bytes even with multibyte characters
+      expect(Buffer.byteLength(ctx, "utf8")).toBeLessThanOrEqual(4096);
+      expect(ctx).toContain("(truncated)");
+    });
+  });
+
+  it("byte length stays within 4096 even with 4-byte emoji split at boundary", async () => {
+    await withTempRepo(async (cwd) => {
+      const baseCommit = execSync("git rev-parse HEAD", { cwd, encoding: "utf8" }).trim();
+
+      // Large number of emoji-named files to guarantee truncation
+      for (let i = 0; i < 80; i++) {
+        const name = `🔥-${"z".repeat(35)}-${i}.ts`;
+        const { writeFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        writeFileSync(join(cwd, name), `export const x${i} = ${i};\n`);
+      }
+      execSync(`git add -A && git commit -m 'add fire emoji files'`, { cwd, shell: "/bin/sh" });
+
+      const ctx = buildLevelContext(cwd, baseCommit);
+
+      // Strict byte check — must never exceed 4096
+      const byteLen = Buffer.byteLength(ctx, "utf8");
+      expect(byteLen).toBeLessThanOrEqual(4096);
+      // Must be valid UTF-8 (no broken sequences from naive slicing)
+      expect(() => Buffer.from(ctx, "utf8").toString("utf8")).not.toThrow();
+    });
+  });
+});

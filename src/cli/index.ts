@@ -298,6 +298,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--slack-webhook <url>", "Slack webhook URL for notifications")
     .option("--discord-webhook <url>", "Discord webhook URL for notifications")
     .option("--teams-webhook <url>", "Microsoft Teams webhook URL for notifications")
+    .option("--telegram-setup", "Run interactive Telegram bot setup wizard to find your chat ID")
     .action(async (cmdOpts: {
       nonInteractive?: boolean;
       provider?: string;
@@ -309,6 +310,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       slackWebhook?: string;
       discordWebhook?: string;
       teamsWebhook?: string;
+      telegramSetup?: boolean;
     }) => {
       const { runInit } = await import("./init.js");
       await runInit({
@@ -322,6 +324,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         slackWebhook: cmdOpts.slackWebhook,
         discordWebhook: cmdOpts.discordWebhook,
         teamsWebhook: cmdOpts.teamsWebhook,
+        telegramSetup: cmdOpts.telegramSetup,
       });
     });
 

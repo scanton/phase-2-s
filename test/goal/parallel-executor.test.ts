@@ -317,3 +317,37 @@ describe("executeOrchestratorLevel — export contract", () => {
     expect(typeof r.error).toBe("string");
   });
 });
+
+// ---------------------------------------------------------------------------
+// resolveSubtaskModel (Sprint 41 — multi-provider per-subtask model routing)
+// ---------------------------------------------------------------------------
+
+import { resolveSubtaskModel } from "../../src/goal/parallel-executor.js";
+
+describe("resolveSubtaskModel", () => {
+  const config = { fast_model: "gpt-4o-mini", smart_model: "o3" };
+
+  it("'fast' annotation resolves to config.fast_model", () => {
+    expect(resolveSubtaskModel("fast", config)).toBe("gpt-4o-mini");
+  });
+
+  it("'smart' annotation resolves to config.smart_model", () => {
+    expect(resolveSubtaskModel("smart", config)).toBe("o3");
+  });
+
+  it("literal model name passes through unchanged", () => {
+    expect(resolveSubtaskModel("claude-3-haiku-20240307", config)).toBe("claude-3-haiku-20240307");
+  });
+
+  it("undefined annotation returns fallback", () => {
+    expect(resolveSubtaskModel(undefined, config, "default-model")).toBe("default-model");
+  });
+
+  it("undefined annotation with no fallback returns undefined", () => {
+    expect(resolveSubtaskModel(undefined, config)).toBeUndefined();
+  });
+
+  it("'fast' with no fast_model in config returns fallback", () => {
+    expect(resolveSubtaskModel("fast", {}, "fallback-model")).toBe("fallback-model");
+  });
+});

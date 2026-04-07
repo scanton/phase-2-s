@@ -31,6 +31,8 @@ export interface SubTask {
   files?: string[];
   /** Optional role annotation from **Role:** X in subtask body. undefined if not present (NOT defaulted here). */
   role?: 'architect' | 'implementer' | 'tester' | 'reviewer';
+  /** Optional model annotation from 'model: X' on the line immediately after the subtask heading. */
+  model?: string;
 }
 
 export interface TestCase {
@@ -196,6 +198,13 @@ function extractDecomposition(lines: string[]): SubTask[] {
       }
       continue;
     }
+
+    const model = line.match(/^\s*-?\s*\*\*Model:\*\*\s*(.+)/i)
+      ?? line.match(/^\s*model:\s*(.+)/i);
+    if (model) {
+      current.model = model[1].trim();
+      continue;
+    }
   }
 
   if (current?.name) subtasks.push(completeSubTask(current));
@@ -214,6 +223,9 @@ function completeSubTask(partial: Partial<SubTask>): SubTask {
   }
   if (partial.role !== undefined) {
     result.role = partial.role;
+  }
+  if (partial.model !== undefined) {
+    result.model = partial.model;
   }
   return result;
 }

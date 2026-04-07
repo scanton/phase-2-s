@@ -203,3 +203,109 @@ describe("sendNotification", () => {
     warnSpy.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// sendTelegramNotification (Sprint 41)
+// ---------------------------------------------------------------------------
+
+import { sendTelegramNotification } from "../../src/core/notify.js";
+
+describe("sendTelegramNotification", () => {
+  it("posts correct body to Telegram Bot API", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await sendTelegramNotification(
+      { title: "✓ my-spec: complete", body: "2 attempts (1m 30s)", success: true },
+      { token: "123456:ABC-DEF", chatId: "-1001234567890" },
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.telegram.org/bot123456:ABC-DEF/sendMessage",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { chat_id: string; text: string };
+    expect(body.chat_id).toBe("-1001234567890");
+    expect(body.text).toContain("my-spec: complete");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves on 200 OK without throwing", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await expect(
+      sendTelegramNotification(
+        { title: "done", success: true },
+        { token: "tok", chatId: "123" },
+      ),
+    ).resolves.toBeUndefined();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("throws on non-200 response", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 401, statusText: "Unauthorized" });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await expect(
+      sendTelegramNotification(
+        { title: "done", success: true },
+        { token: "bad-token", chatId: "123" },
+      ),
+    ).rejects.toThrow("401");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("omits body field when payload.body is absent (text = title only)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await sendTelegramNotification(
+      { title: "⚠ challenged", success: false },
+      { token: "tok", chatId: "123" },
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { text: string };
+    expect(body.text).toBe("⚠ challenged");
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("sendNotification with Telegram channel", () => {
+  it("skips Telegram channel when token/chatId not configured", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await sendNotification({ title: "test", success: true }, { mac: false });
+    // Still warns about no channels — Telegram not counted as active
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("routes to Telegram when options.telegram is provided", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await sendNotification(
+      { title: "done", success: true },
+      { mac: false, telegram: { token: "tok", chatId: "42" } },
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("api.telegram.org"),
+      expect.objectContaining({ method: "POST" }),
+    );
+
+    vi.unstubAllGlobals();
+  });
+
+  it("no-channels warning mentions Telegram env vars", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await sendNotification({ title: "test", success: true }, { mac: false });
+    const warning = warnSpy.mock.calls[0][0] as string;
+    expect(warning).toContain("PHASE2S_TELEGRAM_BOT_TOKEN");
+    warnSpy.mockRestore();
+  });
+});
