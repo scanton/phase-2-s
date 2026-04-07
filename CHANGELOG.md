@@ -21,7 +21,7 @@ Sprint 41 small backlog sweep: Telegram notifications, byte-aware truncation fix
 
 ### Tests
 
-820 → 841 (21 new tests across `level-context`, `notify`, `spec-parser`, and `parallel-executor`).
+820 → 850 (30 new tests across `level-context`, `notify`, `spec-parser`, and `parallel-executor`).
 
 
 ## v1.17.0 — 2026-04-07
