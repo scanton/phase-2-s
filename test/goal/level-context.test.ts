@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildLevelContext } from "../../src/goal/level-context.js";
 import { commitFile, commitManyFiles, withTempRepo } from "./helpers.js";
 
@@ -80,8 +82,6 @@ describe("buildLevelContext — byte-aware truncation", () => {
       // 80 files with emoji names pushes the diff stat past 4096 bytes
       for (let i = 0; i < 80; i++) {
         const name = `file-🚀-emoji-${"x".repeat(30)}-${i}.ts`;
-        const { writeFileSync } = await import("node:fs");
-        const { join } = await import("node:path");
         writeFileSync(join(cwd, name), `export const v${i} = ${i};\n`);
       }
       execSync(`git add -A && git commit -m 'add emoji files'`, { cwd, shell: "/bin/sh" });
@@ -101,8 +101,6 @@ describe("buildLevelContext — byte-aware truncation", () => {
       // Large number of emoji-named files to guarantee truncation
       for (let i = 0; i < 80; i++) {
         const name = `🔥-${"z".repeat(35)}-${i}.ts`;
-        const { writeFileSync } = await import("node:fs");
-        const { join } = await import("node:path");
         writeFileSync(join(cwd, name), `export const x${i} = ${i};\n`);
       }
       execSync(`git add -A && git commit -m 'add fire emoji files'`, { cwd, shell: "/bin/sh" });

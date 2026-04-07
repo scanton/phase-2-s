@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { makeWorktreeSlug, resetWorktreeLocks } from "../../src/goal/parallel-executor.js";
+import { makeWorktreeSlug, resetWorktreeLocks, resolveSubtaskModel } from "../../src/goal/parallel-executor.js";
 import { stashIfDirty, unstash } from "../../src/goal/merge-strategy.js";
 import { makeTempRepo, commitFile, withTempRepo } from "./helpers.js";
 import { writeFileSync } from "node:fs";
@@ -321,8 +321,6 @@ describe("executeOrchestratorLevel — export contract", () => {
 // ---------------------------------------------------------------------------
 // resolveSubtaskModel (Sprint 41 — multi-provider per-subtask model routing)
 // ---------------------------------------------------------------------------
-
-import { resolveSubtaskModel } from "../../src/goal/parallel-executor.js";
 
 describe("resolveSubtaskModel", () => {
   const config = { fast_model: "gpt-4o-mini", smart_model: "o3" };

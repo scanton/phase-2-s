@@ -507,9 +507,9 @@ export async function runTelegramSetup(): Promise<void> {
   console.log("  You'll need a bot token from @BotFather (https://t.me/BotFather).\n");
 
   const token = await ask("  Enter your bot token (from BotFather): ");
-  rl.close();
 
   if (!token) {
+    rl.close();
     console.error(chalk.red("  No token provided. Run phase2s init --telegram-setup to try again."));
     return;
   }
@@ -521,11 +521,13 @@ export async function runTelegramSetup(): Promise<void> {
     try {
       const resp = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
       if (!resp.ok) {
+        rl.close();
         console.error(chalk.red(`\n  Invalid token — check BotFather (HTTP ${resp.status}).`));
         return;
       }
       data = await resp.json();
     } catch (err) {
+      rl.close();
       console.error(chalk.red(`\n  Network error: ${err instanceof Error ? err.message : String(err)}`));
       return;
     }
@@ -534,12 +536,12 @@ export async function runTelegramSetup(): Promise<void> {
     if (result.length === 0) {
       if (attempt < TELEGRAM_MAX_RETRIES - 1) {
         console.log(chalk.yellow("\n  No messages received. Send any message to your bot, then press Enter to retry..."));
-        await new Promise<void>((res) => {
-          const rl2 = createInterface({ input: process.stdin, output: process.stdout });
-          rl2.question("", () => { rl2.close(); res(); });
-        });
+        // Reuse the same readline interface — closing and reopening on the same process.stdin
+        // destroys the stream on Node 18+, making subsequent reads return empty immediately.
+        await ask("");
         continue;
       } else {
+        rl.close();
         console.error(chalk.red("\n  Timed out — message your bot and re-run phase2s init --telegram-setup."));
         return;
       }
@@ -550,6 +552,7 @@ export async function runTelegramSetup(): Promise<void> {
     const sorted = (result as Update[]).sort((a, b) => b.update_id - a.update_id);
     const chatIdNum = sorted[0]?.message?.chat?.id;
     if (chatIdNum === undefined) {
+      rl.close();
       console.error(chalk.red("\n  Could not parse chat ID from updates. Try sending a text message to your bot."));
       return;
     }
@@ -557,6 +560,7 @@ export async function runTelegramSetup(): Promise<void> {
     break;
   }
 
+  rl.close();
   if (!chatId) return;
 
   console.log(chalk.green(`\n  Your chat ID: ${chatId}`));

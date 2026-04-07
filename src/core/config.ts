@@ -69,6 +69,10 @@ const configSchema = z.object({
     slack: z.string().optional(),
     discord: z.string().optional(),
     teams: z.string().optional(),
+    telegram: z.object({
+      token: z.string(),
+      chatId: z.string(),
+    }).optional(),
   }).optional(),
 });
 

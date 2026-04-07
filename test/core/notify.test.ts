@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { buildNotifyPayload, sendNotification, formatDurationMs } from "../../src/core/notify.js";
+import { buildNotifyPayload, sendNotification, formatDurationMs, sendTelegramNotification } from "../../src/core/notify.js";
 
 // ---------------------------------------------------------------------------
 // Mock child_process so osascript never runs in tests
@@ -207,8 +207,6 @@ describe("sendNotification", () => {
 // ---------------------------------------------------------------------------
 // sendTelegramNotification (Sprint 41)
 // ---------------------------------------------------------------------------
-
-import { sendTelegramNotification } from "../../src/core/notify.js";
 
 describe("sendTelegramNotification", () => {
   it("posts correct body to Telegram Bot API", async () => {
