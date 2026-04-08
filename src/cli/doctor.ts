@@ -321,7 +321,10 @@ export function checkShellPlugin(
   phase2sDir: string = join(homedir(), ".phase2s"),
   zshrcPath: string = join(homedir(), ".zshrc"),
 ): CheckResult {
-  // ZSH-only feature — skip check for non-ZSH users (shows N/A in doctor, filtered by runDoctor)
+  // ZSH-only feature — non-ZSH users see a green ✓ "N/A" pass in doctor output.
+  // Note: the runDoctor() filter removes checks where detail === "N/A" exactly.
+  // This check returns a longer detail string, so it passes the filter and shows
+  // as an informational ✓ (not filtered) — which is correct UX for bash users.
   const shell = process.env.SHELL ?? "";
   if (shell && !shell.includes("zsh")) {
     return {
@@ -343,9 +346,25 @@ export function checkShellPlugin(
     };
   }
 
-  // Check ~/.zshrc contains the source line (by looking for the plugin path)
+  // Check ~/.zshrc contains the source line.
+  // Accept both the $HOME-relative form (v1.20.0+) and the legacy absolute
+  // path form (pre-1.20.0) for backwards compatibility.
+  const homeRelativePluginPath = "$HOME/.phase2s/phase2s.plugin.zsh";
   const zshrcExists = existsSync(zshrcPath);
-  const sourced = zshrcExists && readFileSync(zshrcPath, "utf8").includes(pluginDest);
+  let sourced = false;
+  if (zshrcExists) {
+    try {
+      const content = readFileSync(zshrcPath, "utf8");
+      sourced = content.includes(homeRelativePluginPath) || content.includes(pluginDest);
+    } catch {
+      return {
+        name: "Shell integration",
+        ok: false,
+        detail: `Plugin installed but ${zshrcPath} is not readable`,
+        fix: `Check permissions on ${zshrcPath}`,
+      };
+    }
+  }
 
   if (!sourced) {
     return {

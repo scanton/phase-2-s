@@ -46,6 +46,10 @@ if [[ -n "$ZSH_VERSION" ]]; then
     )
     _describe 'subcommand' subcommands
   }
-  compdef _phase2s phase2s
-  compdef _phase2s p2
+  # compdef requires compinit to have been called (oh-my-zsh/prezto do this
+  # automatically; minimal configs may not). Guard to avoid startup errors.
+  if (( ${+functions[compdef]} )); then
+    compdef _phase2s phase2s
+    compdef _phase2s p2
+  fi
 fi

@@ -22,12 +22,6 @@ function makeTmpDir(): string {
   return dir;
 }
 
-function makeZshrc(content: string, tmpHome: string): string {
-  const path = join(tmpHome, ".zshrc");
-  writeFileSync(path, content, "utf8");
-  return path;
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -77,8 +71,8 @@ describe("runSetup()", () => {
     await runSetup({ phase2sDir, zshrcPath });
 
     const content = readFileSync(zshrcPath, "utf8");
-    const pluginDest = join(phase2sDir, "phase2s.plugin.zsh");
-    expect(content).toContain(`source "${pluginDest}"`);
+    // Source line uses $HOME-relative path for portability (not the absolute pluginDest)
+    expect(content).toContain('source "$HOME/.phase2s/phase2s.plugin.zsh"');
     expect(content).toContain("# phase2s shell integration");
   });
 
@@ -91,8 +85,7 @@ describe("runSetup()", () => {
     await runSetup({ phase2sDir, zshrcPath });
 
     const content = readFileSync(zshrcPath, "utf8");
-    const pluginDest = join(phase2sDir, "phase2s.plugin.zsh");
-    const occurrences = content.split(`source "${pluginDest}"`).length - 1;
+    const occurrences = content.split('source "$HOME/.phase2s/phase2s.plugin.zsh"').length - 1;
     expect(occurrences).toBe(1);
   });
 
@@ -124,8 +117,7 @@ describe("runSetup()", () => {
 
     expect(existsSync(zshrcPath)).toBe(true);
     const content = readFileSync(zshrcPath, "utf8");
-    const pluginDest = join(phase2sDir, "phase2s.plugin.zsh");
-    expect(content).toContain(`source "${pluginDest}"`);
+    expect(content).toContain('source "$HOME/.phase2s/phase2s.plugin.zsh"');
   });
 
   it("creates phase2sDir when it does not exist", async () => {

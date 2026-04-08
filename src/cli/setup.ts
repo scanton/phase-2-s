@@ -44,13 +44,17 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
 
   const pluginSrc = bundledShellPluginPath();
   const pluginDest = join(phase2sDir, "phase2s.plugin.zsh");
-  const sourceLine = `source "${pluginDest}" # phase2s shell integration\n`;
+  // Use $HOME-relative path in the source line so .zshrc is portable across
+  // home directory renames and machine migrations. The literal string "$HOME"
+  // is what ZSH expands at shell startup — not the absolute path.
+  const homeRelativePluginPath = "$HOME/.phase2s/phase2s.plugin.zsh";
+  const sourceLine = `source "${homeRelativePluginPath}" # phase2s shell integration\n`;
 
   if (dryRun) {
     console.log(chalk.bold("\n  phase2s setup --dry-run\n"));
     console.log(`  Would copy:   ${pluginSrc}`);
     console.log(`         → ${pluginDest}`);
-    console.log(`  Would append: source "${pluginDest}" # phase2s shell integration`);
+    console.log(`  Would append: source "${homeRelativePluginPath}" # phase2s shell integration`);
     console.log(`         → ${zshrcPath}`);
     console.log(`  (no files written)\n`);
     return;
@@ -68,9 +72,19 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
     return; // safety guard when process.exit is mocked in tests
   }
 
-  // 2. Append source line to ~/.zshrc (idempotent: check for exact pluginDest path)
-  const existing = existsSync(zshrcPath) ? readFileSync(zshrcPath, "utf8") : "";
-  if (!existing.includes(pluginDest)) {
+  // 2. Append source line to ~/.zshrc (idempotent: check for $HOME-relative path OR
+  //    legacy absolute path from versions < 1.20.0 that used an absolute path)
+  let existing = "";
+  try {
+    existing = existsSync(zshrcPath) ? readFileSync(zshrcPath, "utf8") : "";
+  } catch (err) {
+    console.error(chalk.red(`\n  Cannot read ${zshrcPath}: ${(err as NodeJS.ErrnoException).message}`));
+    console.error(chalk.red("  Check file permissions.\n"));
+    process.exit(1);
+    return;
+  }
+  const alreadySourced = existing.includes(homeRelativePluginPath) || existing.includes(pluginDest);
+  if (!alreadySourced) {
     // Trailing newline guard: prepend \n if the file doesn't end with one
     const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
     try {
