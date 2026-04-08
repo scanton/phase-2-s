@@ -8,7 +8,7 @@
  * The interactive prompt loop is in promptConfig (not exported).
  */
 
-import { createInterface } from "node:readline";
+import { createRl, ask as askRl } from "./prompt-util.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -323,9 +323,8 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function promptConfig(existing: Record<string, unknown>): Promise<InitConfig> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (q: string): Promise<string> =>
-    new Promise((resolve) => rl.question(q, (a) => resolve(a.trim())));
+  const rl = createRl();
+  const ask = (q: string) => askRl(rl, q);
 
   console.log(chalk.bold("  Phase2S setup\n"));
 
@@ -501,9 +500,7 @@ const TELEGRAM_FETCH_TIMEOUT_MS = 10_000;
  * 5. Print chat ID + YAML snippet
  */
 export async function runTelegramSetup(): Promise<void> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (q: string): Promise<string> =>
-    new Promise((resolve) => rl.question(q, (a) => resolve(a.trim())));
+  const rl = createRl();
 
   // askSecret suppresses keystroke echo so the token isn't visible to observers.
   // Uses readline's internal _writeToOutput hook — the standard Node.js pattern
@@ -592,7 +589,7 @@ export async function runTelegramSetup(): Promise<void> {
         console.log(chalk.yellow("\n  No messages received. Send any message to your bot, then press Enter to retry..."));
         // Reuse the same readline interface — closing and reopening on the same process.stdin
         // destroys the stream on Node 18+, making subsequent reads return empty immediately.
-        await ask("");
+        await askRl(rl, "");
         continue;
       } else {
         rl.close();

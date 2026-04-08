@@ -15,7 +15,7 @@ import { createInterface, type Interface } from "node:readline";
  */
 export function createRl(): Interface {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  rl.on("SIGINT", () => {
+  rl.once("SIGINT", () => {
     rl.close();
     process.exit(0);
   });

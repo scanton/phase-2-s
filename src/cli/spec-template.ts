@@ -100,8 +100,8 @@ function loadTemplates(): TemplateEntry[] {
       const content = readFileSync(filePath, "utf8");
       const { meta } = parseFrontmatter(content);
       entries.push({ name, meta, filePath });
-    } catch {
-      // Skip malformed templates silently in list output
+    } catch (err) {
+      console.warn(`[phase2s] Skipping malformed template: ${filePath}: ${(err as Error).message}`);
     }
   }
   return entries;
@@ -146,6 +146,7 @@ export async function runTemplateUse(name: string, cwd: string): Promise<void> {
     }
     console.log();
     process.exit(1);
+    return;
   }
 
   const content = readFileSync(entry.filePath, "utf8");
@@ -177,19 +178,41 @@ export async function runTemplateUse(name: string, cwd: string): Promise<void> {
   // that itself contains "{{token}}" syntax, it is not re-processed in subsequent iterations.
   const output = body.replace(/\{\{([^}]+)\}\}/g, (_match, key) => values[key as string] ?? `{{${key as string}}}`);
 
+  // Warn about any tokens that weren't in the declared placeholders list.
+  // These could be typos in the template or extra {{...}} in the spec body that
+  // were never filled in — the user should know before running phase2s goal.
+  const unresolvedTokens = [...output.matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[0]);
+  if (unresolvedTokens.length > 0) {
+    const unique = [...new Set(unresolvedTokens)];
+    for (const token of unique) {
+      console.warn(chalk.yellow(`  [phase2s] Warning: unresolved placeholder: ${token} — edit the spec before running phase2s goal.`));
+    }
+  }
+
   // Determine output path: .phase2s/specs/<name>-<timestamp>.md
   const specsDir = join(cwd, ".phase2s", "specs");
-  mkdirSync(specsDir, { recursive: true });
+  try {
+    mkdirSync(specsDir, { recursive: true });
+  } catch (err) {
+    console.error(chalk.red(`\n  Cannot create specs directory at ${specsDir}: ${(err as NodeJS.ErrnoException).message}\n  Check directory permissions.\n`));
+    process.exit(1);
+  }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "-").slice(0, 19);
   let outPath = join(specsDir, `${name}-${timestamp}.md`);
 
-  // Handle existing file (shouldn't happen with timestamp, but be safe)
-  if (existsSync(outPath)) {
-    outPath = join(specsDir, `${name}-${timestamp}-1.md`);
+  // Handle existing file — loop to find a free path (multiple rapid runs in same second)
+  let counter = 1;
+  while (existsSync(outPath)) {
+    outPath = join(specsDir, `${name}-${timestamp}-${counter++}.md`);
   }
 
-  writeFileSync(outPath, output, "utf8");
+  try {
+    writeFileSync(outPath, output, "utf8");
+  } catch (err) {
+    console.error(chalk.red(`\n  Cannot write spec to ${outPath}: ${(err as NodeJS.ErrnoException).message}\n  Check directory permissions.\n`));
+    process.exit(1);
+  }
   console.log(chalk.green(`\n  Spec written to: ${outPath}\n`));
 
   // Lint the generated spec
@@ -199,6 +222,7 @@ export async function runTemplateUse(name: string, cwd: string): Promise<void> {
     console.log(chalk.yellow("  Lint warnings above — edit the spec before running phase2s goal.\n"));
   } else {
     console.log(chalk.green("  Spec looks good. Run:\n"));
-    console.log(`    ${chalk.bold(`phase2s goal ${outPath}`)}\n`);
+    // Quote the path so spaces don't break the copy-pasted command
+    console.log(`    ${chalk.bold(`phase2s goal "${outPath}"`)}\n`);
   }
 }
