@@ -11,7 +11,7 @@
 | Metric | Value |
 |--------|-------|
 | Version | v1.19.0 |
-| Tests | 882 (+32 from v1.18.0) |
+| Tests | 888 (+38 from v1.18.0) |
 
 - [x] **`resolveSubtaskModel` case normalization** — `.toLowerCase()` before alias comparison. `model: Fast` → `config.fast_model`. **Completed:** v1.19.0 (2026-04-07)
 - [x] **Telegram byte-aware truncation** — `Buffer.byteLength(text, 'utf8') > 4090` check. Truncate via `Buffer.from(text).subarray(0, 4087).toString('utf8') + '…'`. Emoji-safe. **Completed:** v1.19.0 (2026-04-07)
@@ -22,6 +22,15 @@
 - [x] **6 bundled templates** — auth, api, refactor, test, cli, bug. Each with realistic 4-5 subtask decomposition. **Completed:** v1.19.0 (2026-04-07)
 - [x] **`phase2s doctor` templates check** — `checkTemplatesDir()` verifies bundled templates directory present and non-empty. **Completed:** v1.19.0 (2026-04-07)
 - [x] **`prompt-util.ts`** — shared readline wizard helper extracted from `init.ts`. `createRl()` + `ask()`. **Completed:** v1.19.0 (2026-04-07)
+
+### Pre-landing adversarial review fixes (also v1.19.0)
+
+- [x] **Template format incompatibility (CRITICAL)** — all 6 templates used wrong markdown format; spec-parser parsed 0 subtasks from generated specs. Rewritten to correct format. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`alias.startsWith(p)` regression** — KNOWN_MODEL_PREFIXES check used original `annotation` instead of lowercased `alias`. Model IDs like `GPT-4O` bypassed warning. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Cascade placeholder injection** — sequential `replaceAll` allowed user values containing `{{token}}` to be re-substituted. Fixed with single-pass regex. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Frontmatter trailing newline** — regex required `\r?\n` after closing `---`; files without trailing newline silently dropped from template list. Made optional. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Duplicate `node:fs` import in `doctor.ts`** — merged. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Telegram constants hoisted** — `TELEGRAM_MAX_BYTES`, `TELEGRAM_ELLIPSIS`, `TELEGRAM_TRUNCATION_GUARD_BYTES` moved to module level. **Completed:** v1.19.0 (2026-04-07)
 
 ---
 

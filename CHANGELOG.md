@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.19.0 — 2026-04-07
+
+Sprint 42 bug sweep (4 adversarial findings from v1.18.0) + spec template library (`phase2s template list` / `phase2s template use <name>`). Pre-landing adversarial review caught a critical template format bug and three additional code quality fixes.
+
+### What's new
+
+- **`phase2s template list`** — lists 6 bundled spec templates with title and description.
+- **`phase2s template use <name>`** — interactive wizard: prompts for ≤4 placeholders, substitutes `{{tokens}}` in a single pass (no cascade injection), writes spec to `.phase2s/specs/`, runs lint.
+- **6 bundled templates** — `auth`, `api`, `refactor`, `test`, `cli`, `bug`. Each has a realistic 4–5 subtask decomposition in the exact format `phase2s goal` expects.
+- **`phase2s doctor` templates check** — `checkTemplatesDir()` verifies bundled templates directory is present and non-empty.
+- **`prompt-util.ts`** — shared readline wizard helper extracted from `init.ts`. `createRl()` + `ask()` available across CLI commands.
+
+### Fixed
+
+- **Template format incompatibility (CRITICAL)** — all 6 bundled templates used wrong markdown headings (`## Constraints`, `### 1. Name`, bare `Input:` text). The spec-parser would parse 0 subtasks, making `phase2s goal <generated>` a silent no-op. Rewritten to use the correct format (`## Constraint Architecture`, `### Sub-task N: Name`, `- **Input:**`, `## Eval Command` section). Caught by Codex adversarial review.
+- **`alias.startsWith(p)` regression** — `resolveSubtaskModel()` created an `alias = annotation.toLowerCase()` variable for case-insensitive comparison but the KNOWN_MODEL_PREFIXES check on line 529 still used the original `annotation`. Model IDs like `GPT-4O` bypassed the "unknown model" warning. Fixed.
+- **Cascade placeholder injection** — sequential `replaceAll` loop allowed a user-entered value containing `{{token}}` to be re-substituted when that token was processed next. Replaced with a single-pass regex replacement.
+- **Frontmatter regex required trailing newline** — closing `---` regex required `\r?\n` immediately after. Files without a trailing newline were silently dropped from `template list`. Made the trailing newline optional; body defaults to `""`.
+- **Duplicate `node:fs` import in `doctor.ts`** — `readFileSync` was imported separately on line 15 from an already-present `node:fs` import. Merged.
+- **Telegram truncation constants inside function body** — `TELEGRAM_MAX_BYTES`, `TELEGRAM_ELLIPSIS`, `TELEGRAM_TRUNCATION_GUARD_BYTES` moved to module level for visibility and testability.
+- **`resolveSubtaskModel` case normalization** — `.toLowerCase()` before alias comparison. `model: Fast` → `config.fast_model`.
+- **`resp.json()` SyntaxError isolation** — separated into own try/catch in `init.ts` Telegram wizard. Emits a clear "unexpected response (non-JSON)" message instead of raw SyntaxError.
+- **`TRUNCATION_HEADROOM_BYTES` JSDoc** — updated to document worst-case U+FFFD expansion correctly.
+
+### Tests
+
+850 → 888 (+38). New test files: `spec-template.test.ts` (207 lines), `template-format.test.ts` (6 format-compatibility tests), `notify.test.ts` (+70 lines), `doctor.test.ts` (+40 lines), `parallel-executor.test.ts` (+12 lines).
+
+
 ## v1.18.0 — 2026-04-07
 
 Sprint 41 small backlog sweep: Telegram notifications, byte-aware truncation fix, multi-provider parallel workers via `model:` spec annotation, tiktoken marked won't-fix.
