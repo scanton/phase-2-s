@@ -15,8 +15,9 @@ const MAX_CONTEXT_BYTES = 4096;
 /**
  * Headroom subtracted from the byte limit before truncation.
  * Node.js `Buffer.subarray(0,N).toString('utf8')` replaces a partial multibyte
- * sequence at the cut point with U+FFFD (3 bytes in UTF-8). Reserving 3 bytes
- * guarantees the final string stays within MAX_CONTEXT_BYTES in all cases.
+ * sequence at the cut point with U+FFFD (3 bytes in UTF-8). Worst-case net
+ * expansion: +2 bytes (1 orphan byte → 3-byte U+FFFD). A 3-byte reserve gives
+ * a 1-byte margin of safety.
  */
 const TRUNCATION_HEADROOM_BYTES = 3;
 

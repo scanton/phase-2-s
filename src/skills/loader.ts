@@ -22,6 +22,19 @@ function bundledSkillsDir(): string {
 }
 
 /**
+ * Return the absolute path to the bundled spec templates directory shipped
+ * inside the npm package at .phase2s/templates/.
+ *
+ * Three levels up from this file's directory gets us to <pkg-root>
+ * (same calculation as bundledSkillsDir).
+ */
+export function bundledTemplatesDir(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  const pkgRoot = resolve(dirname(thisFile), "../../..");
+  return join(pkgRoot, ".phase2s", "templates");
+}
+
+/**
  * Load skills from SKILL.md files in a directory.
  *
  * Follows a convention similar to gstack: each skill is a directory

@@ -338,3 +338,73 @@ describe("sendNotification with Telegram channel", () => {
     vi.unstubAllGlobals();
   });
 });
+
+// ---------------------------------------------------------------------------
+// sendTelegramNotification — byte-aware truncation (Sprint 42)
+// ---------------------------------------------------------------------------
+
+describe("sendTelegramNotification byte-aware truncation", () => {
+  it("sends short text unchanged (no truncation)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const shortText = "Hello, world!";
+    await sendTelegramNotification(
+      { title: shortText, success: true },
+      { token: VALID_BOT_TOKEN, chatId: "123" },
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { text: string };
+    expect(body.text).toBe(shortText);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("truncates text longer than 4090 bytes (ASCII text)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    // 5000 ASCII chars = 5000 bytes, well over the 4090 limit
+    const longText = "A".repeat(5000);
+    await sendTelegramNotification(
+      { title: longText, success: true },
+      { token: VALID_BOT_TOKEN, chatId: "123" },
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { text: string };
+    // After truncation, byte length should be <= 4090 bytes (4087 chars + 3-byte ellipsis)
+    expect(Buffer.byteLength(body.text, "utf8")).toBeLessThanOrEqual(4090);
+    // Should end with ellipsis
+    expect(body.text.endsWith("\u2026")).toBe(true);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("byte-aware truncation handles emoji-heavy text", () => {
+    // Emoji are 4 bytes each in UTF-8; 1100 emoji = 4400 bytes
+    // but string .length = 2200 (surrogate pairs) — naive char-count would not catch the overflow
+    const emojiText = "😀".repeat(1100);
+    expect(Buffer.byteLength(emojiText, "utf8")).toBeGreaterThan(4090);
+    // The string char length (2200) is less than the byte length (4400)
+    // — this is the case where naive char-counting would fail
+    expect(emojiText.length).toBeLessThan(Buffer.byteLength(emojiText, "utf8"));
+  });
+
+  it("text exactly at 4090 bytes is not truncated", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+
+    // Exactly 4090 ASCII chars = 4090 bytes (at limit, should not truncate)
+    const exactText = "B".repeat(4090);
+    await sendTelegramNotification(
+      { title: exactText, success: true },
+      { token: VALID_BOT_TOKEN, chatId: "123" },
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string) as { text: string };
+    expect(body.text).toBe(exactText);
+    expect(body.text.endsWith("\u2026")).toBe(false);
+
+    vi.unstubAllGlobals();
+  });
+});

@@ -361,4 +361,16 @@ describe("resolveSubtaskModel", () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("totally-unknown-xyz"));
     warnSpy.mockRestore();
   });
+
+  it("resolves 'Fast' (capital F) to fast_model (case-insensitive fix)", () => {
+    expect(resolveSubtaskModel("Fast", config, "default-model")).toBe("gpt-4o-mini");
+  });
+
+  it("resolves 'SMART' (all caps) to smart_model (case-insensitive fix)", () => {
+    expect(resolveSubtaskModel("SMART", config, "default-model")).toBe("o3");
+  });
+
+  it("resolves 'Fast' with no fast_model in config returns fallback", () => {
+    expect(resolveSubtaskModel("Fast", {}, "fallback-model")).toBe("fallback-model");
+  });
 });

@@ -48,7 +48,38 @@ SPEC READY: .phase2s/specs/2026-04-04-11-00-rate-limiting.md
 NEXT: run `phase2s goal .phase2s/specs/2026-04-04-11-00-rate-limiting.md`
 ```
 
-### Option B: Write it yourself
+### Option B: Use a template
+
+If your task fits a common pattern — adding a REST endpoint, writing an auth system, fixing a bug, adding tests — start from a bundled template:
+
+```bash
+phase2s template list
+```
+
+```
+auth    Authentication system with JWT, refresh tokens, and password hashing
+api     REST API resource with CRUD operations, validation, and tests
+bug     Reproduce, isolate, fix, and verify a specific bug
+refactor  Improve internal structure without changing external behavior
+test    Write missing tests for an existing module to reach a coverage target
+cli     Add a new subcommand to an existing CLI tool
+```
+
+```bash
+phase2s template use bug
+```
+
+```
+Bug description: clicking logout sometimes doesn't end the session
+Reproduction steps: log in, click logout, open a new tab, visit /dashboard — still logged in
+Test command: npm test
+
+Spec saved to .phase2s/specs/bug-clicking-logout-sometimes-doesnt-end.md
+```
+
+The wizard fills in 3-4 placeholders, substitutes them through the template, and writes the spec to `.phase2s/specs/`. The output is a full spec ready to lint and run — no editing needed.
+
+### Option C: Write it yourself
 
 Create a markdown file anywhere. The format:
 

@@ -6,14 +6,46 @@
 
 ---
 
+## Sprint 42 (done) — Bug Sweep + Spec Template Library (v1.19.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.19.0 |
+| Tests | 893 (+43 from v1.18.0) |
+
+- [x] **`resolveSubtaskModel` case normalization** — `.toLowerCase()` before alias comparison. `model: Fast` → `config.fast_model`. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Telegram byte-aware truncation** — `Buffer.byteLength(text, 'utf8') > 4090` check. Truncate via `Buffer.from(text).subarray(0, 4087).toString('utf8') + '…'`. Emoji-safe. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`resp.json()` SyntaxError** — separated into own try/catch in `init.ts` Telegram wizard. Emits "Telegram returned an unexpected response (non-JSON)..." instead of raw SyntaxError. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`TRUNCATION_HEADROOM_BYTES` JSDoc** — updated to: "worst case +2 bytes net expansion (1 orphan byte → 3-byte U+FFFD); 3-byte reserve gives 1-byte margin". Code unchanged. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`phase2s template list`** — lists 6 bundled templates with title + description. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`phase2s template use <name>`** — wizard prompts for ≤4 placeholders, substitutes `{{tokens}}`, writes spec to `.phase2s/specs/`, runs lint. **Completed:** v1.19.0 (2026-04-07)
+- [x] **6 bundled templates** — auth, api, refactor, test, cli, bug. Each with realistic 4-5 subtask decomposition. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`phase2s doctor` templates check** — `checkTemplatesDir()` verifies bundled templates directory present and non-empty. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`prompt-util.ts`** — shared readline wizard helper extracted from `init.ts`. `createRl()` + `ask()`. **Completed:** v1.19.0 (2026-04-07)
+
+### Pre-landing /review pass fixes (also v1.19.0)
+
+- [x] **`prompt-util.ts` SIGINT handler** — `.on("SIGINT")` → `.once("SIGINT")` to prevent double-close if `createRl()` is called more than once. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`spec-template.ts` FS error handling** — `mkdirSync`/`writeFileSync` wrapped in try-catch with human-readable error messages; `while`-loop collision guard for output path (was `if`). **Completed:** v1.19.0 (2026-04-07)
+- [x] **`spec-template.ts` unresolved token warning** — after substitution, scan for remaining `{{token}}` patterns and warn the user with `chalk.yellow` for each unique unresolved placeholder. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`spec-template.ts` `return` after `process.exit(1)`** — unknown-template guard fell through to `entry.filePath` access when exit was mocked; added `return` as safety guard. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`init.ts` DRY refactor** — removed duplicate `readline` setup; imports `createRl()`/`ask()` from `prompt-util.ts`. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Hollow test rewrite** — `runTemplateList`/`runTemplateUse` tests previously tested only internal helpers. Rewritten to call the functions directly; added `vi.mock` for `bundledTemplatesDir` (import.meta.url resolves to source path in vitest, not dist); added cascade injection prevention test; added trailing-newline regression tests. +5 tests. **Completed:** v1.19.0 (2026-04-07)
+
+### Pre-landing adversarial review fixes (also v1.19.0)
+
+- [x] **Template format incompatibility (CRITICAL)** — all 6 templates used wrong markdown format; spec-parser parsed 0 subtasks from generated specs. Rewritten to correct format. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`alias.startsWith(p)` regression** — KNOWN_MODEL_PREFIXES check used original `annotation` instead of lowercased `alias`. Model IDs like `GPT-4O` bypassed warning. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Cascade placeholder injection** — sequential `replaceAll` allowed user values containing `{{token}}` to be re-substituted. Fixed with single-pass regex. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Frontmatter trailing newline** — regex required `\r?\n` after closing `---`; files without trailing newline silently dropped from template list. Made optional. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Duplicate `node:fs` import in `doctor.ts`** — merged. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Telegram constants hoisted** — `TELEGRAM_MAX_BYTES`, `TELEGRAM_ELLIPSIS`, `TELEGRAM_TRUNCATION_GUARD_BYTES` moved to module level. **Completed:** v1.19.0 (2026-04-07)
+
+---
+
 ## Backlog — Post-Sprint 41 adversarial review findings
 
-Found after v1.18.0 merged. Target: next sweep sprint.
-
-- [ ] **`resolveSubtaskModel` case normalization** — `model: Fast` and `model: FAST` fall through to the literal-passthrough branch and emit a console.warn instead of resolving to `config.fast_model`. Fix: lowercase annotation before alias comparison. Medium priority.
-- [ ] **Telegram 4096-char limit** — `sendTelegramNotification()` does not truncate `text` before sending. Long spec names + verbose run summaries can exceed Telegram's 4096-char limit, causing HTTP 400. Notification silently dropped. Fix: `text.slice(0, 4090) + (text.length > 4090 ? '…' : '')` before fetch. Medium priority.
-- [ ] **`resp.json()` SyntaxError misleading message** — if Telegram CDN returns an HTML error page, `resp.json()` throws `SyntaxError: Unexpected token '<'`. Caught as generic "Network error" in the wizard. Fix: add SyntaxError branch or wrap `resp.json()` in its own try. Low priority.
-- [ ] **`TRUNCATION_HEADROOM_BYTES` comment wrong** — comment says "worst case split at byte 3 → +3 expansion". Actual worst case is 1 orphan byte → U+FFFD (+2). Code is correct; comment is wrong. Fix: update comment to say "+2 expansion, 3-byte reserve gives 1 byte margin". Trivial.
+Found after v1.18.0 merged. All fixed in Sprint 42 above.
 
 ---
 
@@ -674,14 +706,12 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - CI added (GitHub Actions, Node.js 22) — no deploy step yet (CLI tool)
 - `agent.ts`: provider display log showed "codex-cli" even when `PHASE2S_PROVIDER=openai-api` — fixed in Sprint 4 (now reads `this.provider.name`).
 
-### Post-Sprint 41 adversarial review findings (deferred, not bugs)
+### Post-Sprint 41 adversarial review findings — fixed in Sprint 42 (v1.19.0)
 
-Caught by background adversarial agent after v1.18.0 shipped. None are regressions; all are pre-existing or low-severity.
-
-- **`resolveSubtaskModel` case normalization** — `model: Fast` or `model: SMART` in a spec doesn't match the lowercase `"fast"` / `"smart"` checks. Fix: lowercase the annotation before comparison in `resolveSubtaskModel()`.
-- **Telegram 4096-char message limit** — Telegram Bot API rejects messages longer than 4096 characters. `sendTelegramNotification()` doesn't truncate. Long `body` strings (e.g., from a verbose run summary) will get a 400 Bad Request from Telegram. Fix: truncate `text` to 4096 chars with a `…` suffix before the POST.
-- **`resp.json()` SyntaxError shows as "Network error"** — In `sendTelegramNotification()`, if Telegram returns a non-JSON body (happens on some proxy errors), `resp.json()` throws a SyntaxError, which is caught and re-thrown as `Telegram API error: Network error`. The message is misleading. Fix: distinguish JSON parse errors from fetch errors in the catch block.
-- **`TRUNCATION_HEADROOM_BYTES` comment** — JSDoc says "worst case +3 bytes for the U+FFFD replacement character" but worst case is actually +2 (a 4-byte emoji split at byte 3 produces a 3-byte invalid sequence replaced by the 3-byte U+FFFD, net +0; split at byte 1 produces +2). Comment is conservative/harmless but technically wrong. Fix: update JSDoc to "up to +2 bytes net overhead" or simplify to "reserves space for UTF-8 replacement character overhead."
+- [x] **`resolveSubtaskModel` case normalization** — fixed: `.toLowerCase()` before alias comparison.
+- [x] **Telegram 4096-char message limit** — fixed: byte-aware truncation via `Buffer.byteLength()`.
+- [x] **`resp.json()` SyntaxError shows as "Network error"** — fixed: separate try/catch in `init.ts`.
+- [x] **`TRUNCATION_HEADROOM_BYTES` comment** — fixed: JSDoc updated to "+2 bytes net expansion, 3-byte reserve gives 1-byte margin".
 
 ---
 

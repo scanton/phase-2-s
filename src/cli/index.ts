@@ -357,6 +357,27 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       await runDoctor();
     });
 
+  // Spec template library
+  const templateCmd = program
+    .command("template")
+    .description("Manage spec templates");
+
+  templateCmd
+    .command("list")
+    .description("List all bundled spec templates")
+    .action(async () => {
+      const { runTemplateList } = await import("./spec-template.js");
+      runTemplateList();
+    });
+
+  templateCmd
+    .command("use <name>")
+    .description("Generate a spec from a template via interactive wizard")
+    .action(async (name: string) => {
+      const { runTemplateUse } = await import("./spec-template.js");
+      await runTemplateUse(name, process.cwd());
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")
