@@ -6,6 +6,13 @@
 
 ---
 
+## Sprint 44 Backlog — ZSH plugin follow-ons (from Sprint 43 eng review)
+
+- [ ] **Bash shell support** — `phase2s setup --bash` adds a `p2()` function snippet to `~/.bash_profile`. Sprint 43 ships ZSH only; `p2` alias in the plugin file is ZSH-only. Bash users need a separate install path. (Depends on: Sprint 43 shipping.)
+- [ ] **`checkShellPlugin()` write-permission check** — Add `accessSync(zshrc, constants.W_OK)` to `checkShellPlugin()` in `doctor.ts` so `phase2s doctor` warns proactively if `~/.zshrc` isn't writable before the user tries `phase2s setup`. Low effort, good UX. (Depends on: Sprint 43 shipping.)
+
+---
+
 ## Backlog — ForgeCode-Inspired Features (Competitive Research, 2026-04-07)
 
 Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forgecode) (6.2k stars, ~4 months old, shipping daily). They do several things better than us. Highest-impact ideas below, prioritized by leverage.

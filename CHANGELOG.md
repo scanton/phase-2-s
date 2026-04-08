@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.20.0 — 2026-04-07
+
+Sprint 43 — ZSH shell integration. Enables `: fix the bug` syntax directly from any ZSH terminal without entering the REPL, inspired by ForgeCode's top UX differentiator.
+
+### What's new
+
+- **`: <prompt>` syntax** — Shadow ZSH's null command with a function that delegates to `phase2s run`. Works from any directory after setup. Guard prevents `: # comments` and bare `:` from reaching phase2s.
+- **`p2` alias** — Short ZSH alias for `phase2s run`. `p2 "summarize this PR"` works after sourcing the plugin.
+- **`phase2s setup`** — New command that copies the bundled ZSH plugin to `~/.phase2s/phase2s.plugin.zsh` and appends a `source` line to `~/.zshrc`. Idempotent (safe to re-run). `--dry-run` flag shows what would happen without writing anything.
+- **Inline ZSH tab completion** — `_phase2s()` function embedded in the plugin to avoid 100-400ms Node.js cold-start cost per shell tab. Completion covers all 13 subcommands including `setup` and `template`.
+- **`phase2s doctor` shell check** — `checkShellPlugin()` verifies the ZSH plugin is installed and sourced in `~/.zshrc`.
+- **Bundled plugin file** — `.phase2s/shell/phase2s.plugin.zsh` shipped inside the npm package. `bundledShellPluginPath()` in `loader.ts` resolves it using the same 3-levels-up calculation as `bundledTemplatesDir()`.
+
+### Fixed
+
+- **ZSH `$SHELL` detection** — `phase2s setup` warns if the detected shell is not ZSH, since v1.20.0 is ZSH-only. Bash support tracked in TODOS.md.
+
+### Tests
+
+893 → 917 (+24). New test files: `plugin.test.ts` (7 tests: plugin file existence, function content, ZSH syntax validation), `setup.test.ts` (11 tests: install flow, idempotency, trailing-newline guard, dry-run, shell detection). Extended `doctor.test.ts` (+4 tests for `checkShellPlugin`), `completion.test.ts` (+2 tests for setup/template subcommands).
+
+---
+
 ## v1.19.0 — 2026-04-07
 
 Sprint 42 bug sweep (4 adversarial findings from v1.18.0) + spec template library (`phase2s template list` / `phase2s template use <name>`). Pre-landing adversarial review caught a critical template format bug and three additional code quality fixes.

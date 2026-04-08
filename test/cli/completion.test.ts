@@ -59,4 +59,14 @@ describe("phase2s completion zsh", () => {
     const output = await runCompletion("zsh");
     expect(output).toContain("phase2s skills --json");
   });
+
+  it("zsh script includes setup subcommand", async () => {
+    const output = await runCompletion("zsh");
+    expect(output).toContain("setup");
+  });
+
+  it("zsh script includes template subcommand", async () => {
+    const output = await runCompletion("zsh");
+    expect(output).toContain("template");
+  });
 });

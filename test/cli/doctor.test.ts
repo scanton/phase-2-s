@@ -317,3 +317,66 @@ describe("checkTemplatesDir", () => {
     expect(failResult.name).toBe("Spec templates");
   });
 });
+
+// ---------------------------------------------------------------------------
+// checkShellPlugin (Sprint 43 — ZSH shell integration)
+// ---------------------------------------------------------------------------
+
+describe("checkShellPlugin", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-doctor-shellplugin-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("fails when plugin file does not exist", async () => {
+    const { checkShellPlugin } = await import("../../src/cli/doctor.js");
+    const result = checkShellPlugin(join(tmpDir, ".phase2s"), join(tmpDir, ".zshrc"));
+    expect(result.ok).toBe(false);
+    expect(result.name).toBe("Shell integration");
+    expect(result.detail).toContain("not installed");
+    expect(result.fix).toContain("phase2s setup");
+  });
+
+  it("fails when plugin exists but zshrc does not exist", async () => {
+    const { checkShellPlugin } = await import("../../src/cli/doctor.js");
+    const phase2sDir = join(tmpDir, ".phase2s");
+    mkdirSync(phase2sDir);
+    writeFileSync(join(phase2sDir, "phase2s.plugin.zsh"), "# plugin\n");
+    // No zshrc created
+    const result = checkShellPlugin(phase2sDir, join(tmpDir, ".zshrc"));
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain("not sourced");
+    expect(result.fix).toContain("phase2s setup");
+  });
+
+  it("fails when plugin exists but zshrc does not source it", async () => {
+    const { checkShellPlugin } = await import("../../src/cli/doctor.js");
+    const phase2sDir = join(tmpDir, ".phase2s");
+    const zshrcPath = join(tmpDir, ".zshrc");
+    mkdirSync(phase2sDir);
+    writeFileSync(join(phase2sDir, "phase2s.plugin.zsh"), "# plugin\n");
+    writeFileSync(zshrcPath, "# no source line here\n");
+    const result = checkShellPlugin(phase2sDir, zshrcPath);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain("not sourced");
+  });
+
+  it("passes when plugin exists and zshrc sources it", async () => {
+    const { checkShellPlugin } = await import("../../src/cli/doctor.js");
+    const phase2sDir = join(tmpDir, ".phase2s");
+    const zshrcPath = join(tmpDir, ".zshrc");
+    const pluginDest = join(phase2sDir, "phase2s.plugin.zsh");
+    mkdirSync(phase2sDir);
+    writeFileSync(pluginDest, "# plugin\n");
+    writeFileSync(zshrcPath, `source "${pluginDest}" # phase2s shell integration\n`);
+    const result = checkShellPlugin(phase2sDir, zshrcPath);
+    expect(result.ok).toBe(true);
+    expect(result.name).toBe("Shell integration");
+    expect(result.detail).toContain("sourced");
+  });
+});

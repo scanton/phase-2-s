@@ -10,6 +10,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, accessSync, mkdirSync, constants, readdirSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
+import { homedir } from "node:os";
 import chalk from "chalk";
 import { parse as parseYaml } from "yaml";
 import { bundledTemplatesDir } from "../skills/loader.js";
@@ -311,6 +312,47 @@ export function checkTemplatesDir(): CheckResult {
   };
 }
 
+/**
+ * Check that the ZSH shell integration plugin is installed and sourced.
+ *
+ * Accepts optional path overrides for testability (same pattern as checkWorkDir).
+ */
+export function checkShellPlugin(
+  phase2sDir: string = join(homedir(), ".phase2s"),
+  zshrcPath: string = join(homedir(), ".zshrc"),
+): CheckResult {
+  const pluginDest = join(phase2sDir, "phase2s.plugin.zsh");
+  const pluginExists = existsSync(pluginDest);
+
+  if (!pluginExists) {
+    return {
+      name: "Shell integration",
+      ok: false,
+      detail: "ZSH plugin not installed",
+      fix: "Run: phase2s setup",
+    };
+  }
+
+  // Check ~/.zshrc contains the source line (by looking for the plugin path)
+  const zshrcExists = existsSync(zshrcPath);
+  const sourced = zshrcExists && readFileSync(zshrcPath, "utf8").includes(pluginDest);
+
+  if (!sourced) {
+    return {
+      name: "Shell integration",
+      ok: false,
+      detail: `Plugin installed but not sourced in ${zshrcPath}`,
+      fix: "Run: phase2s setup  (re-run is idempotent and adds the source line)",
+    };
+  }
+
+  return {
+    name: "Shell integration",
+    ok: true,
+    detail: `ZSH plugin installed and sourced`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // runDoctor — entry point
 // ---------------------------------------------------------------------------
@@ -342,6 +384,7 @@ export async function runDoctor(): Promise<void> {
     checkConfigFile(configPath),
     checkWorkDir(resolve(".phase2s")),
     checkTemplatesDir(),
+    checkShellPlugin(),
     checkTmux(),
     checkGitWorktree(),
   ];
