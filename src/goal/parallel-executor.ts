@@ -526,7 +526,7 @@ export function resolveSubtaskModel(
   if (alias === "fast") return config.fast_model ?? fallback;
   if (alias === "smart") return config.smart_model ?? fallback;
   // Literal model name passthrough — warn if it doesn't look like a known format
-  if (!KNOWN_MODEL_PREFIXES.some(p => annotation.startsWith(p))) {
+  if (!KNOWN_MODEL_PREFIXES.some(p => alias.startsWith(p))) {
     console.warn(`[phase2s] Unknown model annotation: "${annotation}". Passing through — check your spec.`);
   }
   return annotation;

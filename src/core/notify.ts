@@ -207,6 +207,24 @@ async function sendTeamsNotification(payload: NotifyPayload, webhookUrl: string)
 const TELEGRAM_FETCH_TIMEOUT_MS = 10_000;
 
 /**
+ * Telegram Bot API rejects messages >4096 bytes. We truncate at 4090 as a conservative
+ * margin to leave headroom for overhead. Byte-aware (not character-aware) because emoji
+ * and CJK text can produce >4096 bytes even when text.length ≤ 4090.
+ */
+const TELEGRAM_MAX_BYTES = 4090;
+
+/** U+2026 HORIZONTAL ELLIPSIS — 3 bytes in UTF-8, appended after truncation. */
+const TELEGRAM_ELLIPSIS = "\u2026";
+
+/**
+ * Bytes to subtract from TELEGRAM_MAX_BYTES before slicing the buffer.
+ * Breakdown: 3 bytes for TELEGRAM_ELLIPSIS + 3 bytes worst-case U+FFFD expansion
+ * (cutting a multi-byte sequence at the last byte produces one U+FFFD = 3 bytes,
+ * replacing 1 byte — net +2 byte expansion; the extra 1 byte gives a safety margin).
+ */
+const TELEGRAM_TRUNCATION_GUARD_BYTES = 6;
+
+/**
  * Send a Telegram notification via the Bot API.
  *
  * API: POST https://api.telegram.org/bot{TOKEN}/sendMessage
@@ -227,17 +245,8 @@ export async function sendTelegramNotification(
   const text = payload.body
     ? `${payload.title}\n${payload.body}`
     : payload.title;
-  // Telegram Bot API rejects messages >4096 bytes (UTF-8). Truncate byte-aware — JS string
-  // length counts code units, not bytes; emoji-heavy text can exceed 4096 bytes even with
-  // text.length ≤ 4090. Buffer.byteLength() gives the true byte count.
-  const TELEGRAM_MAX_BYTES = 4090;
-  const ELLIPSIS = "\u2026"; // U+2026 HORIZONTAL ELLIPSIS, 3 bytes UTF-8
-  // Worst-case multibyte expansion: cutting after 1 byte of a multi-byte sequence causes
-  // Buffer.toString('utf8') to emit U+FFFD (3 bytes) replacing the orphan byte — a net +2
-  // byte expansion at the cut point. Subtract 6 (3 for FFFD headroom + 3 for ellipsis) so
-  // the final string is guaranteed ≤ TELEGRAM_MAX_BYTES in all cases.
   const truncatedText = Buffer.byteLength(text, "utf8") > TELEGRAM_MAX_BYTES
-    ? Buffer.from(text).subarray(0, TELEGRAM_MAX_BYTES - 6).toString("utf8") + ELLIPSIS
+    ? Buffer.from(text).subarray(0, TELEGRAM_MAX_BYTES - TELEGRAM_TRUNCATION_GUARD_BYTES).toString("utf8") + TELEGRAM_ELLIPSIS
     : text;
   const url = `https://api.telegram.org/bot${opts.token}/sendMessage`;
   const ac = new AbortController();

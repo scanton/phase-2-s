@@ -45,12 +45,12 @@ interface TemplateMeta {
  * Only supports the three expected keys. Unknown keys are ignored.
  */
 export function parseFrontmatter(content: string): { meta: TemplateMeta; body: string } {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n([\s\S]*))?$/);
   if (!match) {
     throw new Error("Template missing YAML frontmatter (expected --- ... --- block at top)");
   }
   const frontmatter = match[1];
-  const body = match[2];
+  const body = match[2] ?? "";
 
   let title = "";
   let description = "";
@@ -172,11 +172,10 @@ export async function runTemplateUse(name: string, cwd: string): Promise<void> {
     rl.close();
   }
 
-  // Substitute {{token}} placeholders in body only (frontmatter is never written)
-  let output = body;
-  for (const [key, val] of Object.entries(values)) {
-    output = output.replaceAll(`{{${key}}}`, val);
-  }
+  // Substitute {{token}} placeholders in body only (frontmatter is never written).
+  // Single-pass regex replacement prevents cascade injection: if a user enters a value
+  // that itself contains "{{token}}" syntax, it is not re-processed in subsequent iterations.
+  const output = body.replace(/\{\{([^}]+)\}\}/g, (_match, key) => values[key as string] ?? `{{${key as string}}}`);
 
   // Determine output path: .phase2s/specs/<name>-<timestamp>.md
   const specsDir = join(cwd, ".phase2s", "specs");

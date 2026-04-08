@@ -8,11 +8,10 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, accessSync, mkdirSync, constants, readdirSync } from "node:fs";
+import { existsSync, accessSync, mkdirSync, constants, readdirSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import chalk from "chalk";
 import { parse as parseYaml } from "yaml";
-import { readFileSync } from "node:fs";
 import { bundledTemplatesDir } from "../skills/loader.js";
 
 // ---------------------------------------------------------------------------
