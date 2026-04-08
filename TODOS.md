@@ -11,7 +11,7 @@
 | Metric | Value |
 |--------|-------|
 | Version | v1.19.0 |
-| Tests | 888 (+38 from v1.18.0) |
+| Tests | 893 (+43 from v1.18.0) |
 
 - [x] **`resolveSubtaskModel` case normalization** — `.toLowerCase()` before alias comparison. `model: Fast` → `config.fast_model`. **Completed:** v1.19.0 (2026-04-07)
 - [x] **Telegram byte-aware truncation** — `Buffer.byteLength(text, 'utf8') > 4090` check. Truncate via `Buffer.from(text).subarray(0, 4087).toString('utf8') + '…'`. Emoji-safe. **Completed:** v1.19.0 (2026-04-07)
@@ -22,6 +22,15 @@
 - [x] **6 bundled templates** — auth, api, refactor, test, cli, bug. Each with realistic 4-5 subtask decomposition. **Completed:** v1.19.0 (2026-04-07)
 - [x] **`phase2s doctor` templates check** — `checkTemplatesDir()` verifies bundled templates directory present and non-empty. **Completed:** v1.19.0 (2026-04-07)
 - [x] **`prompt-util.ts`** — shared readline wizard helper extracted from `init.ts`. `createRl()` + `ask()`. **Completed:** v1.19.0 (2026-04-07)
+
+### Pre-landing /review pass fixes (also v1.19.0)
+
+- [x] **`prompt-util.ts` SIGINT handler** — `.on("SIGINT")` → `.once("SIGINT")` to prevent double-close if `createRl()` is called more than once. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`spec-template.ts` FS error handling** — `mkdirSync`/`writeFileSync` wrapped in try-catch with human-readable error messages; `while`-loop collision guard for output path (was `if`). **Completed:** v1.19.0 (2026-04-07)
+- [x] **`spec-template.ts` unresolved token warning** — after substitution, scan for remaining `{{token}}` patterns and warn the user with `chalk.yellow` for each unique unresolved placeholder. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`spec-template.ts` `return` after `process.exit(1)`** — unknown-template guard fell through to `entry.filePath` access when exit was mocked; added `return` as safety guard. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`init.ts` DRY refactor** — removed duplicate `readline` setup; imports `createRl()`/`ask()` from `prompt-util.ts`. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Hollow test rewrite** — `runTemplateList`/`runTemplateUse` tests previously tested only internal helpers. Rewritten to call the functions directly; added `vi.mock` for `bundledTemplatesDir` (import.meta.url resolves to source path in vitest, not dist); added cascade injection prevention test; added trailing-newline regression tests. +5 tests. **Completed:** v1.19.0 (2026-04-07)
 
 ### Pre-landing adversarial review fixes (also v1.19.0)
 

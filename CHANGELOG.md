@@ -26,7 +26,7 @@ Sprint 42 bug sweep (4 adversarial findings from v1.18.0) + spec template librar
 
 ### Tests
 
-850 → 888 (+38). New test files: `spec-template.test.ts` (207 lines), `template-format.test.ts` (6 format-compatibility tests), `notify.test.ts` (+70 lines), `doctor.test.ts` (+40 lines), `parallel-executor.test.ts` (+12 lines).
+850 → 893 (+43). New test files: `spec-template.test.ts` (27 tests: cascade injection prevention, trailing-newline regression, call-through coverage for `runTemplateList`/`runTemplateUse`), `template-format.test.ts` (6 format-compatibility tests), `notify.test.ts` (+70 lines), `doctor.test.ts` (+40 lines), `parallel-executor.test.ts` (+12 lines).
 
 
 ## v1.18.0 — 2026-04-07
