@@ -321,6 +321,16 @@ export function checkShellPlugin(
   phase2sDir: string = join(homedir(), ".phase2s"),
   zshrcPath: string = join(homedir(), ".zshrc"),
 ): CheckResult {
+  // ZSH-only feature — skip check for non-ZSH users (shows N/A in doctor, filtered by runDoctor)
+  const shell = process.env.SHELL ?? "";
+  if (shell && !shell.includes("zsh")) {
+    return {
+      name: "Shell integration",
+      ok: true,
+      detail: `N/A (ZSH-only — detected shell: ${shell})`,
+    };
+  }
+
   const pluginDest = join(phase2sDir, "phase2s.plugin.zsh");
   const pluginExists = existsSync(pluginDest);
 

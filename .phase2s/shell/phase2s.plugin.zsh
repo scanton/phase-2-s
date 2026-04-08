@@ -12,7 +12,8 @@
 # With args (non-comment):  runs phase2s run "<args>" (quick one-shot mode)
 # With no args OR comment:  preserves null command behavior (no-op)
 #
-# NOTE: if you add subcommands to phase2s, also update ZSH_COMPLETION in src/cli/index.ts
+# NOTE: if you add subcommands to phase2s, update BOTH the subcommands array below
+#       AND ZSH_COMPLETION in src/cli/index.ts (they are intentionally kept in sync).
 function : () {
   if [[ $# -eq 0 || "$*" == "#"* ]]; then
     return 0
