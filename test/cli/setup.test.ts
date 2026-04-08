@@ -192,7 +192,7 @@ describe("runSetup()", () => {
     await runSetup({ phase2sDir, zshrcPath });
 
     const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
-    expect(output).toContain("source ~/.zshrc");
+    expect(output).toContain("source ~/.phase2s/phase2s.plugin.zsh");
     expect(output).toContain(": what does this codebase do?");
     expect(output).toContain(": fix the null check in auth.ts");
   });

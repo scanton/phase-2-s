@@ -102,8 +102,10 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
 
   // 3. Print confirmation
   console.log(`
-  Restart your shell, or run:
-    ${chalk.bold("source ~/.zshrc")}
+  To activate in your current shell, run:
+    ${chalk.bold("source ~/.phase2s/phase2s.plugin.zsh")}
+
+  Or open a new terminal tab — the plugin loads automatically.
 
   Then try:
     ${chalk.bold(": what does this codebase do?")}
