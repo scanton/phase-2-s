@@ -243,6 +243,20 @@ phase2s skills --json # machine-readable for scripts
 
 ### Dark Factory Tools
 
+**Start from a template:**
+
+```bash
+# See the 6 bundled spec templates
+phase2s template list
+
+# Fill in placeholders and write a spec in one step
+phase2s template use auth
+phase2s template use api
+phase2s template use bug
+```
+
+`phase2s template list` shows all bundled templates with their descriptions. `phase2s template use <name>` runs a short wizard (3-4 questions), fills in placeholders like `{{resource_name}}` and `{{test_command}}`, and writes the spec to `.phase2s/specs/` — ready to lint and run. Templates: `auth`, `api`, `refactor`, `test`, `cli`, `bug`.
+
 **Validate before you run:**
 
 ```bash
