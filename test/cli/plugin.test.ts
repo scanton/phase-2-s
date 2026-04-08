@@ -17,14 +17,18 @@ describe("phase2s.plugin.zsh", () => {
     expect(existsSync(pluginPath)).toBe(true);
   });
 
-  it("contains the : () function that overrides the null command", () => {
+  it("defines __phase2s_run and aliases ':' with noglob to suppress glob expansion", () => {
     const content = readFileSync(pluginPath, "utf8");
-    expect(content).toContain("function : ()");
+    // The helper function handles the actual routing
+    expect(content).toContain("function __phase2s_run()");
+    // The alias must use noglob so 'do?' and similar patterns aren't glob-expanded
+    // before the function receives them (ZSH expands globs before function lookup)
+    expect(content).toContain("alias ':=noglob __phase2s_run'");
   });
 
-  it("contains the p2 alias", () => {
+  it("contains the p2 alias with noglob", () => {
     const content = readFileSync(pluginPath, "utf8");
-    expect(content).toContain("alias p2=");
+    expect(content).toContain("alias p2='noglob __phase2s_run'");
   });
 
   it("contains the inline _phase2s() completion function", () => {

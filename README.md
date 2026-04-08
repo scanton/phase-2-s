@@ -59,7 +59,9 @@ After installing, run `phase2s setup` once to enable the `: <prompt>` shorthand 
 
 ```bash
 phase2s setup
-source ~/.zshrc
+
+# Activate in the current shell (or open a new terminal tab):
+source ~/.phase2s/phase2s.plugin.zsh
 
 # Then from any directory:
 : fix the null check in auth.ts

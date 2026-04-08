@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.20.2 — 2026-04-08
+
+Two bug fixes for the ZSH shell integration shipped in v1.20.0.
+
+### Fixed
+
+- **Glob expansion in `: <prompt>` arguments** — ZSH expands glob patterns (`?`, `*`, `!`) in command arguments before looking up the function to call. A prompt like `: what does this codebase do?` would fail with `zsh: no matches found: do?` because ZSH tried to match `do?` as a filename. Fixed by switching from `function : ()` to `alias ':=noglob __phase2s_run'` — aliases are expanded before glob processing, so the `noglob` precommand modifier suppresses filename generation for all `:` arguments. Same fix applied to the `p2` alias.
+- **Setup instructions** — `phase2s setup` previously told users to run `source ~/.zshrc` to activate the plugin in the current shell. Re-sourcing `.zshrc` can fail silently if it has guards (e.g., `[[ -o login ]] || return`) or produce unexpected side effects. Updated to `source ~/.phase2s/phase2s.plugin.zsh`, which directly loads only the plugin. README and docs updated to match.
+
+---
+
+## v1.20.1 — 2026-04-08
+
+Patch release: `phase2s setup` now tells users to run `source ~/.phase2s/phase2s.plugin.zsh` instead of `source ~/.zshrc` to activate the plugin in the current shell. Re-sourcing `.zshrc` can fail silently or produce unexpected side effects. See v1.20.2 for the companion glob fix.
+
+---
+
 ## v1.20.0 — 2026-04-07
 
 Sprint 43 — ZSH shell integration. Enables `: fix the bug` syntax directly from any ZSH terminal without entering the REPL.

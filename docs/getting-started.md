@@ -142,7 +142,9 @@ Run `phase2s setup` once to install the ZSH plugin. This lets you skip the REPL 
 
 ```bash
 phase2s setup
-source ~/.zshrc
+
+# Activate in the current shell (or just open a new terminal tab):
+source ~/.phase2s/phase2s.plugin.zsh
 
 # Then from any directory:
 : fix the null check in auth.ts
@@ -152,6 +154,8 @@ p2 suggest "find large log files"
 ```
 
 `phase2s setup` copies the plugin to `~/.phase2s/` and adds a `source` line to `~/.zshrc`. It's idempotent — safe to re-run after `npm upgrade`. Use `--dry-run` to preview what it would do.
+
+> **Tip:** Use `source ~/.phase2s/phase2s.plugin.zsh` to activate in the current shell, not `source ~/.zshrc` — sourcing the plugin directly is more reliable than re-running your entire `.zshrc`.
 
 ZSH tab completion for all Phase2S subcommands is included automatically.
 
