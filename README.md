@@ -53,6 +53,25 @@ phase2s
 
 ---
 
+## Shell integration (ZSH)
+
+After installing, run `phase2s setup` once to enable the `: <prompt>` shorthand from any directory in your terminal — no REPL required.
+
+```bash
+phase2s setup
+source ~/.zshrc
+
+# Then from any directory:
+: fix the null check in auth.ts
+: what does this codebase do?
+: explain the retry logic in agent.ts
+p2 suggest "find large log files"
+```
+
+`phase2s setup` copies the ZSH plugin to `~/.phase2s/` and adds a `source` line to your `~/.zshrc`. It's idempotent — safe to re-run after npm upgrades. Use `phase2s setup --dry-run` to preview what it would do.
+
+---
+
 ## Feature 1: Your ChatGPT subscription, in your terminal
 
 Most people who pay for ChatGPT Plus use it by opening a browser tab and typing. Phase2S turns it into a programmable coding tool you can use from the command line, from scripts, and from inside Claude Code.

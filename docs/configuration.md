@@ -370,6 +370,8 @@ Commands:
   lint <spec.md>           Validate a spec file before running it
   report <log.jsonl>       Show a formatted run summary
   init                     Interactive setup wizard
+  setup                    Install ZSH shell integration (plugin + .zshrc source line)
+    --dry-run              Preview what would be installed without writing files
   doctor                   Installation health check
   upgrade                  Check for and install updates
   mcp                      Start as an MCP server for Claude Code

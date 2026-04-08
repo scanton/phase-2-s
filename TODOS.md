@@ -6,13 +6,20 @@
 
 ---
 
+## Sprint 44 Backlog — ZSH plugin follow-ons (from Sprint 43 eng review)
+
+- [ ] **Bash shell support** — `phase2s setup --bash` adds a `p2()` function snippet to `~/.bash_profile`. Sprint 43 ships ZSH only; `p2` alias in the plugin file is ZSH-only. Bash users need a separate install path. (Depends on: Sprint 43 shipping.)
+- [ ] **`checkShellPlugin()` write-permission check** — Add `accessSync(zshrc, constants.W_OK)` to `checkShellPlugin()` in `doctor.ts` so `phase2s doctor` warns proactively if `~/.zshrc` isn't writable before the user tries `phase2s setup`. Low effort, good UX. (Depends on: Sprint 43 shipping.)
+
+---
+
 ## Backlog — ForgeCode-Inspired Features (Competitive Research, 2026-04-07)
 
 Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forgecode) (6.2k stars, ~4 months old, shipping daily). They do several things better than us. Highest-impact ideas below, prioritized by leverage.
 
 ### Tier 1 — High leverage, Phase2S-native fit
 
-- [ ] **ZSH plugin / shell intercept mode** — Forge's biggest UX differentiator. Install a ZSH plugin once (`phase2s setup`) and type `: <prompt>` from anywhere in your shell without entering the REPL. Forge intercepts lines starting with `:` before the shell sees them. We could do the same with `ps2` or `p2` prefix. Would dramatically lower friction for quick asks, commit messages, and shell suggestions. Also ship `:commit` (AI commit message) and `:suggest "find large log files"` (natural language → shell command, puts it in your buffer). Forge's ZSH plugin is their #1 stickiness driver.
+- [x] **ZSH plugin / shell intercept mode** — Forge's biggest UX differentiator. Install a ZSH plugin once (`phase2s setup`) and type `: <prompt>` from anywhere in your shell without entering the REPL. Forge intercepts lines starting with `:` before the shell sees them. We could do the same with `ps2` or `p2` prefix. Would dramatically lower friction for quick asks, commit messages, and shell suggestions. Also ship `:commit` (AI commit message) and `:suggest "find large log files"` (natural language → shell command, puts it in your buffer). Forge's ZSH plugin is their #1 stickiness driver. **Completed:** v1.20.0 (2026-04-07)
 
 - [ ] **Named agent personas (sage / muse / forge)** — Forge ships 3 distinct agents: `forge` (read-write, implementation), `sage` (read-only, research/Q&A), `muse` (read-only, planning, writes to `plans/`). Phase2S has skills, but no agent personas. A `phase2s ask "how does X work?"` that's explicitly read-only with a different system prompt would be immediately useful. Maps to: `phase2s ask` (≈ sage), `phase2s plan` (≈ muse), existing REPL (≈ forge). Would clarify when to use what.
 
