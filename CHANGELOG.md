@@ -2,7 +2,7 @@
 
 ## v1.20.0 — 2026-04-07
 
-Sprint 43 — ZSH shell integration. Enables `: fix the bug` syntax directly from any ZSH terminal without entering the REPL, inspired by ForgeCode's top UX differentiator.
+Sprint 43 — ZSH shell integration. Enables `: fix the bug` syntax directly from any ZSH terminal without entering the REPL.
 
 ### What's new
 
