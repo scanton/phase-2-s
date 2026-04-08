@@ -327,10 +327,15 @@ describe("checkShellPlugin", () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "phase2s-doctor-shellplugin-test-"));
+    // Stub SHELL to /bin/zsh so tests exercise the ZSH code path regardless
+    // of the host shell. CI runners (bash) would otherwise hit the early-return
+    // "N/A (ZSH-only)" branch and never reach plugin/zshrc checks.
+    vi.stubEnv("SHELL", "/bin/zsh");
   });
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
   });
 
   it("fails when plugin file does not exist", async () => {
