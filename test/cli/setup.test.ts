@@ -10,6 +10,7 @@ import { runSetup } from "../../src/cli/setup.js";
 vi.mock("../../src/skills/loader.js", () => ({
   bundledShellPluginPath: () => join(process.cwd(), ".phase2s", "shell", "phase2s.plugin.zsh"),
   bundledTemplatesDir: () => join(process.cwd(), ".phase2s", "templates"),
+  bundledBashPluginPath: () => join(process.cwd(), ".phase2s", "shell", "phase2s-bash.sh"),
 }));
 
 // ---------------------------------------------------------------------------
@@ -209,6 +210,107 @@ describe("runSetup()", () => {
     const consoleSpy2 = vi.spyOn(console, "log");
     await runSetup({ phase2sDir, zshrcPath });
 
+    const output2 = consoleSpy2.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output2).toContain("Already in");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bash setup (--bash flag)
+// ---------------------------------------------------------------------------
+
+describe("runSetup() --bash", () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let tmpHome: string;
+
+  beforeEach(() => {
+    tmpHome = join(tmpdir(), `phase2s-bash-setup-test-${Date.now()}`);
+    mkdirSync(tmpHome, { recursive: true });
+    consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+  });
+
+  afterEach(() => {
+    rmSync(tmpHome, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("copies the bash plugin to phase2sDir", async () => {
+    const phase2sDir = join(tmpHome, ".phase2s");
+    const profilePath = join(tmpHome, ".bash_profile");
+    await runSetup({ bash: true, phase2sDir, profilePath });
+    expect(existsSync(join(phase2sDir, "phase2s-bash.sh"))).toBe(true);
+  });
+
+  it("appends a source line to ~/.bash_profile", async () => {
+    const phase2sDir = join(tmpHome, ".phase2s");
+    const profilePath = join(tmpHome, ".bash_profile");
+    writeFileSync(profilePath, "# existing content\n");
+    await runSetup({ bash: true, phase2sDir, profilePath });
+    const content = readFileSync(profilePath, "utf8");
+    expect(content).toContain("phase2s-bash.sh");
+    expect(content).toContain("# phase2s bash integration");
+  });
+
+  it("is idempotent: second run does not duplicate the source line", async () => {
+    const phase2sDir = join(tmpHome, ".phase2s");
+    const profilePath = join(tmpHome, ".bash_profile");
+    writeFileSync(profilePath, "");
+    await runSetup({ bash: true, phase2sDir, profilePath });
+    await runSetup({ bash: true, phase2sDir, profilePath });
+    const content = readFileSync(profilePath, "utf8");
+    const count = (content.match(/# phase2s bash integration/g) ?? []).length;
+    expect(count).toBe(1);
+  });
+
+  it("--bash --dry-run prints plan without writing files", async () => {
+    const phase2sDir = join(tmpHome, ".phase2s");
+    const profilePath = join(tmpHome, ".bash_profile");
+    await runSetup({ bash: true, dryRun: true, phase2sDir, profilePath });
+    expect(existsSync(phase2sDir)).toBe(false);
+    expect(existsSync(profilePath)).toBe(false);
+    const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("dry-run");
+    expect(output).toContain("Would copy");
+  });
+
+  it("does not emit ZSH warning when --bash is passed", async () => {
+    const warnMessages: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...args) => warnMessages.push(String(args[0])));
+    const originalShell = process.env.SHELL;
+    process.env.SHELL = "/bin/bash";
+    try {
+      const phase2sDir = join(tmpHome, ".phase2s");
+      const profilePath = join(tmpHome, ".bash_profile");
+      await runSetup({ bash: true, phase2sDir, profilePath });
+      // No ZSH warning should appear for bash users who used --bash
+      expect(warnMessages.some((m) => /requires ZSH/i.test(m))).toBe(false);
+    } finally {
+      process.env.SHELL = originalShell;
+    }
+  });
+
+  it("prints confirmation with source and login shell note", async () => {
+    const phase2sDir = join(tmpHome, ".phase2s");
+    const profilePath = join(tmpHome, ".bash_profile");
+    writeFileSync(profilePath, "");
+    await runSetup({ bash: true, phase2sDir, profilePath });
+    const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("source ~/.phase2s/phase2s-bash.sh");
+    expect(output).toContain(": what does this codebase do?");
+  });
+
+  it("prints 'Already in' on second run", async () => {
+    const phase2sDir = join(tmpHome, ".phase2s");
+    const profilePath = join(tmpHome, ".bash_profile");
+    writeFileSync(profilePath, "");
+    await runSetup({ bash: true, phase2sDir, profilePath });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const consoleSpy2 = vi.spyOn(console, "log");
+    await runSetup({ bash: true, phase2sDir, profilePath });
     const output2 = consoleSpy2.mock.calls.map((c) => String(c[0])).join("\n");
     expect(output2).toContain("Already in");
   });
