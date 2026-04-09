@@ -238,7 +238,7 @@ phase2s skills --json # machine-readable for scripts
 - [Claude Code integration](docs/claude-code.md) — MCP setup, adversarial review, CLAUDE.md routing rules
 - [Skills reference](docs/skills.md) — all 29 skills with examples
 - [Workflows](docs/workflows.md) — real development sessions end to end
-- [Memory and persistence](docs/memory.md) — session resume, `/remember`, what gets saved
+- [Memory and persistence](docs/memory.md) — session resume, session branching and forking, `/remember`, what gets saved
 - [Writing custom skills](docs/writing-skills.md) — create your own `/commands`
 - [GitHub Action](docs/github-action.md) — `uses: scanton/phase2s@v1` for CI (requires API key)
 - [Advanced](docs/advanced.md) — streaming, model routing, tool allow/deny
@@ -369,7 +369,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 920 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, and session branching DAG
+- [x] 995 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, and bash shell integration
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -428,6 +428,7 @@ browser: true  # requires playwright installed
 - [x] `phase2s template list` / `phase2s template use <name>` — 6 bundled spec templates (`auth`, `api`, `bug`, `refactor`, `test`, `cli`). Short wizard fills in 3-4 placeholders, substitutes tokens in a single pass (no cascade injection), writes spec to `.phase2s/specs/`, and runs lint automatically.
 - [x] `phase2s doctor` templates check — verifies bundled templates directory is present and non-empty
 - [x] `phase2s conversations` / `:clone <uuid>` — DAG-shaped session storage. Browse all sessions with fzf (or plain table), fork any session into a new branch. Sessions stored as `{schemaVersion:2, meta:{id,parentId,branchName}, messages:[]}`. Migration from YYYY-MM-DD.json is automatic, resumable, and non-destructive (backup created before any rename).
+- [x] Bash shell integration — `phase2s setup --bash` installs `~/.phase2s/phase2s-bash.sh` and sources it from `~/.bash_profile`. Provides the same `: <prompt>` shorthand and `p2` alias as the ZSH integration, plus bash tab completion. Fixes for `:clone` corruption and atomic SIGINT save.
 - [x] Byte-aware context truncation — `level-context.ts` uses `Buffer.from(context,'utf8').subarray(0,limit).toString('utf8')` instead of `String.slice()`. Fixes silent byte overrun with emoji or CJK filenames.
 
 ---
