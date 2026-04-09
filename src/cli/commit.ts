@@ -21,7 +21,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, unlinkSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, unlinkSync, existsSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import chalk from "chalk";
@@ -282,7 +282,7 @@ export async function runCommitFlow(
     }
     // Interactive fallback: ask user to write manually
     console.log(chalk.yellow("Model returned no message."));
-    console.log(chalk.dim(`Staged changes:\n${result ?? "(no diff stat)"}`));
+    console.log(chalk.dim("Run `git diff --cached` to see staged changes."));
     const rl = createRl();
     try {
       const manual = await ask(rl, "Write your own commit message (or press Enter to cancel): ");
@@ -368,13 +368,16 @@ async function openEditor(initialMessage: string): Promise<string | null> {
 
   // Write to a temp file
   let tmpFile: string | null = null;
+  let tmpDir: string | null = null;
   try {
-    const tmpDir = mkdtempSync(join(tmpdir(), "phase2s-commit-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-commit-"));
     tmpFile = join(tmpDir, "COMMIT_EDITMSG");
     writeFileSync(tmpFile, initialMessage, "utf8");
 
+    // Split EDITOR on whitespace to support multi-word values like "code --wait"
+    const editorParts = editor.trim().split(/\s+/);
     // Open editor (spawnSync so we inherit stdin/stdout for interactive editing)
-    const result = spawnSync(editor, [tmpFile], { stdio: "inherit" });
+    const result = spawnSync(editorParts[0], [...editorParts.slice(1), tmpFile], { stdio: "inherit" });
 
     if (result.status !== 0) {
       return null; // Editor exited non-zero → treat as cancel
@@ -389,6 +392,9 @@ async function openEditor(initialMessage: string): Promise<string | null> {
   } finally {
     if (tmpFile && existsSync(tmpFile)) {
       try { unlinkSync(tmpFile); } catch { /* best effort */ }
+    }
+    if (tmpDir && existsSync(tmpDir)) {
+      try { rmdirSync(tmpDir); } catch { /* best effort */ }
     }
   }
 }
