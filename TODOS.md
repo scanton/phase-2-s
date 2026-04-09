@@ -6,6 +6,16 @@
 
 ---
 
+## Backlog — Post-Sprint 44 eng review findings (2026-04-08)
+
+- [ ] **Session index file for `conversations` performance** — `phase2s conversations` scans and parses every session JSON on each run. At 100+ sessions this becomes 200-500ms of unnecessary I/O. Add `.phase2s/sessions/index.json` caching `{id, createdAt, branchName, firstMessage}` per session, updated on every `saveSession()` call and `cloneSession()`. Makes `conversations` launch instantaneous. Depends on: Sprint 44 session storage (v1.21.0) shipped first. Target: Sprint 45.
+
+- [ ] **Concurrency lock on `state.json`** — Two Phase2S REPL instances (split-terminal, same project dir) race on `currentSessionId` in `.phase2s/state.json`. Last writer wins and silently breaks the other instance's session continuity. Fix: atomic compare-and-swap write on `state.json`, or per-session state tracked in the session file itself (no shared mutable file). Affects users with multiple terminal tabs open simultaneously. Depends on: Sprint 44 session storage. Target: Sprint 45.
+
+- [ ] **DAG integrity check in `phase2s doctor`** — After `:clone` creates a session with `parentId`, dangling references can occur if the parent file is deleted manually. Add a `doctor` check that scans all session files, validates each `parentId` resolves to an existing file, and reports orphaned or dangling branches. Natural companion to tree visualization. Depends on: Sprint 44 session storage + Sprint 45 tree viz. Target: Sprint 45.
+
+---
+
 ## Backlog — Post-Sprint 41 adversarial review findings
 
 Found after v1.18.0 merged. Target: next sweep sprint.
