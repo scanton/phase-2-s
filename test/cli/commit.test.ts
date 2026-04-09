@@ -259,6 +259,51 @@ describe("runCommitFlow() — interactive", () => {
     expect(exit).toHaveBeenCalledWith(1);
     exit.mockRestore();
   });
+
+  // 20. [e]dit path (no $EDITOR) → readline fallback → commits edited message
+  it("[e]dit with no $EDITOR uses readline fallback and commits the edited message", async () => {
+    const savedEditor = process.env.EDITOR;
+    const savedVisual = process.env.VISUAL;
+    delete process.env.EDITOR;
+    delete process.env.VISUAL;
+    try {
+      // First ask() call: main prompt → "e"
+      // Second ask() call: edit prompt → user's new message
+      askMock
+        .mockResolvedValueOnce("e")
+        .mockResolvedValueOnce("fix: edited by user");
+      await runCommitFlow(makeConfig());
+      const commitCall = spawnSyncMock.mock.calls.find(
+        (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+      );
+      expect(commitCall).toBeDefined();
+      expect(commitCall![1]).toContain("fix: edited by user");
+    } finally {
+      if (savedEditor !== undefined) process.env.EDITOR = savedEditor;
+      if (savedVisual !== undefined) process.env.VISUAL = savedVisual;
+    }
+  });
+
+  // 21. [e]dit path → empty input → commit cancelled (no git commit)
+  it("[e]dit with empty readline input cancels the commit", async () => {
+    const savedEditor = process.env.EDITOR;
+    const savedVisual = process.env.VISUAL;
+    delete process.env.EDITOR;
+    delete process.env.VISUAL;
+    try {
+      askMock
+        .mockResolvedValueOnce("e")
+        .mockResolvedValueOnce(""); // empty → cancel
+      await runCommitFlow(makeConfig());
+      const commitCall = spawnSyncMock.mock.calls.find(
+        (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+      );
+      expect(commitCall).toBeUndefined();
+    } finally {
+      if (savedEditor !== undefined) process.env.EDITOR = savedEditor;
+      if (savedVisual !== undefined) process.env.VISUAL = savedVisual;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -337,5 +382,38 @@ describe("runCommitFlow() — --preview", () => {
   it("--preview does not call ask()", async () => {
     await runCommitFlow(makeConfig(), { preview: true });
     expect(askMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runCommitFlow() — null-model interactive fallback
+// ---------------------------------------------------------------------------
+
+describe("runCommitFlow() — null-model interactive fallback", () => {
+  beforeEach(() => {
+    resetMocks();
+    // Make the model return empty so result === null
+    agentRunMock.mockResolvedValue("");
+  });
+
+  // 22. null-model + user types a message → commits with that message
+  it("prompts for manual message when model returns empty and commits it", async () => {
+    askMock.mockResolvedValue("fix: manual commit message");
+    await runCommitFlow(makeConfig());
+    const commitCall = spawnSyncMock.mock.calls.find(
+      (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+    );
+    expect(commitCall).toBeDefined();
+    expect(commitCall![1]).toContain("fix: manual commit message");
+  });
+
+  // 23. null-model + user presses Enter (empty) → commit cancelled
+  it("cancels commit when user provides empty manual message", async () => {
+    askMock.mockResolvedValue("");
+    await runCommitFlow(makeConfig());
+    const commitCall = spawnSyncMock.mock.calls.find(
+      (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+    );
+    expect(commitCall).toBeUndefined();
   });
 });
