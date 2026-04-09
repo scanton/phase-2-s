@@ -6,7 +6,7 @@ Phase2S has two kinds of memory: session persistence (resuming conversations) an
 
 ## Session persistence
 
-Every conversation saves automatically to `.phase2s/sessions/YYYY-MM-DD.json` after every turn. You don't need to do anything.
+Every conversation saves automatically to `.phase2s/sessions/<uuid>.json` after every turn. You don't need to do anything.
 
 **Resume your last session:**
 
@@ -15,7 +15,7 @@ phase2s --resume
 ```
 
 ```
-Resuming session from .phase2s/sessions/2026-04-04.json (14 messages)
+Resuming session (14 messages)
 
 you >
 ```
@@ -34,9 +34,36 @@ Everything is there: every message you sent, every model response, every tool ca
 - System prompt (regenerated fresh each session, with current learnings injected)
 - The model's internal reasoning (only the final response)
 
-**One session file per day.** If you run Phase2S multiple times on the same day, all turns go into the same file. `--resume` always loads the most recent session file.
-
 **Session files are private.** Written with `mode: 0o600` (owner-read/write only). On shared machines, your conversation history is not world-readable.
+
+---
+
+## Session branching
+
+Sessions are stored as a DAG — each one knows its parent. This lets you fork any past conversation and explore an alternative direction without losing your original work.
+
+**Browse all past sessions:**
+
+```bash
+phase2s conversations
+```
+
+Opens an [fzf](https://github.com/junegunn/fzf) browser (or a plain-text table if fzf isn't installed). Each row shows the date, branch name, and a preview of the first message. The session UUID is shown in the preview pane for copying.
+
+**Fork a session:**
+
+```
+you > :clone <session-uuid>
+Branch name (press Enter for default): feature/different-approach
+Cloned abc-123-... → xyz-789-... (14 messages inherited)
+Branch: feature/different-approach
+
+you >
+```
+
+The forked session starts with a full copy of the parent's messages. Future messages go to the new session file. The original is untouched.
+
+**Migration:** On first launch after upgrading to v1.21.0+, Phase2S automatically migrates legacy date-named sessions to UUID format. A backup is created at `.phase2s/sessions-backup-<date>/` before any files are changed. Migration is resumable — if interrupted, the next launch continues from where it left off.
 
 ---
 
@@ -185,7 +212,8 @@ Everything goes to `.phase2s/` inside your project directory. Nothing writes out
 
 | Path | What's there | When it's created |
 |------|-------------|-------------------|
-| `.phase2s/sessions/YYYY-MM-DD.json` | Full conversation history (tool calls included) | After every turn |
+| `.phase2s/sessions/<uuid>.json` | Full conversation history (tool calls included, v2 format) | After every turn |
+| `.phase2s/state.json` | Active session UUID pointer | On each session start |
 | `.phase2s/memory/learnings.jsonl` | Persistent learnings from `/remember` | When you run `/remember` |
 | `.phase2s/skills/<name>/SKILL.md` | Custom skills from `/skill` | When you run `/skill` |
 | `.phase2s/context/<ts>-<slug>.md` | Satori context snapshot (git branch, commits, diff, task) | Before every `/satori` run |

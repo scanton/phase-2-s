@@ -372,6 +372,10 @@ Commands:
   init                     Interactive setup wizard
   setup                    Install ZSH shell integration (plugin + .zshrc source line)
     --dry-run              Preview what would be installed without writing files
+  template                 Manage spec templates
+    list                   Show all bundled templates with descriptions
+    use <name>             Generate a spec from a template via interactive wizard
+  conversations            Browse session history (fzf interactive or plain table)
   doctor                   Installation health check
   upgrade                  Check for and install updates
   mcp                      Start as an MCP server for Claude Code

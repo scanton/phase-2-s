@@ -145,3 +145,95 @@ describe("Conversation persistence", () => {
     expect(info.size).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dual-format load() — v1 (legacy array) and v2 ({schemaVersion: 2})
+// ---------------------------------------------------------------------------
+
+describe("Conversation.load() dual-format", () => {
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    tmpDir = await mkdtemp(join(process.cwd(), ".test-conv-dual-"));
+  });
+
+  afterAll(async () => {
+    await rm(tmpDir, { recursive: true }).catch(() => {});
+  });
+
+  it("loads v1 format (legacy bare array) correctly", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const path = join(tmpDir, "v1.json");
+    await writeFile(
+      path,
+      JSON.stringify([
+        { role: "user", content: "hello from v1" },
+        { role: "assistant", content: "hi from v1" },
+      ]),
+    );
+    const conv = await Conversation.load(path);
+    expect(conv.length).toBe(2);
+    expect(conv.getMessages()[0].content).toBe("hello from v1");
+  });
+
+  it("loads v2 format ({schemaVersion: 2, meta, messages}) correctly", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const path = join(tmpDir, "v2.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 2,
+        meta: {
+          id: "test-uuid",
+          parentId: null,
+          branchName: "main",
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T00:00:00.000Z",
+        },
+        messages: [
+          { role: "user", content: "hello from v2" },
+          { role: "assistant", content: "hi from v2" },
+        ],
+      }),
+    );
+    const conv = await Conversation.load(path);
+    expect(conv.length).toBe(2);
+    expect(conv.getMessages()[0].content).toBe("hello from v2");
+  });
+
+  it("loads v2 format with null parentId without error", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const path = join(tmpDir, "v2-null-parent.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 2,
+        meta: { id: "x", parentId: null, branchName: "main", createdAt: "", updatedAt: "" },
+        messages: [{ role: "user", content: "test" }],
+      }),
+    );
+    const conv = await Conversation.load(path);
+    expect(conv.length).toBe(1);
+  });
+
+  it("throws on unrecognized format (plain object, no schemaVersion)", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const path = join(tmpDir, "unknown.json");
+    await writeFile(path, JSON.stringify({ someRandomKey: "value" }));
+    await expect(Conversation.load(path)).rejects.toThrow(/unrecognized format/);
+  });
+
+  it("still rejects invalid message roles in v2 format", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const path = join(tmpDir, "v2-bad-role.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 2,
+        meta: { id: "x", parentId: null, branchName: "main", createdAt: "", updatedAt: "" },
+        messages: [{ role: "admin", content: "injected" }],
+      }),
+    );
+    await expect(Conversation.load(path)).rejects.toThrow(/invalid role/i);
+  });
+});

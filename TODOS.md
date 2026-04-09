@@ -6,6 +6,16 @@
 
 ---
 
+## Backlog — Post-Sprint 44 eng review findings (2026-04-08)
+
+- [ ] **Session index file for `conversations` performance** — `phase2s conversations` scans and parses every session JSON on each run. At 100+ sessions this becomes 200-500ms of unnecessary I/O. Add `.phase2s/sessions/index.json` caching `{id, createdAt, branchName, firstMessage}` per session, updated on every `saveSession()` call and `cloneSession()`. Makes `conversations` launch instantaneous. Depends on: Sprint 44 session storage (v1.21.0) shipped first. Target: Sprint 45.
+
+- [ ] **Concurrency lock on `state.json`** — Two Phase2S REPL instances (split-terminal, same project dir) race on `currentSessionId` in `.phase2s/state.json`. Last writer wins and silently breaks the other instance's session continuity. Fix: atomic compare-and-swap write on `state.json`, or per-session state tracked in the session file itself (no shared mutable file). Affects users with multiple terminal tabs open simultaneously. Depends on: Sprint 44 session storage. Target: Sprint 45.
+
+- [ ] **DAG integrity check in `phase2s doctor`** — After `:clone` creates a session with `parentId`, dangling references can occur if the parent file is deleted manually. Add a `doctor` check that scans all session files, validates each `parentId` resolves to an existing file, and reports orphaned or dangling branches. Natural companion to tree visualization. Depends on: Sprint 44 session storage + Sprint 45 tree viz. Target: Sprint 45.
+
+---
+
 ## Sprint 44 Backlog — ZSH plugin follow-ons (from Sprint 43 eng review)
 
 - [ ] **Bash shell support** — `phase2s setup --bash` adds a `p2()` function snippet to `~/.bash_profile`. Sprint 43 ships ZSH only; `p2` alias in the plugin file is ZSH-only. Bash users need a separate install path. (Depends on: Sprint 43 shipping.)
@@ -23,7 +33,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [ ] **Named agent personas (sage / muse / forge)** — Forge ships 3 distinct agents: `forge` (read-write, implementation), `sage` (read-only, research/Q&A), `muse` (read-only, planning, writes to `plans/`). Phase2S has skills, but no agent personas. A `phase2s ask "how does X work?"` that's explicitly read-only with a different system prompt would be immediately useful. Maps to: `phase2s ask` (≈ sage), `phase2s plan` (≈ muse), existing REPL (≈ forge). Would clarify when to use what.
 
-- [ ] **Conversation persistence + management** — Forge saves every conversation and lets you browse them with fzf (`:conversation`), clone them to branch in a different direction (`:clone`), toggle between current and previous (`:conversation -`), rename, retry last prompt (`:retry`), and compose prompts in `$EDITOR` (`:edit`). Phase2S has `--resume` but nothing like this. A `phase2s conversations` command with fzf browser would make the tool stickier for long-running sessions.
+- [x] **Conversation persistence + management** — `phase2s conversations` (fzf browser) + `:clone <uuid>` (session branching DAG). **Completed:** v1.21.0 (2026-04-09)
 
 - [ ] **`--sandbox` flag for interactive mode** — `forge --sandbox experiment-name` creates an isolated git worktree + branch automatically, then starts the session inside it. No manual worktree setup. We already have worktrees for parallel goal execution; exposing `phase2s --sandbox feature-name` for interactive exploration would be a natural extension.
 
@@ -104,7 +114,6 @@ These are our moats vs ForgeCode. Don't let them slip:
 - [x] **Frontmatter trailing newline** — regex required `\r?\n` after closing `---`; files without trailing newline silently dropped from template list. Made optional. **Completed:** v1.19.0 (2026-04-07)
 - [x] **Duplicate `node:fs` import in `doctor.ts`** — merged. **Completed:** v1.19.0 (2026-04-07)
 - [x] **Telegram constants hoisted** — `TELEGRAM_MAX_BYTES`, `TELEGRAM_ELLIPSIS`, `TELEGRAM_TRUNCATION_GUARD_BYTES` moved to module level. **Completed:** v1.19.0 (2026-04-07)
-
 ---
 
 ## Backlog — Post-Sprint 41 adversarial review findings
@@ -735,9 +744,7 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 
 - [x] **Multi-model routing** — Shipped Sprint 15 (v0.18.0). `fast_model`/`smart_model` config. Skills declare `model: fast | smart | <literal>`. `Agent.resolveModel()` maps tiers to configured models.
 - [x] **MCP server integration** — shipped Sprint 12. `phase2s mcp` exposes all 29 skills + state tools + goal tool as Claude Code tools. Configured via `.claude/settings.json`.
-- [ ] **oh-my-codex-style multi-agent** — route subtasks to specialized sub-agents
-  - Orchestrator assigns tasks; specialist agents (coder, reviewer, tester) execute
-  - Each specialist has its own tool set and system prompt
+- [x] **oh-my-codex-style multi-agent** — shipped Sprint 38/39 (v1.15.0–v1.16.0). Orchestrator routes subtasks to role-aware workers (architect, implementer, tester, reviewer), each with a tailored system prompt. Live re-planning on failure (LLM-driven delta merge). Backward contamination DFS. Path-traversal hardening on job IDs.
 - [x] **Persistent memory across sessions** — done in Sprint 10. `loadLearnings()` + `formatLearningsForPrompt()` in `src/core/memory.ts`. Injected into system prompt via `AgentOptions.learnings`. CLI loads automatically from `.phase2s/memory/learnings.jsonl`. `/remember` skill writes new learnings.
 - [x] **Browser tool** — shipped Sprint 19 (v0.23.0). Headless Playwright browser. Used by `/qa` skill and available as a tool in the agent loop.
 - [x] **More provider support** — Anthropic + Ollama (Sprint 14), OpenRouter (Sprint 29), Gemini (Sprint 31).

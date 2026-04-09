@@ -249,12 +249,39 @@ phase2s --resume
 ```
 
 ```
-Resuming session from .phase2s/sessions/2026-04-04.json (14 messages)
+Resuming session (14 messages)
 
 you >
 ```
 
 Full context restored. Every message, every tool result.
+
+---
+
+## Browse and fork past sessions
+
+Phase2S keeps a history of every conversation. Browse them:
+
+```bash
+phase2s conversations
+```
+
+If [fzf](https://github.com/junegunn/fzf) is installed, you get an interactive browser with a preview pane showing the session UUID. Without fzf, you get a plain-text table.
+
+### Fork a session with `:clone`
+
+Inside the REPL, clone any past session to explore an alternative direction:
+
+```
+you > :clone abc-123-def-456
+Branch name (press Enter for default): feature/retry-without-cache
+Cloned abc-123-... → xyz-789-... (14 messages inherited)
+Branch: feature/retry-without-cache
+
+you >
+```
+
+The new session inherits the full message history of the parent. Your current session is unaffected. Use `phase2s conversations` to get session UUIDs.
 
 ---
 
@@ -290,7 +317,7 @@ Phase2S writes to `.phase2s/` inside your project directory. Nothing goes outsid
 
 | Path | What's there |
 |------|-------------|
-| `.phase2s/sessions/YYYY-MM-DD.json` | Conversation history (auto-saved each turn) |
+| `.phase2s/sessions/<uuid>.json` | Conversation history (auto-saved each turn) |
 | `.phase2s/memory/learnings.jsonl` | Project learnings you save with `/remember` |
 | `.phase2s/skills/` | Custom skills you create with `/skill` |
 
@@ -307,7 +334,7 @@ Everything else (`satori/`, `specs/`, `debug/`, `checkpoints/`) is created on-de
 
 **Everything else:**
 - [Workflows](workflows.md) — what a real development day with Phase2S looks like
-- [Memory and persistence](memory.md) — session resume, `/remember`, `/skill`
+- [Memory and persistence](memory.md) — session resume, browsing and forking sessions, `/remember`, `/skill`
 - [Writing custom skills](writing-skills.md) — create your own `/commands`
 - [Configuration](configuration.md) — `.phase2s.yaml` and environment variables
 - [GitHub Action](github-action.md) — run skills in CI (requires API key, not ChatGPT subscription)

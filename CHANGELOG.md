@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.21.0 — 2026-04-09
+
+Sprint 44 — Git for Conversations. Sessions are now a DAG you can browse and fork.
+
+### What's new
+
+- **`phase2s conversations`** — Browse every past session. Launches an [fzf](https://github.com/junegunn/fzf) interactive browser if available; falls back to a plain-text table. Each row shows date, branch name, and a preview of your first message. Session UUID is shown in the fzf preview pane for easy copying.
+- **`:clone <uuid>` REPL command** — Fork any past session into a new branch. The new session inherits the full message history. Future saves go to the new UUID file; the original is untouched. Use `phase2s conversations` to find UUIDs.
+- **DAG session storage** — Sessions now use schema v2: `{schemaVersion: 2, meta: {id, parentId, branchName, createdAt, updatedAt}, messages: [...]}`. Every session knows its parent, enabling branched conversation history.
+- **Automatic migration** — On first launch after upgrading, Phase2S migrates legacy `YYYY-MM-DD.json` sessions to UUID format. Migration is resumable: a manifest file tracks per-file progress so a crash mid-migration doesn't leave the directory permanently half-migrated. A backup copy is created before any rename.
+- **`state.json` session tracking** — `.phase2s/state.json` records the active session UUID so `--resume` always loads the right session regardless of the date.
+
+### Changed
+
+- `--resume` now loads the session from `state.json` instead of scanning for the most recent date-named file.
+- Session files written with mode `0o600` (owner-read/write only) for privacy on shared machines.
+- `Conversation.load()` handles both v1 (legacy array) and v2 formats transparently — no breaking change for callers.
+
+---
+
 ## v1.20.2 — 2026-04-08
 
 Two bug fixes for the ZSH shell integration shipped in v1.20.0.
