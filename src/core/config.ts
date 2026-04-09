@@ -60,8 +60,8 @@ const configSchema = z.object({
   browser: z.boolean().default(false),
   /**
    * Settings for `phase2s commit`.
-   * `format: "conventional"` generates Conventional Commits format (the only supported
-   * value in this release; "free-form" will be added in a future sprint).
+   * `format: "conventional"` generates Conventional Commits format.
+   * Currently only "conventional" is accepted. TODO(Sprint 47): add "free-form".
    */
   commit: z.object({
     format: z.literal("conventional").default("conventional"),

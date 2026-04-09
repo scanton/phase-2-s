@@ -883,21 +883,19 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
           const answer = await askUser(rl2, "[a]ccept / [e]dit / [c]ancel: ");
           const key = answer.toLowerCase().trim();
           if (key.startsWith("a") || key === "") {
-            // Run git commit inline via spawnSync
-            const { spawnSync } = await import("node:child_process");
-            const commitResult = spawnSync("git", ["commit", "-m", result.message], { encoding: "utf8", stdio: "pipe" });
-            const out = [commitResult.stdout, commitResult.stderr].filter(Boolean).join("\n").trim();
-            if (commitResult.status === 0) {
+            // Reuse runGitCommit() from commit.ts — same logic, no duplication
+            const { runGitCommit } = await import("./commit.js");
+            const { ok, output } = runGitCommit(result.message);
+            if (ok) {
               console.log(chalk.green(`✓ Committed: ${result.message}`));
-              if (out) console.log(chalk.dim(out));
+              if (output) console.log(chalk.dim(output));
             } else {
               console.log(chalk.red("✗ Commit failed:"));
-              if (out) console.log(out);
+              if (output) console.log(output);
             }
           } else if (key.startsWith("e")) {
-            // Delegate edit+commit to runCommitFlow's openEditor via the full flow
-            // with --preview=false, --auto=false — but we have to re-derive the message.
-            // Simplest: call runCommitFlow fresh (it will rebuild the message).
+            // Delegate edit+commit to runCommitFlow — it will rebuild the message
+            // (rebuilding is acceptable here; editor path is an uncommon branch)
             rl2.close();
             console.log(chalk.dim("Opening editor..."));
             await runCommitFlow(config, {});

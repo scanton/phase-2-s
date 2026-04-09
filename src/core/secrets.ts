@@ -22,7 +22,7 @@ export interface SecretMatch {
 const SECRET_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   { name: "AWS Access Key",       regex: /AKIA[A-Z0-9]{16}/g },
   { name: "AWS Secret Key",       regex: /[Aa][Ww][Ss]_?[Ss][Ee][Cc][Rr][Ee][Tt].{0,20}[A-Za-z0-9/+]{40}/g },
-  { name: "OpenAI API Key",       regex: /sk-[A-Za-z0-9]{48}/g },
+  { name: "OpenAI API Key",       regex: /sk-[A-Za-z0-9]{48,}/g },
   { name: "OpenAI Project Key",   regex: /sk-proj-[A-Za-z0-9_-]{80,}/g },
   { name: "Anthropic API Key",    regex: /sk-ant-[A-Za-z0-9_-]{80,}/g },
   { name: "GitHub Personal Token", regex: /ghp_[A-Za-z0-9]{36}/g },
@@ -52,9 +52,10 @@ export function scanForSecrets(diff: string): SecretMatch[] {
     const lineNumber = i + 1;
 
     for (const { name, regex } of SECRET_PATTERNS) {
-      regex.lastIndex = 0; // reset stateful regex
-      const match = regex.exec(line);
-      if (match) {
+      regex.lastIndex = 0; // reset stateful regex before scanning the line
+      let match: RegExpExecArray | null;
+      // Use a while loop to catch multiple matches per line (e.g. two keys on one line)
+      while ((match = regex.exec(line)) !== null) {
         // Truncate the matched value for display — show enough to identify, not expose
         const raw = match[0];
         const preview = raw.length > 16 ? raw.slice(0, 8) + "..." + raw.slice(-4) : raw;

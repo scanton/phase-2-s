@@ -81,11 +81,15 @@ ${diff}`;
 // Git helpers (all use spawnSync — no shell, clean stdout/stderr capture)
 // ---------------------------------------------------------------------------
 
+/** 100 MB — generous buffer for large diffs. Prevents silent spawnSync truncation. */
+const MAX_BUFFER = 100 * 1024 * 1024;
+
 /** Returns true if the current directory is inside a git repository. */
 function isGitRepo(): boolean {
   const result = spawnSync("git", ["rev-parse", "--git-dir"], {
     encoding: "utf8",
     stdio: "pipe",
+    maxBuffer: MAX_BUFFER,
   });
   return result.status === 0;
 }
@@ -95,6 +99,7 @@ function headExists(): boolean {
   const result = spawnSync("git", ["rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: "pipe",
+    maxBuffer: MAX_BUFFER,
   });
   return result.status === 0;
 }
@@ -104,6 +109,7 @@ function getStagedStat(): string {
   const result = spawnSync("git", ["diff", "--cached", "--stat"], {
     encoding: "utf8",
     stdio: "pipe",
+    maxBuffer: MAX_BUFFER,
   });
   return result.status === 0 ? result.stdout.trim() : "";
 }
@@ -113,15 +119,17 @@ function getStagedDiff(): string {
   const result = spawnSync("git", ["diff", "--cached"], {
     encoding: "utf8",
     stdio: "pipe",
+    maxBuffer: MAX_BUFFER,
   });
   return result.status === 0 ? result.stdout : "";
 }
 
-/** Run git commit with the given message. Returns { ok, output }. */
-function runGitCommit(message: string): { ok: boolean; output: string } {
+/** Run git commit with the given message. Returns { ok, output }. Exported for REPL :commit handler. */
+export function runGitCommit(message: string): { ok: boolean; output: string } {
   const result = spawnSync("git", ["commit", "-m", message], {
     encoding: "utf8",
     stdio: "pipe",
+    maxBuffer: MAX_BUFFER,
   });
   const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
   return { ok: result.status === 0, output };
@@ -153,24 +161,18 @@ export async function buildCommitMessage(
   const hasStagedChanges = diffStat.length > 0;
 
   if (!hasStagedChanges) {
-    if (!headExists()) {
-      // Initial repo, unborn HEAD: git diff --cached works even without HEAD.
-      // getStagedStat() returns empty on unborn HEAD even with staged files
-      // because --stat formatting requires HEAD context. Fall through to reading
-      // the raw diff directly — if nothing is staged there either, the diff will
-      // be empty and we exit below.
-    } else {
+    if (headExists()) {
       throw new Error("Nothing staged. Run `git add <files>` first.");
     }
+    // Unborn HEAD (initial commit): getStagedStat() returns empty even with staged
+    // files because --stat requires HEAD context. Fall through — getStagedDiff()
+    // (git diff --cached) works without HEAD and will reveal if anything is staged.
   }
 
   // Step 3: read the diff
   const diff = getStagedDiff();
   if (!diff.trim()) {
-    if (!headExists()) {
-      // On unborn HEAD with nothing staged, the diff is empty.
-      throw new Error("Nothing staged. Run `git add <files>` first.");
-    }
+    // Nothing staged (covers both normal repos and unborn HEAD with nothing staged)
     throw new Error("Nothing staged. Run `git add <files>` first.");
   }
 
@@ -202,7 +204,10 @@ export async function buildCommitMessage(
     modelOverride: config.fast_model ?? config.model,
   });
 
-  const message = raw.trim();
+  // Take the first non-empty line only — the model occasionally returns multi-line
+  // responses despite instructions. A multi-line git commit -m message creates an
+  // unexpected body, and NUL bytes in the raw string cause Node spawnSync to throw.
+  const message = raw.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
   if (!message) {
     return null;
   }
@@ -372,7 +377,7 @@ async function openEditor(initialMessage: string): Promise<string | null> {
   try {
     tmpDir = mkdtempSync(join(tmpdir(), "phase2s-commit-"));
     tmpFile = join(tmpDir, "COMMIT_EDITMSG");
-    writeFileSync(tmpFile, initialMessage, "utf8");
+    writeFileSync(tmpFile, initialMessage, { encoding: "utf8", mode: 0o600 });
 
     // Split EDITOR on whitespace to support multi-word values like "code --wait"
     const editorParts = editor.trim().split(/\s+/);

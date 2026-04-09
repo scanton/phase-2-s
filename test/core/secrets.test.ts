@@ -149,4 +149,81 @@ describe("scanForSecrets — multiple matches", () => {
     expect(names).toContain("AWS Access Key");
     expect(names).toContain("GitHub Personal Token");
   });
+
+  it("finds multiple secrets on the same line", () => {
+    const key1 = "AKIAIOSFODNN7EXAMPLE";
+    const key2 = "AKIAIOSFODNN7EXAMPLE";
+    const diff = makeDiff(`const a = '${key1}', b = '${key2}';`);
+    const matches = scanForSecrets(diff).filter((m) => m.name === "AWS Access Key");
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Previously untested pattern families (coverage gaps found in eng review)
+// ---------------------------------------------------------------------------
+describe("scanForSecrets — AWS Secret Key", () => {
+  it("detects AWS_SECRET_ACCESS_KEY pattern in added line", () => {
+    const value = "A".repeat(40);
+    const diff = makeDiff(`const key = 'aws_secret_access_key=${value}';`);
+    const matches = scanForSecrets(diff);
+    expect(matches.some((m) => m.name === "AWS Secret Key")).toBe(true);
+  });
+});
+
+describe("scanForSecrets — OpenAI Project Key", () => {
+  it("detects sk-proj- format key in added line", () => {
+    const key = "sk-proj-" + "A".repeat(80);
+    const diff = makeDiff(`const key = '${key}';`);
+    const matches = scanForSecrets(diff);
+    expect(matches.some((m) => m.name === "OpenAI Project Key")).toBe(true);
+  });
+
+  it("detects longer OpenAI legacy sk- keys (49+ chars) with {48,} pattern", () => {
+    const key = "sk-" + "A".repeat(52); // 52 > 48
+    const diff = makeDiff(`const key = '${key}';`);
+    const matches = scanForSecrets(diff);
+    expect(matches.some((m) => m.name === "OpenAI API Key")).toBe(true);
+  });
+});
+
+describe("scanForSecrets — Anthropic API Key", () => {
+  it("detects sk-ant- format key in added line", () => {
+    const key = "sk-ant-" + "A".repeat(80);
+    const diff = makeDiff(`const key = '${key}';`);
+    const matches = scanForSecrets(diff);
+    expect(matches.some((m) => m.name === "Anthropic API Key")).toBe(true);
+  });
+});
+
+describe("scanForSecrets — GitHub OAuth and App Tokens", () => {
+  it("detects gho_ format OAuth token in added line", () => {
+    const token = "gho_" + "A".repeat(36);
+    const diff = makeDiff(`const token = '${token}';`);
+    const matches = scanForSecrets(diff);
+    expect(matches.some((m) => m.name === "GitHub OAuth Token")).toBe(true);
+  });
+
+  it("detects ghs_ format App token in added line", () => {
+    const token = "ghs_" + "A".repeat(36);
+    const diff = makeDiff(`const token = '${token}';`);
+    const matches = scanForSecrets(diff);
+    expect(matches.some((m) => m.name === "GitHub App Token")).toBe(true);
+  });
+});
+
+describe("scanForSecrets — Slack Tokens", () => {
+  it("detects xoxb- Slack Bot token in added line", () => {
+    const token = "xoxb-" + "A".repeat(40);
+    const diff = makeDiff(`const token = '${token}';`);
+    const matches = scanForSecrets(diff);
+    expect(matches.some((m) => m.name === "Slack Bot Token")).toBe(true);
+  });
+
+  it("detects xoxp- Slack User token in added line", () => {
+    const token = "xoxp-" + "A".repeat(40);
+    const diff = makeDiff(`const token = '${token}';`);
+    const matches = scanForSecrets(diff);
+    expect(matches.some((m) => m.name === "Slack User Token")).toBe(true);
+  });
 });
