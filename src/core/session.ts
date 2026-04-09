@@ -323,7 +323,7 @@ export async function cloneSession(
   cwd: string,
   sourceId: string,
   branchName?: string,
-): Promise<{ id: string; path: string; messageCount: number; branchName: string }> {
+): Promise<{ id: string; path: string; messageCount: number; branchName: string; createdAt: string; updatedAt: string }> {
   const srcPath = sessionPath(cwd, sourceId);
 
   // Load the source session
@@ -371,7 +371,7 @@ export async function cloneSession(
   await writeFile(tmp, JSON.stringify(v2, null, 2), { encoding: "utf-8", mode: 0o600 });
   renameSync(tmp, newPath);
 
-  return { id: newId, path: newPath, messageCount: messages.length, branchName: newMeta.branchName };
+  return { id: newId, path: newPath, messageCount: messages.length, branchName: newMeta.branchName, createdAt: newMeta.createdAt, updatedAt: newMeta.updatedAt };
 }
 
 // ---------------------------------------------------------------------------

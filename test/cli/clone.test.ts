@@ -102,4 +102,20 @@ describe(":clone command — cloneSession()", () => {
     expect((childParsed.meta as SessionMeta).parentId).toBe(SOURCE_ID);
     expect((grandchildParsed.meta as SessionMeta).parentId).toBe(child.id);
   });
+
+  it("return value includes createdAt and updatedAt matching on-disk meta", async () => {
+    const result = await cloneSession(tmpDir, SOURCE_ID, "ts-check");
+    const parsed = readSession(result.path);
+    const onDiskMeta = parsed.meta as SessionMeta;
+    // The return timestamps must match what was written to disk exactly.
+    // If the caller re-called new Date() they would drift from the on-disk value.
+    expect(result.createdAt).toBe(onDiskMeta.createdAt);
+    expect(result.updatedAt).toBe(onDiskMeta.updatedAt);
+  });
+
+  it("return value createdAt is a valid ISO 8601 timestamp", async () => {
+    const result = await cloneSession(tmpDir, SOURCE_ID);
+    expect(() => new Date(result.createdAt).toISOString()).not.toThrow();
+    expect(result.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  });
 });

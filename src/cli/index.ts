@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { access, constants } from "node:fs/promises";
-import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
@@ -723,11 +723,13 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
 
   rl.on("SIGINT", () => {
     process.stdout.write("\n");
-    // Synchronous save before exit — async operations can't complete after process.exit().
+    // Atomic synchronous save before exit — async operations can't complete after process.exit().
+    // tmp → rename ensures the session file is never left partially written.
+    mkdirSync(resolve(activeSessionPath, ".."), { recursive: true });
+    const tmp = activeSessionPath + ".tmp." + process.pid;
     try {
-      mkdirSync(resolve(activeSessionPath, ".."), { recursive: true });
       writeFileSync(
-        activeSessionPath,
+        tmp,
         JSON.stringify({
           schemaVersion: 2,
           meta: { ...sessionMeta, updatedAt: new Date().toISOString() },
@@ -735,8 +737,11 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         }, null, 2),
         { encoding: "utf-8", mode: 0o600 },
       );
+      renameSync(tmp, activeSessionPath);
     } catch {
-      // Best-effort — don't block exit on save failure
+      // Clean up the tmp file if write succeeded but rename failed (or if write itself failed)
+      try { rmSync(tmp, { force: true }); } catch { /* ignore */ }
+      process.stderr.write("Warning: session save failed on exit — last turn may not be saved.\n");
     }
     log.info("Goodbye!");
     rl.close();
@@ -804,17 +809,22 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
       try {
         const result = await cloneSession(process.cwd(), sourceId, branchName);
         // Switch the active session to the new clone.
-        // Use result.branchName — cloneSession owns the default formula, avoids timezone skew.
+        // Use timestamps from cloneSession() — they match what was written to disk.
+        // Calling new Date() here would drift from the on-disk createdAt.
         sessionMeta = {
           id: result.id,
           parentId: sourceId,
           branchName: result.branchName,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: result.createdAt,
+          updatedAt: result.updatedAt,
         };
         activeSessionPath = result.path;
         writeReplState(process.cwd(), { currentSessionId: result.id });
-        // The agent's in-memory conversation continues; future saves go to the new file.
+        // Load the cloned session into the agent, preserving the current system prompt.
+        // Without this, the agent continues from its in-memory conversation which diverges
+        // from the clone file on the next :clone or --resume.
+        const clonedConv = await Conversation.load(result.path);
+        agent.setConversation(clonedConv);
         console.log(chalk.green(`Cloned ${sourceId.slice(0, 8)}... → ${result.id.slice(0, 8)}... (${result.messageCount} messages inherited)`));
         console.log(chalk.dim(`Branch: ${result.branchName}`));
       } catch (err) {

@@ -149,4 +149,32 @@ describe("Conversation", () => {
     c.trimToTokenBudget(128_000 * 0.8); // default budget
     expect(c.length).toBe(lenBefore);
   });
+
+  // --- fromMessages() ---
+
+  it("fromMessages() creates a conversation with exactly the given messages", () => {
+    const msgs = [
+      { role: "system" as const, content: "You are a helper" },
+      { role: "user" as const, content: "hello" },
+      { role: "assistant" as const, content: "hi" },
+    ];
+    const c = Conversation.fromMessages(msgs);
+    expect(c.getMessages()).toHaveLength(3);
+    expect(c.getMessages()[0].role).toBe("system");
+    expect(c.getMessages()[1].content).toBe("hello");
+    expect(c.getMessages()[2].content).toBe("hi");
+  });
+
+  it("fromMessages() copies the array — mutations do not affect the conversation", () => {
+    const msgs = [{ role: "user" as const, content: "original" }];
+    const c = Conversation.fromMessages(msgs);
+    msgs[0] = { role: "user" as const, content: "mutated" };
+    expect(c.getMessages()[0].content).toBe("original");
+  });
+
+  it("fromMessages() with empty array produces an empty conversation", () => {
+    const c = Conversation.fromMessages([]);
+    expect(c.getMessages()).toHaveLength(0);
+    expect(c.length).toBe(0);
+  });
 });

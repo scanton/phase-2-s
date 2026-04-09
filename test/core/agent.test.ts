@@ -13,6 +13,7 @@
 import { describe, it, expect, vi, type Mock } from "vitest";
 import type { ChatCompletionChunk } from "openai/resources/chat/completions.js";
 import { Agent } from "../../src/core/agent.js";
+import { Conversation } from "../../src/core/conversation.js";
 import { OpenAIProvider, type OpenAIClientLike } from "../../src/providers/openai.js";
 import { ToolRegistry } from "../../src/tools/index.js";
 import type { Config } from "../../src/core/config.js";
@@ -593,5 +594,69 @@ describe("Agent — satori retry loop", () => {
     const toolNames = (callArgs.tools ?? []).map((t) => t.function.name);
     expect(toolNames).toContain("file_read");
     expect(toolNames).not.toContain("shell");
+  });
+});
+
+describe("Agent.setConversation() — system prompt preservation", () => {
+  // A minimal provider stub — setConversation tests don't need to call run().
+  const stubProvider = new OpenAIProvider(
+    { apiKey: "sk-test", model: "gpt-4o" } as Config,
+    makeStreamingFakeClient([]),
+  );
+
+  function makeAgent(systemPrompt: string) {
+    return new Agent({ config: minimalConfig, provider: stubProvider, systemPrompt });
+  }
+
+  it("strips system messages from the incoming conversation", () => {
+    const agent = makeAgent("agent-system-prompt");
+    const foreignConv = Conversation.fromMessages([
+      { role: "system", content: "foreign-system" },
+      { role: "user", content: "user message from clone" },
+    ]);
+    agent.setConversation(foreignConv);
+    const msgs = agent.getConversation().getMessages();
+    expect(msgs.some((m) => m.content === "foreign-system")).toBe(false);
+  });
+
+  it("preserves the agent's own system prompt after setConversation()", () => {
+    const agent = makeAgent("my-unique-system-prompt");
+    const loadedConv = Conversation.fromMessages([
+      { role: "system", content: "other-system-to-be-stripped" },
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "hello" },
+    ]);
+    agent.setConversation(loadedConv);
+    const msgs = agent.getConversation().getMessages();
+    const sysMsg = msgs.find((m) => m.role === "system");
+    // buildSystemPrompt() wraps the custom prompt — check it's still present
+    expect(sysMsg?.content).toContain("my-unique-system-prompt");
+    expect(msgs.some((m) => m.content === "other-system-to-be-stripped")).toBe(false);
+  });
+
+  it("carries non-system messages from the loaded conversation", () => {
+    const agent = makeAgent("system");
+    const loadedConv = Conversation.fromMessages([
+      { role: "user", content: "question from clone" },
+      { role: "assistant", content: "answer from clone" },
+    ]);
+    agent.setConversation(loadedConv);
+    const msgs = agent.getConversation().getMessages();
+    const contents = msgs.map((m) => m.content);
+    expect(contents).toContain("question from clone");
+    expect(contents).toContain("answer from clone");
+  });
+
+  it("works when incoming conversation has no system message (legacy v1 session)", () => {
+    const agent = makeAgent("my-unique-system-prompt");
+    // A v1-format loaded session would have no system message
+    const noSysConv = Conversation.fromMessages([
+      { role: "user", content: "legacy message" },
+    ]);
+    agent.setConversation(noSysConv);
+    const msgs = agent.getConversation().getMessages();
+    const sysMsg = msgs.find((m) => m.role === "system");
+    expect(sysMsg?.content).toContain("my-unique-system-prompt");
+    expect(msgs.some((m) => m.content === "legacy message")).toBe(true);
   });
 });
