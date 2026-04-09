@@ -175,7 +175,6 @@ async function runBashSetup({ dryRun, phase2sDir, profilePath }: BashSetupOption
     console.error(chalk.red(`\n  Cannot write plugin to ${pluginDest}: ${(err as NodeJS.ErrnoException).message}`));
     console.error(chalk.red("  Check directory permissions.\n"));
     process.exit(1);
-    return;
   }
 
   // 2. Append source line to ~/.bash_profile (idempotent via sentinel comment)
@@ -186,7 +185,6 @@ async function runBashSetup({ dryRun, phase2sDir, profilePath }: BashSetupOption
     console.error(chalk.red(`\n  Cannot read ${profilePath}: ${(err as NodeJS.ErrnoException).message}`));
     console.error(chalk.red("  Check file permissions.\n"));
     process.exit(1);
-    return;
   }
   if (!existing.includes(sentinel)) {
     const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
@@ -197,7 +195,6 @@ async function runBashSetup({ dryRun, phase2sDir, profilePath }: BashSetupOption
       console.error(chalk.red(`\n  Cannot write to ${profilePath}: ${(err as NodeJS.ErrnoException).message}`));
       console.error(chalk.red("  Check file permissions.\n"));
       process.exit(1);
-      return;
     }
   } else {
     console.log(chalk.dim(`  Already in ${profilePath} — skipped.`));

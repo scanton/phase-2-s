@@ -638,7 +638,15 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         // destroys the clone lineage on the first save after --resume.
         try {
           const raw = JSON.parse(readFileSync(latestPath, "utf-8"));
-          if (raw?.schemaVersion === 2 && raw.meta) {
+          // Validate required fields before trusting the on-disk shape.
+          // An empty object or partial meta would silently corrupt sessionMeta.id/createdAt.
+          if (
+            raw?.schemaVersion === 2 &&
+            raw.meta &&
+            typeof raw.meta.id === "string" &&
+            typeof raw.meta.branchName === "string" &&
+            typeof raw.meta.createdAt === "string"
+          ) {
             loadedResumeMeta = raw.meta as SessionMeta;
           }
         } catch { /* fall through to defaults below */ }
@@ -725,9 +733,11 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     process.stdout.write("\n");
     // Atomic synchronous save before exit — async operations can't complete after process.exit().
     // tmp → rename ensures the session file is never left partially written.
-    mkdirSync(resolve(activeSessionPath, ".."), { recursive: true });
+    // mkdirSync is inside the try so any EACCES/EROFS propagates to the catch instead of
+    // crashing the SIGINT handler with an unhandled exception.
     const tmp = activeSessionPath + ".tmp." + process.pid;
     try {
+      mkdirSync(resolve(activeSessionPath, ".."), { recursive: true });
       writeFileSync(
         tmp,
         JSON.stringify({

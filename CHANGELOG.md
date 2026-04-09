@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.21.1 — 2026-04-08
+## v1.21.1 — 2026-04-09
 
 Sprint 45 — `:clone` correctness fixes and bash shell integration.
 

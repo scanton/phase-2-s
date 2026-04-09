@@ -262,6 +262,9 @@ async function migrateAllLocked(
   }
 
   // Process unfinished entries
+  // Hoist loop-invariant guards outside the loop.
+  const resolvedDir = resolve(dir);
+  const bareUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   let anyMigrated = false;
   for (const entry of manifest.entries) {
     if (entry.done) continue;
@@ -270,14 +273,12 @@ async function migrateAllLocked(
     // A crafted manifest could use "../../../etc/passwd" as originalName.
     const oldPath = join(dir, entry.originalName);
     const resolvedOld = resolve(oldPath);
-    const resolvedDir = resolve(dir);
     if (!resolvedOld.startsWith(resolvedDir + "/") && resolvedOld !== resolvedDir) {
       console.error(chalk.yellow(`Skipping manifest entry with suspicious path: ${entry.originalName}`));
       continue;
     }
     // Also validate newId is a UUID so sessionPath() doesn't escape the sessions dir
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidPattern.test(entry.newId)) {
+    if (!bareUuidPattern.test(entry.newId)) {
       console.error(chalk.yellow(`Skipping manifest entry with non-UUID newId: ${entry.newId}`));
       continue;
     }
@@ -398,6 +399,9 @@ export async function cloneSession(
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error(`Session not found: ${sourceId}`);
+    }
+    if (err instanceof SyntaxError) {
+      throw new Error(`Session file is corrupted and cannot be cloned: ${srcPath}. Delete it or restore from backup.`);
     }
     throw err;
   }

@@ -23,6 +23,11 @@ __phase2s_run() {
 # ':' — override the null command for Phase2S prompts.
 # In Bash, ':' is a built-in (true). We shadow it with a function.
 # Args are already quoted by the shell before reaching the function.
+#
+# Known limitation: bash expands parameter substitutions BEFORE calling functions.
+# If your .bash_profile uses `: ${VAR:=default}` to set variable defaults, bash
+# will expand ${VAR:=default} first, then pass the expanded value to phase2s run.
+# Switch those to `export VAR=${VAR:-default}` to avoid unintended phase2s calls.
 :() {
   __phase2s_run "$@"
 }

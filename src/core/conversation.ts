@@ -68,17 +68,6 @@ export class Conversation {
   }
 
   /**
-   * Deserialize a conversation from a JSON file.
-   *
-   * Handles two session formats:
-   *   v1 (legacy): bare JSON array of messages
-   *   v2 (current): { schemaVersion: 2, meta: SessionMeta, messages: Message[] }
-   *
-   * Throws if the file doesn't exist, is unreadable, contains invalid JSON,
-   * or has an unrecognized format.
-   * Callers (e.g. the CLI --resume path) should handle these gracefully.
-   */
-  /**
    * Create a Conversation directly from an array of messages.
    * No validation — caller is responsible for message integrity.
    * Used by Agent.setConversation() to splice in a loaded session's
@@ -90,6 +79,17 @@ export class Conversation {
     return conv;
   }
 
+  /**
+   * Deserialize a conversation from a JSON file.
+   *
+   * Handles two session formats:
+   *   v1 (legacy): bare JSON array of messages
+   *   v2 (current): { schemaVersion: 2, meta: SessionMeta, messages: Message[] }
+   *
+   * Throws if the file doesn't exist, is unreadable, contains invalid JSON,
+   * or has an unrecognized format.
+   * Callers (e.g. the CLI --resume path) should handle these gracefully.
+   */
   static async load(path: string): Promise<Conversation> {
     const raw = await readFile(path, "utf-8");
     const parsed: unknown = JSON.parse(raw);

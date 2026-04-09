@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -383,5 +383,29 @@ describe("checkShellPlugin", () => {
     expect(result.ok).toBe(true);
     expect(result.name).toBe("Shell integration");
     expect(result.detail).toContain("sourced");
+  });
+
+  it("fails when plugin exists but phase2sDir is not writable (Sprint 45 guard)", async () => {
+    // Skip on Windows — chmod semantics differ
+    if (process.platform === "win32") return;
+    const { checkShellPlugin } = await import("../../src/cli/doctor.js");
+    const phase2sDir = join(tmpDir, ".phase2s");
+    const zshrcPath = join(tmpDir, ".zshrc");
+    const pluginDest = join(phase2sDir, "phase2s.plugin.zsh");
+    mkdirSync(phase2sDir);
+    writeFileSync(pluginDest, "# plugin\n");
+    writeFileSync(zshrcPath, `source "$HOME/.phase2s/phase2s.plugin.zsh" # phase2s shell integration\n`);
+    // r-xr-xr-x: execute bit preserved so existsSync(pluginDest) works,
+    // but write bit removed so accessSync(W_OK) fails.
+    chmodSync(phase2sDir, 0o555);
+    try {
+      const result = checkShellPlugin(phase2sDir, zshrcPath);
+      expect(result.ok).toBe(false);
+      expect(result.detail).toContain("not writable");
+      expect(result.fix).toContain("chmod");
+    } finally {
+      // Restore write permission so afterEach can clean up
+      chmodSync(phase2sDir, 0o755);
+    }
   });
 });

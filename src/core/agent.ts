@@ -91,7 +91,9 @@ export class Agent {
     const currentMessages = this.conversation.getMessages();
     const systemMsg = currentMessages.find((m) => m.role === "system");
     const nonSystemMessages = conv.getMessages().filter((m) => m.role !== "system");
-    const merged = systemMsg ? [systemMsg, ...nonSystemMessages] : nonSystemMessages;
+    // Shallow-copy systemMsg to avoid aliasing: the merged array and the caller's
+    // getMessages() copy would otherwise share the same Message object reference.
+    const merged = systemMsg ? [{ ...systemMsg }, ...nonSystemMessages] : nonSystemMessages;
     this.conversation = Conversation.fromMessages(merged);
   }
 
