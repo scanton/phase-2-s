@@ -1,5 +1,74 @@
 # Changelog
 
+## v1.20.2 — 2026-04-08
+
+Two bug fixes for the ZSH shell integration shipped in v1.20.0.
+
+### Fixed
+
+- **Glob expansion in `: <prompt>` arguments** — ZSH expands glob patterns (`?`, `*`, `!`) in command arguments before looking up the function to call. A prompt like `: what does this codebase do?` would fail with `zsh: no matches found: do?` because ZSH tried to match `do?` as a filename. Fixed by switching from `function : ()` to `alias ':=noglob __phase2s_run'` — aliases are expanded before glob processing, so the `noglob` precommand modifier suppresses filename generation for all `:` arguments. Same fix applied to the `p2` alias.
+- **Setup instructions** — `phase2s setup` previously told users to run `source ~/.zshrc` to activate the plugin in the current shell. Re-sourcing `.zshrc` can fail silently if it has guards (e.g., `[[ -o login ]] || return`) or produce unexpected side effects. Updated to `source ~/.phase2s/phase2s.plugin.zsh`, which directly loads only the plugin. README and docs updated to match.
+
+---
+
+## v1.20.1 — 2026-04-08
+
+Patch release: `phase2s setup` now tells users to run `source ~/.phase2s/phase2s.plugin.zsh` instead of `source ~/.zshrc` to activate the plugin in the current shell. Re-sourcing `.zshrc` can fail silently or produce unexpected side effects. See v1.20.2 for the companion glob fix.
+
+---
+
+## v1.20.0 — 2026-04-07
+
+Sprint 43 — ZSH shell integration. Enables `: fix the bug` syntax directly from any ZSH terminal without entering the REPL.
+
+### What's new
+
+- **`: <prompt>` syntax** — Shadow ZSH's null command with a function that delegates to `phase2s run`. Works from any directory after setup. Guard prevents `: # comments` and bare `:` from reaching phase2s.
+- **`p2` alias** — Short ZSH alias for `phase2s run`. `p2 "summarize this PR"` works after sourcing the plugin.
+- **`phase2s setup`** — New command that copies the bundled ZSH plugin to `~/.phase2s/phase2s.plugin.zsh` and appends a `source` line to `~/.zshrc`. Idempotent (safe to re-run). `--dry-run` flag shows what would happen without writing anything.
+- **Inline ZSH tab completion** — `_phase2s()` function embedded in the plugin to avoid 100-400ms Node.js cold-start cost per shell tab. Completion covers all 13 subcommands including `setup` and `template`.
+- **`phase2s doctor` shell check** — `checkShellPlugin()` verifies the ZSH plugin is installed and sourced in `~/.zshrc`.
+- **Bundled plugin file** — `.phase2s/shell/phase2s.plugin.zsh` shipped inside the npm package. `bundledShellPluginPath()` in `loader.ts` resolves it using the same 3-levels-up calculation as `bundledTemplatesDir()`.
+
+### Fixed
+
+- **ZSH `$SHELL` detection** — `phase2s setup` warns if the detected shell is not ZSH, since v1.20.0 is ZSH-only. Bash support tracked in TODOS.md.
+
+### Tests
+
+893 → 917 (+24). New test files: `plugin.test.ts` (7 tests: plugin file existence, function content, ZSH syntax validation), `setup.test.ts` (11 tests: install flow, idempotency, trailing-newline guard, dry-run, shell detection). Extended `doctor.test.ts` (+4 tests for `checkShellPlugin`), `completion.test.ts` (+2 tests for setup/template subcommands).
+
+---
+
+## v1.19.0 — 2026-04-07
+
+Sprint 42 bug sweep (4 adversarial findings from v1.18.0) + spec template library (`phase2s template list` / `phase2s template use <name>`). Pre-landing adversarial review caught a critical template format bug and three additional code quality fixes.
+
+### What's new
+
+- **`phase2s template list`** — lists 6 bundled spec templates with title and description.
+- **`phase2s template use <name>`** — interactive wizard: prompts for ≤4 placeholders, substitutes `{{tokens}}` in a single pass (no cascade injection), writes spec to `.phase2s/specs/`, runs lint.
+- **6 bundled templates** — `auth`, `api`, `refactor`, `test`, `cli`, `bug`. Each has a realistic 4–5 subtask decomposition in the exact format `phase2s goal` expects.
+- **`phase2s doctor` templates check** — `checkTemplatesDir()` verifies bundled templates directory is present and non-empty.
+- **`prompt-util.ts`** — shared readline wizard helper extracted from `init.ts`. `createRl()` + `ask()` available across CLI commands.
+
+### Fixed
+
+- **Template format incompatibility (CRITICAL)** — all 6 bundled templates used wrong markdown headings (`## Constraints`, `### 1. Name`, bare `Input:` text). The spec-parser would parse 0 subtasks, making `phase2s goal <generated>` a silent no-op. Rewritten to use the correct format (`## Constraint Architecture`, `### Sub-task N: Name`, `- **Input:**`, `## Eval Command` section). Caught by Codex adversarial review.
+- **`alias.startsWith(p)` regression** — `resolveSubtaskModel()` created an `alias = annotation.toLowerCase()` variable for case-insensitive comparison but the KNOWN_MODEL_PREFIXES check on line 529 still used the original `annotation`. Model IDs like `GPT-4O` bypassed the "unknown model" warning. Fixed.
+- **Cascade placeholder injection** — sequential `replaceAll` loop allowed a user-entered value containing `{{token}}` to be re-substituted when that token was processed next. Replaced with a single-pass regex replacement.
+- **Frontmatter regex required trailing newline** — closing `---` regex required `\r?\n` immediately after. Files without a trailing newline were silently dropped from `template list`. Made the trailing newline optional; body defaults to `""`.
+- **Duplicate `node:fs` import in `doctor.ts`** — `readFileSync` was imported separately on line 15 from an already-present `node:fs` import. Merged.
+- **Telegram truncation constants inside function body** — `TELEGRAM_MAX_BYTES`, `TELEGRAM_ELLIPSIS`, `TELEGRAM_TRUNCATION_GUARD_BYTES` moved to module level for visibility and testability.
+- **`resolveSubtaskModel` case normalization** — `.toLowerCase()` before alias comparison. `model: Fast` → `config.fast_model`.
+- **`resp.json()` SyntaxError isolation** — separated into own try/catch in `init.ts` Telegram wizard. Emits a clear "unexpected response (non-JSON)" message instead of raw SyntaxError.
+- **`TRUNCATION_HEADROOM_BYTES` JSDoc** — updated to document worst-case U+FFFD expansion correctly.
+
+### Tests
+
+850 → 893 (+43). New test files: `spec-template.test.ts` (27 tests: cascade injection prevention, trailing-newline regression, call-through coverage for `runTemplateList`/`runTemplateUse`), `template-format.test.ts` (6 format-compatibility tests), `notify.test.ts` (+70 lines), `doctor.test.ts` (+40 lines), `parallel-executor.test.ts` (+12 lines).
+
+
 ## v1.18.0 — 2026-04-07
 
 Sprint 41 small backlog sweep: Telegram notifications, byte-aware truncation fix, multi-provider parallel workers via `model:` spec annotation, tiktoken marked won't-fix.

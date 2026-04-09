@@ -50,6 +50,18 @@ phase2s run --dry-run "/explain src/core/agent.ts"
 # → Would route to skill: explain (model: gpt-4o-mini)
 ```
 
+### ZSH shorthand
+
+After running `phase2s setup`, you can invoke skills from any terminal prompt without opening the REPL:
+
+```bash
+: fix the null check in auth.ts
+: what does this codebase do?
+p2 suggest "find large log files"
+```
+
+The `:` command maps to `phase2s run`. The `p2` alias is equivalent. See [getting-started.md](getting-started.md#shell-integration-zsh--optional-but-recommended) for setup instructions.
+
 ---
 
 ## Persistent execution

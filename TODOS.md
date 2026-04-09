@@ -16,14 +16,109 @@
 
 ---
 
+## Sprint 44 Backlog — ZSH plugin follow-ons (from Sprint 43 eng review)
+
+- [ ] **Bash shell support** — `phase2s setup --bash` adds a `p2()` function snippet to `~/.bash_profile`. Sprint 43 ships ZSH only; `p2` alias in the plugin file is ZSH-only. Bash users need a separate install path. (Depends on: Sprint 43 shipping.)
+- [ ] **`checkShellPlugin()` write-permission check** — Add `accessSync(zshrc, constants.W_OK)` to `checkShellPlugin()` in `doctor.ts` so `phase2s doctor` warns proactively if `~/.zshrc` isn't writable before the user tries `phase2s setup`. Low effort, good UX. (Depends on: Sprint 43 shipping.)
+
+---
+
+## Backlog — ForgeCode-Inspired Features (Competitive Research, 2026-04-07)
+
+Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forgecode) (6.2k stars, ~4 months old, shipping daily). They do several things better than us. Highest-impact ideas below, prioritized by leverage.
+
+### Tier 1 — High leverage, Phase2S-native fit
+
+- [x] **ZSH plugin / shell intercept mode** — Forge's biggest UX differentiator. Install a ZSH plugin once (`phase2s setup`) and type `: <prompt>` from anywhere in your shell without entering the REPL. Forge intercepts lines starting with `:` before the shell sees them. We could do the same with `ps2` or `p2` prefix. Would dramatically lower friction for quick asks, commit messages, and shell suggestions. Also ship `:commit` (AI commit message) and `:suggest "find large log files"` (natural language → shell command, puts it in your buffer). Forge's ZSH plugin is their #1 stickiness driver. **Completed:** v1.20.0 (2026-04-07)
+
+- [ ] **Named agent personas (sage / muse / forge)** — Forge ships 3 distinct agents: `forge` (read-write, implementation), `sage` (read-only, research/Q&A), `muse` (read-only, planning, writes to `plans/`). Phase2S has skills, but no agent personas. A `phase2s ask "how does X work?"` that's explicitly read-only with a different system prompt would be immediately useful. Maps to: `phase2s ask` (≈ sage), `phase2s plan` (≈ muse), existing REPL (≈ forge). Would clarify when to use what.
+
+- [x] **Conversation persistence + management** — `phase2s conversations` (fzf browser) + `:clone <uuid>` (session branching DAG). **Completed:** v1.21.0 (2026-04-09)
+
+- [ ] **`--sandbox` flag for interactive mode** — `forge --sandbox experiment-name` creates an isolated git worktree + branch automatically, then starts the session inside it. No manual worktree setup. We already have worktrees for parallel goal execution; exposing `phase2s --sandbox feature-name` for interactive exploration would be a natural extension.
+
+- [ ] **Lightweight AI commit message** — `phase2s commit` (no args) reads the diff, writes a commit message, and commits immediately. `phase2s commit --preview` shows the message first. Our `/ship` skill does this but it's heavyweight (full diff review + version bump). A standalone `phase2s commit` command for quick commits would fill the gap. Forge uses this as a gateway feature — people install just for the commit UX, then discover the rest.
+
+### Tier 2 — Meaningful improvements
+
+- [ ] **Context compaction** — Forge has `:compact` (manual) and auto-compaction at configurable token thresholds (100k by default). Phase2S sessions can run long and hit context limits silently. Expose `phase2s compact` in the REPL and add auto-compaction config to `.phase2s.yaml`. Forge's `forge-partial-summary-frame.md` template suggests they have a structured compaction summary format — worth borrowing.
+
+- [ ] **`@file` fuzzy attachment in REPL** — Type `@` in a prompt then Tab to fuzzy-search and attach files as `@[filename]`. Forge uses this to give the AI specific context without the user having to type full paths. Would integrate naturally with Phase2S's existing REPL.
+
+- [ ] **Semantic search / codebase indexing** — `:sync` indexes the codebase; subsequent prompts can search by meaning rather than exact text. Forge sends to `api.forgecode.dev` by default, self-hostable via `FORGE_WORKSPACE_SERVER_URL`. Phase2S has no semantic search. This is table stakes for large codebases. Could integrate with a local embeddings model (Ollama) for offline use.
+
+- [ ] **Doom-loop prevention template** — Forge has `forge-doom-loop-reminder.md`, a system prompt fragment that explicitly reminds the AI not to get stuck retrying the same failing operation. We have `max_tool_failure_per_turn` equivalents but no explicit anti-doom-loop prompt engineering. Worth adding to satori's retry prompt.
+
+- [ ] **Tool error reflection** — Forge has `forge-partial-tool-error-reflection.md`, a prompt fragment injected when a tool fails, asking the AI to reflect on what went wrong before retrying. Phase2S's satori loop does failure analysis, but it happens at the outer goal level. Inner-loop (per-tool) reflection would catch more errors earlier.
+
+- [ ] **`:reasoning-effort` per-session control** — Forge exposes `reasoning-effort` as a session-level override (`:re high`). Users can switch between fast/cheap and slow/deep reasoning without editing config. Phase2S has `fast_model`/`smart_model` tiers but no interactive switcher during a session.
+
+### Tier 3 — Worth noting
+
+- [ ] **`forge provider login` — interactive credential manager** — `forge provider login` walks you through provider setup with an interactive picker. We have `phase2s init` which does this, but Forge's is more streamlined (separate `provider` subcommand, `login`/`logout`/`list`). Consider restructuring `phase2s init` or adding `phase2s provider` subcommand.
+
+- [ ] **`:dump html`** — export a conversation as formatted HTML (not just JSONL). Useful for sharing run histories with teammates. We have `phase2s report` for dark factory runs; a general conversation export would be a lower-effort complement.
+
+- [ ] **`AGENTS.md` support** — Forge automatically reads `AGENTS.md` (project root or `~/forge/AGENTS.md`) at the start of every session — persistent project-level AI instructions for coding conventions, commit style, things to avoid. Phase2S reads `.phase2s.yaml` for config but nothing equivalent for freeform "developer handbook" instructions. An `AGENTS.md` equivalent (or a `instructions:` key in `.phase2s.yaml`) would make customization more discoverable.
+
+- [ ] **`forge -C /path/to/project`** — start Phase2S in a specific directory without `cd`ing. Small but useful for scripts and IDE integrations. `phase2s -C /path` should be straightforward.
+
+---
+
+## What Phase2S does better (to protect and deepen)
+
+These are our moats vs ForgeCode. Don't let them slip:
+
+- **Autonomous goal execution** — `phase2s goal` with retry loops, acceptance criteria, and failure analysis. Forge has nothing like this. Their skills are closer to gstack's skills — human-triggered, not autonomous.
+- **Spec-driven development** — 5-pillar spec format, `/deep-specify`, spec linting, dry-run, judge. Forge has a `create-plan` skill but no spec executor.
+- **Cross-model adversarial review** — `/adversarial` pits GPT against Claude. Forge has no equivalent.
+- **MCP server** — all 29 skills as Claude Code tools. Forge is a standalone tool with no MCP integration.
+- **Observability** — structured JSONL run logs, `phase2s report`, `phase2s judge`. Forge has `:dump` but no run-level observability.
+- **Parallel execution with git worktrees** — leveled parallelism, multi-agent orchestration by role. Forge's `--sandbox` is single-threaded.
+- **Notification gateway** — Slack, Discord, Teams, Telegram, macOS. Forge has no notifications.
+- **GitHub Action** — `uses: scanton/phase2s@v1`. Forge has no CI action.
+
+---
+
+## Sprint 42 (done) — Bug Sweep + Spec Template Library (v1.19.0)
+
+| Metric | Value |
+|--------|-------|
+| Version | v1.19.0 |
+| Tests | 893 (+43 from v1.18.0) |
+
+- [x] **`resolveSubtaskModel` case normalization** — `.toLowerCase()` before alias comparison. `model: Fast` → `config.fast_model`. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Telegram byte-aware truncation** — `Buffer.byteLength(text, 'utf8') > 4090` check. Truncate via `Buffer.from(text).subarray(0, 4087).toString('utf8') + '…'`. Emoji-safe. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`resp.json()` SyntaxError** — separated into own try/catch in `init.ts` Telegram wizard. Emits "Telegram returned an unexpected response (non-JSON)..." instead of raw SyntaxError. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`TRUNCATION_HEADROOM_BYTES` JSDoc** — updated to: "worst case +2 bytes net expansion (1 orphan byte → 3-byte U+FFFD); 3-byte reserve gives 1-byte margin". Code unchanged. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`phase2s template list`** — lists 6 bundled templates with title + description. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`phase2s template use <name>`** — wizard prompts for ≤4 placeholders, substitutes `{{tokens}}`, writes spec to `.phase2s/specs/`, runs lint. **Completed:** v1.19.0 (2026-04-07)
+- [x] **6 bundled templates** — auth, api, refactor, test, cli, bug. Each with realistic 4-5 subtask decomposition. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`phase2s doctor` templates check** — `checkTemplatesDir()` verifies bundled templates directory present and non-empty. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`prompt-util.ts`** — shared readline wizard helper extracted from `init.ts`. `createRl()` + `ask()`. **Completed:** v1.19.0 (2026-04-07)
+
+### Pre-landing /review pass fixes (also v1.19.0)
+
+- [x] **`prompt-util.ts` SIGINT handler** — `.on("SIGINT")` → `.once("SIGINT")` to prevent double-close if `createRl()` is called more than once. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`spec-template.ts` FS error handling** — `mkdirSync`/`writeFileSync` wrapped in try-catch with human-readable error messages; `while`-loop collision guard for output path (was `if`). **Completed:** v1.19.0 (2026-04-07)
+- [x] **`spec-template.ts` unresolved token warning** — after substitution, scan for remaining `{{token}}` patterns and warn the user with `chalk.yellow` for each unique unresolved placeholder. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`spec-template.ts` `return` after `process.exit(1)`** — unknown-template guard fell through to `entry.filePath` access when exit was mocked; added `return` as safety guard. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`init.ts` DRY refactor** — removed duplicate `readline` setup; imports `createRl()`/`ask()` from `prompt-util.ts`. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Hollow test rewrite** — `runTemplateList`/`runTemplateUse` tests previously tested only internal helpers. Rewritten to call the functions directly; added `vi.mock` for `bundledTemplatesDir` (import.meta.url resolves to source path in vitest, not dist); added cascade injection prevention test; added trailing-newline regression tests. +5 tests. **Completed:** v1.19.0 (2026-04-07)
+
+### Pre-landing adversarial review fixes (also v1.19.0)
+
+- [x] **Template format incompatibility (CRITICAL)** — all 6 templates used wrong markdown format; spec-parser parsed 0 subtasks from generated specs. Rewritten to correct format. **Completed:** v1.19.0 (2026-04-07)
+- [x] **`alias.startsWith(p)` regression** — KNOWN_MODEL_PREFIXES check used original `annotation` instead of lowercased `alias`. Model IDs like `GPT-4O` bypassed warning. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Cascade placeholder injection** — sequential `replaceAll` allowed user values containing `{{token}}` to be re-substituted. Fixed with single-pass regex. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Frontmatter trailing newline** — regex required `\r?\n` after closing `---`; files without trailing newline silently dropped from template list. Made optional. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Duplicate `node:fs` import in `doctor.ts`** — merged. **Completed:** v1.19.0 (2026-04-07)
+- [x] **Telegram constants hoisted** — `TELEGRAM_MAX_BYTES`, `TELEGRAM_ELLIPSIS`, `TELEGRAM_TRUNCATION_GUARD_BYTES` moved to module level. **Completed:** v1.19.0 (2026-04-07)
+---
+
 ## Backlog — Post-Sprint 41 adversarial review findings
 
-Found after v1.18.0 merged. Target: next sweep sprint.
-
-- [ ] **`resolveSubtaskModel` case normalization** — `model: Fast` and `model: FAST` fall through to the literal-passthrough branch and emit a console.warn instead of resolving to `config.fast_model`. Fix: lowercase annotation before alias comparison. Medium priority.
-- [ ] **Telegram 4096-char limit** — `sendTelegramNotification()` does not truncate `text` before sending. Long spec names + verbose run summaries can exceed Telegram's 4096-char limit, causing HTTP 400. Notification silently dropped. Fix: `text.slice(0, 4090) + (text.length > 4090 ? '…' : '')` before fetch. Medium priority.
-- [ ] **`resp.json()` SyntaxError misleading message** — if Telegram CDN returns an HTML error page, `resp.json()` throws `SyntaxError: Unexpected token '<'`. Caught as generic "Network error" in the wizard. Fix: add SyntaxError branch or wrap `resp.json()` in its own try. Low priority.
-- [ ] **`TRUNCATION_HEADROOM_BYTES` comment wrong** — comment says "worst case split at byte 3 → +3 expansion". Actual worst case is 1 orphan byte → U+FFFD (+2). Code is correct; comment is wrong. Fix: update comment to say "+2 expansion, 3-byte reserve gives 1 byte margin". Trivial.
+Found after v1.18.0 merged. All fixed in Sprint 42 above.
 
 ---
 
@@ -682,14 +777,12 @@ These are the power features from oh-my-codex that go beyond SKILL.md. They requ
 - CI added (GitHub Actions, Node.js 22) — no deploy step yet (CLI tool)
 - `agent.ts`: provider display log showed "codex-cli" even when `PHASE2S_PROVIDER=openai-api` — fixed in Sprint 4 (now reads `this.provider.name`).
 
-### Post-Sprint 41 adversarial review findings (deferred, not bugs)
+### Post-Sprint 41 adversarial review findings — fixed in Sprint 42 (v1.19.0)
 
-Caught by background adversarial agent after v1.18.0 shipped. None are regressions; all are pre-existing or low-severity.
-
-- **`resolveSubtaskModel` case normalization** — `model: Fast` or `model: SMART` in a spec doesn't match the lowercase `"fast"` / `"smart"` checks. Fix: lowercase the annotation before comparison in `resolveSubtaskModel()`.
-- **Telegram 4096-char message limit** — Telegram Bot API rejects messages longer than 4096 characters. `sendTelegramNotification()` doesn't truncate. Long `body` strings (e.g., from a verbose run summary) will get a 400 Bad Request from Telegram. Fix: truncate `text` to 4096 chars with a `…` suffix before the POST.
-- **`resp.json()` SyntaxError shows as "Network error"** — In `sendTelegramNotification()`, if Telegram returns a non-JSON body (happens on some proxy errors), `resp.json()` throws a SyntaxError, which is caught and re-thrown as `Telegram API error: Network error`. The message is misleading. Fix: distinguish JSON parse errors from fetch errors in the catch block.
-- **`TRUNCATION_HEADROOM_BYTES` comment** — JSDoc says "worst case +3 bytes for the U+FFFD replacement character" but worst case is actually +2 (a 4-byte emoji split at byte 3 produces a 3-byte invalid sequence replaced by the 3-byte U+FFFD, net +0; split at byte 1 produces +2). Comment is conservative/harmless but technically wrong. Fix: update JSDoc to "up to +2 bytes net overhead" or simplify to "reserves space for UTF-8 replacement character overhead."
+- [x] **`resolveSubtaskModel` case normalization** — fixed: `.toLowerCase()` before alias comparison.
+- [x] **Telegram 4096-char message limit** — fixed: byte-aware truncation via `Buffer.byteLength()`.
+- [x] **`resp.json()` SyntaxError shows as "Network error"** — fixed: separate try/catch in `init.ts`.
+- [x] **`TRUNCATION_HEADROOM_BYTES` comment** — fixed: JSDoc updated to "+2 bytes net expansion, 3-byte reserve gives 1-byte margin".
 
 ---
 

@@ -207,6 +207,24 @@ async function sendTeamsNotification(payload: NotifyPayload, webhookUrl: string)
 const TELEGRAM_FETCH_TIMEOUT_MS = 10_000;
 
 /**
+ * Telegram Bot API rejects messages >4096 bytes. We truncate at 4090 as a conservative
+ * margin to leave headroom for overhead. Byte-aware (not character-aware) because emoji
+ * and CJK text can produce >4096 bytes even when text.length ≤ 4090.
+ */
+const TELEGRAM_MAX_BYTES = 4090;
+
+/** U+2026 HORIZONTAL ELLIPSIS — 3 bytes in UTF-8, appended after truncation. */
+const TELEGRAM_ELLIPSIS = "\u2026";
+
+/**
+ * Bytes to subtract from TELEGRAM_MAX_BYTES before slicing the buffer.
+ * Breakdown: 3 bytes for TELEGRAM_ELLIPSIS + 3 bytes worst-case U+FFFD expansion
+ * (cutting a multi-byte sequence at the last byte produces one U+FFFD = 3 bytes,
+ * replacing 1 byte — net +2 byte expansion; the extra 1 byte gives a safety margin).
+ */
+const TELEGRAM_TRUNCATION_GUARD_BYTES = 6;
+
+/**
  * Send a Telegram notification via the Bot API.
  *
  * API: POST https://api.telegram.org/bot{TOKEN}/sendMessage
@@ -227,6 +245,9 @@ export async function sendTelegramNotification(
   const text = payload.body
     ? `${payload.title}\n${payload.body}`
     : payload.title;
+  const truncatedText = Buffer.byteLength(text, "utf8") > TELEGRAM_MAX_BYTES
+    ? Buffer.from(text).subarray(0, TELEGRAM_MAX_BYTES - TELEGRAM_TRUNCATION_GUARD_BYTES).toString("utf8") + TELEGRAM_ELLIPSIS
+    : text;
   const url = `https://api.telegram.org/bot${opts.token}/sendMessage`;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TELEGRAM_FETCH_TIMEOUT_MS);
@@ -235,7 +256,7 @@ export async function sendTelegramNotification(
     response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: opts.chatId, text }),
+      body: JSON.stringify({ chat_id: opts.chatId, text: truncatedText }),
       signal: ac.signal,
     });
   } finally {

@@ -22,6 +22,36 @@ function bundledSkillsDir(): string {
 }
 
 /**
+ * Return the absolute path to the bundled spec templates directory shipped
+ * inside the npm package at .phase2s/templates/.
+ *
+ * Three levels up from this file's directory gets us to <pkg-root>
+ * (same calculation as bundledSkillsDir).
+ */
+export function bundledTemplatesDir(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  const pkgRoot = resolve(dirname(thisFile), "../../..");
+  return join(pkgRoot, ".phase2s", "templates");
+}
+
+/**
+ * Return the absolute path to the bundled ZSH shell plugin shipped inside the
+ * npm package at .phase2s/shell/phase2s.plugin.zsh.
+ *
+ * Three levels up from this file's directory gets us to <pkg-root>
+ * (same calculation as bundledTemplatesDir).
+ *
+ * At runtime:  dist/src/skills/loader.js  → 3 up → <pkg-root>
+ * In vitest:   src/skills/loader.ts       → 3 up → PARENT of project root (wrong)
+ * Tests must vi.mock this module to return the correct source path.
+ */
+export function bundledShellPluginPath(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  const pkgRoot = resolve(dirname(thisFile), "../../..");
+  return join(pkgRoot, ".phase2s", "shell", "phase2s.plugin.zsh");
+}
+
+/**
  * Load skills from SKILL.md files in a directory.
  *
  * Follows a convention similar to gstack: each skill is a directory

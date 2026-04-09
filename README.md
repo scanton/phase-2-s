@@ -53,6 +53,27 @@ phase2s
 
 ---
 
+## Shell integration (ZSH)
+
+After installing, run `phase2s setup` once to enable the `: <prompt>` shorthand from any directory in your terminal — no REPL required.
+
+```bash
+phase2s setup
+
+# Activate in the current shell (or open a new terminal tab):
+source ~/.phase2s/phase2s.plugin.zsh
+
+# Then from any directory:
+: fix the null check in auth.ts
+: what does this codebase do?
+: explain the retry logic in agent.ts
+p2 suggest "find large log files"
+```
+
+`phase2s setup` copies the ZSH plugin to `~/.phase2s/` and adds a `source` line to your `~/.zshrc`. It's idempotent — safe to re-run after npm upgrades. Use `phase2s setup --dry-run` to preview what it would do.
+
+---
+
 ## Feature 1: Your ChatGPT subscription, in your terminal
 
 Most people who pay for ChatGPT Plus use it by opening a browser tab and typing. Phase2S turns it into a programmable coding tool you can use from the command line, from scripts, and from inside Claude Code.
@@ -243,6 +264,20 @@ phase2s skills --json # machine-readable for scripts
 
 ### Dark Factory Tools
 
+**Start from a template:**
+
+```bash
+# See the 6 bundled spec templates
+phase2s template list
+
+# Fill in placeholders and write a spec in one step
+phase2s template use auth
+phase2s template use api
+phase2s template use bug
+```
+
+`phase2s template list` shows all bundled templates with their descriptions. `phase2s template use <name>` runs a short wizard (3-4 questions), fills in placeholders like `{{resource_name}}` and `{{test_command}}`, and writes the spec to `.phase2s/specs/` — ready to lint and run. Templates: `auth`, `api`, `refactor`, `test`, `cli`, `bug`.
+
 **Validate before you run:**
 
 ```bash
@@ -334,7 +369,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 850 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, and Telegram notification channel
+- [x] 920 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, and session branching DAG
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -390,6 +425,9 @@ browser: true  # requires playwright installed
 - [x] Live re-planning — when a subtask fails, the orchestrator calls the LLM with a structured prompt describing the failure, remaining jobs, and architect context. The response (`DeltaResponse`) is validated and merged back; `buildLevels()` re-levels the revised plan. Backward contamination DFS flags completed ancestors whose outputs the failed job consumed (`suspectCount` in the run log). Path traversal protection on all LLM-generated job IDs.
 - [x] Telegram notification channel — `sendTelegramNotification()` in `notify.ts`, configurable via `PHASE2S_TELEGRAM_BOT_TOKEN` + `PHASE2S_TELEGRAM_CHAT_ID` env vars or `notify.telegram` in `.phase2s.yaml`. `phase2s init --telegram-setup` wizard calls `getUpdates`, picks the most recent chat, and prints the ready-to-paste YAML snippet.
 - [x] `model:` spec annotation for parallel workers — subtasks declare `model: fast`, `model: smart`, or a literal model name. `resolveSubtaskModel()` maps aliases to configured tiers and falls back to the outer `--model` flag.
+- [x] `phase2s template list` / `phase2s template use <name>` — 6 bundled spec templates (`auth`, `api`, `bug`, `refactor`, `test`, `cli`). Short wizard fills in 3-4 placeholders, substitutes tokens in a single pass (no cascade injection), writes spec to `.phase2s/specs/`, and runs lint automatically.
+- [x] `phase2s doctor` templates check — verifies bundled templates directory is present and non-empty
+- [x] `phase2s conversations` / `:clone <uuid>` — DAG-shaped session storage. Browse all sessions with fzf (or plain table), fork any session into a new branch. Sessions stored as `{schemaVersion:2, meta:{id,parentId,branchName}, messages:[]}`. Migration from YYYY-MM-DD.json is automatic, resumable, and non-destructive (backup created before any rename).
 - [x] Byte-aware context truncation — `level-context.ts` uses `Buffer.from(context,'utf8').subarray(0,limit).toString('utf8')` instead of `String.slice()`. Fixes silent byte overrun with emoji or CJK filenames.
 
 ---

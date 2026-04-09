@@ -8,11 +8,12 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, accessSync, mkdirSync, constants } from "node:fs";
+import { existsSync, accessSync, mkdirSync, constants, readdirSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
+import { homedir } from "node:os";
 import chalk from "chalk";
 import { parse as parseYaml } from "yaml";
-import { readFileSync } from "node:fs";
+import { bundledTemplatesDir } from "../skills/loader.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -271,6 +272,116 @@ export function checkGitWorktree(): CheckResult {
   };
 }
 
+/**
+ * Check that bundled spec templates directory is present and non-empty.
+ */
+export function checkTemplatesDir(): CheckResult {
+  const dir = bundledTemplatesDir();
+  if (!existsSync(dir)) {
+    return {
+      name: "Spec templates",
+      ok: false,
+      detail: "Bundled templates directory not found",
+      fix: "Reinstall phase2s: npm install -g @scanton/phase2s",
+    };
+  }
+  let files: string[];
+  try {
+    files = readdirSync(dir).filter((f: string) => f.endsWith(".md"));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code ?? "unknown";
+    return {
+      name: "Spec templates",
+      ok: false,
+      detail: `Templates directory not readable (${code})`,
+      fix: "Check directory permissions or reinstall: npm install -g @scanton/phase2s",
+    };
+  }
+  if (files.length === 0) {
+    return {
+      name: "Spec templates",
+      ok: false,
+      detail: "Templates directory exists but contains no templates",
+      fix: "Reinstall phase2s: npm install -g @scanton/phase2s",
+    };
+  }
+  return {
+    name: "Spec templates",
+    ok: true,
+    detail: `${files.length} bundled templates found`,
+  };
+}
+
+/**
+ * Check that the ZSH shell integration plugin is installed and sourced.
+ *
+ * Accepts optional path overrides for testability (same pattern as checkWorkDir).
+ */
+export function checkShellPlugin(
+  phase2sDir: string = join(homedir(), ".phase2s"),
+  zshrcPath: string = join(homedir(), ".zshrc"),
+): CheckResult {
+  // ZSH-only feature — non-ZSH users see a green ✓ "N/A" pass in doctor output.
+  // Note: the runDoctor() filter removes checks where detail === "N/A" exactly.
+  // This check returns a longer detail string, so it passes the filter and shows
+  // as an informational ✓ (not filtered) — which is correct UX for bash users.
+  const shell = process.env.SHELL ?? "";
+  if (shell && !shell.includes("zsh")) {
+    return {
+      name: "Shell integration",
+      ok: true,
+      detail: `N/A (ZSH-only — detected shell: ${shell})`,
+    };
+  }
+
+  const pluginDest = join(phase2sDir, "phase2s.plugin.zsh");
+  const pluginExists = existsSync(pluginDest);
+
+  if (!pluginExists) {
+    return {
+      name: "Shell integration",
+      ok: false,
+      detail: "ZSH plugin not installed",
+      fix: "Run: phase2s setup",
+    };
+  }
+
+  // Check ~/.zshrc contains the source line.
+  // Accept both the $HOME-relative form (v1.20.0+) and the legacy absolute
+  // path form (pre-1.20.0) for backwards compatibility.
+  const homeRelativePluginPath = "$HOME/.phase2s/phase2s.plugin.zsh";
+  const zshrcExists = existsSync(zshrcPath);
+  let sourced = false;
+  if (zshrcExists) {
+    try {
+      const content = readFileSync(zshrcPath, "utf8");
+      sourced = content.includes(homeRelativePluginPath) || content.includes(pluginDest);
+    } catch {
+      return {
+        name: "Shell integration",
+        ok: false,
+        detail: `Plugin installed but ${zshrcPath} is not readable`,
+        fix: `Check permissions on ${zshrcPath}`,
+      };
+    }
+  }
+
+  if (!sourced) {
+    return {
+      name: "Shell integration",
+      ok: false,
+      detail: `Plugin installed but not sourced in ${zshrcPath}`,
+      fix: "Run: phase2s setup  (re-run is idempotent and adds the source line)",
+    };
+  }
+
+  return {
+    name: "Shell integration",
+    ok: true,
+    detail: `ZSH plugin installed and sourced`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // runDoctor — entry point
 // ---------------------------------------------------------------------------
@@ -301,6 +412,8 @@ export async function runDoctor(): Promise<void> {
     checkAuth(provider, existingConfig),
     checkConfigFile(configPath),
     checkWorkDir(resolve(".phase2s")),
+    checkTemplatesDir(),
+    checkShellPlugin(),
     checkTmux(),
     checkGitWorktree(),
   ];

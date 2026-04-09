@@ -136,6 +136,31 @@ Get your key at [platform.minimax.io](https://platform.minimax.io/). Default mod
 
 ---
 
+## Shell integration (ZSH) — optional but recommended
+
+Run `phase2s setup` once to install the ZSH plugin. This lets you skip the REPL entirely and invoke Phase2S from any terminal prompt using the `:` shorthand:
+
+```bash
+phase2s setup
+
+# Activate in the current shell (or just open a new terminal tab):
+source ~/.phase2s/phase2s.plugin.zsh
+
+# Then from any directory:
+: fix the null check in auth.ts
+: what does this codebase do?
+: explain the retry logic in agent.ts
+p2 suggest "find large log files"
+```
+
+`phase2s setup` copies the plugin to `~/.phase2s/` and adds a `source` line to `~/.zshrc`. It's idempotent — safe to re-run after `npm upgrade`. Use `--dry-run` to preview what it would do.
+
+> **Tip:** Use `source ~/.phase2s/phase2s.plugin.zsh` to activate in the current shell, not `source ~/.zshrc` — sourcing the plugin directly is more reliable than re-running your entire `.zshrc`.
+
+ZSH tab completion for all Phase2S subcommands is included automatically.
+
+---
+
 ## Verify your installation
 
 If something isn't working, run the health check:
@@ -144,7 +169,7 @@ If something isn't working, run the health check:
 phase2s doctor
 ```
 
-It checks your Node.js version, provider binary, API key, config file, and working directory — then tells you exactly what to fix.
+It checks your Node.js version, provider binary, API key, config file, working directory, and shell integration — then tells you exactly what to fix.
 
 ---
 

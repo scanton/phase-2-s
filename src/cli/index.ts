@@ -370,6 +370,37 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       await runDoctor();
     });
 
+  // Shell integration setup
+  program
+    .command("setup")
+    .description("Install ZSH shell integration — enables ': <prompt>' from any directory")
+    .option("--dry-run", "Show what would be done without writing any files")
+    .action(async (cmdOpts: { dryRun?: boolean }) => {
+      const { runSetup } = await import("./setup.js");
+      await runSetup({ dryRun: cmdOpts.dryRun });
+    });
+
+  // Spec template library
+  const templateCmd = program
+    .command("template")
+    .description("Manage spec templates");
+
+  templateCmd
+    .command("list")
+    .description("List all bundled spec templates")
+    .action(async () => {
+      const { runTemplateList } = await import("./spec-template.js");
+      runTemplateList();
+    });
+
+  templateCmd
+    .command("use <name>")
+    .description("Generate a spec from a template via interactive wizard")
+    .action(async (name: string) => {
+      const { runTemplateUse } = await import("./spec-template.js");
+      await runTemplateUse(name, process.cwd());
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")
@@ -406,7 +437,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp goal judge report init upgrade lint doctor completion" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run skills mcp goal judge report init upgrade lint doctor completion setup template" -- "\$cur"))
     return
   fi
 
@@ -450,6 +481,8 @@ _phase2s() {
     'lint:Validate a 5-pillar spec file before running it'
     'doctor:Check Phase2S installation health'
     'completion:Output shell completion script'
+    'setup:Install ZSH shell integration'
+    'template:Manage spec templates (list / use)'
   )
 
   if (( CURRENT == 2 )); then
