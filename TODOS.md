@@ -36,7 +36,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [ ] **`--sandbox` flag for interactive mode** — `forge --sandbox experiment-name` creates an isolated git worktree + branch automatically, then starts the session inside it. No manual worktree setup. We already have worktrees for parallel goal execution; exposing `phase2s --sandbox feature-name` for interactive exploration would be a natural extension.
 
-- [ ] **Lightweight AI commit message** — `phase2s commit` (no args) reads the diff, writes a commit message, and commits immediately. `phase2s commit --preview` shows the message first. Our `/ship` skill does this but it's heavyweight (full diff review + version bump). A standalone `phase2s commit` command for quick commits would fill the gap. Forge uses this as a gateway feature — people install just for the commit UX, then discover the rest.
+- [x] **Lightweight AI commit message** — `phase2s commit` (no args) reads the diff, writes a commit message, and commits immediately. `phase2s commit --preview` shows the message first. Our `/ship` skill does this but it's heavyweight (full diff review + version bump). A standalone `phase2s commit` command for quick commits would fill the gap. Forge uses this as a gateway feature — people install just for the commit UX, then discover the rest. **Completed:** v1.22.0 (2026-04-09)
 
 ### Tier 2 — Meaningful improvements
 

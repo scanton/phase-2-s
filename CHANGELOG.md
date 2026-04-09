@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.22.0 — 2026-04-09
+
+Sprint 46 — AI-generated commit messages (`phase2s commit`).
+
+### Added
+
+- **`phase2s commit`** — New subcommand that generates a Conventional Commits message from the staged diff using the fast model tier. Interactive flow: accept / edit / cancel. `--auto` for CI, `--preview` to inspect without committing. Warns on detected secrets (AWS keys, OpenAI/Anthropic keys, GitHub tokens, Slack tokens, private key blocks) before sending the diff to the LLM. Secrets scanner uses per-pattern while loops to catch multiple secrets per line.
+- **`phase2s commit --format conventional`** — Generates `<type>(<scope>): <subject>` format. `format: conventional` is configurable in `.phase2s.yaml` under the `commit:` key.
+- **`:commit` REPL command** — Generates a commit message from staged changes without entering a sub-flow; runs `git commit` directly if accepted.
+- **`scanForSecrets(diff)`** — Exported from `src/core/secrets.ts`. Scans only added lines (`+` prefix, excludes `+++` headers). Detects: AWS Access Key, AWS Secret Key, OpenAI API Key, OpenAI Project Key, Anthropic API Key, GitHub Personal/OAuth/App tokens, Slack Bot/User tokens, Private Key blocks.
+
+### Fixed
+
+- **`spawnSync` silent truncation** — Default 1MB buffer can silently truncate large diffs before sending to the LLM. All 5 `spawnSync` calls in `commit.ts` now use `maxBuffer: 100MB`.
+- **OpenAI key regex too narrow** — `sk-[A-Za-z0-9]{48}` (exact) missed newer longer keys. Changed to `{48,}` (48 or more).
+- **LLM multi-line output** — Model occasionally returns multi-line responses despite prompt instructions. Commit message now takes only the first non-empty line, preventing unexpected commit bodies and NUL byte errors.
+- **Temp file permissions** — Editor temp file was created with `0o666` (world-readable minus umask). Now uses `{ mode: 0o600 }`.
+
 ## v1.21.1 — 2026-04-09
 
 Sprint 45 — `:clone` correctness fixes and bash shell integration.
