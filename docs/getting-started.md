@@ -334,7 +334,7 @@ Everything else (`satori/`, `specs/`, `debug/`, `checkpoints/`) is created on-de
 
 **Everything else:**
 - [Workflows](workflows.md) — what a real development day with Phase2S looks like
-- [Memory and persistence](memory.md) — session resume, `/remember`, `/skill`
+- [Memory and persistence](memory.md) — session resume, browsing and forking sessions, `/remember`, `/skill`
 - [Writing custom skills](writing-skills.md) — create your own `/commands`
 - [Configuration](configuration.md) — `.phase2s.yaml` and environment variables
 - [GitHub Action](github-action.md) — run skills in CI (requires API key, not ChatGPT subscription)
