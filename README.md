@@ -339,6 +339,53 @@ phase2s__state_clear({ key: "deploy_status" })
 phase2s__report({ runLogPath: ".phase2s/runs/2026-04-05-goal-abc123.jsonl" })
 ```
 
+### AI Commit Messages
+
+```bash
+# Generate a commit message from staged changes
+git add src/auth.ts
+phase2s commit
+
+# Preview the proposed message without committing
+phase2s commit --preview
+
+# Non-interactive for CI — commits immediately, fails fast on detected secrets
+phase2s commit --auto
+```
+
+`phase2s commit` reads the staged diff, asks the fast model to write a Conventional Commits message (`<type>(<scope>): <subject>`), and walks you through accept / edit / cancel. The edit path opens `$EDITOR` if configured, or falls back to a readline prompt.
+
+The secrets scanner runs before the diff leaves your machine. If it finds AWS keys, OpenAI or Anthropic keys, GitHub tokens, or Slack tokens in the staged changes, it warns and asks whether to continue. In `--auto` mode it fails hard instead of prompting.
+
+From inside the REPL, `:commit` does the same thing without breaking your session.
+
+**For teams**
+
+Check a `.phase2s.yaml` into your repo. Everyone gets consistent Conventional Commits format without a style guide argument:
+
+```yaml
+# .phase2s.yaml
+commit:
+  format: conventional   # <type>(<scope>): <subject>
+```
+
+For CI, use `--auto` with a direct API provider (ChatGPT subscription requires browser auth, which doesn't work in CI). Set `PHASE2S_PROVIDER=openai-api` and `OPENAI_API_KEY`, then:
+
+```yaml
+# .github/workflows/ci.yml
+- name: Commit generated files
+  run: |
+    git add generated/
+    phase2s commit --auto
+  env:
+    PHASE2S_PROVIDER: openai-api
+    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
+
+Use `--preview` in PR workflows to inspect proposed messages without committing — useful for audit logs or comment bots.
+
+---
+
 ### Tools and Configuration
 
 **Custom system prompt:**
@@ -369,7 +416,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 995 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, and bash shell integration
+- [x] 1046 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, and AI-generated commit messages
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -430,6 +477,7 @@ browser: true  # requires playwright installed
 - [x] `phase2s conversations` / `:clone <uuid>` — DAG-shaped session storage. Browse all sessions with fzf (or plain table), fork any session into a new branch. Sessions stored as `{schemaVersion:2, meta:{id,parentId,branchName}, messages:[]}`. Migration from YYYY-MM-DD.json is automatic, resumable, and non-destructive (backup created before any rename).
 - [x] Bash shell integration — `phase2s setup --bash` installs `~/.phase2s/phase2s-bash.sh` and sources it from `~/.bash_profile`. Provides the same `: <prompt>` shorthand and `p2` alias as the ZSH integration, plus bash tab completion. Fixes for `:clone` corruption and atomic SIGINT save.
 - [x] Byte-aware context truncation — `level-context.ts` uses `Buffer.from(context,'utf8').subarray(0,limit).toString('utf8')` instead of `String.slice()`. Fixes silent byte overrun with emoji or CJK filenames.
+- [x] `phase2s commit` — AI-generated commit messages from staged diffs. Interactive accept / edit / cancel flow. `--auto` for CI (non-interactive, fails fast on detected secrets). `--preview` for dry-run inspection. Secrets scanner warns before sending the diff to your LLM provider. `:commit` REPL shorthand for in-session use. Conventional Commits format configurable via `.phase2s.yaml`.
 
 ---
 

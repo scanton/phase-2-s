@@ -401,6 +401,19 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       await runTemplateUse(name, process.cwd());
     });
 
+  // AI-generated commit messages
+  program
+    .command("commit")
+    .description("Generate an AI commit message for staged changes")
+    .option("--auto", "Commit immediately without confirmation (non-interactive, CI-safe)")
+    .option("--preview", "Show proposed message only — do not commit")
+    .action(async (cmdOpts: { auto?: boolean; preview?: boolean }) => {
+      const opts = program.opts();
+      const config = await loadConfig({ provider: opts.provider, model: opts.model });
+      const { runCommitFlow } = await import("./commit.js");
+      await runCommitFlow(config, { auto: cmdOpts.auto, preview: cmdOpts.preview });
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")
@@ -839,6 +852,76 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         console.log(chalk.dim(`Branch: ${result.branchName}`));
       } catch (err) {
         log.error(err instanceof Error ? err.message : String(err));
+      }
+      continue;
+    }
+
+    // :commit — generate an AI commit message for staged changes from inside the REPL
+    if (trimmed === ":commit" || trimmed.startsWith(":commit ")) {
+      const { buildCommitMessage, runCommitFlow, runGitCommit, SecretWarningError } = await import("./commit.js");
+      const { createRl: makeRl, ask: askUser } = await import("./prompt-util.js");
+      let secretsSendAnyway = false;
+      let result: Awaited<ReturnType<typeof buildCommitMessage>> | undefined;
+      // Loop to handle secret warnings interactively (same pattern as runCommitFlow)
+      while (true) {
+        try {
+          // buildCommitMessage() creates its own ephemeral Agent — the REPL conversation is never touched.
+          result = await buildCommitMessage(config, { secretsSendAnyway });
+          break;
+        } catch (err: unknown) {
+          if (err instanceof SecretWarningError) {
+            console.log(chalk.yellow(`\n⚠  ${err.message}`));
+            const rl3 = makeRl();
+            try {
+              const answer = await askUser(rl3, "  [s]end anyway / [c]ancel: ");
+              if (answer.toLowerCase().startsWith("s")) {
+                secretsSendAnyway = true;
+                continue;
+              }
+            } finally {
+              rl3.close();
+            }
+            console.log(chalk.dim("Commit cancelled."));
+          } else {
+            console.log(chalk.red(`✗ ${(err as Error).message}`));
+          }
+          break;
+        }
+      }
+      if (result === undefined || result === null) {
+        if (result === null) {
+          console.log(chalk.yellow("Model returned no message. Try again or commit manually with git commit."));
+        }
+        continue;
+      }
+      console.log(chalk.bold("\nProposed commit message:"));
+      console.log(chalk.cyan(`  ${result.message}`));
+      console.log(chalk.dim(`\nStaged changes:\n${result.diffStat}`));
+      console.log();
+      // Show accept/edit/cancel prompt. Accept uses the already-generated message.
+      // Edit delegates to runCommitFlow() which will rebuild the message (one extra LLM call,
+      // acceptable on an uncommon branch).
+      const rl2 = makeRl();
+      try {
+        const answer = await askUser(rl2, "[a]ccept / [e]dit / [c]ancel: ");
+        const key = answer.toLowerCase().trim();
+        if (key.startsWith("a") || key === "") {
+          const { ok, output } = runGitCommit(result.message);
+          if (ok) {
+            console.log(chalk.green(`✓ Committed: ${result.message}`));
+            if (output) console.log(chalk.dim(output));
+          } else {
+            console.log(chalk.red("✗ Commit failed:"));
+            if (output) console.log(output);
+          }
+        } else if (key.startsWith("e")) {
+          console.log(chalk.dim("Opening editor..."));
+          await runCommitFlow(config, {});
+        } else {
+          console.log(chalk.dim("Commit cancelled."));
+        }
+      } finally {
+        rl2.close();
       }
       continue;
     }

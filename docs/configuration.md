@@ -134,6 +134,13 @@ maxTurns: 50
 # deny:
 #   - shell
 
+# Commit message format for `phase2s commit`
+# conventional: <type>(<scope>): <subject> (Conventional Commits format)
+# short:        one-line summary without a type prefix
+# Default: conventional
+# commit:
+#   format: conventional
+
 # Notification channels for dark factory runs (phase2s goal --notify)
 # mac: true sends a system notification via osascript (macOS only, default: true on macOS)
 # slack: Slack incoming webhook URL
@@ -376,6 +383,9 @@ Commands:
   template                 Manage spec templates
     list                   Show all bundled templates with descriptions
     use <name>             Generate a spec from a template via interactive wizard
+  commit                   Generate a commit message from staged changes and commit
+    --auto                 Commit immediately without prompting (CI-safe; fails on detected secrets)
+    --preview              Print proposed message and exit without committing
   conversations            Browse session history (fzf interactive or plain table)
   doctor                   Installation health check
   upgrade                  Check for and install updates
