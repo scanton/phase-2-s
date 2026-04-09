@@ -15,7 +15,7 @@
 
 import { execFile, execFileSync } from "node:child_process";
 import chalk from "chalk";
-import { listSessions, getSessionPreview, type SessionMeta } from "../core/session.js";
+import { listSessions, getSessionPreview, sanitizeForTerminal, type SessionMeta } from "../core/session.js";
 
 // ---------------------------------------------------------------------------
 // Row type
@@ -66,7 +66,9 @@ async function buildRows(sessions: Array<{ meta: SessionMeta; path: string }>): 
       return {
         id: meta.id,
         date: meta.createdAt.slice(0, 10),
-        branchName: meta.branchName,
+        // Sanitize branchName before it enters fzf input lines — prevents ANSI/OSC
+        // injection if a crafted session file has escape sequences in branchName.
+        branchName: sanitizeForTerminal(meta.branchName ?? "main"),
         parentId: meta.parentId,
         preview: preview || "(empty session)",
       };

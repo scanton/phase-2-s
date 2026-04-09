@@ -412,7 +412,13 @@ export async function listSessions(cwd: string): Promise<Array<{ meta: SessionMe
         !Array.isArray(parsed) &&
         (parsed as Record<string, unknown>).schemaVersion === 2
       ) {
-        results.push({ meta: (parsed as SessionV2).meta, path: p });
+        const meta = (parsed as SessionV2).meta;
+        // Validate meta.id as UUID — prevents shell injection if a crafted file has
+        // shell metacharacters in meta.id (used as {2} in fzf --preview command).
+        if (!uuidPattern.test(`${meta.id}.json`)) {
+          continue;
+        }
+        results.push({ meta, path: p });
       }
     } catch {
       // Skip corrupted files
@@ -456,7 +462,7 @@ export async function getSessionPreview(path: string): Promise<string> {
  * Strip ANSI escape codes and ASCII control characters from a string.
  * Prevents terminal escape injection in fzf/table display.
  */
-function sanitizeForTerminal(s: string): string {
+export function sanitizeForTerminal(s: string): string {
   // Remove ANSI escape sequences (ESC[ ... m and similar)
   // eslint-disable-next-line no-control-regex
   return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/[\x00-\x1f\x7f]/g, " ").trim();

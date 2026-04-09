@@ -2,8 +2,8 @@ import { Command } from "commander";
 import { createInterface } from "node:readline";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { access, constants, readdir } from "node:fs/promises";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { access, constants } from "node:fs/promises";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
@@ -55,7 +55,7 @@ async function findLatestSession(): Promise<string | null> {
   if (!state?.currentSessionId) return null;
   const path = join(SESSION_DIR, `${state.currentSessionId}.json`);
   try {
-    await import("node:fs/promises").then(({ access, constants }) => access(path, constants.R_OK));
+    await access(path, constants.R_OK);
     return path;
   } catch {
     return null; // state.json pointed to a deleted/moved file
@@ -624,6 +624,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   let sessionId: string;
   let resumedConversation: Conversation | undefined;
   let sessionMeta: SessionMeta;
+  let loadedResumeMeta: SessionMeta | undefined;
 
   if (opts.resume) {
     const latestPath = await findLatestSession();
@@ -632,6 +633,15 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         resumedConversation = await Conversation.load(latestPath);
         const state = readReplState(process.cwd());
         sessionId = state?.currentSessionId ?? randomUUID();
+        // Preserve DAG metadata (parentId, branchName, createdAt) from the resumed file.
+        // Without this, sessionMeta is always re-initialized with parentId:null which
+        // destroys the clone lineage on the first save after --resume.
+        try {
+          const raw = JSON.parse(readFileSync(latestPath, "utf-8"));
+          if (raw?.schemaVersion === 2 && raw.meta) {
+            loadedResumeMeta = raw.meta as SessionMeta;
+          }
+        } catch { /* fall through to defaults below */ }
         console.log(chalk.dim(`Resuming session (${resumedConversation.length} messages)\n`));
       } catch {
         console.log(chalk.yellow("Warning: Could not load previous session. Starting fresh.\n"));
@@ -646,13 +656,18 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   }
 
   const now = new Date().toISOString();
-  sessionMeta = {
-    id: sessionId,
-    parentId: null,
-    branchName: "main",
-    createdAt: now,
-    updatedAt: now,
-  };
+  if (loadedResumeMeta) {
+    // Restore the full DAG metadata from the resumed session, updating only updatedAt.
+    sessionMeta = { ...loadedResumeMeta, updatedAt: now };
+  } else {
+    sessionMeta = {
+      id: sessionId,
+      parentId: null,
+      branchName: "main",
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
 
   // Record this as the active session
   writeReplState(process.cwd(), { currentSessionId: sessionId });
@@ -776,6 +791,11 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
       if (!sourceId) {
         console.log(chalk.yellow("Usage: :clone <session-uuid>"));
         console.log(chalk.dim("Get a UUID from: phase2s conversations"));
+        continue;
+      }
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!UUID_RE.test(sourceId)) {
+        console.log(chalk.red("Invalid session ID: must be a UUID (get one from: phase2s conversations)"));
         continue;
       }
       process.stdout.write(chalk.cyan("Branch name (press Enter for default): "));
