@@ -16,6 +16,15 @@ import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, getUnfilledInputKeys, extractAskTokens, substituteAskValues, stripAskTokens } from "../skills/template.js";
 import { log } from "../utils/logger.js";
+import {
+  migrateAll,
+  saveSession as saveSessionV2,
+  cloneSession,
+  readReplState,
+  writeReplState,
+  type SessionMeta,
+} from "../core/session.js";
+import { runConversationsBrowser } from "./conversations.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -37,30 +46,20 @@ const VERSION = findVersion();
 /** Directory for session auto-saves. */
 const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
 
-/** Path for today's session file. */
-function todaySessionPath(): string {
-  const d = new Date();
-  const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return join(SESSION_DIR, `${datePart}.json`);
-}
-
 /**
- * Find the most recent session file in SESSION_DIR.
- * Returns null if no session files exist.
+ * Find the most recently active session file via state.json.
+ * Returns null if no active session is recorded or the file is missing.
  */
 async function findLatestSession(): Promise<string | null> {
-  let entries: string[];
+  const state = readReplState(process.cwd());
+  if (!state?.currentSessionId) return null;
+  const path = join(SESSION_DIR, `${state.currentSessionId}.json`);
   try {
-    entries = await readdir(SESSION_DIR);
+    await import("node:fs/promises").then(({ access, constants }) => access(path, constants.R_OK));
+    return path;
   } catch {
-    return null;
+    return null; // state.json pointed to a deleted/moved file
   }
-  // Only match YYYY-MM-DD.json filenames so stray .json files don't become sessions.
-  const sessions = entries
-    .filter((e) => /^\d{4}-\d{2}-\d{2}\.json$/.test(e))
-    .sort()
-    .reverse();
-  return sessions.length > 0 ? join(SESSION_DIR, sessions[0]) : null;
 }
 
 export async function main(argv: string[] = process.argv): Promise<void> {
@@ -348,6 +347,20 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       if (!ok) process.exit(1);
     });
 
+  // Session browser
+  program
+    .command("conversations")
+    .description("Browse past sessions. Launches fzf if available, falls back to plain table.")
+    .action(async () => {
+      const selectedId = await runConversationsBrowser(process.cwd());
+      if (selectedId) {
+        // Resume the selected session by re-running interactiveMode with it active
+        writeReplState(process.cwd(), { currentSessionId: selectedId });
+        const config = await loadConfig({});
+        await interactiveMode(config, { resume: true });
+      }
+    });
+
   // Installation health check
   program
     .command("doctor")
@@ -570,21 +583,49 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   if (!checkOpenAIKey(config)) process.exit(1);
   if (!checkAnthropicKey(config)) process.exit(1);
 
-  // --resume: load most recent session
+  // Migrate legacy sessions on first run after upgrade (one-time, resumable)
+  await migrateAll(process.cwd());
+
+  // Determine the active session UUID and path
+  const { randomUUID } = await import("node:crypto");
+  let sessionId: string;
   let resumedConversation: Conversation | undefined;
+  let sessionMeta: SessionMeta;
+
   if (opts.resume) {
-    const sessionPath = await findLatestSession();
-    if (sessionPath) {
+    const latestPath = await findLatestSession();
+    if (latestPath) {
       try {
-        resumedConversation = await Conversation.load(sessionPath);
-        console.log(chalk.dim(`Resuming session from ${sessionPath} (${resumedConversation.length} messages)\n`));
+        resumedConversation = await Conversation.load(latestPath);
+        const state = readReplState(process.cwd());
+        sessionId = state?.currentSessionId ?? randomUUID();
+        console.log(chalk.dim(`Resuming session (${resumedConversation.length} messages)\n`));
       } catch {
         console.log(chalk.yellow("Warning: Could not load previous session. Starting fresh.\n"));
+        sessionId = randomUUID();
       }
     } else {
       console.log(chalk.yellow("No previous session found. Starting fresh.\n"));
+      sessionId = randomUUID();
     }
+  } else {
+    sessionId = randomUUID();
   }
+
+  const now = new Date().toISOString();
+  sessionMeta = {
+    id: sessionId,
+    parentId: null,
+    branchName: "main",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  // Record this as the active session
+  writeReplState(process.cwd(), { currentSessionId: sessionId });
+
+  // activeSessionPath and sessionMeta are mutable — :clone updates both
+  let activeSessionPath = join(SESSION_DIR, `${sessionId}.json`);
 
   console.log(chalk.bold(`\nPhase2S v${VERSION}`));
   console.log(chalk.dim("Type your message and press Enter. Type /quit to exit.\n"));
@@ -598,9 +639,6 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
 
   const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr });
   const skills = await loadAllSkills();
-
-  // Session auto-save path — today's file
-  const sessionPath = todaySessionPath();
 
   // Ensure stdin is open and stays open for the full session
   process.stdin.resume();
@@ -637,10 +675,18 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
 
   rl.on("SIGINT", () => {
     process.stdout.write("\n");
-    // Synchronous save before exit — async saveSession() can't complete after process.exit().
+    // Synchronous save before exit — async operations can't complete after process.exit().
     try {
-      mkdirSync(resolve(sessionPath, ".."), { recursive: true });
-      writeFileSync(sessionPath, JSON.stringify(agent.getConversation().getMessages(), null, 2), { encoding: "utf-8", mode: 0o600 });
+      mkdirSync(resolve(activeSessionPath, ".."), { recursive: true });
+      writeFileSync(
+        activeSessionPath,
+        JSON.stringify({
+          schemaVersion: 2,
+          meta: { ...sessionMeta, updatedAt: new Date().toISOString() },
+          messages: agent.getConversation().getMessages(),
+        }, null, 2),
+        { encoding: "utf-8", mode: 0o600 },
+      );
     } catch {
       // Best-effort — don't block exit on save failure
     }
@@ -659,12 +705,10 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     });
   };
 
-  /** Save the current conversation to today's session file (best-effort). */
+  /** Save the current conversation to the active session file (best-effort, v2 format). */
   const saveSession = async (): Promise<void> => {
     try {
-      // mode 0o600: session files may contain code, file paths, or secrets —
-      // restrict to owner-only to prevent world-readable exposure on multi-user systems.
-      await agent.getConversation().save(sessionPath, 0o600);
+      await saveSessionV2(activeSessionPath, agent.getConversation(), sessionMeta);
     } catch {
       // Best-effort — session save failures don't interrupt the user
     }
@@ -690,6 +734,39 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
 
     if (trimmed === "/help") {
       printHelp(skills);
+      continue;
+    }
+
+    // :clone <uuid> — fork the specified session into a new one
+    if (trimmed.startsWith(":clone")) {
+      const sourceId = trimmed.slice(":clone".length).trim();
+      if (!sourceId) {
+        console.log(chalk.yellow("Usage: :clone <session-uuid>"));
+        console.log(chalk.dim("Get a UUID from: phase2s conversations"));
+        continue;
+      }
+      process.stdout.write(chalk.cyan("Branch name (press Enter for default): "));
+      const branchInput = await nextLine();
+      const branchName = branchInput?.trim() || undefined;
+      try {
+        const result = await cloneSession(process.cwd(), sourceId, branchName);
+        // Switch the active session to the new clone.
+        // Use result.branchName — cloneSession owns the default formula, avoids timezone skew.
+        sessionMeta = {
+          id: result.id,
+          parentId: sourceId,
+          branchName: result.branchName,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        activeSessionPath = result.path;
+        writeReplState(process.cwd(), { currentSessionId: result.id });
+        // The agent's in-memory conversation continues; future saves go to the new file.
+        console.log(chalk.green(`Cloned ${sourceId.slice(0, 8)}... → ${result.id.slice(0, 8)}... (${result.messageCount} messages inherited)`));
+        console.log(chalk.dim(`Branch: ${result.branchName}`));
+      } catch (err) {
+        log.error(err instanceof Error ? err.message : String(err));
+      }
       continue;
     }
 
