@@ -68,21 +68,43 @@ export class Conversation {
   }
 
   /**
-   * Deserialize a conversation from a JSON file previously written by save().
+   * Deserialize a conversation from a JSON file.
    *
-   * Throws if the file doesn't exist, is unreadable, or contains invalid JSON —
-   * callers (e.g. the CLI --resume path) should handle these gracefully.
+   * Handles two session formats:
+   *   v1 (legacy): bare JSON array of messages
+   *   v2 (current): { schemaVersion: 2, meta: SessionMeta, messages: Message[] }
+   *
+   * Throws if the file doesn't exist, is unreadable, contains invalid JSON,
+   * or has an unrecognized format.
+   * Callers (e.g. the CLI --resume path) should handle these gracefully.
    */
   static async load(path: string): Promise<Conversation> {
     const raw = await readFile(path, "utf-8");
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      throw new Error("Invalid session file: expected a JSON array of messages");
+
+    // v2 format: { schemaVersion: 2, meta, messages }
+    let messagesArray: unknown[];
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      (parsed as Record<string, unknown>).schemaVersion === 2
+    ) {
+      const v2 = parsed as { messages: unknown };
+      if (!Array.isArray(v2.messages)) {
+        throw new Error("Invalid session file: v2 format missing messages array");
+      }
+      messagesArray = v2.messages;
+    } else if (Array.isArray(parsed)) {
+      // v1 legacy format
+      messagesArray = parsed;
+    } else {
+      throw new Error("Invalid session file: unrecognized format (expected array or v2 object)");
     }
     // Validate each message to prevent prompt injection via a crafted session file.
     const validRoles = new Set(["system", "user", "assistant", "tool"]);
-    for (let i = 0; i < parsed.length; i++) {
-      const msg = parsed[i];
+    for (let i = 0; i < messagesArray.length; i++) {
+      const msg = messagesArray[i];
       if (typeof msg !== "object" || msg === null) {
         throw new Error(`Invalid session file: message at index ${i} is not an object`);
       }
@@ -94,7 +116,7 @@ export class Conversation {
         throw new Error(`Invalid session file: message at index ${i} has non-string content`);
       }
     }
-    const messages: Message[] = parsed as Message[];
+    const messages: Message[] = messagesArray as Message[];
     const conv = new Conversation();
     // Copy the array to avoid sharing the reference with the parsed JSON object.
     conv.messages = [...messages];
