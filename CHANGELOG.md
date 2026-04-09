@@ -6,7 +6,7 @@ Sprint 46 — AI-generated commit messages (`phase2s commit`).
 
 ### Added
 
-- **`phase2s commit`** — New subcommand that generates a Conventional Commits message from the staged diff using the fast model tier. Interactive flow: accept / edit / cancel. `--auto` for CI, `--preview` to inspect without committing. Warns on detected secrets (AWS keys, OpenAI/Anthropic keys, GitHub tokens, Slack tokens, private key blocks) before sending the diff to the LLM. Secrets scanner uses per-pattern while loops to catch multiple secrets per line.
+- **`phase2s commit`** — Run it after `git add`. Reads your staged diff, writes a Conventional Commits message using the fast model tier, and walks you through accept / edit / cancel. `--auto` for CI (non-interactive), `--preview` to inspect the proposed message without committing. Scans for secrets (AWS keys, OpenAI/Anthropic keys, GitHub tokens, Slack tokens, private key blocks) before the diff leaves your machine; warns interactively or fails hard in `--auto` mode.
 - **Conventional Commits format** — Generates `<type>(<scope>): <subject>` format by default. Configurable via `format: conventional` in `.phase2s.yaml` under the `commit:` key.
 - **`:commit` REPL command** — Generates a commit message from staged changes without entering a sub-flow; runs `git commit` directly if accepted.
 - **`scanForSecrets(diff)`** — Exported from `src/core/secrets.ts`. Scans only added lines (`+` prefix, excludes `+++` headers). Detects: AWS Access Key, AWS Secret Key, OpenAI API Key, OpenAI Project Key, Anthropic API Key, GitHub Personal/OAuth/App tokens, Slack Bot/User tokens, Private Key blocks.
