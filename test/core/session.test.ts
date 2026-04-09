@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -183,6 +183,104 @@ describe("migrateAll()", () => {
     expect(existsSync(join(dir, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.json"))).toBe(true);
     const manifest2 = JSON.parse(readFileSync(join(dir, "migration.json"), "utf-8")) as { entries: Array<{ done: boolean }> };
     expect(manifest2.entries.every((e) => e.done)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// migrateAll() — lockfile + path traversal guards (Phase 2)
+// ---------------------------------------------------------------------------
+
+describe("migrateAll() — lockfile", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-lock-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("skips and warns when lock file is already present (concurrent migration guard)", async () => {
+    // Pre-seed the lockfile to simulate another process holding the migration lock.
+    // (Two actual concurrent Node.js calls in the same process won't race —
+    // single-threaded; the pre-seeded approach is the reliable way to test this path.)
+    const dir = sessionsDir(tmpDir);
+    mkdirSync(dir, { recursive: true });
+    // Write a legacy file so migration would normally run
+    writeLegacySession(tmpDir, "2026-04-01.json", [{ role: "user", content: "hello" }]);
+    // Place the lock file before calling migrateAll
+    const lockPath = join(dir, "migration.json.lock");
+    writeFileSync(lockPath, "", "utf-8");
+
+    const stderrMessages: string[] = [];
+    const origConsoleError = console.error;
+    console.error = (...args: unknown[]) => stderrMessages.push(String(args[0]));
+    try {
+      await migrateAll(tmpDir);
+    } finally {
+      console.error = origConsoleError;
+    }
+
+    // Migration should have been skipped — no manifest written
+    expect(existsSync(join(dir, "migration.json"))).toBe(false);
+    // Warning should have been emitted
+    expect(stderrMessages.some((m) => /already in progress/i.test(m))).toBe(true);
+
+    // Clean up lock so afterEach rmSync works cleanly
+    unlinkSync(lockPath);
+  });
+
+  it("releases the lock after successful migration", async () => {
+    writeLegacySession(tmpDir, "2026-04-01.json", []);
+    await migrateAll(tmpDir);
+    const lockPath = join(sessionsDir(tmpDir), "migration.json.lock");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+});
+
+describe("migrateAll() — path traversal guards", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-traversal-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("skips manifest entries with path-traversal originalName", async () => {
+    const dir = sessionsDir(tmpDir);
+    mkdirSync(dir, { recursive: true });
+    // Write a crafted manifest with a traversal path
+    const maliciousManifest = {
+      version: 1,
+      entries: [
+        { originalName: "../../evil.json", newId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", done: false },
+      ],
+    };
+    writeFileSync(join(dir, "migration.json"), JSON.stringify(maliciousManifest), "utf-8");
+    // Should not throw and should not write anything outside sessions dir
+    await expect(migrateAll(tmpDir)).resolves.not.toThrow();
+    // The traversal target should not have been created
+    expect(existsSync(join(tmpDir, "evil.json"))).toBe(false);
+  });
+
+  it("skips manifest entries with non-UUID newId", async () => {
+    const dir = sessionsDir(tmpDir);
+    mkdirSync(dir, { recursive: true });
+    // Write a legacy file so the entry would otherwise be processed
+    writeLegacySession(tmpDir, "2026-04-01.json", [{ role: "user", content: "hello" }]);
+    const craftyManifest = {
+      version: 1,
+      entries: [
+        { originalName: "2026-04-01.json", newId: "../../evil", done: false },
+      ],
+    };
+    writeFileSync(join(dir, "migration.json"), JSON.stringify(craftyManifest), "utf-8");
+    await expect(migrateAll(tmpDir)).resolves.not.toThrow();
+    // No file at the traversal path should exist
+    expect(existsSync(join(tmpDir, "evil.json"))).toBe(false);
+    expect(existsSync(join(tmpDir, "..", "evil"))).toBe(false);
   });
 });
 

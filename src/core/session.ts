@@ -27,9 +27,10 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import { readdir, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
+import chalk from "chalk";
 import type { Message } from "../providers/types.js";
 import { Conversation } from "./conversation.js";
 
@@ -186,6 +187,46 @@ export async function migrateAll(cwd: string): Promise<void> {
   const dir = sessionsDir(cwd);
   const manifestPath = migrationManifestPath(cwd);
 
+  // Bail early: if sessions directory doesn't exist and no manifest, nothing to migrate.
+  // We check this before acquiring the lock so we don't need the dir to exist for
+  // writeFileSync(lockPath) to succeed (avoids ENOENT on lock creation).
+  let allEntries: string[] = [];
+  try {
+    allEntries = await readdir(dir);
+  } catch {
+    if (!existsSync(manifestPath)) {
+      return; // sessions dir doesn't exist yet — nothing to migrate
+    }
+    // Dir gone but manifest exists — crash recovery; continue without entry list
+  }
+
+  // Acquire a migration lock to prevent concurrent Phase2S instances from
+  // both running migration at the same time. POSIX "wx" flag is atomic.
+  const lockPath = manifestPath + ".lock";
+  try {
+    writeFileSync(lockPath, "", { flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      console.error(chalk.dim("Migration already in progress — skipping."));
+      return;
+    }
+    throw err; // ENOENT, EACCES = real error — propagate
+  }
+
+  try {
+    await migrateAllLocked(cwd, dir, manifestPath, allEntries);
+  } finally {
+    try { unlinkSync(lockPath); } catch { /* ignore — lock cleanup is best-effort */ }
+  }
+}
+
+/** Inner migration logic, called only after the lockfile is held. */
+async function migrateAllLocked(
+  cwd: string,
+  dir: string,
+  manifestPath: string,
+  allEntries: string[],
+): Promise<void> {
   // Read existing manifest (if any) for resumability
   let manifest: MigrationManifest | null = null;
   if (existsSync(manifestPath)) {
@@ -196,16 +237,9 @@ export async function migrateAll(cwd: string): Promise<void> {
     }
   }
 
-  // If no manifest, scan for legacy files
+  // If no manifest, build one from scanned legacy files
   if (!manifest) {
-    let entries: string[] = [];
-    try {
-      entries = await readdir(dir);
-    } catch {
-      return; // sessions dir doesn't exist yet — nothing to migrate
-    }
-
-    const legacyFiles = entries.filter((e) => /^\d{4}-\d{2}-\d{2}\.json$/.test(e));
+    const legacyFiles = allEntries.filter((e) => /^\d{4}-\d{2}-\d{2}\.json$/.test(e));
     if (legacyFiles.length === 0) return; // nothing to migrate
 
     // Create backup before touching anything
@@ -228,11 +262,27 @@ export async function migrateAll(cwd: string): Promise<void> {
   }
 
   // Process unfinished entries
+  // Hoist loop-invariant guards outside the loop.
+  const resolvedDir = resolve(dir);
+  const bareUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   let anyMigrated = false;
   for (const entry of manifest.entries) {
     if (entry.done) continue;
 
+    // Guard against path traversal: originalName must resolve inside dir.
+    // A crafted manifest could use "../../../etc/passwd" as originalName.
     const oldPath = join(dir, entry.originalName);
+    const resolvedOld = resolve(oldPath);
+    if (!resolvedOld.startsWith(resolvedDir + "/") && resolvedOld !== resolvedDir) {
+      console.error(chalk.yellow(`Skipping manifest entry with suspicious path: ${entry.originalName}`));
+      continue;
+    }
+    // Also validate newId is a UUID so sessionPath() doesn't escape the sessions dir
+    if (!bareUuidPattern.test(entry.newId)) {
+      console.error(chalk.yellow(`Skipping manifest entry with non-UUID newId: ${entry.newId}`));
+      continue;
+    }
+
     const newPath = sessionPath(cwd, entry.newId);
 
     // Skip if original file was already renamed (crash after rename but before manifest update)
@@ -283,7 +333,7 @@ export async function migrateAll(cwd: string): Promise<void> {
       messages,
     };
 
-    // Write new file, then rename old file to new name
+    // Write new file atomically, then retire old file
     const tmp = newPath + ".tmp";
     writeFileSync(tmp, JSON.stringify(v2, null, 2), { encoding: "utf-8", mode: 0o600 });
     renameSync(tmp, newPath);
@@ -323,7 +373,7 @@ export async function cloneSession(
   cwd: string,
   sourceId: string,
   branchName?: string,
-): Promise<{ id: string; path: string; messageCount: number; branchName: string }> {
+): Promise<{ id: string; path: string; messageCount: number; branchName: string; createdAt: string; updatedAt: string }> {
   const srcPath = sessionPath(cwd, sourceId);
 
   // Load the source session
@@ -350,6 +400,9 @@ export async function cloneSession(
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error(`Session not found: ${sourceId}`);
     }
+    if (err instanceof SyntaxError) {
+      throw new Error(`Session file is corrupted and cannot be cloned: ${srcPath}. Delete it or restore from backup.`);
+    }
     throw err;
   }
 
@@ -371,7 +424,7 @@ export async function cloneSession(
   await writeFile(tmp, JSON.stringify(v2, null, 2), { encoding: "utf-8", mode: 0o600 });
   renameSync(tmp, newPath);
 
-  return { id: newId, path: newPath, messageCount: messages.length, branchName: newMeta.branchName };
+  return { id: newId, path: newPath, messageCount: messages.length, branchName: newMeta.branchName, createdAt: newMeta.createdAt, updatedAt: newMeta.updatedAt };
 }
 
 // ---------------------------------------------------------------------------
@@ -412,7 +465,13 @@ export async function listSessions(cwd: string): Promise<Array<{ meta: SessionMe
         !Array.isArray(parsed) &&
         (parsed as Record<string, unknown>).schemaVersion === 2
       ) {
-        results.push({ meta: (parsed as SessionV2).meta, path: p });
+        const meta = (parsed as SessionV2).meta;
+        // Validate meta.id as UUID — prevents shell injection if a crafted file has
+        // shell metacharacters in meta.id (used as {2} in fzf --preview command).
+        if (!uuidPattern.test(`${meta.id}.json`)) {
+          continue;
+        }
+        results.push({ meta, path: p });
       }
     } catch {
       // Skip corrupted files
@@ -456,7 +515,7 @@ export async function getSessionPreview(path: string): Promise<string> {
  * Strip ANSI escape codes and ASCII control characters from a string.
  * Prevents terminal escape injection in fzf/table display.
  */
-function sanitizeForTerminal(s: string): string {
+export function sanitizeForTerminal(s: string): string {
   // Remove ANSI escape sequences (ESC[ ... m and similar)
   // eslint-disable-next-line no-control-regex
   return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/[\x00-\x1f\x7f]/g, " ").trim();

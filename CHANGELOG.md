@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.21.1 — 2026-04-09
+
+Sprint 45 — `:clone` correctness fixes and bash shell integration.
+
+### Fixed
+
+- **`:clone` conversation corruption** — After cloning a session, the agent was loading the cloned conversation verbatim, which replaced the live tool list (from the current system prompt) with the snapshot baked into the cloned session. Fixed via `Agent.setConversation()`: strips any system message from the incoming conversation, re-prepends the agent's own current system prompt, then sets the merged message list. Tool calls now work correctly after `:clone`.
+- **`:clone` timestamp drift** — The `:clone` REPL handler was calling `new Date()` to set `sessionMeta.createdAt`/`updatedAt` after `cloneSession()` already wrote different timestamps to disk. The two timestamps could differ by milliseconds. Fixed by extending the `cloneSession()` return value to include `createdAt` and `updatedAt` from the written metadata, and using those values directly in the handler.
+- **`migrateAll` concurrent execution** — Two Phase2S processes starting simultaneously on the same project could both run the migration. Fixed with a POSIX exclusive-create lockfile (`{ flag: "wx" }`): the second process detects `EEXIST` and skips with a dim console message. The lock is always released in a `finally` block.
+- **`migrateAll` path traversal** — A crafted migration manifest entry (e.g., `originalName: "../../etc/passwd"`) could escape the sessions directory. Fixed with `resolve()` + `startsWith(resolvedDir + "/")` guard on `originalName` and a UUID regex guard on `newId`. Suspicious entries are skipped with a yellow console warning.
+- **SIGINT data loss on exit** — The previous `writeFileSync` in the SIGINT handler was not atomic: a crash mid-write would leave a truncated session file. Fixed with a tmp-file+rename pattern. If the rename fails, the tmp file is removed and a warning is written to stderr. The session file on disk is never left in a partial state.
+
+### Added
+
+- **Bash shell integration** — `phase2s setup --bash` installs a bash integration script to `~/.phase2s/phase2s-bash.sh` and sources it from `~/.bash_profile`. Provides the same `: <prompt>` shorthand and `p2` alias as the ZSH integration, plus bash tab completion for all subcommands. Idempotent (safe to re-run). Login shell caveat documented: for non-login bash (VS Code integrated terminal, etc.), also source from `~/.bashrc`.
+- **`Conversation.fromMessages()`** — New static factory for creating a `Conversation` directly from a messages array, without JSON parsing. Used by `Agent.setConversation()` internally; available for other callers that construct conversations programmatically.
+- **`Agent.setConversation()`** — Public method to replace the agent's current conversation while preserving its system prompt. Strips any system message from the incoming conversation before merging.
+
+---
+
 ## v1.21.0 — 2026-04-09
 
 Sprint 44 — Git for Conversations. Sessions are now a DAG you can browse and fork.

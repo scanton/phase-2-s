@@ -2,8 +2,8 @@ import { Command } from "commander";
 import { createInterface } from "node:readline";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { access, constants, readdir } from "node:fs/promises";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { access, constants } from "node:fs/promises";
+import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
@@ -55,7 +55,7 @@ async function findLatestSession(): Promise<string | null> {
   if (!state?.currentSessionId) return null;
   const path = join(SESSION_DIR, `${state.currentSessionId}.json`);
   try {
-    await import("node:fs/promises").then(({ access, constants }) => access(path, constants.R_OK));
+    await access(path, constants.R_OK);
     return path;
   } catch {
     return null; // state.json pointed to a deleted/moved file
@@ -624,6 +624,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   let sessionId: string;
   let resumedConversation: Conversation | undefined;
   let sessionMeta: SessionMeta;
+  let loadedResumeMeta: SessionMeta | undefined;
 
   if (opts.resume) {
     const latestPath = await findLatestSession();
@@ -632,6 +633,23 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         resumedConversation = await Conversation.load(latestPath);
         const state = readReplState(process.cwd());
         sessionId = state?.currentSessionId ?? randomUUID();
+        // Preserve DAG metadata (parentId, branchName, createdAt) from the resumed file.
+        // Without this, sessionMeta is always re-initialized with parentId:null which
+        // destroys the clone lineage on the first save after --resume.
+        try {
+          const raw = JSON.parse(readFileSync(latestPath, "utf-8"));
+          // Validate required fields before trusting the on-disk shape.
+          // An empty object or partial meta would silently corrupt sessionMeta.id/createdAt.
+          if (
+            raw?.schemaVersion === 2 &&
+            raw.meta &&
+            typeof raw.meta.id === "string" &&
+            typeof raw.meta.branchName === "string" &&
+            typeof raw.meta.createdAt === "string"
+          ) {
+            loadedResumeMeta = raw.meta as SessionMeta;
+          }
+        } catch { /* fall through to defaults below */ }
         console.log(chalk.dim(`Resuming session (${resumedConversation.length} messages)\n`));
       } catch {
         console.log(chalk.yellow("Warning: Could not load previous session. Starting fresh.\n"));
@@ -646,13 +664,18 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   }
 
   const now = new Date().toISOString();
-  sessionMeta = {
-    id: sessionId,
-    parentId: null,
-    branchName: "main",
-    createdAt: now,
-    updatedAt: now,
-  };
+  if (loadedResumeMeta) {
+    // Restore the full DAG metadata from the resumed session, updating only updatedAt.
+    sessionMeta = { ...loadedResumeMeta, updatedAt: now };
+  } else {
+    sessionMeta = {
+      id: sessionId,
+      parentId: null,
+      branchName: "main",
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
 
   // Record this as the active session
   writeReplState(process.cwd(), { currentSessionId: sessionId });
@@ -708,11 +731,15 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
 
   rl.on("SIGINT", () => {
     process.stdout.write("\n");
-    // Synchronous save before exit — async operations can't complete after process.exit().
+    // Atomic synchronous save before exit — async operations can't complete after process.exit().
+    // tmp → rename ensures the session file is never left partially written.
+    // mkdirSync is inside the try so any EACCES/EROFS propagates to the catch instead of
+    // crashing the SIGINT handler with an unhandled exception.
+    const tmp = activeSessionPath + ".tmp." + process.pid;
     try {
       mkdirSync(resolve(activeSessionPath, ".."), { recursive: true });
       writeFileSync(
-        activeSessionPath,
+        tmp,
         JSON.stringify({
           schemaVersion: 2,
           meta: { ...sessionMeta, updatedAt: new Date().toISOString() },
@@ -720,8 +747,11 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         }, null, 2),
         { encoding: "utf-8", mode: 0o600 },
       );
+      renameSync(tmp, activeSessionPath);
     } catch {
-      // Best-effort — don't block exit on save failure
+      // Clean up the tmp file if write succeeded but rename failed (or if write itself failed)
+      try { rmSync(tmp, { force: true }); } catch { /* ignore */ }
+      process.stderr.write("Warning: session save failed on exit — last turn may not be saved.\n");
     }
     log.info("Goodbye!");
     rl.close();
@@ -778,23 +808,33 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         console.log(chalk.dim("Get a UUID from: phase2s conversations"));
         continue;
       }
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!UUID_RE.test(sourceId)) {
+        console.log(chalk.red("Invalid session ID: must be a UUID (get one from: phase2s conversations)"));
+        continue;
+      }
       process.stdout.write(chalk.cyan("Branch name (press Enter for default): "));
       const branchInput = await nextLine();
       const branchName = branchInput?.trim() || undefined;
       try {
         const result = await cloneSession(process.cwd(), sourceId, branchName);
         // Switch the active session to the new clone.
-        // Use result.branchName — cloneSession owns the default formula, avoids timezone skew.
+        // Use timestamps from cloneSession() — they match what was written to disk.
+        // Calling new Date() here would drift from the on-disk createdAt.
         sessionMeta = {
           id: result.id,
           parentId: sourceId,
           branchName: result.branchName,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: result.createdAt,
+          updatedAt: result.updatedAt,
         };
         activeSessionPath = result.path;
         writeReplState(process.cwd(), { currentSessionId: result.id });
-        // The agent's in-memory conversation continues; future saves go to the new file.
+        // Load the cloned session into the agent, preserving the current system prompt.
+        // Without this, the agent continues from its in-memory conversation which diverges
+        // from the clone file on the next :clone or --resume.
+        const clonedConv = await Conversation.load(result.path);
+        agent.setConversation(clonedConv);
         console.log(chalk.green(`Cloned ${sourceId.slice(0, 8)}... → ${result.id.slice(0, 8)}... (${result.messageCount} messages inherited)`));
         console.log(chalk.dim(`Branch: ${result.branchName}`));
       } catch (err) {

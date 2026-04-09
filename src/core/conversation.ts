@@ -68,6 +68,18 @@ export class Conversation {
   }
 
   /**
+   * Create a Conversation directly from an array of messages.
+   * No validation — caller is responsible for message integrity.
+   * Used by Agent.setConversation() to splice in a loaded session's
+   * messages while preserving the agent's current system prompt.
+   */
+  static fromMessages(messages: Message[]): Conversation {
+    const conv = new Conversation();
+    conv.messages = [...messages];
+    return conv;
+  }
+
+  /**
    * Deserialize a conversation from a JSON file.
    *
    * Handles two session formats:

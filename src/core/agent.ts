@@ -77,6 +77,27 @@ export class Agent {
   }
 
   /**
+   * Replace the agent's active conversation with messages from a loaded session,
+   * preserving the agent's current system prompt.
+   *
+   * The loaded session's messages may contain a system prompt from a different run
+   * (different tools, different config). Keeping it would corrupt the current agent's
+   * tool list and behavior. Instead, strip any system messages from the incoming
+   * conversation and prepend this agent's own system message.
+   *
+   * Used by :clone to switch the agent to the forked session without reinitializing.
+   */
+  setConversation(conv: Conversation): void {
+    const currentMessages = this.conversation.getMessages();
+    const systemMsg = currentMessages.find((m) => m.role === "system");
+    const nonSystemMessages = conv.getMessages().filter((m) => m.role !== "system");
+    // Shallow-copy systemMsg to avoid aliasing: the merged array and the caller's
+    // getMessages() copy would otherwise share the same Message object reference.
+    const merged = systemMsg ? [{ ...systemMsg }, ...nonSystemMessages] : nonSystemMessages;
+    this.conversation = Conversation.fromMessages(merged);
+  }
+
+  /**
    * Resolve a model alias ("fast" | "smart") to an actual model ID using config.
    * Falls back to config.model if alias not configured.
    */

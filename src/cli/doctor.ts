@@ -346,6 +346,20 @@ export function checkShellPlugin(
     };
   }
 
+  // Write-permission check: verify phase2sDir is writable so future upgrades work.
+  // Placed here (after plugin-exists confirmation) so we only warn when the dir
+  // already exists — we don't try to create it from doctor.
+  try {
+    accessSync(phase2sDir, constants.W_OK);
+  } catch {
+    return {
+      name: "Shell integration",
+      ok: false,
+      detail: `Plugin installed but ${phase2sDir} is not writable`,
+      fix: `Run: chmod u+w "${phase2sDir}"  (needed for phase2s setup upgrades)`,
+    };
+  }
+
   // Check ~/.zshrc contains the source line.
   // Accept both the $HOME-relative form (v1.20.0+) and the legacy absolute
   // path form (pre-1.20.0) for backwards compatibility.

@@ -52,6 +52,21 @@ export function bundledShellPluginPath(): string {
 }
 
 /**
+ * Return the absolute path to the bundled Bash shell plugin shipped inside the
+ * npm package at .phase2s/shell/phase2s-bash.sh.
+ *
+ * Same path arithmetic as bundledShellPluginPath — three levels up from
+ * dist/src/skills/loader.js gives the package root.
+ *
+ * Tests must vi.mock this module to return the correct source path.
+ */
+export function bundledBashPluginPath(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  const pkgRoot = resolve(dirname(thisFile), "../../..");
+  return join(pkgRoot, ".phase2s", "shell", "phase2s-bash.sh");
+}
+
+/**
  * Load skills from SKILL.md files in a directory.
  *
  * Follows a convention similar to gstack: each skill is a directory

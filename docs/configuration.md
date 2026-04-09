@@ -370,7 +370,8 @@ Commands:
   lint <spec.md>           Validate a spec file before running it
   report <log.jsonl>       Show a formatted run summary
   init                     Interactive setup wizard
-  setup                    Install ZSH shell integration (plugin + .zshrc source line)
+  setup                    Install shell integration (ZSH by default)
+    --bash                 Install bash integration to ~/.phase2s/phase2s-bash.sh
     --dry-run              Preview what would be installed without writing files
   template                 Manage spec templates
     list                   Show all bundled templates with descriptions

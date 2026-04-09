@@ -8,18 +8,18 @@
 
 ## Backlog — Post-Sprint 44 eng review findings (2026-04-08)
 
-- [ ] **Session index file for `conversations` performance** — `phase2s conversations` scans and parses every session JSON on each run. At 100+ sessions this becomes 200-500ms of unnecessary I/O. Add `.phase2s/sessions/index.json` caching `{id, createdAt, branchName, firstMessage}` per session, updated on every `saveSession()` call and `cloneSession()`. Makes `conversations` launch instantaneous. Depends on: Sprint 44 session storage (v1.21.0) shipped first. Target: Sprint 45.
+- [ ] **Session index file for `conversations` performance** — `phase2s conversations` scans and parses every session JSON on each run. At 100+ sessions this becomes 200-500ms of unnecessary I/O. Add `.phase2s/sessions/index.json` caching `{id, createdAt, branchName, firstMessage}` per session, updated on every `saveSession()` call and `cloneSession()`. Makes `conversations` launch instantaneous. Depends on: Sprint 44 session storage (v1.21.0) shipped first. Target: Sprint 46.
 
-- [ ] **Concurrency lock on `state.json`** — Two Phase2S REPL instances (split-terminal, same project dir) race on `currentSessionId` in `.phase2s/state.json`. Last writer wins and silently breaks the other instance's session continuity. Fix: atomic compare-and-swap write on `state.json`, or per-session state tracked in the session file itself (no shared mutable file). Affects users with multiple terminal tabs open simultaneously. Depends on: Sprint 44 session storage. Target: Sprint 45.
+- [ ] **Concurrency lock on `state.json`** — Two Phase2S REPL instances (split-terminal, same project dir) race on `currentSessionId` in `.phase2s/state.json`. Last writer wins and silently breaks the other instance's session continuity. Fix: atomic compare-and-swap write on `state.json`, or per-session state tracked in the session file itself (no shared mutable file). Affects users with multiple terminal tabs open simultaneously. Depends on: Sprint 44 session storage. Target: Sprint 46.
 
-- [ ] **DAG integrity check in `phase2s doctor`** — After `:clone` creates a session with `parentId`, dangling references can occur if the parent file is deleted manually. Add a `doctor` check that scans all session files, validates each `parentId` resolves to an existing file, and reports orphaned or dangling branches. Natural companion to tree visualization. Depends on: Sprint 44 session storage + Sprint 45 tree viz. Target: Sprint 45.
+- [ ] **DAG integrity check in `phase2s doctor`** — After `:clone` creates a session with `parentId`, dangling references can occur if the parent file is deleted manually. Add a `doctor` check that scans all session files, validates each `parentId` resolves to an existing file, and reports orphaned or dangling branches. Natural companion to tree visualization. Depends on: Sprint 44 session storage + Sprint 45 tree viz. Target: Sprint 46.
 
 ---
 
 ## Sprint 44 Backlog — ZSH plugin follow-ons (from Sprint 43 eng review)
 
-- [ ] **Bash shell support** — `phase2s setup --bash` adds a `p2()` function snippet to `~/.bash_profile`. Sprint 43 ships ZSH only; `p2` alias in the plugin file is ZSH-only. Bash users need a separate install path. (Depends on: Sprint 43 shipping.)
-- [ ] **`checkShellPlugin()` write-permission check** — Add `accessSync(zshrc, constants.W_OK)` to `checkShellPlugin()` in `doctor.ts` so `phase2s doctor` warns proactively if `~/.zshrc` isn't writable before the user tries `phase2s setup`. Low effort, good UX. (Depends on: Sprint 43 shipping.)
+- [x] **Bash shell support** — `phase2s setup --bash` installs `~/.phase2s/phase2s-bash.sh` (`: <prompt>` shorthand, `p2` alias, tab completion) and sources it from `~/.bash_profile`. Idempotent. **Completed:** v1.21.1 (2026-04-09)
+- [x] **`checkShellPlugin()` write-permission check** — `accessSync(phase2sDir, constants.W_OK)` added to `checkShellPlugin()` in `doctor.ts`. Reports "not writable" with a `chmod` fix hint if the `.phase2s/` directory lacks write access. **Completed:** v1.21.1 (2026-04-09)
 
 ---
 
@@ -805,3 +805,15 @@ These were flagged but not fixed — they need deeper analysis before touching.
 - Plugin system — third-party skills installable via npm
 - Team mode — shared skill library + shared session history for a dev team
 - Self-hosting — run phase2s as a web service with a REST API
+
+---
+
+## Sprint 45 follow-ons (from /plan-eng-review 2026-04-09)
+
+- [ ] **Bash doctor parity** — `doctor.ts` currently only checks ZSH plugin (via `checkShellPlugin()`). After Sprint 45 ships bash support, add `checkBashPlugin()` that verifies `~/.phase2s/phase2s-bash.sh` is installed and sourced in the detected profile file (`~/.bash_profile` or `~/.bashrc`). Same structure as existing `checkShellPlugin()`. Blocked by: Sprint 45 bash support shipping first. Target: Sprint 46.
+
+- [ ] **migrateAll symlink escape** — lexical regex validation on `originalName`/`newId` doesn't prevent symlink targets pointing outside the sessions dir. A symlink named `2024-01-01.json` pointing to `/etc/passwd` passes the regex. Fix: after `path.join()`, call `realpathSync()` on the resolved path and verify it starts with `sessionsDir`. Severity LOW (requires write access to the sessions dir to exploit). Blocked by: Sprint 45 migrateAll hardening. Target: Sprint 46.
+
+- [ ] **migrateAll stale lockfile on SIGKILL** — If a Phase2S process is killed with SIGKILL while migration is running, the `finally` block never executes and `.phase2s/sessions/migration.json.lock` is never cleaned up. Every subsequent startup detects EEXIST and silently skips migration forever. Fix: use mtime-based TTL (steal lock if > 60s old) or write `process.pid` to the lockfile and check liveness on EEXIST with `process.kill(pid, 0)`. Currently requires manual deletion of the stale lockfile to recover. Severity LOW in practice (SIGKILL during startup window only). Target: Sprint 46.
+
+- [ ] **Bash `:()` override — `${VAR:=default}` incompatibility** — The bash plugin shadows the `:` builtin. Patterns like `: ${JAVA_HOME:=/usr/lib/jvm/default}` in `.bash_profile` expand before the function call, passing the expanded value to `phase2s run` instead of being a no-op. Users with this pattern should switch to `export VAR=${VAR:-default}` syntax. Document in `phase2s setup --bash` output and getting-started.md. Same inherent trade-off as the ZSH override. Target: Sprint 46 docs pass.

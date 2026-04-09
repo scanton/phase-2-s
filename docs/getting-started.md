@@ -136,9 +136,11 @@ Get your key at [platform.minimax.io](https://platform.minimax.io/). Default mod
 
 ---
 
-## Shell integration (ZSH) — optional but recommended
+## Shell integration — optional but recommended
 
-Run `phase2s setup` once to install the ZSH plugin. This lets you skip the REPL entirely and invoke Phase2S from any terminal prompt using the `:` shorthand:
+Phase2S supports ZSH (default) and Bash. Run `phase2s setup` once to install the plugin for your shell.
+
+### ZSH
 
 ```bash
 phase2s setup
@@ -158,6 +160,26 @@ p2 suggest "find large log files"
 > **Tip:** Use `source ~/.phase2s/phase2s.plugin.zsh` to activate in the current shell, not `source ~/.zshrc` — sourcing the plugin directly is more reliable than re-running your entire `.zshrc`.
 
 ZSH tab completion for all Phase2S subcommands is included automatically.
+
+### Bash
+
+```bash
+phase2s setup --bash
+
+# Activate in the current shell:
+source ~/.phase2s/phase2s-bash.sh
+
+# Then from any directory:
+: fix the null check in auth.ts
+: what does this codebase do?
+p2 suggest "find large log files"
+```
+
+`phase2s setup --bash` copies the script to `~/.phase2s/phase2s-bash.sh` and adds a `source` line to `~/.bash_profile`.
+
+> **Note:** `~/.bash_profile` is sourced only in **login shells**. VS Code's integrated terminal and other non-login bash instances use `~/.bashrc`. If you use non-login bash, also add `source "$HOME/.phase2s/phase2s-bash.sh" # phase2s bash integration` to `~/.bashrc`.
+
+Bash tab completion for all Phase2S subcommands is included automatically.
 
 ---
 
