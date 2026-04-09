@@ -21,7 +21,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, unlinkSync, existsSync, rmdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, unlinkSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import chalk from "chalk";
@@ -54,6 +54,9 @@ export interface CommitFlowOptions {
 
 /** Maximum number of diff lines to send to the model. */
 const MAX_DIFF_LINES = 4000;
+
+/** Maximum diff size in bytes (512 KB). Guards against large single-line files (minified JS, base64 blobs). */
+const MAX_DIFF_BYTES = 512 * 1024;
 
 /** Conventional commit prompt sent to the fast model. */
 const COMMIT_PROMPT = (diff: string, format: string) =>
@@ -176,7 +179,15 @@ export async function buildCommitMessage(
     throw new Error("Nothing staged. Run `git add <files>` first.");
   }
 
-  // Step 4: enforce 4000-line cap
+  // Step 4: enforce size caps — line count and byte size
+  // Byte check first: catches large single-line files (minified JS, base64 blobs)
+  // that would pass the line-count check but send megabytes to the LLM.
+  if (diff.length > MAX_DIFF_BYTES) {
+    const kb = Math.round(diff.length / 1024);
+    throw new Error(
+      `Diff too large for auto-generation (${kb} KB). Stage a smaller set of changes.`,
+    );
+  }
   const lineCount = diff.split("\n").length;
   if (lineCount > MAX_DIFF_LINES) {
     throw new Error(
@@ -190,7 +201,7 @@ export async function buildCommitMessage(
     if (secrets.length > 0) {
       const names = [...new Set(secrets.map((s) => s.name))].join(", ");
       throw new SecretWarningError(
-        `Possible secret detected in diff (${names}). Use --send-anyway to proceed, or cancel and unstage the file.`,
+        `Possible secret detected in diff (${names}). Choose [s]end anyway to proceed, or cancel and unstage the file.`,
         secrets,
       );
     }
@@ -206,10 +217,16 @@ export async function buildCommitMessage(
 
   // Take the first non-empty line only — the model occasionally returns multi-line
   // responses despite instructions. A multi-line git commit -m message creates an
-  // unexpected body, and NUL bytes in the raw string cause Node spawnSync to throw.
-  const message = raw.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  // unexpected body, and NUL bytes cause Node spawnSync to throw or silently truncate
+  // the message at the C-string level.
+  const message = (raw.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "")
+    .replace(/\0/g, ""); // strip NUL bytes — spawnSync behavior on NUL varies by OS
   if (!message) {
     return null;
+  }
+
+  if (message.length > 72) {
+    console.warn(chalk.yellow(`⚠  Message is ${message.length} chars (recommended max 72). Consider editing.`));
   }
 
   return { message, diffStat: diffStat || "(initial commit)" };
@@ -241,6 +258,11 @@ export async function runCommitFlow(
   config: Config,
   opts: CommitFlowOptions = {},
 ): Promise<void> {
+  if (opts.auto && opts.preview) {
+    console.error(chalk.red("✗ --auto and --preview are mutually exclusive."));
+    process.exit(1);
+  }
+
   let result: CommitMessageResult | null = null;
   let secretsSendAnyway = false;
 
@@ -384,6 +406,13 @@ async function openEditor(initialMessage: string): Promise<string | null> {
     // Open editor (spawnSync so we inherit stdin/stdout for interactive editing)
     const result = spawnSync(editorParts[0], [...editorParts.slice(1), tmpFile], { stdio: "inherit" });
 
+    if (result.error) {
+      // ENOENT means the editor binary was not found — surface it rather than silently cancelling
+      const code = (result.error as NodeJS.ErrnoException).code ?? "ERR";
+      console.error(chalk.red(`✗ Could not launch editor (${code}): ${editorParts[0]}`));
+      console.error(chalk.dim("  Check your $EDITOR or $VISUAL environment variable."));
+      return null;
+    }
     if (result.status !== 0) {
       return null; // Editor exited non-zero → treat as cancel
     }
@@ -395,11 +424,10 @@ async function openEditor(initialMessage: string): Promise<string | null> {
     const edited = readFileSync(tmpFile, "utf8").trim();
     return edited || null; // empty file → cancel
   } finally {
-    if (tmpFile && existsSync(tmpFile)) {
-      try { unlinkSync(tmpFile); } catch { /* best effort */ }
-    }
+    // rmSync with recursive + force handles editor swap files (vim: .COMMIT_EDITMSG.swp,
+    // emacs: COMMIT_EDITMSG~) that would cause rmdirSync to fail on non-empty dir.
     if (tmpDir && existsSync(tmpDir)) {
-      try { rmdirSync(tmpDir); } catch { /* best effort */ }
+      try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
     }
   }
 }

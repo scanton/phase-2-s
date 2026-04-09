@@ -27,7 +27,7 @@ vi.mock("../../src/cli/prompt-util.js", () => ({
 // Import the module under test AFTER mocks are declared
 // ---------------------------------------------------------------------------
 import { Agent } from "../../src/core/agent.js";
-import { buildCommitMessage, runCommitFlow, SecretWarningError } from "../../src/cli/commit.js";
+import { buildCommitMessage, runCommitFlow, runGitCommit, SecretWarningError } from "../../src/cli/commit.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -415,5 +415,145 @@ describe("runCommitFlow() — null-model interactive fallback", () => {
       (c: string[]) => c[0] === "git" && c[1][0] === "commit",
     );
     expect(commitCall).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runCommitFlow() — SecretWarningError [s]end anyway path
+// ---------------------------------------------------------------------------
+
+describe("runCommitFlow() — secret [s]end anyway path", () => {
+  beforeEach(() => {
+    resetMocks();
+  });
+
+  // 24. Secret detected → user chooses [s]end anyway → commits
+  it("[s]end anyway bypasses SecretWarningError and commits", async () => {
+    const diffWithSecret = makeStagedDiff() + "\n+const key = 'AKIAIOSFODNN7EXAMPLE';";
+    setupSpawnMocks({ diff: diffWithSecret });
+    // First ask(): secret prompt → "s", second ask(): main prompt → "a"
+    askMock
+      .mockResolvedValueOnce("s")
+      .mockResolvedValueOnce("a");
+    await runCommitFlow(makeConfig());
+    const commitCall = spawnSyncMock.mock.calls.find(
+      (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+    );
+    expect(commitCall).toBeDefined();
+  });
+
+  // 25. Secret detected → user chooses [c]ancel → no commit
+  it("[c]ancel on secret warning does not commit", async () => {
+    const diffWithSecret = makeStagedDiff() + "\n+const key = 'AKIAIOSFODNN7EXAMPLE';";
+    setupSpawnMocks({ diff: diffWithSecret });
+    askMock.mockResolvedValueOnce("c");
+    await runCommitFlow(makeConfig());
+    const commitCall = spawnSyncMock.mock.calls.find(
+      (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+    );
+    expect(commitCall).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// openEditor() — with $EDITOR set
+// ---------------------------------------------------------------------------
+
+describe("runCommitFlow() — openEditor() with $EDITOR set", () => {
+  beforeEach(() => {
+    resetMocks();
+  });
+
+  // 26. $EDITOR set, editor exits 0, file written → commits edited message
+  it("[e]dit with $EDITOR set reads edited file and commits it", async () => {
+    process.env.EDITOR = "/usr/bin/true"; // any non-empty value
+    try {
+      // spawnSync mock: for the editor call (first non-git spawnSync after git calls),
+      // return status 0. Then the code reads tmpFile. We need to mock fs.readFileSync.
+      // Instead: intercept spawnSync to capture the tmpFile path and write to it.
+      let capturedTmpFile: string | null = null;
+      spawnSyncMock.mockImplementation((_cmd: string, args: string[]) => {
+        const arg = args.join(" ");
+        if (arg.includes("--git-dir")) return GIT_OK(".git");
+        if (arg.includes("rev-parse HEAD")) return GIT_OK("abc1234");
+        if (arg.includes("--cached --stat")) return GIT_OK("src/hello.ts | 5 +++++\n 1 file changed");
+        if (arg.includes("--cached")) return GIT_OK(makeStagedDiff());
+        if (arg.startsWith("commit")) return GIT_OK("[main abc] feat: add edited thing");
+        // Editor call: capture the tmpFile path and write the edited message to it
+        capturedTmpFile = args[args.length - 1];
+        const { writeFileSync } = require("node:fs");
+        writeFileSync(capturedTmpFile, "feat: edited via real editor");
+        return GIT_OK();
+      });
+      askMock.mockResolvedValueOnce("e"); // main prompt → [e]dit
+      await runCommitFlow(makeConfig());
+      const commitCall = spawnSyncMock.mock.calls.find(
+        (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+      );
+      expect(commitCall).toBeDefined();
+      expect(commitCall![1]).toContain("feat: edited via real editor");
+      expect(capturedTmpFile).not.toBeNull();
+    } finally {
+      delete process.env.EDITOR;
+    }
+  });
+
+  // 27. $EDITOR set, editor exits non-zero → commit cancelled
+  it("[e]dit with editor that exits non-zero cancels commit", async () => {
+    process.env.EDITOR = "/usr/bin/false";
+    try {
+      spawnSyncMock.mockImplementation((_cmd: string, args: string[]) => {
+        const arg = args.join(" ");
+        if (arg.includes("--git-dir")) return GIT_OK(".git");
+        if (arg.includes("rev-parse HEAD")) return GIT_OK("abc1234");
+        if (arg.includes("--cached --stat")) return GIT_OK("src/hello.ts | 5 +++++");
+        if (arg.includes("--cached")) return GIT_OK(makeStagedDiff());
+        if (arg.startsWith("commit")) return GIT_OK();
+        // Editor call: return non-zero status
+        return GIT_FAIL();
+      });
+      askMock.mockResolvedValueOnce("e"); // main prompt → [e]dit
+      await runCommitFlow(makeConfig());
+      const commitCall = spawnSyncMock.mock.calls.find(
+        (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+      );
+      expect(commitCall).toBeUndefined();
+    } finally {
+      delete process.env.EDITOR;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runGitCommit() — direct unit tests
+// ---------------------------------------------------------------------------
+
+describe("runGitCommit()", () => {
+  beforeEach(() => {
+    resetMocks();
+  });
+
+  // 28. Successful commit → ok=true, output contains stdout
+  it("returns ok=true and stdout on successful commit", () => {
+    spawnSyncMock.mockReturnValue(GIT_OK("[main abc1234] feat: add thing", ""));
+    const { ok, output } = runGitCommit("feat: add thing");
+    expect(ok).toBe(true);
+    expect(output).toContain("[main abc1234]");
+  });
+
+  // 29. Failed commit → ok=false, output contains stderr
+  it("returns ok=false and stderr on failed commit", () => {
+    spawnSyncMock.mockReturnValue(GIT_FAIL("", "error: pre-commit hook failed"));
+    const { ok, output } = runGitCommit("feat: add thing");
+    expect(ok).toBe(false);
+    expect(output).toContain("pre-commit hook failed");
+  });
+
+  // 30. Both stdout and stderr populated → output joins them
+  it("joins stdout and stderr in output", () => {
+    spawnSyncMock.mockReturnValue(GIT_FAIL("some stdout", "some stderr"));
+    const { output } = runGitCommit("feat: add thing");
+    expect(output).toContain("some stdout");
+    expect(output).toContain("some stderr");
   });
 });
