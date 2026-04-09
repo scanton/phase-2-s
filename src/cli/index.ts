@@ -401,6 +401,19 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       await runTemplateUse(name, process.cwd());
     });
 
+  // AI-generated commit messages
+  program
+    .command("commit")
+    .description("Generate an AI commit message for staged changes")
+    .option("--auto", "Commit immediately without confirmation (non-interactive, CI-safe)")
+    .option("--preview", "Show proposed message only — do not commit")
+    .action(async (cmdOpts: { auto?: boolean; preview?: boolean }) => {
+      const opts = program.opts();
+      const config = await loadConfig({ provider: opts.provider, model: opts.model });
+      const { runCommitFlow } = await import("./commit.js");
+      await runCommitFlow(config, { auto: cmdOpts.auto, preview: cmdOpts.preview });
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")
@@ -839,6 +852,69 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         console.log(chalk.dim(`Branch: ${result.branchName}`));
       } catch (err) {
         log.error(err instanceof Error ? err.message : String(err));
+      }
+      continue;
+    }
+
+    // :commit — generate an AI commit message for staged changes from inside the REPL
+    if (trimmed === ":commit" || trimmed.startsWith(":commit ")) {
+      try {
+        const { buildCommitMessage, runCommitFlow, SecretWarningError } = await import("./commit.js");
+        // buildCommitMessage() creates its own ephemeral Agent — the REPL conversation is never touched.
+        let result = await buildCommitMessage(config).catch((err) => {
+          if (err instanceof SecretWarningError) throw err;
+          console.log(chalk.red(`✗ ${err.message}`));
+          return undefined;
+        });
+        if (result === undefined) { continue; }
+        if (result === null) {
+          console.log(chalk.yellow("Model returned no message. Try again or commit manually with git commit."));
+          continue;
+        }
+        console.log(chalk.bold("\nProposed commit message:"));
+        console.log(chalk.cyan(`  ${result.message}`));
+        console.log(chalk.dim(`\nStaged changes:\n${result.diffStat}`));
+        console.log();
+        // Use runCommitFlow's interactive path but pass the already-built result
+        // via a mini re-implementation of the prompt (avoids calling buildCommitMessage again)
+        const { createRl: makeRl, ask: askUser } = await import("./prompt-util.js");
+        const rl2 = makeRl();
+        try {
+          const answer = await askUser(rl2, "[a]ccept / [e]dit / [c]ancel: ");
+          const key = answer.toLowerCase().trim();
+          if (key.startsWith("a") || key === "") {
+            // Run git commit inline via spawnSync
+            const { spawnSync } = await import("node:child_process");
+            const commitResult = spawnSync("git", ["commit", "-m", result.message], { encoding: "utf8", stdio: "pipe" });
+            const out = [commitResult.stdout, commitResult.stderr].filter(Boolean).join("\n").trim();
+            if (commitResult.status === 0) {
+              console.log(chalk.green(`✓ Committed: ${result.message}`));
+              if (out) console.log(chalk.dim(out));
+            } else {
+              console.log(chalk.red("✗ Commit failed:"));
+              if (out) console.log(out);
+            }
+          } else if (key.startsWith("e")) {
+            // Delegate edit+commit to runCommitFlow's openEditor via the full flow
+            // with --preview=false, --auto=false — but we have to re-derive the message.
+            // Simplest: call runCommitFlow fresh (it will rebuild the message).
+            rl2.close();
+            console.log(chalk.dim("Opening editor..."));
+            await runCommitFlow(config, {});
+            continue;
+          } else {
+            console.log(chalk.dim("Commit cancelled."));
+          }
+        } finally {
+          rl2.close();
+        }
+      } catch (err: unknown) {
+        const { SecretWarningError } = await import("./commit.js");
+        if (err instanceof SecretWarningError) {
+          console.log(chalk.yellow(`\n⚠  ${err.message}`));
+        } else {
+          console.log(chalk.red(`✗ ${(err as Error).message}`));
+        }
       }
       continue;
     }

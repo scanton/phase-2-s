@@ -59,6 +59,14 @@ const configSchema = z.object({
    */
   browser: z.boolean().default(false),
   /**
+   * Settings for `phase2s commit`.
+   * `format: "conventional"` generates Conventional Commits format (the only supported
+   * value in this release; "free-form" will be added in a future sprint).
+   */
+  commit: z.object({
+    format: z.literal("conventional").default("conventional"),
+  }).optional(),
+  /**
    * Notification settings for dark factory runs.
    * `mac: true` sends a macOS system notification via osascript (macOS only).
    * `slack` is a Slack incoming webhook URL.
