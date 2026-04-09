@@ -13,7 +13,6 @@
 - [ ] **Concurrency lock on `state.json`** — Two Phase2S REPL instances (split-terminal, same project dir) race on `currentSessionId` in `.phase2s/state.json`. Last writer wins and silently breaks the other instance's session continuity. Fix: atomic compare-and-swap write on `state.json`, or per-session state tracked in the session file itself (no shared mutable file). Affects users with multiple terminal tabs open simultaneously. Depends on: Sprint 44 session storage. Target: Sprint 47.
 
 - [ ] **DAG integrity check in `phase2s doctor`** — After `:clone` creates a session with `parentId`, dangling references can occur if the parent file is deleted manually. Add a `doctor` check that scans all session files, validates each `parentId` resolves to an existing file, and reports orphaned or dangling branches. Natural companion to tree visualization. Depends on: Sprint 44 session storage + Sprint 45 tree viz. Target: Sprint 47.
-
 ---
 
 ## Sprint 44 Backlog — ZSH plugin follow-ons (from Sprint 43 eng review)
