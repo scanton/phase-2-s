@@ -344,7 +344,7 @@ phase2s --resume
 ```
 
 ```
-Resuming session from .phase2s/sessions/2026-04-04.json (31 messages)
+Resuming session (31 messages)
 Learnings: 3 entries from .phase2s/memory/
 
 you >

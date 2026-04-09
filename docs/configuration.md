@@ -372,6 +372,7 @@ Commands:
   init                     Interactive setup wizard
   setup                    Install ZSH shell integration (plugin + .zshrc source line)
     --dry-run              Preview what would be installed without writing files
+  conversations            Browse session history (fzf interactive or plain table)
   doctor                   Installation health check
   upgrade                  Check for and install updates
   mcp                      Start as an MCP server for Claude Code
