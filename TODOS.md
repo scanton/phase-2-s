@@ -805,3 +805,11 @@ These were flagged but not fixed — they need deeper analysis before touching.
 - Plugin system — third-party skills installable via npm
 - Team mode — shared skill library + shared session history for a dev team
 - Self-hosting — run phase2s as a web service with a REST API
+
+---
+
+## Sprint 45 follow-ons (from /plan-eng-review 2026-04-09)
+
+- [ ] **Bash doctor parity** — `doctor.ts` currently only checks ZSH plugin (via `checkShellPlugin()`). After Sprint 45 ships bash support, add `checkBashPlugin()` that verifies `~/.phase2s/phase2s-bash.sh` is installed and sourced in the detected profile file (`~/.bash_profile` or `~/.bashrc`). Same structure as existing `checkShellPlugin()`. Blocked by: Sprint 45 bash support shipping first. Target: Sprint 46.
+
+- [ ] **migrateAll symlink escape** — lexical regex validation on `originalName`/`newId` doesn't prevent symlink targets pointing outside the sessions dir. A symlink named `2024-01-01.json` pointing to `/etc/passwd` passes the regex. Fix: after `path.join()`, call `realpathSync()` on the resolved path and verify it starts with `sessionsDir`. Severity LOW (requires write access to the sessions dir to exploit). Blocked by: Sprint 45 migrateAll hardening. Target: Sprint 46.
