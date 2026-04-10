@@ -452,6 +452,41 @@ export async function loadSession(path: string): Promise<{ conv: Conversation; m
 // ---------------------------------------------------------------------------
 
 /**
+ * Atomically steal a stale migration lock file.
+ *
+ * Deletes the existing lock and re-acquires it with the current PID using the
+ * atomic POSIX "wx" flag. Returns `true` if the steal succeeded (caller holds
+ * the lock). Returns `false` if another process stole it first (EEXIST on
+ * re-acquire — the winner logs and returns so the caller should too).
+ * Throws on any unexpected error (EACCES, EROFS, etc.) so real errors surface.
+ *
+ * TOCTOU note: between unlinkSync and writeFileSync(wx), a brief window exists
+ * where no lock file is present. A concurrent process may win the re-acquire,
+ * producing EEXIST here — that is correct behavior (it won, we skip).
+ */
+function stealMigrationLock(lockPath: string): boolean {
+  // unlinkSync can throw ENOENT if a concurrent stealer already deleted the lock.
+  // Treat that as "already gone — fall through and try wx acquire directly."
+  try {
+    unlinkSync(lockPath);
+  } catch (unlinkErr) {
+    if ((unlinkErr as NodeJS.ErrnoException).code !== "ENOENT") throw unlinkErr;
+    // ENOENT: already deleted by another stealer — fall through to wx acquire
+  }
+  try {
+    writeFileSync(lockPath, process.pid.toString(), { flag: "wx", mode: 0o600 });
+    return true;
+  } catch (stealErr) {
+    if ((stealErr as NodeJS.ErrnoException).code === "EEXIST") {
+      // Another process stole the lock first — skip migration.
+      console.error(chalk.dim("Migration lock stolen by concurrent process — skipping."));
+      return false;
+    }
+    throw stealErr; // EACCES, EROFS, etc. — real error, propagate
+  }
+}
+
+/**
  * Migrate all legacy session files (schema v1 — bare arrays) to schema v2.
  *
  * Strategy:
@@ -492,62 +527,43 @@ export async function migrateAll(cwd: string): Promise<void> {
       // Check if the holding process is still alive.
       // This handles SIGKILL recovery: a killed process leaves the lockfile
       // permanently unless we detect its absence and steal the lock.
+
+      // Narrow try/catch: only covers readFileSync so that steal-path errors
+      // (EACCES, EROFS, disk-full on writeFileSync) propagate to the caller
+      // rather than being silently swallowed as "already in progress".
+      let pidStr: string;
       try {
-        const pidStr = readFileSync(lockPath, "utf-8").trim();
-        const pid = Number(pidStr);
-        if (Number.isInteger(pid) && pid > 0) {
-          try {
-            process.kill(pid, 0); // signal 0: liveness check only, does not send a signal
-            // Process alive — migration really is in progress.
-            console.error(chalk.dim("Migration already in progress — skipping."));
-            return;
-          } catch (killErr) {
-            if ((killErr as NodeJS.ErrnoException).code === "ESRCH") {
-              // Process dead — stale lock from SIGKILL. Steal it.
-              // TOCTOU note: two processes can simultaneously detect a dead PID and
-              // both try to steal. The second writeFileSync(wx) will get EEXIST —
-              // catch it and skip (the other process won the race, which is fine).
-              unlinkSync(lockPath);
-              try {
-                writeFileSync(lockPath, process.pid.toString(), {
-                  flag: "wx",
-                  mode: 0o600,
-                });
-              } catch (stealErr) {
-                if ((stealErr as NodeJS.ErrnoException).code === "EEXIST") {
-                  // Another process stole the lock first — skip migration.
-                  console.error(chalk.dim("Migration lock stolen by concurrent process — skipping."));
-                  return;
-                }
-                throw stealErr;
-              }
-              // Fall through to run migration with the stolen lock
-            } else {
-              // EPERM: current process lacks permission to signal that PID.
-              // This is extremely rare (different-user or privilege boundary).
-              // Be conservative — treat as "process alive, migration in progress."
-              console.error(chalk.dim("Migration lock exists — skipping."));
-              return;
-            }
-          }
-        } else {
-          // Invalid/corrupt PID in lock file — stale. Steal it (same TOCTOU guard).
-          unlinkSync(lockPath);
-          try {
-            writeFileSync(lockPath, process.pid.toString(), { flag: "wx", mode: 0o600 });
-          } catch (stealErr) {
-            if ((stealErr as NodeJS.ErrnoException).code === "EEXIST") {
-              console.error(chalk.dim("Migration lock stolen by concurrent process — skipping."));
-              return;
-            }
-            throw stealErr;
-          }
-          // Fall through to run migration with the stolen lock
-        }
+        pidStr = readFileSync(lockPath, "utf-8").trim();
       } catch {
-        // Can't read lock file (ENOENT race, etc.) — be conservative
+        // ENOENT race: lock deleted between our EEXIST and this read — conservative skip.
         console.error(chalk.dim("Migration already in progress — skipping."));
         return;
+      }
+
+      const pid = Number(pidStr);
+      if (Number.isInteger(pid) && pid > 0) {
+        try {
+          process.kill(pid, 0); // signal 0: liveness check only, does not send a signal
+          // Process alive — migration really is in progress.
+          console.error(chalk.dim("Migration already in progress — skipping."));
+          return;
+        } catch (killErr) {
+          if ((killErr as NodeJS.ErrnoException).code === "ESRCH") {
+            // Process dead — stale lock from SIGKILL. Steal it.
+            if (!stealMigrationLock(lockPath)) return;
+            // Fall through to run migration with the stolen lock
+          } else {
+            // EPERM: current process lacks permission to signal that PID.
+            // This is extremely rare (different-user or privilege boundary).
+            // Be conservative — treat as "process alive, migration in progress."
+            console.error(chalk.dim("Migration lock exists — skipping."));
+            return;
+          }
+        }
+      } else {
+        // Invalid/corrupt PID in lock file — stale. Steal it.
+        if (!stealMigrationLock(lockPath)) return;
+        // Fall through to run migration with the stolen lock
       }
     } else {
       throw err; // ENOENT, EACCES = real error — propagate

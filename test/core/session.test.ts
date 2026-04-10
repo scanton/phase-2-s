@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync, symlinkSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -1114,17 +1115,20 @@ describe("migrateAll() — SIGKILL stale lock recovery", () => {
     setupLegacySession(tmpDir);
     const manifestPath = join(tmpDir, ".phase2s", "sessions", "migration.json");
     const lockPath = manifestPath + ".lock";
-    // Write a PID that is almost certainly dead (max PID is typically 32768 on macOS,
-    // 4194304 on Linux — 99999 is safe for our purposes here).
-    writeFileSync(lockPath, "99999");
 
-    // If ESRCH: lock is stolen and migration runs. If EPERM (unlikely): migration skips.
-    // Either way migrateAll must not throw.
-    await expect(migrateAll(tmpDir)).resolves.not.toThrow();
+    // Spawn a real child process and wait for it to exit, giving us a
+    // guaranteed-dead PID (ESRCH on process.kill(pid, 0)).
+    // spawnSync blocks until the process exits so by the time it returns,
+    // the PID is definitely dead.
+    const child = spawnSync(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+    const deadPid = child.pid;
 
-    // If migration ran (ESRCH path), the manifest should exist.
-    // We can't assert the outcome deterministically because EPERM is possible on some
-    // systems. The important invariant: no throw, no zombie lockfile from our own PID.
+    writeFileSync(lockPath, deadPid.toString());
+
+    await migrateAll(tmpDir);
+
+    // ESRCH path: lock stolen → migration ran → manifest written
+    expect(existsSync(manifestPath)).toBe(true);
   });
 
   it("skips migration when lock contains our own (live) PID", async () => {
@@ -1152,15 +1156,11 @@ describe("migrateAll() — SIGKILL stale lock recovery", () => {
     expect(existsSync(manifestPath)).toBe(true);
   });
 
-  it("skips migration conservatively when lock file cannot be read (outer catch)", async () => {
+  it("steals lock and runs migration when lock contains empty/NaN PID", async () => {
     setupLegacySession(tmpDir);
     const manifestPath = join(tmpDir, ".phase2s", "sessions", "migration.json");
     const lockPath = manifestPath + ".lock";
-    // Write a zero-byte lock (readFileSync returns "", Number("") = NaN → falls through,
-    // but Number.isInteger(NaN) = false → invalid PID branch → steal.
-    // To trigger the outer catch (can't read) we'd need to write a non-readable file,
-    // which requires root or a different technique. Instead test the NaN/invalid branch
-    // (empty string) which also produces a steal → migration runs.
+    // Empty string → Number("") = NaN → Number.isInteger(NaN) = false → invalid PID branch → steal.
     writeFileSync(lockPath, "");
 
     await expect(migrateAll(tmpDir)).resolves.not.toThrow();
