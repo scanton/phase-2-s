@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import chalk from "chalk";
 import { parse as parseYaml } from "yaml";
 import { bundledTemplatesDir } from "../skills/loader.js";
+import { readSessionIndex, rebuildSessionIndexStrict } from "../core/session.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -558,7 +559,63 @@ export function checkSessionDag(sessionsDir: string): CheckResult {
 // runDoctor — entry point
 // ---------------------------------------------------------------------------
 
-export async function runDoctor(): Promise<void> {
+/**
+ * Implements `doctor --fix`: rebuild the session index and run the DAG integrity check.
+ * Uses rebuildSessionIndexStrict so write failures propagate (unlike the silent best-effort
+ * behavior of rebuildSessionIndex used in listSessions).
+ */
+async function runDoctorFix(): Promise<void> {
+  const cwd = resolve(".");
+  const sessDir = resolve(".phase2s", "sessions");
+
+  console.log(chalk.bold("\n  Phase2S doctor --fix\n"));
+  process.stdout.write(chalk.dim("  Rebuilding session index...\n"));
+
+  // Capture before count from the current on-disk index (null = no index yet → 0 entries).
+  const existingIndex = await readSessionIndex(cwd);
+  const beforeCount = Object.keys(existingIndex?.sessions ?? {}).length;
+
+  let afterIndex;
+  try {
+    afterIndex = await rebuildSessionIndexStrict(cwd);
+  } catch (err) {
+    console.error(chalk.red(`  ✗  Rebuild failed: ${(err as Error).message}`));
+    process.exit(1);
+  }
+
+  const afterCount = Object.keys(afterIndex.sessions).length;
+  const recovered = afterCount - beforeCount;
+
+  if (recovered > 0) {
+    console.log(chalk.green(`  Recovered: ${recovered} session${recovered === 1 ? "" : "s"} (was ${beforeCount}, now ${afterCount})`));
+  } else if (recovered < 0) {
+    // Stale index entries removed (session files were deleted since last index write).
+    console.log(chalk.yellow(`  Cleaned up: ${Math.abs(recovered)} stale entr${Math.abs(recovered) === 1 ? "y" : "ies"} (was ${beforeCount}, now ${afterCount})`));
+  } else {
+    console.log(chalk.dim(`  Recovered: 0 sessions (index was current — ${afterCount} entries)`));
+  }
+
+  // Run DAG check on the repaired index.
+  const dagResult = checkSessionDag(sessDir);
+  if (dagResult.ok) {
+    console.log(chalk.green(`  DAG check: OK (no dangling parentId references)`));
+  } else {
+    console.log(chalk.yellow(`  DAG check: warnings — ${dagResult.detail}`));
+    if (dagResult.fix) {
+      console.log(chalk.dim(`    ${dagResult.fix}`));
+    }
+  }
+
+  console.log("");
+}
+
+export async function runDoctor(opts: { fix?: boolean } = {}): Promise<void> {
+  // --fix mode: rebuild session index and run DAG check, then exit.
+  if (opts.fix) {
+    await runDoctorFix();
+    return;
+  }
+
   console.log(chalk.bold("\n  Phase2S doctor\n"));
 
   // Load existing config to inform checks (best-effort — errors are surfaced by checkConfigFile)

@@ -628,3 +628,159 @@ describe("checkBashPlugin", () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// runDoctorFix (doctor --fix)
+// ---------------------------------------------------------------------------
+
+describe("doctor --fix", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-doctor-fix-test-"));
+    vi.resetModules();
+    spawnSyncMock.mockReset();
+    // Default: spawnSync returns success so checkProviderBinary etc. don't interfere
+    spawnSyncMock.mockReturnValue({ status: 0, error: null });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+  });
+
+  it("reports recovered sessions when index is stale", async () => {
+    // Set up a sessions directory with one valid session file but no index
+    const sessDir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(sessDir, { recursive: true });
+    const sessionId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const sessionData = {
+      schemaVersion: 2,
+      meta: { id: sessionId, parentId: null, branchName: "main", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+      messages: [{ role: "user", content: "hello" }],
+    };
+    writeFileSync(join(sessDir, `${sessionId}.json`), JSON.stringify(sessionData));
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    const origWrite = process.stdout.write.bind(process.stdout);
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    process.stdout.write = (s: string | Uint8Array) => { logs.push(String(s)); return true; };
+
+    process.chdir(tmpDir);
+    try {
+      const { runDoctor } = await import("../../src/cli/doctor.js");
+      await runDoctor({ fix: true });
+    } finally {
+      console.log = origLog;
+      process.stdout.write = origWrite;
+    }
+
+    const output = logs.join("\n");
+    expect(output).toContain("Recovered: 1 session");
+    expect(output).toContain("was 0, now 1");
+    expect(output).toContain("DAG check: OK");
+  });
+
+  it("reports index was current when no sessions are missing", async () => {
+    const sessDir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(sessDir, { recursive: true });
+    // No session files → before=0, after=0
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    const origWrite = process.stdout.write.bind(process.stdout);
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    process.stdout.write = (s: string | Uint8Array) => { logs.push(String(s)); return true; };
+
+    process.chdir(tmpDir);
+    try {
+      const { runDoctor } = await import("../../src/cli/doctor.js");
+      await runDoctor({ fix: true });
+    } finally {
+      console.log = origLog;
+      process.stdout.write = origWrite;
+    }
+
+    const output = logs.join("\n");
+    expect(output).toContain("Recovered: 0 sessions");
+    expect(output).toContain("index was current");
+  });
+
+  it("reports DAG warnings when sessions have dangling parentIds", async () => {
+    const sessDir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(sessDir, { recursive: true });
+    // Session with a parentId that doesn't exist
+    const sessionId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const sessionData = {
+      schemaVersion: 2,
+      meta: { id: sessionId, parentId: "nonexistent-parent-uuid", branchName: "main", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+      messages: [],
+    };
+    writeFileSync(join(sessDir, `${sessionId}.json`), JSON.stringify(sessionData));
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+
+    process.chdir(tmpDir);
+    try {
+      const { runDoctor } = await import("../../src/cli/doctor.js");
+      await runDoctor({ fix: true });
+    } finally {
+      console.log = origLog;
+    }
+
+    const output = logs.join("\n");
+    expect(output).toContain("DAG check: warnings");
+  });
+
+  it("exits 1 when rebuildSessionIndexStrict throws", async () => {
+    const sessDir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(sessDir, { recursive: true });
+
+    // Spy on rebuildSessionIndexStrict via the session module to make it throw.
+    // We import both doctor and session at test time so the spy takes effect.
+    const sessionMod = await import("../../src/core/session.js");
+    const strictSpy = vi.spyOn(sessionMod, "rebuildSessionIndexStrict").mockRejectedValue(
+      new Error("EPERM: permission denied"),
+    );
+
+    process.chdir(tmpDir);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: number | string | null | undefined) => { throw new Error("process.exit called"); });
+    const origErr = console.error;
+    const origWrite = process.stdout.write.bind(process.stdout);
+    console.error = () => {};
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+
+    try {
+      const { runDoctor } = await import("../../src/cli/doctor.js");
+      await expect(runDoctor({ fix: true })).rejects.toThrow("process.exit called");
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    } finally {
+      console.error = origErr;
+      process.stdout.write = origWrite;
+      exitSpy.mockRestore();
+      strictSpy.mockRestore();
+    }
+  });
+
+  it("doctor without --fix runs normal checks (does not output fix messages)", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+
+    process.chdir(tmpDir);
+    try {
+      const { runDoctor } = await import("../../src/cli/doctor.js");
+      await runDoctor();  // no { fix: true }
+    } finally {
+      console.log = origLog;
+    }
+
+    const output = logs.join("\n");
+    expect(output).toContain("Phase2S doctor");
+    expect(output).not.toContain("Rebuilding session index");
+    expect(output).not.toContain("Recovered:");
+  });
+});
