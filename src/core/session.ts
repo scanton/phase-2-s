@@ -456,7 +456,10 @@ export async function rebuildSessionIndexStrict(cwd: string): Promise<SessionInd
   if (!acquired) {
     // Strict variant: lock contention is an error — caller (doctor --fix) must know
     // the index was NOT written. Returning silently would give false confidence.
-    throw new Error("Could not acquire session index lock — another phase2s process is running. Try again.");
+    throw new Error(
+      "Could not acquire session index lock — another phase2s process is running. " +
+      "Wait 30 seconds and try again, or delete `.phase2s/sessions/.index.lock` manually if no other process is running.",
+    );
   }
 
   try {
@@ -464,7 +467,13 @@ export async function rebuildSessionIndexStrict(cwd: string): Promise<SessionInd
     await mkdir(dirname(indexPath), { recursive: true });
     const tmp = indexPath + ".tmp." + process.pid;
     await writeFile(tmp, JSON.stringify(index, null, 2), { encoding: "utf-8", mode: 0o600 });
-    renameSync(tmp, indexPath);
+    try {
+      renameSync(tmp, indexPath);
+    } catch (renameErr) {
+      // Clean up orphaned tmp file before re-throwing.
+      try { unlinkSync(tmp); } catch { /* best-effort */ }
+      throw renameErr;
+    }
     // NOTE: unlike rebuildSessionIndex, write failures are NOT swallowed here.
   } finally {
     releasePosixLock(lockFile);
