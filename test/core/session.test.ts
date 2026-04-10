@@ -11,6 +11,8 @@ import {
   writeReplState,
   readSessionIndex,
   upsertSessionIndex,
+  rebuildSessionIndex,
+  releasePosixLock,
   type SessionMeta,
 } from "../../src/core/session.js";
 import { Conversation } from "../../src/core/conversation.js";
@@ -657,6 +659,20 @@ describe("listSessions() — index fast path", () => {
       createdAt: "2026-04-01T10:00:00.000Z",
       updatedAt: "2026-04-01T10:00:00.000Z",
     });
+
+    // Create the session files on disk — the stale-path filter (Item 2) removes
+    // index entries whose files no longer exist, so files must be present.
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${older.id}.json`),
+      JSON.stringify({ schemaVersion: 2, meta: older, messages: [] }),
+    );
+    writeFileSync(
+      join(dir, `${newer.id}.json`),
+      JSON.stringify({ schemaVersion: 2, meta: newer, messages: [] }),
+    );
+
     await upsertSessionIndex(tmpDir, older, "old");
     await upsertSessionIndex(tmpDir, newer, "new");
 
@@ -734,5 +750,183 @@ describe("cloneSession() — index upsert side-effect", () => {
     expect(index!.sessions[result.id]).toBeDefined();
     expect(index!.sessions[result.id].parentId).toBe(sourceMeta.id);
     expect(index!.sessions[result.id].firstMessage).toBe("original message");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// releasePosixLock() — PID guard (Item 1: ABA lock fix)
+// ---------------------------------------------------------------------------
+
+describe("releasePosixLock() — PID guard", () => {
+  let tmpDir: string;
+  let lockPath: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-release-lock-test-"));
+    mkdirSync(join(tmpDir, ".phase2s"), { recursive: true });
+    lockPath = join(tmpDir, ".phase2s", ".state.lock");
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("does NOT unlink the lock when it belongs to a different PID (.state.lock)", () => {
+    // Simulate a foreign process holding the lock (process.pid + 1 can never be our PID)
+    writeFileSync(lockPath, String(process.pid + 1));
+    releasePosixLock(lockPath);
+    expect(existsSync(lockPath)).toBe(true);
+  });
+
+  it("DOES unlink the lock when it belongs to our PID (.state.lock)", () => {
+    writeFileSync(lockPath, String(process.pid));
+    releasePosixLock(lockPath);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("does NOT unlink the lock when it belongs to a different PID (.index.lock)", () => {
+    mkdirSync(join(tmpDir, ".phase2s", "sessions"), { recursive: true });
+    const indexLockPath = join(tmpDir, ".phase2s", "sessions", ".index.lock");
+    writeFileSync(indexLockPath, String(process.pid + 1));
+    releasePosixLock(indexLockPath);
+    expect(existsSync(indexLockPath)).toBe(true);
+  });
+
+  it("DOES unlink the lock when it belongs to our PID (.index.lock)", () => {
+    mkdirSync(join(tmpDir, ".phase2s", "sessions"), { recursive: true });
+    const indexLockPath = join(tmpDir, ".phase2s", "sessions", ".index.lock");
+    writeFileSync(indexLockPath, String(process.pid));
+    releasePosixLock(indexLockPath);
+    expect(existsSync(indexLockPath)).toBe(false);
+  });
+
+  it("silently ignores a missing lock file (already gone)", () => {
+    // File never created — should not throw
+    expect(() => releasePosixLock(lockPath)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listSessions() — stale index path filter (Item 2)
+// ---------------------------------------------------------------------------
+
+describe("listSessions() — stale path filter", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-stale-path-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("excludes index entries whose session file has been deleted from disk", async () => {
+    const meta = makeMeta({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" });
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+
+    // Write the session file and add it to the index
+    const filePath = join(dir, `${meta.id}.json`);
+    writeFileSync(
+      filePath,
+      JSON.stringify({ schemaVersion: 2, meta, messages: [] }),
+      { encoding: "utf-8", mode: 0o600 },
+    );
+    await upsertSessionIndex(tmpDir, meta, "deleted session");
+
+    // Index says the session exists — delete the file
+    unlinkSync(filePath);
+    expect(existsSync(filePath)).toBe(false);
+
+    // listSessions should not return the deleted path
+    const sessions = await listSessions(tmpDir);
+    expect(sessions.find((s) => s.meta.id === meta.id)).toBeUndefined();
+  });
+
+  it("still returns live sessions when some are stale", async () => {
+    const stale = makeMeta({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" });
+    const live = makeMeta({
+      id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      createdAt: "2026-04-09T10:00:00.000Z",
+      updatedAt: "2026-04-09T10:00:00.000Z",
+    });
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+
+    // Write both session files
+    const stalePath = join(dir, `${stale.id}.json`);
+    writeFileSync(stalePath, JSON.stringify({ schemaVersion: 2, meta: stale, messages: [] }));
+    const livePath = join(dir, `${live.id}.json`);
+    writeFileSync(livePath, JSON.stringify({ schemaVersion: 2, meta: live, messages: [] }));
+
+    // Add both to index
+    await upsertSessionIndex(tmpDir, stale, "stale session");
+    await upsertSessionIndex(tmpDir, live, "live session");
+
+    // Delete the stale file
+    unlinkSync(stalePath);
+
+    const sessions = await listSessions(tmpDir);
+    expect(sessions.find((s) => s.meta.id === stale.id)).toBeUndefined();
+    expect(sessions.find((s) => s.meta.id === live.id)).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rebuildSessionIndex() — lock-miss skip (Item 4)
+// ---------------------------------------------------------------------------
+
+describe("rebuildSessionIndex() — lock", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-rebuild-lock-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns null when .index.lock is held by a concurrent process", async () => {
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    // Pre-place a fresh (non-stale) lock to simulate a concurrent upsert
+    const lockPath = join(dir, ".index.lock");
+    writeFileSync(lockPath, "99999"); // fresh mtime — will not be cleaned as stale
+
+    try {
+      const result = await rebuildSessionIndex(tmpDir);
+      expect(result).toBeNull();
+      // Lock should still belong to the "other process" — not stolen or deleted
+      expect(existsSync(lockPath)).toBe(true);
+    } finally {
+      try { unlinkSync(lockPath); } catch { /* already cleaned */ }
+    }
+  });
+
+  it("acquires, rebuilds, and releases .index.lock on success", async () => {
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+
+    // Write a valid session file for the rebuild to find
+    const meta = makeMeta();
+    writeFileSync(
+      join(dir, `${meta.id}.json`),
+      JSON.stringify({
+        schemaVersion: 2,
+        meta,
+        messages: [{ role: "user", content: "rebuild test" }],
+      }),
+      { encoding: "utf-8", mode: 0o600 },
+    );
+
+    const result = await rebuildSessionIndex(tmpDir);
+
+    // Rebuild should succeed and return the index
+    expect(result).not.toBeNull();
+    expect(result!.sessions[meta.id]).toBeDefined();
+    expect(result!.sessions[meta.id].firstMessage).toBe("rebuild test");
+
+    // Lock should be released after completion
+    const lockPath = join(dir, ".index.lock");
+    expect(existsSync(lockPath)).toBe(false);
   });
 });
