@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.23.0 — 2026-04-10
+
+Sprint 49 — Vegetables Sprint: five deferred items shipped before the next architecture sprint.
+
+### Added
+
+- **`phase2s doctor --fix`** — New flag that rebuilds the session index from disk and runs the DAG integrity check. Surfaces orphaned or stale index entries, reports recovered sessions, and exits 1 if the write fails. Previously the only way to recover a corrupted index was to delete it by hand.
+- **`-C <path>` global flag** — Run any phase2s command as if started in `<path>`. Evaluated before any subcommand runs (`process.chdir()` via Commander `preAction` hook), so `phase2s -C ~/my-project conversations` works without wrapping in a `cd`. Error messages distinguish "no such directory" from "not a directory."
+- **`:re [high|low|default]` REPL command** — Switch reasoning effort in the current session without editing `.phase2s.yaml`. `:re high` routes normal turns through `smart_model`, `:re low` through `fast_model`, `:re default` resets to config. `:re` with no args shows the current tier and model. Applies to normal turns only; skill invocations keep their declared model tier.
+- **Tool error reflection in satori** — When a tool call fails during a satori subtask attempt, a structured three-question reflection fragment is injected before the next retry. Fires on attempt 1 only to avoid double-reflection noise from the doom-loop protocol. Disable with `PHASE2S_TOOL_ERROR_REFLECTION=off`.
+- **Bash `:()` limitation warning in `phase2s setup --bash`** — The setup output now documents the known incompatibility between the `:` function override and `${VAR:=default}` expansion patterns in `.bash_profile`. Includes the safe replacement (`${VAR:-default}`). The same content is in `docs/getting-started.md`.
+
+### Fixed
+
+- **`rebuildSessionIndexStrict` lock contention** — When the session index lock was held by a concurrent process, the strict variant silently returned an in-memory index without writing it to disk, causing `doctor --fix` to report success when nothing was actually repaired. Now throws so the caller can exit 1 with a clear error.
+- **`doctor --fix` stale-entry count** — When session files had been deleted since the last index write, the recovered count was negative and the output misleadingly said "index was current." Now correctly reports "Cleaned up: N stale entries."
+- **`-C` validation TOCTOU** — The `-C` hook previously called `existsSync` then `statSync` separately, creating a race window. Collapsed to a single `statSync` call with ENOENT handling.
+- **`:re` case sensitivity** — `:re HIGH` now works; arguments are lowercased before matching.
+
 ## v1.22.3 — 2026-04-09
 
 Sprint 48 — Lock correctness closure + doom-loop prevention.
