@@ -127,6 +127,60 @@ function replStateLockPath(cwd: string): string {
 const STALE_LOCK_TIMEOUT_MS = 30_000;
 /** Delay before retrying lock acquisition when contended. */
 const LOCK_RETRY_DELAY_MS = 50;
+/** Maximum characters to store/display as the session preview (first user message). */
+const SESSION_PREVIEW_MAX_CHARS = 80;
+
+// ---------------------------------------------------------------------------
+// Lock helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Acquire a POSIX exclusive-create lock file.
+ * Stale locks (older than STALE_LOCK_TIMEOUT_MS) are removed automatically.
+ * Retries once after LOCK_RETRY_DELAY_MS on contention.
+ *
+ * @returns `true` if the lock was acquired, `false` if we're proceeding without it.
+ * @throws  Any error other than EEXIST from the underlying writeFileSync.
+ */
+async function acquirePosixLock(lockFile: string): Promise<boolean> {
+  // Stale lock detection: if the lock is older than 30 s, the process that
+  // created it has almost certainly crashed — remove it before trying to acquire.
+  try {
+    const stat = statSync(lockFile);
+    if (Date.now() - stat.mtimeMs > STALE_LOCK_TIMEOUT_MS) unlinkSync(lockFile);
+  } catch {
+    /* no lock file — normal path */
+  }
+
+  // Acquire lock. "wx" = O_WRONLY | O_CREAT | O_EXCL — atomic on POSIX.
+  const tryAcquire = (): boolean => {
+    try {
+      writeFileSync(lockFile, process.pid.toString(), { flag: "wx", mode: 0o600 });
+      return true;
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
+      throw e;
+    }
+  };
+
+  if (tryAcquire()) return true;
+
+  // Another process holds the lock — wait and retry once.
+  await new Promise<void>((resolve) => setTimeout(resolve, LOCK_RETRY_DELAY_MS));
+  if (tryAcquire()) return true;
+
+  // Still contended after retry — proceed without lock.
+  // This preserves liveness over strict mutual exclusion.
+  return false;
+}
+
+/**
+ * Release a POSIX lock file acquired by acquirePosixLock().
+ * Best-effort — errors are silently ignored.
+ */
+function releasePosixLock(lockFile: string): void {
+  try { unlinkSync(lockFile); } catch { /* best-effort */ }
+}
 
 // ---------------------------------------------------------------------------
 // REPL state.json I/O
@@ -155,36 +209,7 @@ export async function writeReplState(cwd: string, state: ReplState): Promise<voi
   mkdirSync(phase2sDir, { recursive: true });
 
   const lockFile = replStateLockPath(cwd);
-
-  // Stale lock detection: if the lock is older than 30 s, the process that
-  // created it has almost certainly crashed — remove it before trying to acquire.
-  try {
-    const stat = statSync(lockFile);
-    if (Date.now() - stat.mtimeMs > STALE_LOCK_TIMEOUT_MS) unlinkSync(lockFile);
-  } catch {
-    /* no lock file — normal path */
-  }
-
-  // Acquire lock. "wx" = O_WRONLY | O_CREAT | O_EXCL — atomic on POSIX.
-  let lockAcquired = false;
-  try {
-    writeFileSync(lockFile, process.pid.toString(), { flag: "wx" });
-    lockAcquired = true;
-  } catch (e: unknown) {
-    if ((e as NodeJS.ErrnoException).code === "EEXIST") {
-      // Another process holds the lock — wait and retry once.
-      await new Promise<void>((resolve) => setTimeout(resolve, LOCK_RETRY_DELAY_MS));
-      try {
-        writeFileSync(lockFile, process.pid.toString(), { flag: "wx" });
-        lockAcquired = true;
-      } catch {
-        // Still contended after retry — proceed without lock.
-        // This preserves liveness over strict mutual exclusion.
-      }
-    } else {
-      throw e;
-    }
-  }
+  const lockAcquired = await acquirePosixLock(lockFile);
 
   try {
     const path = replStatePath(cwd);
@@ -192,9 +217,7 @@ export async function writeReplState(cwd: string, state: ReplState): Promise<voi
     writeFileSync(tmp, JSON.stringify(state, null, 2), "utf-8");
     renameSync(tmp, path);
   } finally {
-    if (lockAcquired) {
-      try { unlinkSync(lockFile); } catch { /* best-effort */ }
-    }
+    if (lockAcquired) releasePosixLock(lockFile);
   }
 }
 
@@ -204,9 +227,16 @@ export async function writeReplState(cwd: string, state: ReplState): Promise<voi
 
 /**
  * Save a conversation in v2 format.
- * Writes { schemaVersion: 2, meta, messages } with mode 0o600.
+ * Writes { schemaVersion: 2, meta, messages } atomically (tmp → rename) with mode 0o600.
+ *
+ * Also triggers a best-effort fire-and-forget upsert of the session index
+ * (.phase2s/sessions/index.json). Index failures are logged to stderr as
+ * chalk.dim warnings but do NOT throw — they never interrupt the user.
+ *
+ * @param cwd  Project working directory (parent of .phase2s/).
+ * @param path Full path to the session JSON file.
  */
-export async function saveSession(path: string, conv: Conversation, meta: SessionMeta): Promise<void> {
+export async function saveSession(cwd: string, path: string, conv: Conversation, meta: SessionMeta): Promise<void> {
   const messages = conv.getMessages();
   const updatedAt = new Date().toISOString();
   const updated: SessionV2 = {
@@ -220,8 +250,6 @@ export async function saveSession(path: string, conv: Conversation, meta: Sessio
   renameSync(tmp, path);
 
   // Update session index (best-effort — don't interrupt the user on failure)
-  // path = <cwd>/.phase2s/sessions/<uuid>.json — two levels up from dirname
-  const cwd = resolve(dirname(path), "..", "..");
   upsertSessionIndex(cwd, { ...meta, updatedAt }, extractFirstMessage(messages)).catch((err: unknown) => {
     console.error(chalk.dim(`[phase2s] session index update failed: ${err instanceof Error ? err.message : String(err)}`));
   });
@@ -262,28 +290,8 @@ export async function upsertSessionIndex(cwd: string, meta: SessionMeta & { upda
   const indexPath = sessionIndexPath(cwd);
   await mkdir(dirname(indexPath), { recursive: true });
 
-  // Acquire index lock (same pattern as writeReplState)
   const lockFile = sessionIndexLockPath(cwd);
-  try {
-    const stat = statSync(lockFile);
-    if (Date.now() - stat.mtimeMs > STALE_LOCK_TIMEOUT_MS) unlinkSync(lockFile);
-  } catch { /* no lock file */ }
-
-  let lockAcquired = false;
-  try {
-    writeFileSync(lockFile, process.pid.toString(), { flag: "wx" });
-    lockAcquired = true;
-  } catch (e: unknown) {
-    if ((e as NodeJS.ErrnoException).code === "EEXIST") {
-      await new Promise<void>((resolve) => setTimeout(resolve, LOCK_RETRY_DELAY_MS));
-      try {
-        writeFileSync(lockFile, process.pid.toString(), { flag: "wx" });
-        lockAcquired = true;
-      } catch { /* proceed without lock */ }
-    } else {
-      throw e;
-    }
-  }
+  const lockAcquired = await acquirePosixLock(lockFile);
 
   try {
     let index = await readSessionIndex(cwd);
@@ -300,13 +308,11 @@ export async function upsertSessionIndex(cwd: string, meta: SessionMeta & { upda
       firstMessage,
     };
 
-    const tmp = indexPath + ".tmp";
+    const tmp = indexPath + ".tmp." + process.pid;
     await writeFile(tmp, JSON.stringify(index, null, 2), { encoding: "utf-8", mode: 0o600 });
     renameSync(tmp, indexPath);
   } finally {
-    if (lockAcquired) {
-      try { unlinkSync(lockFile); } catch { /* best-effort */ }
-    }
+    if (lockAcquired) releasePosixLock(lockFile);
   }
 }
 
@@ -354,11 +360,12 @@ async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
     }
   }
 
-  // Write the rebuilt index to disk (best-effort)
+  // Write the rebuilt index to disk (best-effort).
+  // Use a per-process tmp path to avoid colliding with concurrent upsertSessionIndex writes.
   try {
     const indexPath = sessionIndexPath(cwd);
     await mkdir(dirname(indexPath), { recursive: true });
-    const tmp = indexPath + ".tmp";
+    const tmp = indexPath + ".tmp." + process.pid;
     await writeFile(tmp, JSON.stringify(index, null, 2), { encoding: "utf-8", mode: 0o600 });
     renameSync(tmp, indexPath);
   } catch {
@@ -678,7 +685,7 @@ function todayDate(): string {
  */
 function extractFirstMessage(messages: Message[]): string {
   const first = messages.find((m) => m.role === "user");
-  return sanitizeForTerminal(first?.content ?? "").slice(0, 80);
+  return sanitizeForTerminal(first?.content ?? "").slice(0, SESSION_PREVIEW_MAX_CHARS);
 }
 
 /**
@@ -729,34 +736,6 @@ export async function listSessions(cwd: string): Promise<Array<{ meta: SessionMe
     }));
   results.sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt));
   return results;
-}
-
-/**
- * Get the first user message from a session file for display in the browser.
- * Returns empty string if not found or on parse error.
- * Sanitizes control characters (including ANSI escape codes) before returning.
- */
-export async function getSessionPreview(path: string): Promise<string> {
-  try {
-    const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    let messages: Message[] = [];
-    if (Array.isArray(parsed)) {
-      messages = parsed as Message[];
-    } else if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      (parsed as Record<string, unknown>).schemaVersion === 2
-    ) {
-      messages = (parsed as SessionV2).messages;
-    }
-    const first = messages.find((m) => m.role === "user");
-    if (!first) return "";
-    // Strip ANSI escape codes and control characters
-    return sanitizeForTerminal(first.content ?? "").slice(0, 80);
-  } catch {
-    return "";
-  }
 }
 
 /**

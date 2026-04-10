@@ -9,7 +9,6 @@ import {
   listSessions,
   readReplState,
   writeReplState,
-  getSessionPreview,
   readSessionIndex,
   upsertSessionIndex,
   type SessionMeta,
@@ -399,7 +398,7 @@ describe("saveSession()", () => {
     const conv = makeConv("hello", "hi there");
     const meta = makeMeta();
     const path = join(tmpDir, "session.json");
-    await saveSession(path, conv, meta);
+    await saveSession(tmpDir, path, conv, meta);
     const parsed = readSession(path);
     expect(parsed.schemaVersion).toBe(2);
     expect(Array.isArray(parsed.messages)).toBe(true);
@@ -410,7 +409,7 @@ describe("saveSession()", () => {
     const conv = makeConv("hello");
     const meta = makeMeta({ updatedAt: "2026-01-01T00:00:00.000Z" });
     const path = join(tmpDir, "session.json");
-    await saveSession(path, conv, meta);
+    await saveSession(tmpDir, path, conv, meta);
     const parsed = readSession(path);
     expect((parsed.meta as SessionMeta).updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
   });
@@ -418,7 +417,7 @@ describe("saveSession()", () => {
   it("creates parent directories if needed", async () => {
     const conv = makeConv("test");
     const path = join(tmpDir, "deep", "nested", "session.json");
-    await saveSession(path, conv, makeMeta());
+    await saveSession(tmpDir, path, conv, makeMeta());
     expect(existsSync(path)).toBe(true);
   });
 });
@@ -451,60 +450,6 @@ describe("readReplState() / writeReplState()", () => {
     await writeReplState(tmpDir, { currentSessionId: "first" });
     await writeReplState(tmpDir, { currentSessionId: "second" });
     expect(readReplState(tmpDir)?.currentSessionId).toBe("second");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getSessionPreview()
-// ---------------------------------------------------------------------------
-
-describe("getSessionPreview()", () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-preview-test-"));
-  });
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it("returns first user message content", async () => {
-    const path = join(tmpDir, "s.json");
-    writeFileSync(
-      path,
-      JSON.stringify({
-        schemaVersion: 2,
-        meta: makeMeta(),
-        messages: [
-          { role: "system", content: "system msg" },
-          { role: "user", content: "hello world" },
-        ],
-      }),
-    );
-    const preview = await getSessionPreview(path);
-    expect(preview).toBe("hello world");
-  });
-
-  it("strips ANSI escape codes from preview", async () => {
-    const path = join(tmpDir, "s.json");
-    writeFileSync(
-      path,
-      JSON.stringify({
-        schemaVersion: 2,
-        meta: makeMeta(),
-        messages: [{ role: "user", content: "\x1b[32mgreen text\x1b[0m" }],
-      }),
-    );
-    const preview = await getSessionPreview(path);
-    expect(preview).not.toContain("\x1b");
-    expect(preview).toContain("green text");
-  });
-
-  it("returns empty string for corrupted file", async () => {
-    const path = join(tmpDir, "bad.json");
-    writeFileSync(path, "not json at all");
-    const preview = await getSessionPreview(path);
-    expect(preview).toBe("");
   });
 });
 
@@ -564,12 +509,14 @@ describe("writeReplState() lock", () => {
     const lockPath = join(phase2sDir, ".state.lock");
     writeFileSync(lockPath, "99999"); // fresh lock (not stale)
 
-    // writeReplState should still write state.json even without winning the lock
-    await expect(writeReplState(tmpDir, { currentSessionId: "contended" })).resolves.not.toThrow();
-    expect(readReplState(tmpDir)?.currentSessionId).toBe("contended");
-
-    // Clean up the contention lock
-    unlinkSync(lockPath);
+    try {
+      // writeReplState should still write state.json even without winning the lock
+      await expect(writeReplState(tmpDir, { currentSessionId: "contended" })).resolves.not.toThrow();
+      expect(readReplState(tmpDir)?.currentSessionId).toBe("contended");
+    } finally {
+      // Always clean up the contention lock so it doesn't pollute other tests
+      try { unlinkSync(lockPath); } catch { /* already removed */ }
+    }
   });
 });
 
@@ -736,12 +683,15 @@ describe("saveSession() — index upsert side-effect", () => {
     const path = join(dir, `${meta.id}.json`);
     const conv = makeConv("hello from saveSession");
 
-    await saveSession(path, conv, meta);
+    await saveSession(tmpDir, path, conv, meta);
 
-    // Give the fire-and-forget upsert time to complete
-    await new Promise((r) => setTimeout(r, 100));
-
-    const index = await readSessionIndex(tmpDir);
+    // Poll for the fire-and-forget upsert to complete (more reliable than a fixed sleep)
+    let index = null;
+    for (let i = 0; i < 20; i++) {
+      index = await readSessionIndex(tmpDir);
+      if (index?.sessions[meta.id]) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
     expect(index).not.toBeNull();
     expect(index!.sessions[meta.id]).toBeDefined();
     expect(index!.sessions[meta.id].firstMessage).toBe("hello from saveSession");
@@ -773,10 +723,13 @@ describe("cloneSession() — index upsert side-effect", () => {
 
     const result = await cloneSession(tmpDir, sourceMeta.id, "test-branch");
 
-    // Give fire-and-forget upsert time to complete
-    await new Promise((r) => setTimeout(r, 100));
-
-    const index = await readSessionIndex(tmpDir);
+    // Poll for the fire-and-forget upsert to complete
+    let index = null;
+    for (let i = 0; i < 20; i++) {
+      index = await readSessionIndex(tmpDir);
+      if (index?.sessions[result.id]) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
     expect(index).not.toBeNull();
     expect(index!.sessions[result.id]).toBeDefined();
     expect(index!.sessions[result.id].parentId).toBe(sourceMeta.id);

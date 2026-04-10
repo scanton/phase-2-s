@@ -432,9 +432,11 @@ export function checkSessionDag(sessionsDir: string): CheckResult {
         data.meta &&
         typeof (data.meta as Record<string, unknown>).id === "string"
       ) {
-        const meta = data.meta as { id: string; parentId?: string | null };
+        const meta = data.meta as { id: string; parentId?: unknown };
         idSet.add(meta.id);
-        parsed.push({ id: meta.id, parentId: meta.parentId ?? null });
+        // Guard: parentId may be any JSON value in a crafted file; normalize to string | null
+        const parentId = typeof meta.parentId === "string" ? meta.parentId : null;
+        parsed.push({ id: meta.id, parentId });
       }
     } catch {
       /* skip corrupt files */

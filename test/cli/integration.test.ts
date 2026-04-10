@@ -67,14 +67,14 @@ describe("findLatestSession() — reads from state.json (regression)", () => {
         messages: [],
       }),
     );
-    writeReplState(tmpDir, { currentSessionId: id });
+    await writeReplState(tmpDir, { currentSessionId: id });
 
     const result = await simulateFindLatestSession(tmpDir);
     expect(result).toBe(sessionPath);
   });
 
   it("returns null when state.json points to a deleted file", async () => {
-    writeReplState(tmpDir, { currentSessionId: "nonexistent-uuid" });
+    await writeReplState(tmpDir, { currentSessionId: "nonexistent-uuid" });
     const result = await simulateFindLatestSession(tmpDir);
     expect(result).toBeNull();
   });

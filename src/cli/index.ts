@@ -784,7 +784,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   /** Save the current conversation to the active session file (best-effort, v2 format). */
   const saveSession = async (): Promise<void> => {
     try {
-      await saveSessionV2(activeSessionPath, agent.getConversation(), sessionMeta);
+      await saveSessionV2(process.cwd(), activeSessionPath, agent.getConversation(), sessionMeta);
     } catch {
       // Best-effort — session save failures don't interrupt the user
     }

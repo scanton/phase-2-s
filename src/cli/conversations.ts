@@ -67,7 +67,8 @@ function buildRows(sessions: Array<{ meta: SessionMeta; path: string; firstMessa
     // injection if a crafted session file has escape sequences in branchName.
     branchName: sanitizeForTerminal(meta.branchName ?? "main"),
     parentId: meta.parentId,
-    preview: firstMessage || "(empty session)",
+    // Re-sanitize firstMessage: defense-in-depth against crafted index.json with ANSI sequences
+    preview: sanitizeForTerminal(firstMessage) || "(empty session)",
   }));
 }
 
