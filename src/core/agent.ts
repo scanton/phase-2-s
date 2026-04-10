@@ -147,16 +147,15 @@ export class Agent {
   /**
    * Run one pass of the agent loop (inner loop — does NOT add userMessage to conversation).
    * Called by run() after the user message is already added.
-   *
-   * @param toolReflectionEnabled - When true, injects a reflection fragment into the
-   *   conversation after a tool failure before the next LLM turn. Set to false for
-   *   satori attempts 2+ (doom-loop context already provides the reflection directive).
    */
-  private async runOnce(
-    onDelta?: (text: string) => void,
-    modelOverride?: string,
-    toolReflectionEnabled = true,
-  ): Promise<string> {
+  private async runOnce(opts: {
+    onDelta?: (text: string) => void;
+    modelOverride?: string;
+    /** When true, injects a reflection fragment after a tool failure before the next LLM turn.
+     *  Set to false for satori attempts 2+ (doom-loop context already provides the directive). */
+    toolReflectionEnabled?: boolean;
+  } = {}): Promise<string> {
+    const { onDelta, modelOverride, toolReflectionEnabled = true } = opts;
     const reflectionEnabled =
       toolReflectionEnabled &&
       process.env.PHASE2S_TOOL_ERROR_REFLECTION !== "off";
@@ -263,8 +262,11 @@ export class Agent {
       let lastText = "";
       for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
         // Tool reflection only on attempt 1 — attempts 2+ already have doom-loop context.
-        const toolReflectionEnabled = attempt === 1;
-        lastText = await this.runOnce(opts.onDelta, opts.modelOverride, toolReflectionEnabled);
+        lastText = await this.runOnce({
+          onDelta: opts.onDelta,
+          modelOverride: opts.modelOverride,
+          toolReflectionEnabled: attempt === 1,
+        });
 
         const { exitCode, output } = await this.runVerify(verifyCommand, opts.verifyFn);
         const passed = exitCode === 0;
@@ -294,7 +296,7 @@ export class Agent {
     }
 
     // Normal single-pass mode
-    return this.runOnce(opts.onDelta, opts.modelOverride);
+    return this.runOnce({ onDelta: opts.onDelta, modelOverride: opts.modelOverride });
   }
 }
 

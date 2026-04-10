@@ -335,27 +335,19 @@ export async function upsertSessionIndex(cwd: string, meta: SessionMeta & { upda
 }
 
 /**
- * Rebuild the session index from scratch by scanning all session files.
- * Called automatically when the index is missing or corrupt.
+ * Scan the sessions directory and build an in-memory SessionIndex.
+ * All I/O runs outside any lock — callers acquire the lock only for the
+ * final atomic rename (O(1) lock hold time regardless of session count).
  *
- * Acquires `.index.lock` only for the final tmp+rename write — O(1) — so the
- * lock hold time is short regardless of how many session files exist. All
- * readdir + readFile calls happen before lock acquisition.
- *
- * Returns null if the lock is held by a concurrent upsert — the caller in
- * `listSessions` handles this gracefully by returning an empty result set.
+ * Returns null when the directory does not exist so callers can early-return
+ * without touching the lock (acquirePosixLock requires the parent dir to exist).
  */
-export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
-  const dir = sessionsDir(cwd);
-
-  // --- Phase 1: scan + read, all outside the lock ---
-  // If the sessions dir doesn't exist, return an empty index without touching
-  // any lock. (acquirePosixLock would ENOENT on a missing parent directory.)
+async function scanSessionsDir(dir: string): Promise<SessionIndex | null> {
   let entries: string[];
   try {
     entries = await readdir(dir);
   } catch {
-    return { version: 1, sessions: {} };
+    return null;
   }
 
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
@@ -388,6 +380,29 @@ export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
       /* skip corrupt files */
     }
   }
+
+  return index;
+}
+
+/**
+ * Rebuild the session index from scratch by scanning all session files.
+ * Called automatically when the index is missing or corrupt.
+ *
+ * Acquires `.index.lock` only for the final tmp+rename write — O(1) — so the
+ * lock hold time is short regardless of how many session files exist. All
+ * readdir + readFile calls happen before lock acquisition.
+ *
+ * Returns null if the lock is held by a concurrent upsert — the caller in
+ * `listSessions` handles this gracefully by returning an empty result set.
+ */
+export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
+  const dir = sessionsDir(cwd);
+
+  // --- Phase 1: scan + read, all outside the lock ---
+  // null means the sessions dir doesn't exist — early return to avoid
+  // ENOENT in acquirePosixLock (which requires the parent dir to exist).
+  const index = await scanSessionsDir(dir);
+  if (index === null) return { version: 1, sessions: {} };
 
   // --- Phase 2: write under the lock (O(1)) ---
   // Acquire the index lock only for the rename so hold time is minimal.
@@ -424,49 +439,17 @@ export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
  * Use this for user-facing repair commands (e.g. `doctor --fix`) where a silent
  * write failure would be worse than an error.
  *
- * Scan failures (e.g. sessions dir unreadable) propagate from rebuildSessionIndex
- * itself — this function additionally propagates index-write failures.
+ * Scan failures (e.g. sessions dir unreadable) return an empty index (same as
+ * rebuildSessionIndex). This function additionally propagates index-write failures
+ * and throws on lock contention instead of silently returning.
  */
 export async function rebuildSessionIndexStrict(cwd: string): Promise<SessionIndex> {
   const dir = sessionsDir(cwd);
 
-  let entries: string[];
-  try {
-    entries = await readdir(dir);
-  } catch {
-    return { version: 1, sessions: {} };
-  }
-
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
-  const jsonFiles = entries.filter((e) => uuidPattern.test(e));
-
-  const index: SessionIndex = { version: 1, sessions: {} };
-  for (const f of jsonFiles) {
-    const p = join(dir, f);
-    try {
-      const raw = await readFile(p, "utf-8");
-      const parsed = JSON.parse(raw) as unknown;
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        !Array.isArray(parsed) &&
-        (parsed as Record<string, unknown>).schemaVersion === 2
-      ) {
-        const { meta, messages } = parsed as SessionV2;
-        if (!uuidPattern.test(`${meta.id}.json`)) continue;
-        index.sessions[meta.id] = {
-          id: meta.id,
-          parentId: meta.parentId,
-          branchName: meta.branchName,
-          createdAt: meta.createdAt,
-          updatedAt: meta.updatedAt,
-          firstMessage: extractFirstMessage(messages as Message[]),
-        };
-      }
-    } catch {
-      /* skip corrupt files */
-    }
-  }
+  // Phase 1: scan outside the lock (shared with rebuildSessionIndex)
+  // null means the sessions dir doesn't exist — return empty index early.
+  const index = await scanSessionsDir(dir);
+  if (index === null) return { version: 1, sessions: {} };
 
   const lockFile = sessionIndexLockPath(cwd);
   const acquired = await acquirePosixLock(lockFile);

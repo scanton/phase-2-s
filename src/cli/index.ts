@@ -52,6 +52,20 @@ function sessionDir(): string {
 }
 
 /**
+ * Resolve the model override for a REPL turn based on the active :re tier.
+ * Returns undefined (fall through to config.model) when no override is active
+ * or when the tier-specific model is not configured.
+ */
+function resolveReasoningModel(
+  override: "high" | "low" | undefined,
+  config: { smart_model?: string; fast_model?: string },
+): string | undefined {
+  if (override === "high") return config.smart_model;
+  if (override === "low") return config.fast_model;
+  return undefined;
+}
+
+/**
  * Find the most recently active session file via state.json.
  * Returns null if no active session is recorded or the file is missing.
  */
@@ -858,11 +872,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
       if (arg === "") {
         // Show current state
         const tier = reasoningOverride ?? "default";
-        const model = reasoningOverride === "high"
-          ? (config.smart_model ?? config.model ?? "default")
-          : reasoningOverride === "low"
-            ? (config.fast_model ?? config.model ?? "default")
-            : (config.model ?? "default");
+        const model = resolveReasoningModel(reasoningOverride, config) ?? config.model ?? "default";
         const overrideSuffix = reasoningOverride ? chalk.dim(" [overridden — use :re default to reset]") : "";
         console.log(chalk.cyan(`→ Reasoning: ${tier} (${model})${overrideSuffix}`));
       } else if (arg === "high") {
@@ -1103,11 +1113,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
 
     // Normal message — stream deltas as they arrive
     // Apply reasoningOverride (set by :re command) — only affects normal turns, not skill invocations.
-    const normalTurnModel = reasoningOverride === "high"
-      ? config.smart_model
-      : reasoningOverride === "low"
-        ? config.fast_model
-        : undefined;
+    const normalTurnModel = resolveReasoningModel(reasoningOverride, config);
     process.stdout.write(chalk.bold("\nassistant > "));
     try {
       await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel });
