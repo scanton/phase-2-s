@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.22.2 — 2026-04-09
+
+Sprint 47 post-review — session lock correctness sweep: ABA lock fix, stale path filtering, index lock on rebuild.
+
+### Fixed
+
+- **ABA lock race in `releasePosixLock`** — Before unlinking a lock file, the function now reads the file's PID and only proceeds if it matches the current process. Without this guard, a stale-lock cleanup by a second process (combined with a third acquiring a new lock) could cause the original holder's `finally` block to silently delete a live lock. The fix also adds a `Number.isInteger` guard so empty or corrupt lock files are treated as not-owned and left for the stale timeout to handle.
+- **`listSessions` stale path filter** — Both the index fast path and the rebuild slow path now filter results with `existsSync` before returning. Sessions deleted from disk since the index was written are silently skipped instead of returning paths that no longer exist.
+- **`rebuildSessionIndex` now holds `.index.lock` during write** — Previously, `rebuildSessionIndex` wrote `index.json` without acquiring the index lock, allowing a concurrent `upsertSessionIndex` to lose its entry to the rebuild's `renameSync`. The function now acquires `.index.lock` before scanning, returns `null` on contention (handled gracefully by the caller), and releases the lock in a `finally` block.
+- **NFS lock atomicity documented** — `acquirePosixLock` now has a JSDoc note that `{ flag: "wx" }` is atomic on local POSIX filesystems but not on NFSv2/v3 mounts. The same note appears in `CONTRIBUTING.md`.
+- **`checkSessionDag` concurrency caveat documented** — JSDoc clarifies that the function takes a point-in-time snapshot; false-positive dangling-parentId warnings are possible during concurrent session creation but self-resolve on the next `doctor` run.
+
 ## v1.22.1 — 2026-04-09
 
 Sprint 47 — Session infrastructure: atomic state lock, O(1) conversation listing, DAG integrity check.
