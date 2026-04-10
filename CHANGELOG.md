@@ -16,6 +16,7 @@ Sprint 48 — Lock correctness closure + doom-loop prevention.
 - **`phase2s doctor` Bash shell integration check** — `checkBashPlugin()` follows the exact structure of `checkShellPlugin()`: N/A for non-Bash shells, checks plugin file existence, write permission on `~/.phase2s`, and source line in `~/.bash_profile` or `~/.bashrc` (either file, absolute or `$HOME`-relative form). Bash users previously saw a false-clean doctor report.
 - **Doom-loop reflection protocol in `buildSatoriContext`** — When a sub-task fails and is retried, satori now receives a structured three-question reflection protocol instead of the original one-liner "Fix this specifically." The protocol asks for root cause, reasoning flaw, and a meaningfully different new approach. If the model cannot identify a different approach, it is instructed to stop and explain rather than repeat. Set `PHASE2S_DOOM_LOOP_REFLECTION=off` to revert to the one-liner (escape hatch for LLM regression).
 
+
 ## v1.22.2 — 2026-04-09
 
 Sprint 47 post-review — session lock correctness sweep: ABA lock fix, stale path filtering, index lock on rebuild.

@@ -1279,3 +1279,4 @@ describe("migrateAllLocked() — symlink escape guard", () => {
     expect(existsSync(newPath)).toBe(true);
   });
 });
+
