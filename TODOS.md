@@ -28,7 +28,7 @@
 
 - [x] **`rebuildSessionIndex` lock starvation** — Restructured: all `readdir` + `readFile` calls happen before lock acquisition; the lock is held only for the O(1) `renameSync`. `upsertSessionIndex` callers no longer exhaust the wait budget during rebuilds. Also changed: lock contention now returns the built-but-unpersisted index (not null) so callers always get valid data. **Completed:** v1.22.2 /review pass (2026-04-09)
 
-- [ ] **`writeReplState` fixed `.tmp` suffix (no PID)** — Uses `path + ".tmp"` (shared suffix). If two processes both proceed without the lock (the `acquirePosixLock` false-return path), they can collide on the temp file. Fix: use `path + ".tmp." + process.pid` matching the pattern in `upsertSessionIndex`. **Priority:** P3
+- [x] **`writeReplState` fixed `.tmp` suffix (no PID)** — Uses `path + ".tmp"` (shared suffix). If two processes both proceed without the lock (the `acquirePosixLock` false-return path), they can collide on the temp file. Fix: use `path + ".tmp." + process.pid` matching the pattern in `upsertSessionIndex`. **Completed:** v1.22.3 (Sprint 48, 2026-04-09)
 
 ---
 
@@ -72,7 +72,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [ ] **Semantic search / codebase indexing** — `:sync` indexes the codebase; subsequent prompts can search by meaning rather than exact text. Forge sends to `api.forgecode.dev` by default, self-hostable via `FORGE_WORKSPACE_SERVER_URL`. Phase2S has no semantic search. This is table stakes for large codebases. Could integrate with a local embeddings model (Ollama) for offline use.
 
-- [ ] **Doom-loop prevention template** — Forge has `forge-doom-loop-reminder.md`, a system prompt fragment that explicitly reminds the AI not to get stuck retrying the same failing operation. We have `max_tool_failure_per_turn` equivalents but no explicit anti-doom-loop prompt engineering. Worth adding to satori's retry prompt.
+- [x] **Doom-loop prevention template** — Forge has `forge-doom-loop-reminder.md`, a system prompt fragment that explicitly reminds the AI not to get stuck retrying the same failing operation. We have `max_tool_failure_per_turn` equivalents but no explicit anti-doom-loop prompt engineering. Worth adding to satori's retry prompt. **Completed:** v1.22.3 — structured reflection protocol in `buildSatoriContext()` (Sprint 48, 2026-04-09)
 
 - [ ] **Tool error reflection** — Forge has `forge-partial-tool-error-reflection.md`, a prompt fragment injected when a tool fails, asking the AI to reflect on what went wrong before retrying. Phase2S's satori loop does failure analysis, but it happens at the outer goal level. Inner-loop (per-tool) reflection would catch more errors earlier.
 
@@ -835,10 +835,10 @@ These were flagged but not fixed — they need deeper analysis before touching.
 
 ## Sprint 45 follow-ons (from /plan-eng-review 2026-04-09)
 
-- [ ] **Bash doctor parity** — `doctor.ts` currently only checks ZSH plugin (via `checkShellPlugin()`). After Sprint 45 ships bash support, add `checkBashPlugin()` that verifies `~/.phase2s/phase2s-bash.sh` is installed and sourced in the detected profile file (`~/.bash_profile` or `~/.bashrc`). Same structure as existing `checkShellPlugin()`. Blocked by: Sprint 45 bash support shipping first. Target: Sprint 47.
+- [x] **Bash doctor parity** — `doctor.ts` currently only checks ZSH plugin (via `checkShellPlugin()`). After Sprint 45 ships bash support, add `checkBashPlugin()` that verifies `~/.phase2s/phase2s-bash.sh` is installed and sourced in the detected profile file (`~/.bash_profile` or `~/.bashrc`). Same structure as existing `checkShellPlugin()`. **Completed:** v1.22.3 (Sprint 48, 2026-04-09)
 
-- [ ] **migrateAll symlink escape** — lexical regex validation on `originalName`/`newId` doesn't prevent symlink targets pointing outside the sessions dir. A symlink named `2024-01-01.json` pointing to `/etc/passwd` passes the regex. Fix: after `path.join()`, call `realpathSync()` on the resolved path and verify it starts with `sessionsDir`. Severity LOW (requires write access to the sessions dir to exploit). Blocked by: Sprint 45 migrateAll hardening. Target: Sprint 47.
+- [x] **migrateAll symlink escape** — lexical regex validation on `originalName`/`newId` doesn't prevent symlink targets pointing outside the sessions dir. A symlink named `2024-01-01.json` pointing to `/etc/passwd` passes the regex. Fix: after `path.join()`, call `realpathSync()` on the resolved path and verify it starts with `sessionsDir`. **Completed:** v1.22.3 — two-phase escape guard (Sprint 48, 2026-04-09)
 
-- [ ] **migrateAll stale lockfile on SIGKILL** — If a Phase2S process is killed with SIGKILL while migration is running, the `finally` block never executes and `.phase2s/sessions/migration.json.lock` is never cleaned up. Every subsequent startup detects EEXIST and silently skips migration forever. Fix: use mtime-based TTL (steal lock if > 60s old) or write `process.pid` to the lockfile and check liveness on EEXIST with `process.kill(pid, 0)`. Currently requires manual deletion of the stale lockfile to recover. Severity LOW in practice (SIGKILL during startup window only). Target: Sprint 47.
+- [x] **migrateAll stale lockfile on SIGKILL** — If a Phase2S process is killed with SIGKILL while migration is running, the `finally` block never executes and `.phase2s/sessions/migration.json.lock` is never cleaned up. Every subsequent startup detects EEXIST and silently skips migration forever. Fix: use mtime-based TTL (steal lock if > 60s old) or write `process.pid` to the lockfile and check liveness on EEXIST with `process.kill(pid, 0)`. **Completed:** v1.22.3 — PID liveness check with SIGKILL recovery (Sprint 48, 2026-04-09)
 
 - [ ] **Bash `:()` override — `${VAR:=default}` incompatibility** — The bash plugin shadows the `:` builtin. Patterns like `: ${JAVA_HOME:=/usr/lib/jvm/default}` in `.bash_profile` expand before the function call, passing the expanded value to `phase2s run` instead of being a no-op. Users with this pattern should switch to `export VAR=${VAR:-default}` syntax. Document in `phase2s setup --bash` output and getting-started.md. Same inherent trade-off as the ZSH override. Target: Sprint 47 docs pass.

@@ -98,7 +98,36 @@ describe("buildSatoriContext", () => {
     const prompt = buildSatoriContext(SUBTASK, CONSTRAINTS, "The bucket wasn't cleared on window expiry");
     expect(prompt).toContain("Previous failure");
     expect(prompt).toContain("The bucket wasn't cleared on window expiry");
-    expect(prompt).toContain("Fix this specifically");
+  });
+
+  it("includes reflection protocol after the failure context", () => {
+    const prompt = buildSatoriContext(SUBTASK, CONSTRAINTS, "The bucket wasn't cleared on window expiry");
+    const failureIdx = prompt.indexOf("## Previous failure");
+    const reflectionIdx = prompt.indexOf("## Reflection protocol");
+    expect(reflectionIdx).toBeGreaterThan(failureIdx);
+    expect(prompt).toContain("Getting stuck is acceptable");
+  });
+
+  it("does NOT include reflection protocol when failureContext is absent", () => {
+    const prompt = buildSatoriContext(SUBTASK, CONSTRAINTS);
+    expect(prompt).not.toContain("Reflection protocol");
+    expect(prompt).not.toContain("Getting stuck is acceptable");
+  });
+
+  it("falls back to one-liner when PHASE2S_DOOM_LOOP_REFLECTION=off", () => {
+    const prev = process.env.PHASE2S_DOOM_LOOP_REFLECTION;
+    process.env.PHASE2S_DOOM_LOOP_REFLECTION = "off";
+    try {
+      const prompt = buildSatoriContext(SUBTASK, CONSTRAINTS, "The bucket wasn't cleared on window expiry");
+      expect(prompt).toContain("Fix this specifically. Do not repeat the same approach.");
+      expect(prompt).not.toContain("Reflection protocol");
+    } finally {
+      if (prev === undefined) {
+        delete process.env.PHASE2S_DOOM_LOOP_REFLECTION;
+      } else {
+        process.env.PHASE2S_DOOM_LOOP_REFLECTION = prev;
+      }
+    }
   });
 });
 

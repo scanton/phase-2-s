@@ -27,7 +27,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, writeFileSync, readFileSync, unlinkSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, writeFileSync, readFileSync, unlinkSync, statSync, realpathSync } from "node:fs";
 import { readdir, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import chalk from "chalk";
@@ -229,7 +229,7 @@ export async function writeReplState(cwd: string, state: ReplState): Promise<voi
 
   try {
     const path = replStatePath(cwd);
-    const tmp = path + ".tmp";
+    const tmp = path + ".tmp." + process.pid;
     writeFileSync(tmp, JSON.stringify(state, null, 2), { encoding: "utf-8", mode: 0o600 });
     renameSync(tmp, path);
   } finally {
@@ -261,6 +261,8 @@ export async function saveSession(cwd: string, path: string, conv: Conversation,
     messages,
   };
   await mkdir(dirname(path), { recursive: true });
+  // No PID suffix needed here: saveSession() is always called inside a held
+  // acquirePosixLock() guard, so two concurrent callers cannot both proceed.
   const tmp = path + ".tmp";
   await writeFile(tmp, JSON.stringify(updated, null, 2), { encoding: "utf-8", mode: 0o600 });
   renameSync(tmp, path);
@@ -450,6 +452,41 @@ export async function loadSession(path: string): Promise<{ conv: Conversation; m
 // ---------------------------------------------------------------------------
 
 /**
+ * Atomically steal a stale migration lock file.
+ *
+ * Deletes the existing lock and re-acquires it with the current PID using the
+ * atomic POSIX "wx" flag. Returns `true` if the steal succeeded (caller holds
+ * the lock). Returns `false` if another process stole it first (EEXIST on
+ * re-acquire — the winner logs and returns so the caller should too).
+ * Throws on any unexpected error (EACCES, EROFS, etc.) so real errors surface.
+ *
+ * TOCTOU note: between unlinkSync and writeFileSync(wx), a brief window exists
+ * where no lock file is present. A concurrent process may win the re-acquire,
+ * producing EEXIST here — that is correct behavior (it won, we skip).
+ */
+function stealMigrationLock(lockPath: string): boolean {
+  // unlinkSync can throw ENOENT if a concurrent stealer already deleted the lock.
+  // Treat that as "already gone — fall through and try wx acquire directly."
+  try {
+    unlinkSync(lockPath);
+  } catch (unlinkErr) {
+    if ((unlinkErr as NodeJS.ErrnoException).code !== "ENOENT") throw unlinkErr;
+    // ENOENT: already deleted by another stealer — fall through to wx acquire
+  }
+  try {
+    writeFileSync(lockPath, process.pid.toString(), { flag: "wx", mode: 0o600 });
+    return true;
+  } catch (stealErr) {
+    if ((stealErr as NodeJS.ErrnoException).code === "EEXIST") {
+      // Another process stole the lock first — skip migration.
+      console.error(chalk.dim("Migration lock stolen by concurrent process — skipping."));
+      return false;
+    }
+    throw stealErr; // EACCES, EROFS, etc. — real error, propagate
+  }
+}
+
+/**
  * Migrate all legacy session files (schema v1 — bare arrays) to schema v2.
  *
  * Strategy:
@@ -487,10 +524,50 @@ export async function migrateAll(cwd: string): Promise<void> {
     writeFileSync(lockPath, process.pid.toString(), { flag: "wx", mode: 0o600 });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "EEXIST") {
-      console.error(chalk.dim("Migration already in progress — skipping."));
-      return;
+      // Check if the holding process is still alive.
+      // This handles SIGKILL recovery: a killed process leaves the lockfile
+      // permanently unless we detect its absence and steal the lock.
+
+      // Narrow try/catch: only covers readFileSync so that steal-path errors
+      // (EACCES, EROFS, disk-full on writeFileSync) propagate to the caller
+      // rather than being silently swallowed as "already in progress".
+      let pidStr: string;
+      try {
+        pidStr = readFileSync(lockPath, "utf-8").trim();
+      } catch {
+        // ENOENT race: lock deleted between our EEXIST and this read — conservative skip.
+        console.error(chalk.dim("Migration already in progress — skipping."));
+        return;
+      }
+
+      const pid = Number(pidStr);
+      if (Number.isInteger(pid) && pid > 0) {
+        try {
+          process.kill(pid, 0); // signal 0: liveness check only, does not send a signal
+          // Process alive — migration really is in progress.
+          console.error(chalk.dim("Migration already in progress — skipping."));
+          return;
+        } catch (killErr) {
+          if ((killErr as NodeJS.ErrnoException).code === "ESRCH") {
+            // Process dead — stale lock from SIGKILL. Steal it.
+            if (!stealMigrationLock(lockPath)) return;
+            // Fall through to run migration with the stolen lock
+          } else {
+            // EPERM: current process lacks permission to signal that PID.
+            // This is extremely rare (different-user or privilege boundary).
+            // Be conservative — treat as "process alive, migration in progress."
+            console.error(chalk.dim("Migration lock exists — skipping."));
+            return;
+          }
+        }
+      } else {
+        // Invalid/corrupt PID in lock file — stale. Steal it.
+        if (!stealMigrationLock(lockPath)) return;
+        // Fall through to run migration with the stolen lock
+      }
+    } else {
+      throw err; // ENOENT, EACCES = real error — propagate
     }
-    throw err; // ENOENT, EACCES = real error — propagate
   }
 
   try {
@@ -543,19 +620,40 @@ async function migrateAllLocked(
 
   // Process unfinished entries
   // Hoist loop-invariant guards outside the loop.
+  // resolvedDir: lexical (resolve()) — used for Phase 1 ".." traversal check.
+  // realDir: symlink-resolved (realpathSync()) — used for Phase 2 symlink escape check.
+  // These must be separate on systems where the sessions dir itself is a symlink
+  // (e.g. macOS /tmp → /private/tmp): using realpathSync() for Phase 1 would cause
+  // resolve(oldPath) (which is lexical) to never match realDir, skipping all entries.
   const resolvedDir = resolve(dir);
+  let realDir: string;
+  try { realDir = realpathSync(dir); } catch { realDir = resolvedDir; }
   const bareUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   let anyMigrated = false;
   for (const entry of manifest.entries) {
     if (entry.done) continue;
 
-    // Guard against path traversal: originalName must resolve inside dir.
-    // A crafted manifest could use "../../../etc/passwd" as originalName.
+    // Phase 1 — Lexical check (fast): catches ".." traversal and absolute paths.
+    // resolve() is purely lexical — it does NOT follow symlinks.
     const oldPath = join(dir, entry.originalName);
     const resolvedOld = resolve(oldPath);
     if (!resolvedOld.startsWith(resolvedDir + "/") && resolvedOld !== resolvedDir) {
       console.error(chalk.yellow(`Skipping manifest entry with suspicious path: ${entry.originalName}`));
       continue;
+    }
+    // Phase 2 — Symlink check: catches symlinks pointing outside sessionsDir
+    // that pass the lexical check. realpathSync() follows the symlink to its
+    // real target. Only runs if file exists (realpathSync throws on ENOENT).
+    if (existsSync(oldPath)) {
+      try {
+        const realOld = realpathSync(oldPath);
+        if (!realOld.startsWith(realDir + "/") && realOld !== realDir) {
+          console.error(chalk.yellow(`Skipping manifest entry with symlink escape: ${entry.originalName}`));
+          continue;
+        }
+      } catch {
+        // realpathSync failed (race: file removed between existsSync and realpathSync) — continue
+      }
     }
     // Also validate newId is a UUID so sessionPath() doesn't escape the sessions dir
     if (!bareUuidPattern.test(entry.newId)) {
@@ -614,7 +712,7 @@ async function migrateAllLocked(
     };
 
     // Write new file atomically, then retire old file
-    const tmp = newPath + ".tmp";
+    const tmp = newPath + ".tmp." + process.pid;
     writeFileSync(tmp, JSON.stringify(v2, null, 2), { encoding: "utf-8", mode: 0o600 });
     renameSync(tmp, newPath);
     // Remove old file after successful write
@@ -700,7 +798,7 @@ export async function cloneSession(
   const v2: SessionV2 = { schemaVersion: 2, meta: newMeta, messages };
 
   await mkdir(dirname(newPath), { recursive: true });
-  const tmp = newPath + ".tmp";
+  const tmp = newPath + ".tmp." + process.pid;
   await writeFile(tmp, JSON.stringify(v2, null, 2), { encoding: "utf-8", mode: 0o600 });
   renameSync(tmp, newPath);
 

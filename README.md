@@ -243,6 +243,7 @@ phase2s skills --json # machine-readable for scripts
 - [GitHub Action](docs/github-action.md) — `uses: scanton/phase2s@v1` for CI (requires API key)
 - [Advanced](docs/advanced.md) — streaming, model routing, tool allow/deny
 - [Configuration](docs/configuration.md) — `.phase2s.yaml` and environment variables
+- [Contributing](CONTRIBUTING.md) — session storage internals, lock correctness, NFS caveats
 
 ---
 
@@ -416,7 +417,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 1063 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, AI-generated commit messages, and session index/locking/DAG integrity
+- [x] 1099 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, AI-generated commit messages, session index/locking/DAG integrity, and session lock hardening (PID-suffixed tmp files, SIGKILL recovery, symlink escape guard)
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -482,6 +483,7 @@ browser: true  # requires playwright installed
 - [x] O(1) `conversations` listing via session index — `.phase2s/sessions/index.json` is maintained on every `saveSession`/`cloneSession` call. `phase2s conversations` reads a single file instead of scanning every session on disk. Falls back to a full rebuild if the index is missing or corrupt.
 - [x] `phase2s doctor` DAG integrity check — scans all session files and reports any `parentId` references that point to a non-existent session (dangling branches after manual deletion).
 - [x] Session lock hardening (v1.22.2) — `releasePosixLock` reads the PID before unlinking to close an ABA race (also guards against decimal/corrupt PID via `Number.isInteger`); `rebuildSessionIndex` holds `.index.lock` only for the O(1) `renameSync` (scan happens before lock acquisition to prevent lock starvation); `migrateAll` writes `process.pid` to its lock file and calls `releasePosixLock` in `finally` instead of bare `unlinkSync`; `listSessions` fast path and slow path both filter stale paths with `existsSync` before emitting results.
+- [x] Lock correctness closure + doom-loop prevention (v1.22.3) — PID-suffixed tmp files in `writeReplState` and `cloneSession` prevent concurrent-write races on the same `.tmp` path; SIGKILL stale migration lock recovery via `process.kill(pid, 0)` liveness check (dead process → steal lock, no more manual `rm *.lock`); two-phase symlink escape guard in `migrateAllLocked` (lexical + `realpathSync`); `phase2s doctor` now checks Bash shell integration parity with ZSH; doom-loop reflection protocol replaces the one-liner retry prompt in `buildSatoriContext` (set `PHASE2S_DOOM_LOOP_REFLECTION=off` to revert).
 
 ---
 

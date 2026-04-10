@@ -397,6 +397,87 @@ export function checkShellPlugin(
 }
 
 /**
+ * Check that the Bash shell integration plugin is installed and sourced.
+ *
+ * Follows the exact structure of checkShellPlugin() — see that function for
+ * the rationale behind each check (N/A guard, write-permission, source-line).
+ * Return type: CheckResult (same as all other doctor checks).
+ *
+ * @param phase2sDir    Path to ~/.phase2s (injectable for testing).
+ * @param profilePaths  Paths to check for the source line (injectable for testing;
+ *                      defaults to ~/.bash_profile and ~/.bashrc).
+ */
+export function checkBashPlugin(
+  phase2sDir: string = join(homedir(), ".phase2s"),
+  profilePaths: string[] = [
+    join(homedir(), ".bash_profile"),
+    join(homedir(), ".bashrc"),
+  ],
+): CheckResult {
+  // Bash-only feature — non-Bash users (ZSH, fish, etc.) see an informational ✓.
+  // Unlike checkShellPlugin, SHELL unset/empty means we cannot confirm Bash — skip.
+  const shell = process.env.SHELL ?? "";
+  const isBash = shell.endsWith("/bash");
+  if (!isBash) {
+    return {
+      name: "Bash shell integration",
+      ok: true,
+      detail: `N/A (Bash-only — detected shell: ${shell || "unknown"})`,
+    };
+  }
+
+  const pluginPath = join(phase2sDir, "phase2s-bash.sh");
+  if (!existsSync(pluginPath)) {
+    return {
+      name: "Bash shell integration",
+      ok: false,
+      detail: "Bash plugin not installed",
+      fix: "Run: phase2s setup --bash",
+    };
+  }
+
+  // Write-permission check — mirrors checkShellPlugin: warns if future upgrades
+  // will fail because ~/.phase2s is not writable.
+  try {
+    accessSync(phase2sDir, constants.W_OK);
+  } catch {
+    return {
+      name: "Bash shell integration",
+      ok: false,
+      detail: `Plugin installed but ${phase2sDir} is not writable`,
+      fix: `Run: chmod u+w "${phase2sDir}"  (needed for phase2s setup upgrades)`,
+    };
+  }
+
+  // Check ~/.bash_profile or ~/.bashrc for a source line.
+  // Accept both the $HOME-relative form and the absolute path form for
+  // compatibility with users who sourced manually before setup --bash existed.
+  // .some() is correct: sourced in either file is sufficient.
+  const homeRelativePluginPath = "$HOME/.phase2s/phase2s-bash.sh";
+  const sourced = profilePaths.some((f) => {
+    try {
+      const content = readFileSync(f, "utf-8");
+      return content.includes(homeRelativePluginPath) || content.includes(pluginPath);
+    } catch { return false; }
+  });
+
+  if (!sourced) {
+    return {
+      name: "Bash shell integration",
+      ok: false,
+      detail: "Bash plugin installed but not sourced in ~/.bash_profile or ~/.bashrc",
+      fix: "Run: phase2s setup --bash  (adds the source line, idempotent)",
+    };
+  }
+
+  return {
+    name: "Bash shell integration",
+    ok: true,
+    detail: "Bash plugin installed and sourced",
+  };
+}
+
+/**
  * Check session DAG integrity: every parentId must resolve to an existing session.
  * Read-only — reports dangling references, never modifies files.
  *
@@ -505,6 +586,7 @@ export async function runDoctor(): Promise<void> {
     checkWorkDir(resolve(".phase2s")),
     checkTemplatesDir(),
     checkShellPlugin(),
+    checkBashPlugin(),
     checkTmux(),
     checkGitWorktree(),
     checkSessionDag(resolve(".phase2s", "sessions")),
