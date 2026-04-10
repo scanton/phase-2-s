@@ -8,3 +8,4 @@ dist/action/package.json
 .env
 .test-*/
 .gstack/
+.worktrees/
