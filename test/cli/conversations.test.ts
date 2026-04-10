@@ -6,7 +6,7 @@ import { join } from "node:path";
 // We test the sessions listing + preview logic via session.ts functions directly,
 // and test the plain-table output via conversations.ts.
 
-import { listSessions, getSessionPreview, type SessionMeta } from "../../src/core/session.js";
+import { listSessions, type SessionMeta } from "../../src/core/session.js";
 import { runConversationsBrowser } from "../../src/cli/conversations.js";
 
 function makeSessionFile(
@@ -90,62 +90,6 @@ describe("listSessions()", () => {
     writeFileSync(join(sessDir, "something.json.tmp"), "{}");
     const results = await listSessions(tmpDir);
     expect(results.length).toBe(0);
-  });
-});
-
-describe("getSessionPreview()", () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-preview-conv-test-"));
-  });
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it("returns first user message (skipping system message)", async () => {
-    const path = join(tmpDir, "s.json");
-    writeFileSync(
-      path,
-      JSON.stringify({
-        schemaVersion: 2,
-        meta: { id: "x", parentId: null, branchName: "main", createdAt: "", updatedAt: "" },
-        messages: [
-          { role: "system", content: "be helpful" },
-          { role: "user", content: "what does agent.ts do?" },
-        ],
-      }),
-    );
-    expect(await getSessionPreview(path)).toBe("what does agent.ts do?");
-  });
-
-  it("sanitizes ANSI escape codes", async () => {
-    const path = join(tmpDir, "ansi.json");
-    writeFileSync(
-      path,
-      JSON.stringify({
-        schemaVersion: 2,
-        meta: { id: "x", parentId: null, branchName: "main", createdAt: "", updatedAt: "" },
-        messages: [{ role: "user", content: "\x1b[1mBold\x1b[0m text" }],
-      }),
-    );
-    const preview = await getSessionPreview(path);
-    expect(preview).not.toContain("\x1b");
-    expect(preview).toContain("Bold");
-    expect(preview).toContain("text");
-  });
-
-  it("returns empty string for session with no user messages", async () => {
-    const path = join(tmpDir, "empty.json");
-    writeFileSync(
-      path,
-      JSON.stringify({
-        schemaVersion: 2,
-        meta: { id: "x", parentId: null, branchName: "main", createdAt: "", updatedAt: "" },
-        messages: [{ role: "assistant", content: "no user message" }],
-      }),
-    );
-    expect(await getSessionPreview(path)).toBe("");
   });
 });
 

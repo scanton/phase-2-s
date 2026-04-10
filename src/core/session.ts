@@ -27,7 +27,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, writeFileSync, readFileSync, unlinkSync, statSync } from "node:fs";
 import { readdir, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import chalk from "chalk";
@@ -55,6 +55,23 @@ export interface SessionV2 {
 /** Repl-level state: which session is currently active. */
 export interface ReplState {
   currentSessionId: string;
+}
+
+/** One entry in the session index, cached for fast listing. */
+export interface SessionIndexEntry {
+  id: string;
+  parentId: string | null;
+  branchName: string;
+  createdAt: string;
+  updatedAt: string;
+  /** First user message, sanitized and truncated to 80 chars. */
+  firstMessage: string;
+}
+
+/** The session index file — one entry per session, keyed by UUID. */
+export interface SessionIndex {
+  version: 1;
+  sessions: Record<string, SessionIndexEntry>;
 }
 
 /** Per-file entry in the migration manifest. */
@@ -90,6 +107,81 @@ function migrationManifestPath(cwd: string): string {
   return join(sessionsDir(cwd), "migration.json");
 }
 
+function sessionIndexPath(cwd: string): string {
+  return join(sessionsDir(cwd), "index.json");
+}
+
+function sessionIndexLockPath(cwd: string): string {
+  return join(sessionsDir(cwd), ".index.lock");
+}
+
+function replStateLockPath(cwd: string): string {
+  return join(cwd, ".phase2s", ".state.lock");
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Stale lock timeout: locks older than this are assumed to belong to crashed processes. */
+const STALE_LOCK_TIMEOUT_MS = 30_000;
+/** Delay before retrying lock acquisition when contended. */
+const LOCK_RETRY_DELAY_MS = 50;
+/** Maximum characters to store/display as the session preview (first user message). */
+const SESSION_PREVIEW_MAX_CHARS = 80;
+
+// ---------------------------------------------------------------------------
+// Lock helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Acquire a POSIX exclusive-create lock file.
+ * Stale locks (older than STALE_LOCK_TIMEOUT_MS) are removed automatically.
+ * Retries once after LOCK_RETRY_DELAY_MS on contention.
+ *
+ * @returns `true` if the lock was acquired, `false` if we're proceeding without it.
+ * @throws  Any error other than EEXIST from the underlying writeFileSync.
+ */
+async function acquirePosixLock(lockFile: string): Promise<boolean> {
+  // Stale lock detection: if the lock is older than 30 s, the process that
+  // created it has almost certainly crashed — remove it before trying to acquire.
+  try {
+    const stat = statSync(lockFile);
+    if (Date.now() - stat.mtimeMs > STALE_LOCK_TIMEOUT_MS) unlinkSync(lockFile);
+  } catch {
+    /* no lock file — normal path */
+  }
+
+  // Acquire lock. "wx" = O_WRONLY | O_CREAT | O_EXCL — atomic on POSIX.
+  const tryAcquire = (): boolean => {
+    try {
+      writeFileSync(lockFile, process.pid.toString(), { flag: "wx", mode: 0o600 });
+      return true;
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
+      throw e;
+    }
+  };
+
+  if (tryAcquire()) return true;
+
+  // Another process holds the lock — wait and retry once.
+  await new Promise<void>((resolve) => setTimeout(resolve, LOCK_RETRY_DELAY_MS));
+  if (tryAcquire()) return true;
+
+  // Still contended after retry — proceed without lock.
+  // This preserves liveness over strict mutual exclusion.
+  return false;
+}
+
+/**
+ * Release a POSIX lock file acquired by acquirePosixLock().
+ * Best-effort — errors are silently ignored.
+ */
+function releasePosixLock(lockFile: string): void {
+  try { unlinkSync(lockFile); } catch { /* best-effort */ }
+}
+
 // ---------------------------------------------------------------------------
 // REPL state.json I/O
 // ---------------------------------------------------------------------------
@@ -107,14 +199,26 @@ export function readReplState(cwd: string): ReplState | null {
 
 /**
  * Write REPL state atomically (tmp → rename).
- * Creates parent directory if needed.
+ * Uses a POSIX exclusive-create lock (.state.lock) to serialize concurrent
+ * writers (e.g., two REPL instances in split terminals). Stale locks older
+ * than 30 s are removed automatically (handles crashed processes).
+ * Retries once after 50 ms on contention.
  */
-export function writeReplState(cwd: string, state: ReplState): void {
-  const path = replStatePath(cwd);
-  const tmp = path + ".tmp";
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(tmp, JSON.stringify(state, null, 2), "utf-8");
-  renameSync(tmp, path);
+export async function writeReplState(cwd: string, state: ReplState): Promise<void> {
+  const phase2sDir = join(cwd, ".phase2s");
+  mkdirSync(phase2sDir, { recursive: true });
+
+  const lockFile = replStateLockPath(cwd);
+  const lockAcquired = await acquirePosixLock(lockFile);
+
+  try {
+    const path = replStatePath(cwd);
+    const tmp = path + ".tmp";
+    writeFileSync(tmp, JSON.stringify(state, null, 2), "utf-8");
+    renameSync(tmp, path);
+  } finally {
+    if (lockAcquired) releasePosixLock(lockFile);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -123,18 +227,152 @@ export function writeReplState(cwd: string, state: ReplState): void {
 
 /**
  * Save a conversation in v2 format.
- * Writes { schemaVersion: 2, meta, messages } with mode 0o600.
+ * Writes { schemaVersion: 2, meta, messages } atomically (tmp → rename) with mode 0o600.
+ *
+ * Also triggers a best-effort fire-and-forget upsert of the session index
+ * (.phase2s/sessions/index.json). Index failures are logged to stderr as
+ * chalk.dim warnings but do NOT throw — they never interrupt the user.
+ *
+ * @param cwd  Project working directory (parent of .phase2s/).
+ * @param path Full path to the session JSON file.
  */
-export async function saveSession(path: string, conv: Conversation, meta: SessionMeta): Promise<void> {
+export async function saveSession(cwd: string, path: string, conv: Conversation, meta: SessionMeta): Promise<void> {
+  const messages = conv.getMessages();
+  const updatedAt = new Date().toISOString();
   const updated: SessionV2 = {
     schemaVersion: 2,
-    meta: { ...meta, updatedAt: new Date().toISOString() },
-    messages: conv.getMessages(),
+    meta: { ...meta, updatedAt },
+    messages,
   };
   await mkdir(dirname(path), { recursive: true });
   const tmp = path + ".tmp";
   await writeFile(tmp, JSON.stringify(updated, null, 2), { encoding: "utf-8", mode: 0o600 });
   renameSync(tmp, path);
+
+  // Update session index (best-effort — don't interrupt the user on failure)
+  upsertSessionIndex(cwd, { ...meta, updatedAt }, extractFirstMessage(messages)).catch((err: unknown) => {
+    console.error(chalk.dim(`[phase2s] session index update failed: ${err instanceof Error ? err.message : String(err)}`));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Session index — O(1) listing cache
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the session index from disk.
+ * Returns null if the index doesn't exist or is corrupt.
+ */
+export async function readSessionIndex(cwd: string): Promise<SessionIndex | null> {
+  try {
+    const raw = await readFile(sessionIndexPath(cwd), "utf-8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      (parsed as Record<string, unknown>).version === 1
+    ) {
+      return parsed as SessionIndex;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Upsert one session's entry in the index.
+ * Reads the current index (or starts fresh), merges the entry, writes atomically.
+ * Serialized with a POSIX exclusive-create lock (.index.lock) to prevent
+ * concurrent upserts from losing each other's updates.
+ */
+export async function upsertSessionIndex(cwd: string, meta: SessionMeta & { updatedAt: string }, firstMessage: string): Promise<void> {
+  const indexPath = sessionIndexPath(cwd);
+  await mkdir(dirname(indexPath), { recursive: true });
+
+  const lockFile = sessionIndexLockPath(cwd);
+  const lockAcquired = await acquirePosixLock(lockFile);
+
+  try {
+    let index = await readSessionIndex(cwd);
+    if (!index) {
+      index = { version: 1, sessions: {} };
+    }
+
+    index.sessions[meta.id] = {
+      id: meta.id,
+      parentId: meta.parentId,
+      branchName: meta.branchName,
+      createdAt: meta.createdAt,
+      updatedAt: meta.updatedAt,
+      firstMessage,
+    };
+
+    const tmp = indexPath + ".tmp." + process.pid;
+    await writeFile(tmp, JSON.stringify(index, null, 2), { encoding: "utf-8", mode: 0o600 });
+    renameSync(tmp, indexPath);
+  } finally {
+    if (lockAcquired) releasePosixLock(lockFile);
+  }
+}
+
+/**
+ * Rebuild the session index from scratch by scanning all session files.
+ * Called automatically when the index is missing or corrupt.
+ */
+async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
+  const dir = sessionsDir(cwd);
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return { version: 1, sessions: {} };
+  }
+
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
+  const jsonFiles = entries.filter((e) => uuidPattern.test(e));
+
+  const index: SessionIndex = { version: 1, sessions: {} };
+  for (const f of jsonFiles) {
+    const p = join(dir, f);
+    try {
+      const raw = await readFile(p, "utf-8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        !Array.isArray(parsed) &&
+        (parsed as Record<string, unknown>).schemaVersion === 2
+      ) {
+        const { meta, messages } = parsed as SessionV2;
+        if (!uuidPattern.test(`${meta.id}.json`)) continue;
+        index.sessions[meta.id] = {
+          id: meta.id,
+          parentId: meta.parentId,
+          branchName: meta.branchName,
+          createdAt: meta.createdAt,
+          updatedAt: meta.updatedAt,
+          firstMessage: extractFirstMessage(messages as Message[]),
+        };
+      }
+    } catch {
+      /* skip corrupt files */
+    }
+  }
+
+  // Write the rebuilt index to disk (best-effort).
+  // Use a per-process tmp path to avoid colliding with concurrent upsertSessionIndex writes.
+  try {
+    const indexPath = sessionIndexPath(cwd);
+    await mkdir(dirname(indexPath), { recursive: true });
+    const tmp = indexPath + ".tmp." + process.pid;
+    await writeFile(tmp, JSON.stringify(index, null, 2), { encoding: "utf-8", mode: 0o600 });
+    renameSync(tmp, indexPath);
+  } catch {
+    /* best-effort */
+  }
+
+  return index;
 }
 
 /**
@@ -351,7 +589,7 @@ async function migrateAllLocked(
   if (anyMigrated && !existsSync(replStatePath(cwd))) {
     const lastEntry = manifest.entries.filter((e) => e.done).pop();
     if (lastEntry) {
-      writeReplState(cwd, { currentSessionId: lastEntry.newId });
+      await writeReplState(cwd, { currentSessionId: lastEntry.newId });
     }
   }
 }
@@ -424,6 +662,11 @@ export async function cloneSession(
   await writeFile(tmp, JSON.stringify(v2, null, 2), { encoding: "utf-8", mode: 0o600 });
   renameSync(tmp, newPath);
 
+  // Update session index with the new clone (best-effort)
+  upsertSessionIndex(cwd, newMeta, extractFirstMessage(messages)).catch((err: unknown) => {
+    console.error(chalk.dim(`[phase2s] session index update failed: ${err instanceof Error ? err.message : String(err)}`));
+  });
+
   return { id: newId, path: newPath, messageCount: messages.length, branchName: newMeta.branchName, createdAt: newMeta.createdAt, updatedAt: newMeta.updatedAt };
 }
 
@@ -437,78 +680,62 @@ function todayDate(): string {
 }
 
 /**
- * List all sessions in the sessions directory, sorted newest-first.
- * Skips files that fail to parse (corrupted) and migration artifacts.
+ * Extract the first user message from a message list for index/preview display.
+ * Sanitizes control characters and truncates to 80 chars.
  */
-export async function listSessions(cwd: string): Promise<Array<{ meta: SessionMeta; path: string }>> {
-  const dir = sessionsDir(cwd);
-  let entries: string[];
-  try {
-    entries = await readdir(dir);
-  } catch {
-    return [];
-  }
-
-  // Only UUID.json files (not manifest, not .migrated, not .tmp)
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
-  const jsonFiles = entries.filter((e) => uuidPattern.test(e));
-
-  const results: Array<{ meta: SessionMeta; path: string }> = [];
-  for (const f of jsonFiles) {
-    const p = join(dir, f);
-    try {
-      const raw = await readFile(p, "utf-8");
-      const parsed = JSON.parse(raw) as unknown;
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        !Array.isArray(parsed) &&
-        (parsed as Record<string, unknown>).schemaVersion === 2
-      ) {
-        const meta = (parsed as SessionV2).meta;
-        // Validate meta.id as UUID — prevents shell injection if a crafted file has
-        // shell metacharacters in meta.id (used as {2} in fzf --preview command).
-        if (!uuidPattern.test(`${meta.id}.json`)) {
-          continue;
-        }
-        results.push({ meta, path: p });
-      }
-    } catch {
-      // Skip corrupted files
-    }
-  }
-
-  // Sort newest-first by createdAt
-  results.sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt));
-  return results;
+function extractFirstMessage(messages: Message[]): string {
+  const first = messages.find((m) => m.role === "user");
+  return sanitizeForTerminal(first?.content ?? "").slice(0, SESSION_PREVIEW_MAX_CHARS);
 }
 
 /**
- * Get the first user message from a session file for display in the browser.
- * Returns empty string if not found or on parse error.
- * Sanitizes control characters (including ANSI escape codes) before returning.
+ * List all sessions in the sessions directory, sorted newest-first.
+ *
+ * Reads from the session index (O(1) file reads) when available.
+ * Falls back to scanning all session files if the index is missing or corrupt,
+ * and rebuilds the index from the scan result.
  */
-export async function getSessionPreview(path: string): Promise<string> {
-  try {
-    const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    let messages: Message[] = [];
-    if (Array.isArray(parsed)) {
-      messages = parsed as Message[];
-    } else if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      (parsed as Record<string, unknown>).schemaVersion === 2
-    ) {
-      messages = (parsed as SessionV2).messages;
-    }
-    const first = messages.find((m) => m.role === "user");
-    if (!first) return "";
-    // Strip ANSI escape codes and control characters
-    return sanitizeForTerminal(first.content ?? "").slice(0, 80);
-  } catch {
-    return "";
+export async function listSessions(cwd: string): Promise<Array<{ meta: SessionMeta; path: string; firstMessage: string }>> {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
+  const dir = sessionsDir(cwd);
+
+  // Fast path: read from index
+  const index = await readSessionIndex(cwd);
+  if (index) {
+    const results = Object.values(index.sessions)
+      .filter((entry) => uuidPattern.test(`${entry.id}.json`))
+      .map((entry) => ({
+        meta: {
+          id: entry.id,
+          parentId: entry.parentId,
+          branchName: entry.branchName,
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt,
+        },
+        path: join(dir, `${entry.id}.json`),
+        firstMessage: entry.firstMessage,
+      }));
+    results.sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt));
+    return results;
   }
+
+  // Slow path: scan all session files, then rebuild the index
+  const rebuiltIndex = await rebuildSessionIndex(cwd);
+  const results = Object.values(rebuiltIndex.sessions)
+    .filter((entry) => uuidPattern.test(`${entry.id}.json`))
+    .map((entry) => ({
+      meta: {
+        id: entry.id,
+        parentId: entry.parentId,
+        branchName: entry.branchName,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
+      },
+      path: join(dir, `${entry.id}.json`),
+      firstMessage: entry.firstMessage,
+    }));
+  results.sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt));
+  return results;
 }
 
 /**

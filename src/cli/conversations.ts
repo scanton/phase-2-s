@@ -15,7 +15,7 @@
 
 import { execFile, execFileSync } from "node:child_process";
 import chalk from "chalk";
-import { listSessions, getSessionPreview, sanitizeForTerminal, type SessionMeta } from "../core/session.js";
+import { listSessions, sanitizeForTerminal, type SessionMeta } from "../core/session.js";
 
 // ---------------------------------------------------------------------------
 // Row type
@@ -45,7 +45,7 @@ export async function runConversationsBrowser(cwd: string): Promise<string | nul
     return null;
   }
 
-  const rows = await buildRows(sessions);
+  const rows = buildRows(sessions);
 
   if (hasFzf() && process.stdout.isTTY) {
     return runFzf(rows);
@@ -59,21 +59,17 @@ export async function runConversationsBrowser(cwd: string): Promise<string | nul
 // Row building
 // ---------------------------------------------------------------------------
 
-async function buildRows(sessions: Array<{ meta: SessionMeta; path: string }>): Promise<SessionRow[]> {
-  return Promise.all(
-    sessions.map(async ({ meta, path }) => {
-      const preview = await getSessionPreview(path);
-      return {
-        id: meta.id,
-        date: meta.createdAt.slice(0, 10),
-        // Sanitize branchName before it enters fzf input lines — prevents ANSI/OSC
-        // injection if a crafted session file has escape sequences in branchName.
-        branchName: sanitizeForTerminal(meta.branchName ?? "main"),
-        parentId: meta.parentId,
-        preview: preview || "(empty session)",
-      };
-    }),
-  );
+function buildRows(sessions: Array<{ meta: SessionMeta; path: string; firstMessage: string }>): SessionRow[] {
+  return sessions.map(({ meta, firstMessage }) => ({
+    id: meta.id,
+    date: meta.createdAt.slice(0, 10),
+    // Sanitize branchName before it enters fzf input lines — prevents ANSI/OSC
+    // injection if a crafted session file has escape sequences in branchName.
+    branchName: sanitizeForTerminal(meta.branchName ?? "main"),
+    parentId: meta.parentId,
+    // Re-sanitize firstMessage: defense-in-depth against crafted index.json with ANSI sequences
+    preview: sanitizeForTerminal(firstMessage) || "(empty session)",
+  }));
 }
 
 // ---------------------------------------------------------------------------

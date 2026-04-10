@@ -355,7 +355,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const selectedId = await runConversationsBrowser(process.cwd());
       if (selectedId) {
         // Resume the selected session by re-running interactiveMode with it active
-        writeReplState(process.cwd(), { currentSessionId: selectedId });
+        await writeReplState(process.cwd(), { currentSessionId: selectedId });
         const config = await loadConfig({});
         await interactiveMode(config, { resume: true });
       }
@@ -691,7 +691,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   }
 
   // Record this as the active session
-  writeReplState(process.cwd(), { currentSessionId: sessionId });
+  await writeReplState(process.cwd(), { currentSessionId: sessionId });
 
   // activeSessionPath and sessionMeta are mutable — :clone updates both
   let activeSessionPath = join(SESSION_DIR, `${sessionId}.json`);
@@ -784,7 +784,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   /** Save the current conversation to the active session file (best-effort, v2 format). */
   const saveSession = async (): Promise<void> => {
     try {
-      await saveSessionV2(activeSessionPath, agent.getConversation(), sessionMeta);
+      await saveSessionV2(process.cwd(), activeSessionPath, agent.getConversation(), sessionMeta);
     } catch {
       // Best-effort — session save failures don't interrupt the user
     }
@@ -842,7 +842,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
           updatedAt: result.updatedAt,
         };
         activeSessionPath = result.path;
-        writeReplState(process.cwd(), { currentSessionId: result.id });
+        await writeReplState(process.cwd(), { currentSessionId: result.id });
         // Load the cloned session into the agent, preserving the current system prompt.
         // Without this, the agent continues from its in-memory conversation which diverges
         // from the clone file on the next :clone or --resume.

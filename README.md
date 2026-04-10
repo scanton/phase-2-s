@@ -416,7 +416,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 1046 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, and AI-generated commit messages
+- [x] 1063 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, AI-generated commit messages, and session index/locking/DAG integrity
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -478,6 +478,9 @@ browser: true  # requires playwright installed
 - [x] Bash shell integration — `phase2s setup --bash` installs `~/.phase2s/phase2s-bash.sh` and sources it from `~/.bash_profile`. Provides the same `: <prompt>` shorthand and `p2` alias as the ZSH integration, plus bash tab completion. Fixes for `:clone` corruption and atomic SIGINT save.
 - [x] Byte-aware context truncation — `level-context.ts` uses `Buffer.from(context,'utf8').subarray(0,limit).toString('utf8')` instead of `String.slice()`. Fixes silent byte overrun with emoji or CJK filenames.
 - [x] `phase2s commit` — AI-generated commit messages from staged diffs. Interactive accept / edit / cancel flow. `--auto` for CI (non-interactive, fails fast on detected secrets). `--preview` for dry-run inspection. Secrets scanner warns before sending the diff to your LLM provider. `:commit` REPL shorthand for in-session use. Conventional Commits format configurable via `.phase2s.yaml`.
+- [x] POSIX exclusive-create lock on `state.json` — `writeReplState` is now async and uses `{ flag: "wx" }` to prevent last-writer-wins races when multiple REPL instances run in parallel. Stale locks (>30 s) are removed automatically.
+- [x] O(1) `conversations` listing via session index — `.phase2s/sessions/index.json` is maintained on every `saveSession`/`cloneSession` call. `phase2s conversations` reads a single file instead of scanning every session on disk. Falls back to a full rebuild if the index is missing or corrupt.
+- [x] `phase2s doctor` DAG integrity check — scans all session files and reports any `parentId` references that point to a non-existent session (dangling branches after manual deletion).
 
 ---
 

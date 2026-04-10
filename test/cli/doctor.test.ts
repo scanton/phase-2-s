@@ -409,3 +409,113 @@ describe("checkShellPlugin", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// checkSessionDag
+// ---------------------------------------------------------------------------
+
+describe("checkSessionDag", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-dag-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeSession(dir: string, id: string, parentId: string | null) {
+    writeFileSync(
+      join(dir, `${id}.json`),
+      JSON.stringify({
+        schemaVersion: 2,
+        meta: { id, parentId, branchName: "main", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+        messages: [],
+      }),
+    );
+  }
+
+  it("returns ok when sessions dir does not exist (fresh install)", async () => {
+    const { checkSessionDag } = await import("../../src/cli/doctor.js");
+    const result = checkSessionDag(join(tmpDir, ".phase2s", "sessions"));
+    expect(result.ok).toBe(true);
+    expect(result.detail).toBe("no sessions found");
+  });
+
+  it("returns ok when no session files exist", async () => {
+    const { checkSessionDag } = await import("../../src/cli/doctor.js");
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    const result = checkSessionDag(dir);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toBe("no sessions found");
+  });
+
+  it("returns ok when all parentIds resolve", async () => {
+    const { checkSessionDag } = await import("../../src/cli/doctor.js");
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    const parentId = "00000000-0000-0000-0000-000000000001";
+    const childId = "00000000-0000-0000-0000-000000000002";
+    writeSession(dir, parentId, null);
+    writeSession(dir, childId, parentId);
+    const result = checkSessionDag(dir);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("2 sessions");
+    expect(result.detail).toContain("0 dangling");
+  });
+
+  it("detects dangling parentId", async () => {
+    const { checkSessionDag } = await import("../../src/cli/doctor.js");
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    const missingParentId = "00000000-0000-0000-0000-000000000001";
+    const orphanId = "00000000-0000-0000-0000-000000000002";
+    writeSession(dir, orphanId, missingParentId);
+    const result = checkSessionDag(dir);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain("1 dangling");
+    expect(result.detail).toContain(orphanId.slice(0, 8));
+    expect(result.fix).toBeDefined();
+  });
+
+  it("detects multiple dangling references", async () => {
+    const { checkSessionDag } = await import("../../src/cli/doctor.js");
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    const ghost1 = "00000000-0000-0000-0000-000000000001";
+    const ghost2 = "00000000-0000-0000-0000-000000000002";
+    const orphan1 = "00000000-0000-0000-0000-000000000003";
+    const orphan2 = "00000000-0000-0000-0000-000000000004";
+    writeSession(dir, orphan1, ghost1);
+    writeSession(dir, orphan2, ghost2);
+    const result = checkSessionDag(dir);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain("2 dangling");
+  });
+
+  it("skips corrupt session files gracefully", async () => {
+    const { checkSessionDag } = await import("../../src/cli/doctor.js");
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    const validId = "00000000-0000-0000-0000-000000000001";
+    writeSession(dir, validId, null);
+    writeFileSync(join(dir, "00000000-0000-0000-0000-000000000002.json"), "not json");
+    const result = checkSessionDag(dir);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("1 sessions");
+  });
+
+  it("sessions with null parentId are not flagged as dangling", async () => {
+    const { checkSessionDag } = await import("../../src/cli/doctor.js");
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    writeSession(dir, "00000000-0000-0000-0000-000000000001", null);
+    writeSession(dir, "00000000-0000-0000-0000-000000000002", null);
+    const result = checkSessionDag(dir);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("2 sessions");
+    expect(result.detail).toContain("0 dangling");
+  });
+});
+
