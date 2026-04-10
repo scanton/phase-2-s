@@ -315,3 +315,38 @@ describe("runSetup() --bash", () => {
     expect(output2).toContain("Already in");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bash :() known limitation documentation (Sprint 49, Item 5)
+// ---------------------------------------------------------------------------
+
+describe("setup --bash :() limitation warning", () => {
+  let tmpHome: string;
+
+  beforeEach(() => {
+    tmpHome = tmpdir() + "/phase2s-setup-bash-limitation-" + Date.now();
+    mkdirSync(tmpHome, { recursive: true });
+    mkdirSync(join(tmpHome, ".phase2s", "shell"), { recursive: true });
+    writeFileSync(join(tmpHome, ".phase2s", "shell", "phase2s-bash.sh"), "# bash plugin");
+  });
+
+  afterEach(() => {
+    rmSync(tmpHome, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("setup --bash output contains :() limitation text", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const profilePath = join(tmpHome, ".bash_profile");
+    writeFileSync(profilePath, "");
+
+    const phase2sDir = join(tmpHome, ".phase2s");
+    await runSetup({ bash: true, phase2sDir, profilePath });
+
+    const output = consoleSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("Known limitation");
+    expect(output).toContain("bash");
+    expect(output).toContain("${VAR:=default}");
+    expect(output).toContain("${VAR:-default}");
+  });
+});

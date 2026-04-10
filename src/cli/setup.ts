@@ -214,5 +214,10 @@ async function runBashSetup({ dryRun, phase2sDir, profilePath }: BashSetupOption
   Then try:
     ${chalk.bold(": what does this codebase do?")}
     ${chalk.bold(": fix the null check in auth.ts")}
+
+  ${chalk.yellow("⚠  Known limitation:")} The bash \`:\` function conflicts with \`\${VAR:=default}\`
+  expansion in sourcing scripts. If your .bash_profile uses this pattern, replace with:
+    ${chalk.dim("export VAR=\"\${VAR:-default}\"")}
+  See docs/getting-started.md for details.
 `);
 }

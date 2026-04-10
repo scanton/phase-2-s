@@ -181,6 +181,22 @@ p2 suggest "find large log files"
 
 Bash tab completion for all Phase2S subcommands is included automatically.
 
+#### Known limitation: `${VAR:=default}` expansion
+
+The Bash `:` function overrides the shell's built-in `:` (no-op) command. Scripts that use `${VAR:=default}` expansion in a non-subshell context — like this pattern in `.bash_profile`:
+
+```bash
+: ${JAVA_HOME:=/usr/lib/jvm/default}   # ⚠ broken with phase2s
+```
+
+...will pass the expanded value to `phase2s run` instead of acting as a no-op. Replace with the equivalent `:-` form, which does not invoke the `:` function:
+
+```bash
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/default}"   # ✓ safe
+```
+
+This is the same inherent trade-off as the ZSH plugin's `:` override. See [ZSH compatibility notes](configuration.md) for more context.
+
 ---
 
 ## Verify your installation
