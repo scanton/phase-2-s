@@ -420,6 +420,77 @@ export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
 }
 
 /**
+ * Like rebuildSessionIndex but rethrows write failures instead of swallowing them.
+ * Use this for user-facing repair commands (e.g. `doctor --fix`) where a silent
+ * write failure would be worse than an error.
+ *
+ * Scan failures (e.g. sessions dir unreadable) propagate from rebuildSessionIndex
+ * itself — this function additionally propagates index-write failures.
+ */
+export async function rebuildSessionIndexStrict(cwd: string): Promise<SessionIndex> {
+  const dir = sessionsDir(cwd);
+
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return { version: 1, sessions: {} };
+  }
+
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
+  const jsonFiles = entries.filter((e) => uuidPattern.test(e));
+
+  const index: SessionIndex = { version: 1, sessions: {} };
+  for (const f of jsonFiles) {
+    const p = join(dir, f);
+    try {
+      const raw = await readFile(p, "utf-8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        !Array.isArray(parsed) &&
+        (parsed as Record<string, unknown>).schemaVersion === 2
+      ) {
+        const { meta, messages } = parsed as SessionV2;
+        if (!uuidPattern.test(`${meta.id}.json`)) continue;
+        index.sessions[meta.id] = {
+          id: meta.id,
+          parentId: meta.parentId,
+          branchName: meta.branchName,
+          createdAt: meta.createdAt,
+          updatedAt: meta.updatedAt,
+          firstMessage: extractFirstMessage(messages as Message[]),
+        };
+      }
+    } catch {
+      /* skip corrupt files */
+    }
+  }
+
+  const lockFile = sessionIndexLockPath(cwd);
+  const acquired = await acquirePosixLock(lockFile);
+  if (!acquired) {
+    // Strict variant: lock contention is an error — caller (doctor --fix) must know
+    // the index was NOT written. Returning silently would give false confidence.
+    throw new Error("Could not acquire session index lock — another phase2s process is running. Try again.");
+  }
+
+  try {
+    const indexPath = sessionIndexPath(cwd);
+    await mkdir(dirname(indexPath), { recursive: true });
+    const tmp = indexPath + ".tmp." + process.pid;
+    await writeFile(tmp, JSON.stringify(index, null, 2), { encoding: "utf-8", mode: 0o600 });
+    renameSync(tmp, indexPath);
+    // NOTE: unlike rebuildSessionIndex, write failures are NOT swallowed here.
+  } finally {
+    releasePosixLock(lockFile);
+  }
+
+  return index;
+}
+
+/**
  * Load a session file, handling both v1 (legacy array) and v2 formats.
  * Returns null if the file does not exist.
  * Throws if the file exists but is unparseable or has an unrecognized format.

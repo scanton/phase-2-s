@@ -10,7 +10,7 @@
  * instead of chat(). The fake client stubs create() to return an async iterable of
  * ChatCompletionChunk arrays — one sequence per call, consumed in order.
  */
-import { describe, it, expect, vi, type Mock } from "vitest";
+import { describe, it, expect, vi, afterEach, type Mock } from "vitest";
 import type { ChatCompletionChunk } from "openai/resources/chat/completions.js";
 import { Agent } from "../../src/core/agent.js";
 import { Conversation } from "../../src/core/conversation.js";
@@ -658,5 +658,177 @@ describe("Agent.setConversation() — system prompt preservation", () => {
     const sysMsg = msgs.find((m) => m.role === "system");
     expect(sysMsg?.content).toContain("my-unique-system-prompt");
     expect(msgs.some((m) => m.content === "legacy message")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tool error reflection (Sprint 49)
+// ---------------------------------------------------------------------------
+
+describe("tool error reflection", () => {
+  function makeReflectionRegistry(): ToolRegistry {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "fail_tool",
+      description: "Always fails",
+      parameters: z.object({}),
+      async execute(_args: unknown) {
+        return { success: false, output: "", error: "intentional failure" };
+      },
+    });
+    registry.register({
+      name: "throw_tool",
+      description: "Always throws",
+      parameters: z.object({}),
+      async execute(_args: unknown): Promise<{ success: boolean; output: string }> {
+        throw new Error("unexpected tool crash");
+      },
+    });
+    return registry;
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("injects reflection fragment into conversation when tool returns success:false (attempt 1)", async () => {
+    const fakeClient = makeStreamingFakeClient([
+      makeToolCallChunks("fail_tool", {}),
+      makeTextChunks("I see the tool failed — reflecting now"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({
+      config: minimalConfig,
+      provider,
+      tools: makeReflectionRegistry(),
+      systemPrompt: "You are a test assistant.",
+    });
+
+    const conversationAddUserSpy = vi.spyOn(agent.getConversation(), "addUser");
+
+    await agent.run("Try the fail tool");
+
+    // The reflection fragment should have been injected as a user message
+    const reflectionCalls = conversationAddUserSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("Tool failure reflection"),
+    );
+    expect(reflectionCalls.length).toBe(1);
+  });
+
+  it("injects reflection fragment when tool throws (catch path)", async () => {
+    const fakeClient = makeStreamingFakeClient([
+      makeToolCallChunks("throw_tool", {}),
+      makeTextChunks("I see the tool threw an error"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({
+      config: minimalConfig,
+      provider,
+      tools: makeReflectionRegistry(),
+      systemPrompt: "You are a test assistant.",
+    });
+
+    const conversationAddUserSpy = vi.spyOn(agent.getConversation(), "addUser");
+
+    await agent.run("Try the throw tool");
+
+    const reflectionCalls = conversationAddUserSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("Tool failure reflection"),
+    );
+    expect(reflectionCalls.length).toBe(1);
+  });
+
+  it("does not inject reflection when tool succeeds", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "success_tool",
+      description: "Always succeeds",
+      parameters: z.object({}),
+      async execute(_args: unknown) {
+        return { success: true, output: "all good" };
+      },
+    });
+    const fakeClient = makeStreamingFakeClient([
+      makeToolCallChunks("success_tool", {}),
+      makeTextChunks("Tool succeeded"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({
+      config: minimalConfig,
+      provider,
+      tools: registry,
+      systemPrompt: "You are a test assistant.",
+    });
+
+    const conversationAddUserSpy = vi.spyOn(agent.getConversation(), "addUser");
+
+    await agent.run("Try the success tool");
+
+    const reflectionCalls = conversationAddUserSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("Tool failure reflection"),
+    );
+    expect(reflectionCalls.length).toBe(0);
+  });
+
+  it("does not inject reflection when PHASE2S_TOOL_ERROR_REFLECTION=off", async () => {
+    vi.stubEnv("PHASE2S_TOOL_ERROR_REFLECTION", "off");
+
+    const fakeClient = makeStreamingFakeClient([
+      makeToolCallChunks("fail_tool", {}),
+      makeTextChunks("Tool failed but no reflection"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({
+      config: minimalConfig,
+      provider,
+      tools: makeReflectionRegistry(),
+      systemPrompt: "You are a test assistant.",
+    });
+
+    const conversationAddUserSpy = vi.spyOn(agent.getConversation(), "addUser");
+
+    await agent.run("Try the fail tool");
+
+    const reflectionCalls = conversationAddUserSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("Tool failure reflection"),
+    );
+    expect(reflectionCalls.length).toBe(0);
+  });
+
+  it("does not inject reflection on satori attempt 2+ (doom-loop takes over)", async () => {
+    // Attempt 1 fails verification → doom-loop context injected → attempt 2 should NOT
+    // get tool reflection even if a tool fails (toolReflectionEnabled=false for attempt 2+).
+    let attempt = 0;
+    const fakeClient = makeStreamingFakeClient([
+      // Attempt 1: tool fails
+      makeToolCallChunks("fail_tool", {}),
+      makeTextChunks("Attempt 1 done"),
+      // Attempt 2: tool fails again
+      makeToolCallChunks("fail_tool", {}),
+      makeTextChunks("Attempt 2 done"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({
+      config: minimalConfig,
+      provider,
+      tools: makeReflectionRegistry(),
+      systemPrompt: "You are a test assistant.",
+    });
+
+    const conversationAddUserSpy = vi.spyOn(agent.getConversation(), "addUser");
+
+    await agent.run("Try the fail tool with satori", {
+      maxRetries: 2,
+      verifyFn: async () => {
+        attempt++;
+        return { exitCode: attempt < 2 ? 1 : 0, output: "verify output" };
+      },
+    });
+
+    // Reflection should appear exactly once — only on attempt 1
+    const reflectionCalls = conversationAddUserSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("Tool failure reflection"),
+    );
+    expect(reflectionCalls.length).toBe(1);
   });
 });
