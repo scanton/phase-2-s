@@ -189,7 +189,8 @@ async function acquirePosixLock(lockFile: string): Promise<boolean> {
 export function releasePosixLock(lockFile: string): void {
   try {
     const content = readFileSync(lockFile, "utf-8");
-    if (parseInt(content.trim()) !== process.pid) return; // not our lock — skip
+    const pid = parseInt(content.trim(), 10);
+    if (!Number.isInteger(pid) || pid !== process.pid) return; // not our lock (or unreadable) — skip
     unlinkSync(lockFile);
   } catch { /* already gone — fine */ }
 }
@@ -778,7 +779,8 @@ export async function listSessions(cwd: string): Promise<Array<{ meta: SessionMe
       },
       path: join(dir, `${entry.id}.json`),
       firstMessage: entry.firstMessage,
-    }));
+    }))
+    .filter((e) => existsSync(e.path)); // Stale index entries skipped (same as fast-path)
   results.sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt));
   return results;
 }

@@ -803,6 +803,22 @@ describe("releasePosixLock() — PID guard", () => {
     // File never created — should not throw
     expect(() => releasePosixLock(lockPath)).not.toThrow();
   });
+
+  it("does not unlink a lock file with empty content (parseInt returns NaN)", () => {
+    // Edge case: empty or corrupted lock file — parseInt("") returns NaN,
+    // NaN !== process.pid, so the file should be treated as not-our-lock and NOT unlinked.
+    // The stale-lock timeout will handle it on the next acquirePosixLock call.
+    writeFileSync(lockPath, ""); // empty content
+    releasePosixLock(lockPath);
+    expect(existsSync(lockPath)).toBe(true); // file still present — we didn't own it
+  });
+
+  it("does not unlink a lock file with non-numeric content", () => {
+    // Edge case: corrupted lock file with non-numeric PID
+    writeFileSync(lockPath, "not-a-pid");
+    releasePosixLock(lockPath);
+    expect(existsSync(lockPath)).toBe(true); // file still present — we didn't own it
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -928,5 +944,38 @@ describe("rebuildSessionIndex() — lock", () => {
     // Lock should be released after completion
     const lockPath = join(dir, ".index.lock");
     expect(existsSync(lockPath)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listSessions() — slow-path null integration (lock contention during rebuild)
+// ---------------------------------------------------------------------------
+
+describe("listSessions() — slow-path null from rebuildSessionIndex", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-listsessions-null-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns [] when index is absent AND rebuildSessionIndex returns null (lock held)", async () => {
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+
+    // No index.json — will trigger slow path
+    // Pre-place a fresh (non-stale) .index.lock to simulate concurrent upsert
+    const lockPath = join(dir, ".index.lock");
+    writeFileSync(lockPath, "99999"); // foreign PID, fresh mtime
+
+    try {
+      const result = await listSessions(tmpDir);
+      // Slow path: rebuildSessionIndex returns null → listSessions returns []
+      expect(result).toEqual([]);
+    } finally {
+      try { unlinkSync(lockPath); } catch { /* already cleaned */ }
+    }
   });
 });
