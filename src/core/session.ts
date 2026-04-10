@@ -179,17 +179,20 @@ async function acquirePosixLock(lockFile: string): Promise<boolean> {
 }
 
 /**
- * Release a POSIX lock file acquired by acquirePosixLock().
+ * Releases a POSIX lock file if its recorded PID matches the current process.
  *
  * Reads the lock file's PID before unlinking. Only unlinks if the PID matches
  * the current process — guards against the ABA scenario where a stale-lock
  * cleanup removed our lock and another process acquired a new one before our
  * finally block runs. If the PID doesn't match, the unlink is skipped silently.
+ *
+ * Uses Number() (not parseInt) to parse the PID so that decimal strings like
+ * "3.7" fail the Number.isInteger guard rather than silently truncating to 3.
  */
 export function releasePosixLock(lockFile: string): void {
   try {
     const content = readFileSync(lockFile, "utf-8");
-    const pid = parseInt(content.trim(), 10);
+    const pid = Number(content.trim());
     if (!Number.isInteger(pid) || pid !== process.pid) return; // not our lock (or unreadable) — skip
     unlinkSync(lockFile);
   } catch { /* already gone — fine */ }
@@ -227,7 +230,7 @@ export async function writeReplState(cwd: string, state: ReplState): Promise<voi
   try {
     const path = replStatePath(cwd);
     const tmp = path + ".tmp";
-    writeFileSync(tmp, JSON.stringify(state, null, 2), "utf-8");
+    writeFileSync(tmp, JSON.stringify(state, null, 2), { encoding: "utf-8", mode: 0o600 });
     renameSync(tmp, path);
   } finally {
     if (lockAcquired) releasePosixLock(lockFile);
@@ -333,18 +336,19 @@ export async function upsertSessionIndex(cwd: string, meta: SessionMeta & { upda
  * Rebuild the session index from scratch by scanning all session files.
  * Called automatically when the index is missing or corrupt.
  *
- * Acquires `.index.lock` before writing to prevent interleaving with concurrent
- * `upsertSessionIndex` calls. Returns null if the lock is held — the caller in
+ * Acquires `.index.lock` only for the final tmp+rename write — O(1) — so the
+ * lock hold time is short regardless of how many session files exist. All
+ * readdir + readFile calls happen before lock acquisition.
+ *
+ * Returns null if the lock is held by a concurrent upsert — the caller in
  * `listSessions` handles this gracefully by returning an empty result set.
- * No explicit retry is needed: the fallback disk-scan path in `listSessions` covers it.
  */
-export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex | null> {
+export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
   const dir = sessionsDir(cwd);
 
-  // Scan the sessions directory first. If it doesn't exist there is nothing to
-  // rebuild and nothing to write — return an empty index without touching any lock.
-  // acquirePosixLock would ENOENT if the parent directory is missing, so this
-  // early-return also avoids that failure mode.
+  // --- Phase 1: scan + read, all outside the lock ---
+  // If the sessions dir doesn't exist, return an empty index without touching
+  // any lock. (acquirePosixLock would ENOENT on a missing parent directory.)
   let entries: string[];
   try {
     entries = await readdir(dir);
@@ -352,66 +356,65 @@ export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex | n
     return { version: 1, sessions: {} };
   }
 
-  // Acquire the index lock before writing. Without this, a concurrent
-  // upsertSessionIndex could interleave after our rename and lose its update.
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
+  const jsonFiles = entries.filter((e) => uuidPattern.test(e));
+
+  const index: SessionIndex = { version: 1, sessions: {} };
+  for (const f of jsonFiles) {
+    const p = join(dir, f);
+    try {
+      const raw = await readFile(p, "utf-8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        !Array.isArray(parsed) &&
+        (parsed as Record<string, unknown>).schemaVersion === 2
+      ) {
+        const { meta, messages } = parsed as SessionV2;
+        if (!uuidPattern.test(`${meta.id}.json`)) continue;
+        index.sessions[meta.id] = {
+          id: meta.id,
+          parentId: meta.parentId,
+          branchName: meta.branchName,
+          createdAt: meta.createdAt,
+          updatedAt: meta.updatedAt,
+          firstMessage: extractFirstMessage(messages as Message[]),
+        };
+      }
+    } catch {
+      /* skip corrupt files */
+    }
+  }
+
+  // --- Phase 2: write under the lock (O(1)) ---
+  // Acquire the index lock only for the rename so hold time is minimal.
+  // A concurrent upsertSessionIndex will wait at most LOCK_RETRY_DELAY_MS
+  // for the rename to complete, which is a single syscall.
   const lockFile = sessionIndexLockPath(cwd);
   const acquired = await acquirePosixLock(lockFile);
   if (!acquired) {
-    // Lock is held by a concurrent upsert. Skip this rebuild attempt.
-    // Safe to skip: listSessions() falls back to a full disk scan when the index
-    // is missing or invalid, so callers are resilient regardless. The concurrent
-    // upsert will write a fresh, consistent entry in the common case.
-    return null;
+    // Lock is held. Return the index we built — the rebuild data is still
+    // valid even though we couldn't write it. listSessions() can use it
+    // directly for this call without touching disk.
+    return index;
   }
 
   try {
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
-    const jsonFiles = entries.filter((e) => uuidPattern.test(e));
-
-    const index: SessionIndex = { version: 1, sessions: {} };
-    for (const f of jsonFiles) {
-      const p = join(dir, f);
-      try {
-        const raw = await readFile(p, "utf-8");
-        const parsed = JSON.parse(raw) as unknown;
-        if (
-          typeof parsed === "object" &&
-          parsed !== null &&
-          !Array.isArray(parsed) &&
-          (parsed as Record<string, unknown>).schemaVersion === 2
-        ) {
-          const { meta, messages } = parsed as SessionV2;
-          if (!uuidPattern.test(`${meta.id}.json`)) continue;
-          index.sessions[meta.id] = {
-            id: meta.id,
-            parentId: meta.parentId,
-            branchName: meta.branchName,
-            createdAt: meta.createdAt,
-            updatedAt: meta.updatedAt,
-            firstMessage: extractFirstMessage(messages as Message[]),
-          };
-        }
-      } catch {
-        /* skip corrupt files */
-      }
-    }
-
     // Write the rebuilt index to disk (best-effort).
-    // Use a per-process tmp path to avoid colliding with concurrent upsertSessionIndex writes.
-    try {
-      const indexPath = sessionIndexPath(cwd);
-      await mkdir(dirname(indexPath), { recursive: true });
-      const tmp = indexPath + ".tmp." + process.pid;
-      await writeFile(tmp, JSON.stringify(index, null, 2), { encoding: "utf-8", mode: 0o600 });
-      renameSync(tmp, indexPath);
-    } catch {
-      /* best-effort */
-    }
-
-    return index;
+    // Use a per-process tmp path to avoid colliding with concurrent writes.
+    const indexPath = sessionIndexPath(cwd);
+    await mkdir(dirname(indexPath), { recursive: true });
+    const tmp = indexPath + ".tmp." + process.pid;
+    await writeFile(tmp, JSON.stringify(index, null, 2), { encoding: "utf-8", mode: 0o600 });
+    renameSync(tmp, indexPath);
+  } catch {
+    /* best-effort */
   } finally {
     releasePosixLock(lockFile);
   }
+
+  return index;
 }
 
 /**
@@ -481,7 +484,7 @@ export async function migrateAll(cwd: string): Promise<void> {
   // both running migration at the same time. POSIX "wx" flag is atomic.
   const lockPath = manifestPath + ".lock";
   try {
-    writeFileSync(lockPath, "", { flag: "wx" });
+    writeFileSync(lockPath, process.pid.toString(), { flag: "wx", mode: 0o600 });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "EEXIST") {
       console.error(chalk.dim("Migration already in progress — skipping."));
@@ -493,7 +496,7 @@ export async function migrateAll(cwd: string): Promise<void> {
   try {
     await migrateAllLocked(cwd, dir, manifestPath, allEntries);
   } finally {
-    try { unlinkSync(lockPath); } catch { /* ignore — lock cleanup is best-effort */ }
+    releasePosixLock(lockPath);
   }
 }
 
@@ -763,10 +766,8 @@ export async function listSessions(cwd: string): Promise<Array<{ meta: SessionMe
   }
 
   // Slow path: scan all session files, then rebuild the index.
-  // rebuildSessionIndex returns null if .index.lock is held by a concurrent upsert;
-  // in that case return an empty list — the caller can retry.
+  // rebuildSessionIndex always returns a valid index (even if it couldn't persist it).
   const rebuiltIndex = await rebuildSessionIndex(cwd);
-  if (!rebuiltIndex) return [];
   const results = Object.values(rebuiltIndex.sessions)
     .filter((entry) => uuidPattern.test(`${entry.id}.json`))
     .map((entry) => ({

@@ -24,9 +24,9 @@
 
 ## Backlog — Post-Sprint 47b adversarial review findings (2026-04-09)
 
-- [ ] **`migrateAll` lock uses empty content** — The migration lock writes `""` (no PID). If the stale-lock timeout fires and another process acquires the migration lock, the `finally` block's `unlinkSync` will delete the new holder's lock (the ABA hole `releasePosixLock` was updated to prevent). Fix: write `process.pid.toString()` into the migration lock content and call `releasePosixLock`. **Priority:** P2
+- [x] **`migrateAll` lock uses empty content** — Lock now writes `process.pid.toString()` and `finally` calls `releasePosixLock(lockPath)` instead of bare `unlinkSync`. ABA hole closed. **Completed:** v1.22.2 /review pass (2026-04-09)
 
-- [ ] **`rebuildSessionIndex` readdir-before-lock gap** — `readdir` is called before acquiring `.index.lock`. Sessions written between T0 and lock acquisition are not included in the rebuilt index, and a subsequent `upsertSessionIndex` during the same window may be overwritten. Fix: move `readdir` inside the lock body (after `acquirePosixLock`). **Priority:** P2
+- [x] **`rebuildSessionIndex` lock starvation** — Restructured: all `readdir` + `readFile` calls happen before lock acquisition; the lock is held only for the O(1) `renameSync`. `upsertSessionIndex` callers no longer exhaust the wait budget during rebuilds. Also changed: lock contention now returns the built-but-unpersisted index (not null) so callers always get valid data. **Completed:** v1.22.2 /review pass (2026-04-09)
 
 - [ ] **`writeReplState` fixed `.tmp` suffix (no PID)** — Uses `path + ".tmp"` (shared suffix). If two processes both proceed without the lock (the `acquirePosixLock` false-return path), they can collide on the temp file. Fix: use `path + ".tmp." + process.pid` matching the pattern in `upsertSessionIndex`. **Priority:** P3
 

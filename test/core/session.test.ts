@@ -804,9 +804,9 @@ describe("releasePosixLock() — PID guard", () => {
     expect(() => releasePosixLock(lockPath)).not.toThrow();
   });
 
-  it("does not unlink a lock file with empty content (parseInt returns NaN)", () => {
-    // Edge case: empty or corrupted lock file — parseInt("") returns NaN,
-    // NaN !== process.pid, so the file should be treated as not-our-lock and NOT unlinked.
+  it("does not unlink a lock file with empty content (Number('') returns NaN)", () => {
+    // Edge case: empty or corrupted lock file — Number("") returns NaN,
+    // Number.isInteger(NaN) === false, so the file is treated as not-our-lock and NOT unlinked.
     // The stale-lock timeout will handle it on the next acquirePosixLock call.
     writeFileSync(lockPath, ""); // empty content
     releasePosixLock(lockPath);
@@ -816,6 +816,15 @@ describe("releasePosixLock() — PID guard", () => {
   it("does not unlink a lock file with non-numeric content", () => {
     // Edge case: corrupted lock file with non-numeric PID
     writeFileSync(lockPath, "not-a-pid");
+    releasePosixLock(lockPath);
+    expect(existsSync(lockPath)).toBe(true); // file still present — we didn't own it
+  });
+
+  it("does not unlink a lock file with a decimal PID string (e.g. '3.7')", () => {
+    // parseInt("3.7", 10) === 3 and Number.isInteger(3) === true, so the old parseInt
+    // approach could pass the guard if process.pid happened to be 3. The fix uses
+    // Number("3.7") === 3.7 → Number.isInteger(3.7) === false → correctly rejected.
+    writeFileSync(lockPath, "3.7");
     releasePosixLock(lockPath);
     expect(existsSync(lockPath)).toBe(true); // file still present — we didn't own it
   });
@@ -888,7 +897,7 @@ describe("listSessions() — stale path filter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// rebuildSessionIndex() — lock-miss skip (Item 4)
+// rebuildSessionIndex() — lock behavior (Phase 2: write-only lock hold)
 // ---------------------------------------------------------------------------
 
 describe("rebuildSessionIndex() — lock", () => {
@@ -901,7 +910,7 @@ describe("rebuildSessionIndex() — lock", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("returns null when .index.lock is held by a concurrent process", async () => {
+  it("returns a valid (unpersisted) index when .index.lock is held by a concurrent process", async () => {
     const dir = join(tmpDir, ".phase2s", "sessions");
     mkdirSync(dir, { recursive: true });
     // Pre-place a fresh (non-stale) lock to simulate a concurrent upsert
@@ -910,7 +919,9 @@ describe("rebuildSessionIndex() — lock", () => {
 
     try {
       const result = await rebuildSessionIndex(tmpDir);
-      expect(result).toBeNull();
+      // Lock contention: rebuild returns the built index (unpersisted) — not null
+      expect(result).not.toBeNull();
+      expect(result.sessions).toBeDefined();
       // Lock should still belong to the "other process" — not stolen or deleted
       expect(existsSync(lockPath)).toBe(true);
     } finally {
@@ -937,45 +948,110 @@ describe("rebuildSessionIndex() — lock", () => {
     const result = await rebuildSessionIndex(tmpDir);
 
     // Rebuild should succeed and return the index
-    expect(result).not.toBeNull();
-    expect(result!.sessions[meta.id]).toBeDefined();
-    expect(result!.sessions[meta.id].firstMessage).toBe("rebuild test");
+    expect(result.sessions[meta.id]).toBeDefined();
+    expect(result.sessions[meta.id].firstMessage).toBe("rebuild test");
 
     // Lock should be released after completion
     const lockPath = join(dir, ".index.lock");
     expect(existsSync(lockPath)).toBe(false);
   });
+
+  it("returns an empty index (not null) when the sessions directory does not exist", async () => {
+    // No .phase2s/sessions directory — early-return path, no lock acquired
+    const result = await rebuildSessionIndex(tmpDir);
+    expect(result).toEqual({ version: 1, sessions: {} });
+    // No lock file should have been created
+    const lockPath = join(tmpDir, ".phase2s", "sessions", ".index.lock");
+    expect(existsSync(lockPath)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// listSessions() — slow-path null integration (lock contention during rebuild)
+// listSessions() — slow-path lock contention during rebuild
 // ---------------------------------------------------------------------------
 
-describe("listSessions() — slow-path null from rebuildSessionIndex", () => {
+describe("listSessions() — slow-path rebuild under lock contention", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-listsessions-null-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-listsessions-lock-test-"));
   });
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("returns [] when index is absent AND rebuildSessionIndex returns null (lock held)", async () => {
+  it("returns [] when index is absent, sessions dir is empty, and .index.lock is held", async () => {
     const dir = join(tmpDir, ".phase2s", "sessions");
     mkdirSync(dir, { recursive: true });
 
-    // No index.json — will trigger slow path
+    // No index.json — will trigger slow path. No session files — rebuilt index is empty.
     // Pre-place a fresh (non-stale) .index.lock to simulate concurrent upsert
     const lockPath = join(dir, ".index.lock");
     writeFileSync(lockPath, "99999"); // foreign PID, fresh mtime
 
     try {
       const result = await listSessions(tmpDir);
-      // Slow path: rebuildSessionIndex returns null → listSessions returns []
+      // Slow path: rebuild returns empty index (lock held) → listSessions returns []
       expect(result).toEqual([]);
     } finally {
       try { unlinkSync(lockPath); } catch { /* already cleaned */ }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listSessions() — slow-path stale filter (direct coverage of line 779 filter)
+// ---------------------------------------------------------------------------
+
+describe("listSessions() — slow-path stale path filter", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-slow-stale-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("excludes sessions deleted after rebuild when taking the slow path", async () => {
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+
+    // Write a session file (no index.json — will force slow path)
+    const meta = makeMeta();
+    const filePath = join(dir, `${meta.id}.json`);
+    writeFileSync(filePath, JSON.stringify({ schemaVersion: 2, meta, messages: [] }));
+
+    // Delete the session file before listSessions runs — the slow path (rebuildSessionIndex)
+    // will scan it during readdir, build the index, then the stale filter on line 779
+    // must exclude it from the final results because the file is gone.
+    unlinkSync(filePath);
+    expect(existsSync(filePath)).toBe(false);
+
+    const sessions = await listSessions(tmpDir);
+    expect(sessions.find((s) => s.meta.id === meta.id)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// releasePosixLock() — missing lock file on .index.lock variant
+// ---------------------------------------------------------------------------
+
+describe("releasePosixLock() — missing lock file variants", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-release-missing-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("silently ignores a missing .index.lock file (already gone)", () => {
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    const lockPath = join(dir, ".index.lock");
+    // File never created — releasePosixLock must not throw
+    expect(() => releasePosixLock(lockPath)).not.toThrow();
   });
 });
