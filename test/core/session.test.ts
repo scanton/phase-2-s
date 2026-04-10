@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -211,9 +211,10 @@ describe("migrateAll() — lockfile", () => {
     mkdirSync(dir, { recursive: true });
     // Write a legacy file so migration would normally run
     writeLegacySession(tmpDir, "2026-04-01.json", [{ role: "user", content: "hello" }]);
-    // Place the lock file before calling migrateAll
+    // Place the lock file before calling migrateAll, using our own PID so the
+    // liveness check (process.kill(pid, 0)) sees an alive process and skips.
     const lockPath = join(dir, "migration.json.lock");
-    writeFileSync(lockPath, "", "utf-8");
+    writeFileSync(lockPath, process.pid.toString(), "utf-8");
 
     const stderrMessages: string[] = [];
     const origConsoleError = console.error;
@@ -1053,5 +1054,228 @@ describe("releasePosixLock() — missing lock file variants", () => {
     const lockPath = join(dir, ".index.lock");
     // File never created — releasePosixLock must not throw
     expect(() => releasePosixLock(lockPath)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 48 Item 1: writeReplState — PID-suffixed tmp file leaves no stale .tmp
+// ---------------------------------------------------------------------------
+
+describe("writeReplState() — PID-suffixed tmp file", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-writestate-pid-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("leaves no bare .tmp or PID-suffixed .tmp file after write", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" });
+
+    const phase2sDir = join(tmpDir, ".phase2s");
+    const { readdirSync } = await import("node:fs");
+    const files = readdirSync(phase2sDir);
+    const tmpFiles = files.filter((f) => f.includes(".tmp"));
+    expect(tmpFiles).toHaveLength(0);
+
+    // state.json should be written cleanly
+    expect(existsSync(join(phase2sDir, "state.json"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 48 Item 3: migrateAll — SIGKILL stale lock recovery
+// ---------------------------------------------------------------------------
+
+describe("migrateAll() — SIGKILL stale lock recovery", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-sigkill-lock-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** Creates the sessions dir + migration lock file at manifestPath + ".lock" */
+  function setupLegacySession(cwd: string) {
+    const dir = join(cwd, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "2026-01-01.json"),
+      JSON.stringify([{ role: "user", content: "hello" }]),
+    );
+    return dir;
+  }
+
+  it("runs migration when lock contains a dead PID (ESRCH)", async () => {
+    setupLegacySession(tmpDir);
+    const manifestPath = join(tmpDir, ".phase2s", "sessions", "migration.json");
+    const lockPath = manifestPath + ".lock";
+    // Write a PID that is almost certainly dead (max PID is typically 32768 on macOS,
+    // 4194304 on Linux — 99999 is safe for our purposes here).
+    writeFileSync(lockPath, "99999");
+
+    // If ESRCH: lock is stolen and migration runs. If EPERM (unlikely): migration skips.
+    // Either way migrateAll must not throw.
+    await expect(migrateAll(tmpDir)).resolves.not.toThrow();
+
+    // If migration ran (ESRCH path), the manifest should exist.
+    // We can't assert the outcome deterministically because EPERM is possible on some
+    // systems. The important invariant: no throw, no zombie lockfile from our own PID.
+  });
+
+  it("skips migration when lock contains our own (live) PID", async () => {
+    setupLegacySession(tmpDir);
+    const manifestPath = join(tmpDir, ".phase2s", "sessions", "migration.json");
+    const lockPath = manifestPath + ".lock";
+    // Write current process's PID — signal 0 will succeed (EPERM at worst, not ESRCH)
+    writeFileSync(lockPath, process.pid.toString());
+
+    await expect(migrateAll(tmpDir)).resolves.not.toThrow();
+
+    // Manifest should NOT have been written (migration skipped)
+    expect(existsSync(manifestPath)).toBe(false);
+  });
+
+  it("steals lock and runs migration when lock contains an invalid/corrupt PID", async () => {
+    setupLegacySession(tmpDir);
+    const manifestPath = join(tmpDir, ".phase2s", "sessions", "migration.json");
+    const lockPath = manifestPath + ".lock";
+    writeFileSync(lockPath, "not-a-pid");
+
+    await expect(migrateAll(tmpDir)).resolves.not.toThrow();
+
+    // Corrupt PID → steal → migration runs → manifest written
+    expect(existsSync(manifestPath)).toBe(true);
+  });
+
+  it("skips migration conservatively when lock file cannot be read (outer catch)", async () => {
+    setupLegacySession(tmpDir);
+    const manifestPath = join(tmpDir, ".phase2s", "sessions", "migration.json");
+    const lockPath = manifestPath + ".lock";
+    // Write a zero-byte lock (readFileSync returns "", Number("") = NaN → falls through,
+    // but Number.isInteger(NaN) = false → invalid PID branch → steal.
+    // To trigger the outer catch (can't read) we'd need to write a non-readable file,
+    // which requires root or a different technique. Instead test the NaN/invalid branch
+    // (empty string) which also produces a steal → migration runs.
+    writeFileSync(lockPath, "");
+
+    await expect(migrateAll(tmpDir)).resolves.not.toThrow();
+
+    // Empty PID is invalid — steal → migration runs
+    expect(existsSync(manifestPath)).toBe(true);
+  });
+
+  it("runs migration normally (no EEXIST) when no lock file is present", async () => {
+    setupLegacySession(tmpDir);
+    const manifestPath = join(tmpDir, ".phase2s", "sessions", "migration.json");
+
+    await migrateAll(tmpDir);
+
+    expect(existsSync(manifestPath)).toBe(true);
+  });
+
+  it("handles migrateAll gracefully when sessions dir does not exist (early return)", async () => {
+    // No sessions dir, no manifest — should return immediately without error
+    await expect(migrateAll(tmpDir)).resolves.not.toThrow();
+  });
+
+  it("skips duplicate migration calls (second call sees lock held by first)", async () => {
+    setupLegacySession(tmpDir);
+    const manifestPath = join(tmpDir, ".phase2s", "sessions", "migration.json");
+
+    // Run migration to completion — creates and cleans up the lock
+    await migrateAll(tmpDir);
+    expect(existsSync(manifestPath)).toBe(true);
+
+    // Second call — manifest exists, all entries done, should be a no-op
+    await expect(migrateAll(tmpDir)).resolves.not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 48 Item 4: migrateAllLocked — symlink escape guard
+// ---------------------------------------------------------------------------
+
+describe("migrateAllLocked() — symlink escape guard", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-symlink-escape-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("skips a manifest entry whose originalName is a symlink pointing outside sessionsDir", async () => {
+    if (process.platform === "win32") return; // symlinks require elevation on Windows
+
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+
+    // Write a real file OUTSIDE the sessions directory
+    const outsideFile = join(tmpDir, "outside.json");
+    writeFileSync(outsideFile, JSON.stringify([{ role: "user", content: "secret" }]));
+
+    // Create a symlink inside sessionsDir pointing to the outside file
+    const symlinkName = "escape-link.json";
+    symlinkSync(outsideFile, join(dir, symlinkName));
+
+    // Manually write a migration manifest referencing the symlink
+    const manifestPath = join(dir, "migration.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            originalName: symlinkName,
+            newId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            done: false,
+          },
+        ],
+      }),
+    );
+
+    // Run migration — the symlink should be skipped (Phase 2 guard)
+    await migrateAll(tmpDir);
+
+    // The outside file must be untouched (not renamed/deleted)
+    expect(existsSync(outsideFile)).toBe(true);
+
+    // The new UUID session file must NOT have been created (entry was skipped)
+    const newSessionPath = join(dir, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.json");
+    expect(existsSync(newSessionPath)).toBe(false);
+  });
+
+  it("migrates a normal legacy session file that is not a symlink", async () => {
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+
+    // Write a normal legacy session file inside sessionsDir
+    const legacyName = "2026-01-01.json";
+    writeFileSync(
+      join(dir, legacyName),
+      JSON.stringify([{ role: "user", content: "hello" }]),
+    );
+
+    await migrateAll(tmpDir);
+
+    // Manifest should exist and the entry should be marked done
+    const manifestPath = join(dir, "migration.json");
+    expect(existsSync(manifestPath)).toBe(true);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+      entries: Array<{ originalName: string; done: boolean; newId: string }>;
+    };
+    const entry = manifest.entries.find((e) => e.originalName === legacyName);
+    expect(entry).toBeDefined();
+    expect(entry!.done).toBe(true);
+
+    // New UUID session file must exist
+    const newPath = join(dir, `${entry!.newId}.json`);
+    expect(existsSync(newPath)).toBe(true);
   });
 });

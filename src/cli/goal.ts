@@ -779,12 +779,24 @@ export function buildSatoriContext(
 - Cannot do: ${cannotDo}`;
 
   if (failureContext) {
-    context += `
+    if (process.env.PHASE2S_DOOM_LOOP_REFLECTION === "off") {
+      // Escape hatch: revert to the original one-liner if the reflection protocol
+      // causes LLM regression (more refusals, longer outputs with no improvement).
+      context += `\n\n## Previous failure\n${failureContext}\n\nFix this specifically. Do not repeat the same approach.`;
+    } else {
+      context += `
 
 ## Previous failure
 ${failureContext}
 
-Fix this specifically. Do not repeat the same approach.`;
+## Reflection protocol
+Before attempting this task again, stop and answer these three questions:
+1. Why exactly did the previous approach fail? (Be specific — what line, what assumption, what edge case?)
+2. What was wrong in your reasoning that led to that approach?
+3. What is meaningfully DIFFERENT about your new approach? (If it's the same approach with minor tweaks, that will fail again for the same reason.)
+
+If you cannot identify a meaningfully different approach, do NOT retry. Instead, return a clear explanation of what you tried, why it failed, and what additional context or changes to the spec would let you make progress. Getting stuck is acceptable. Repeating the same failure is not.`;
+    }
   }
 
   return context;

@@ -519,3 +519,112 @@ describe("checkSessionDag", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// checkBashPlugin
+// ---------------------------------------------------------------------------
+
+describe("checkBashPlugin", () => {
+  let tmpDir: string;
+  let phase2sDir: string;
+  let savedShell: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-bash-doctor-test-"));
+    phase2sDir = join(tmpDir, ".phase2s");
+    mkdirSync(phase2sDir, { recursive: true });
+    savedShell = process.env.SHELL;
+  });
+
+  afterEach(() => {
+    if (savedShell === undefined) {
+      delete process.env.SHELL;
+    } else {
+      process.env.SHELL = savedShell;
+    }
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it("returns ok:true (N/A) when SHELL is a non-Bash shell (e.g. zsh)", async () => {
+    process.env.SHELL = "/usr/bin/zsh";
+    const { checkBashPlugin } = await import("../../src/cli/doctor.js");
+    const result = checkBashPlugin(phase2sDir);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("detected shell: /usr/bin/zsh");
+  });
+
+  it("returns ok:true (N/A) when SHELL is empty/unset", async () => {
+    process.env.SHELL = "";
+    const { checkBashPlugin } = await import("../../src/cli/doctor.js");
+    const result = checkBashPlugin(phase2sDir);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("detected shell: unknown");
+  });
+
+  it("returns ok:false when Bash plugin file is not installed", async () => {
+    process.env.SHELL = "/bin/bash";
+    const { checkBashPlugin } = await import("../../src/cli/doctor.js");
+    const result = checkBashPlugin(phase2sDir);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain("not installed");
+    expect(result.fix).toBeTruthy();
+  });
+
+  it("returns ok:false when plugin exists but phase2sDir is not writable", async () => {
+    process.env.SHELL = "/bin/bash";
+    // Create the plugin file
+    writeFileSync(join(phase2sDir, "phase2s-bash.sh"), "# bash plugin");
+    // Remove write permission from the directory
+    chmodSync(phase2sDir, 0o555);
+    try {
+      const { checkBashPlugin } = await import("../../src/cli/doctor.js");
+      const result = checkBashPlugin(phase2sDir);
+      expect(result.ok).toBe(false);
+      expect(result.detail).toContain("not writable");
+      expect(result.fix).toBeTruthy();
+    } finally {
+      chmodSync(phase2sDir, 0o755);
+    }
+  });
+
+  it("returns ok:false when plugin is installed but not sourced in any profile file", async () => {
+    process.env.SHELL = "/bin/bash";
+    writeFileSync(join(phase2sDir, "phase2s-bash.sh"), "# bash plugin");
+    // Create empty profile files that don't source the plugin
+    const fakeProfile = join(tmpDir, ".bash_profile");
+    const fakeRc = join(tmpDir, ".bashrc");
+    writeFileSync(fakeProfile, "# empty");
+    writeFileSync(fakeRc, "# empty");
+    const { checkBashPlugin } = await import("../../src/cli/doctor.js");
+    const result = checkBashPlugin(phase2sDir, [fakeProfile, fakeRc]);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain("not sourced");
+    expect(result.fix).toBeTruthy();
+  });
+
+  it("returns ok:true when plugin is sourced via absolute path in an injected profile file", async () => {
+    process.env.SHELL = "/bin/bash";
+    const pluginPath = join(phase2sDir, "phase2s-bash.sh");
+    writeFileSync(pluginPath, "# bash plugin");
+    const fakeProfile = join(tmpDir, ".bash_profile");
+    // Source using absolute path
+    writeFileSync(fakeProfile, `source ${pluginPath}\n`);
+    const { checkBashPlugin } = await import("../../src/cli/doctor.js");
+    const result = checkBashPlugin(phase2sDir, [fakeProfile]);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("sourced");
+  });
+
+  it("returns ok:true when plugin is sourced via $HOME-relative form in an injected profile file", async () => {
+    process.env.SHELL = "/bin/bash";
+    writeFileSync(join(phase2sDir, "phase2s-bash.sh"), "# bash plugin");
+    const fakeRc = join(tmpDir, ".bashrc");
+    // Source using the $HOME-relative form that setup --bash writes
+    writeFileSync(fakeRc, "source $HOME/.phase2s/phase2s-bash.sh\n");
+    const { checkBashPlugin } = await import("../../src/cli/doctor.js");
+    const result = checkBashPlugin(phase2sDir, [fakeRc]);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("sourced");
+  });
+});
+
