@@ -481,7 +481,7 @@ browser: true  # requires playwright installed
 - [x] POSIX exclusive-create lock on `state.json` — `writeReplState` is now async and uses `{ flag: "wx" }` to prevent last-writer-wins races when multiple REPL instances run in parallel. Stale locks (>30 s) are removed automatically.
 - [x] O(1) `conversations` listing via session index — `.phase2s/sessions/index.json` is maintained on every `saveSession`/`cloneSession` call. `phase2s conversations` reads a single file instead of scanning every session on disk. Falls back to a full rebuild if the index is missing or corrupt.
 - [x] `phase2s doctor` DAG integrity check — scans all session files and reports any `parentId` references that point to a non-existent session (dangling branches after manual deletion).
-- [x] Session lock hardening (v1.22.2) — `releasePosixLock` reads the PID before unlinking to close an ABA race; `rebuildSessionIndex` holds `.index.lock` during the entire scan-and-write to prevent concurrent `upsertSessionIndex` calls from losing entries; `listSessions` fast path and slow path both filter stale paths with `existsSync` before emitting results.
+- [x] Session lock hardening (v1.22.2) — `releasePosixLock` reads the PID before unlinking to close an ABA race (also guards against decimal/corrupt PID via `Number.isInteger`); `rebuildSessionIndex` holds `.index.lock` only for the O(1) `renameSync` (scan happens before lock acquisition to prevent lock starvation); `migrateAll` writes `process.pid` to its lock file and calls `releasePosixLock` in `finally` instead of bare `unlinkSync`; `listSessions` fast path and slow path both filter stale paths with `existsSync` before emitting results.
 
 ---
 
