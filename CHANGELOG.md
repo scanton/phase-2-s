@@ -7,9 +7,9 @@ Sprint 48 — Lock correctness closure + doom-loop prevention.
 ### Fixed
 
 - **PID-suffixed tmp files in `writeReplState` and `cloneSession`** — Both functions now use `path + ".tmp." + process.pid` instead of the bare `path + ".tmp"`. Without the suffix, two concurrent processes that both lost the migration lock could race on the same `.tmp` file and silently corrupt `state.json` or a cloned session file.
-- **SIGKILL stale migration lock recovery** — `migrateAll`'s EEXIST handler now reads the PID from the lock file and checks liveness with `process.kill(pid, 0)`. ESRCH (process dead) → steal the lock and run migration. EPERM (privilege boundary) → conservative skip. Invalid/corrupt PID → steal. This replaces the previous behavior of skipping migration forever if the holding process was killed mid-migration, which required a manual `rm .phase2s/sessions/migration.json.lock` to recover.
+- **SIGKILL stale migration lock recovery** — If Phase2S was killed mid-migration (SIGKILL, power loss), previous versions silently skipped migration on every subsequent startup until you manually deleted `.phase2s/sessions/migration.json.lock`. Now `migrateAll` reads the PID from the lock file and calls `process.kill(pid, 0)` to check liveness. Dead process (ESRCH) → steal the lock and finish the migration. Privilege boundary (EPERM) or corrupt PID → conservative skip. No more stuck lock files.
 - **Symlink escape guard in `migrateAllLocked`** — Two-phase path guard: Phase 1 uses `resolve()` (lexical, catches `../` traversal); Phase 2 uses `realpathSync()` (follows symlinks, catches symlinks that point outside the sessions directory). Only Phase 2 runs when the file exists. Phase 1 and Phase 2 use separate baseline directory paths to avoid false-skip on macOS where `/tmp` is a symlink to `/private/tmp`.
-- **`saveSession` no-PID-needed comment** — Added a comment explaining why `saveSession` deliberately keeps the bare `.tmp` suffix: it is always called inside a held `acquirePosixLock()` guard, so two concurrent callers cannot both proceed.
+- **`saveSession` tmp suffix clarified** — Added a code comment explaining why `saveSession` deliberately keeps the bare `.tmp` suffix (no PID): it is always called inside a held `acquirePosixLock()` guard, so only one caller can proceed at a time.
 
 ### Added
 
