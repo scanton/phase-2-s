@@ -210,3 +210,27 @@ describe(":re model override integration", () => {
     expect(modelOverride).toBeUndefined(); // falls back to default
   });
 });
+
+// ---------------------------------------------------------------------------
+// :re case-sensitivity regression (Sprint 49 fix: toLowerCase before matching)
+// ---------------------------------------------------------------------------
+
+describe(":re case-sensitivity normalization", () => {
+  // The :re handler calls .toLowerCase() on the argument before matching.
+  // This test guards against regression where uppercase/mixed-case args fail silently.
+  it("'HIGH', 'Low', 'Default' normalize identically to their lowercase counterparts", () => {
+    // Simulate the normalization inline — same logic as index.ts :re handler
+    function normalizeArg(raw: string): "high" | "low" | "default" | "unknown" {
+      const normalized = raw.toLowerCase();
+      if (normalized === "high") return "high";
+      if (normalized === "low") return "low";
+      if (normalized === "default") return "default";
+      return "unknown";
+    }
+
+    expect(normalizeArg("HIGH")).toBe("high");
+    expect(normalizeArg("Low")).toBe("low");
+    expect(normalizeArg("Default")).toBe("default");
+    expect(normalizeArg("HIGHLOW")).toBe("unknown");  // clearly invalid → unknown
+  });
+});

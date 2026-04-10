@@ -566,7 +566,8 @@ export function checkSessionDag(sessionsDir: string): CheckResult {
  */
 async function runDoctorFix(): Promise<void> {
   const cwd = resolve(".");
-  const sessDir = resolve(".phase2s", "sessions");
+  // Derive sessDir from cwd so the two are always consistent even if cwd changes.
+  const sessDir = resolve(cwd, ".phase2s", "sessions");
 
   console.log(chalk.bold("\n  Phase2S doctor --fix\n"));
   process.stdout.write(chalk.dim("  Rebuilding session index...\n"));
@@ -609,6 +610,14 @@ async function runDoctorFix(): Promise<void> {
   console.log("");
 }
 
+/**
+ * Phase2S installation health check entry point.
+ *
+ * @param opts.fix - When true, runs `doctor --fix`: rebuilds the session index from disk
+ *   via rebuildSessionIndexStrict and runs the DAG integrity check. Exits 1 if the write
+ *   fails (unlike the silent best-effort path used by listSessions). Returns immediately
+ *   after the fix run — the normal health checks do not execute.
+ */
 export async function runDoctor(opts: { fix?: boolean } = {}): Promise<void> {
   // --fix mode: rebuild session index and run DAG check, then exit.
   if (opts.fix) {

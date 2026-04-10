@@ -795,6 +795,59 @@ describe("tool error reflection", () => {
     expect(reflectionCalls.length).toBe(0);
   });
 
+  it("injects reflection fragment when tool call has invalid JSON arguments", async () => {
+    // The invalid-JSON path sets hadToolError=true before the reflect check
+    const badArgsChunks: import("openai/resources/chat/completions.js").ChatCompletionChunk[] = [
+      {
+        id: "chatcmpl-test",
+        object: "chat.completion.chunk",
+        created: 1234567890,
+        model: "gpt-4o",
+        choices: [{
+          index: 0,
+          delta: { role: "assistant", content: null, tool_calls: [{ index: 0, id: "call_bad", type: "function", function: { name: "fail_tool", arguments: "" } }] },
+          finish_reason: null,
+          logprobs: null,
+        }],
+      },
+      {
+        id: "chatcmpl-test",
+        object: "chat.completion.chunk",
+        created: 1234567890,
+        model: "gpt-4o",
+        choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: "<<<not-json>>>" } }] }, finish_reason: null, logprobs: null }],
+      },
+      {
+        id: "chatcmpl-test",
+        object: "chat.completion.chunk",
+        created: 1234567890,
+        model: "gpt-4o",
+        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls", logprobs: null }],
+      },
+    ];
+
+    const fakeClient = makeStreamingFakeClient([
+      badArgsChunks,
+      makeTextChunks("Bad JSON noted — reflecting"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({
+      config: minimalConfig,
+      provider,
+      tools: makeReflectionRegistry(),
+      systemPrompt: "You are a test assistant.",
+    });
+
+    const conversationAddUserSpy = vi.spyOn(agent.getConversation(), "addUser");
+
+    await agent.run("Bad JSON tool call");
+
+    const reflectionCalls = conversationAddUserSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("Tool failure reflection"),
+    );
+    expect(reflectionCalls.length).toBe(1);
+  });
+
   it("does not inject reflection on satori attempt 2+ (doom-loop takes over)", async () => {
     // Attempt 1 fails verification → doom-loop context injected → attempt 2 should NOT
     // get tool reflection even if a tool fails (toolReflectionEnabled=false for attempt 2+).

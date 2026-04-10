@@ -635,8 +635,10 @@ describe("checkBashPlugin", () => {
 
 describe("doctor --fix", () => {
   let tmpDir: string;
+  let originalCwd: string;
 
   beforeEach(() => {
+    originalCwd = process.cwd();
     tmpDir = mkdtempSync(join(tmpdir(), "phase2s-doctor-fix-test-"));
     vi.resetModules();
     spawnSyncMock.mockReset();
@@ -645,6 +647,8 @@ describe("doctor --fix", () => {
   });
 
   afterEach(() => {
+    // Restore cwd before removing tmpDir — chdir into a deleted dir is an ENOENT
+    try { process.chdir(originalCwd); } catch { /* ignore */ }
     rmSync(tmpDir, { recursive: true, force: true });
     vi.unstubAllEnvs();
   });
@@ -721,7 +725,9 @@ describe("doctor --fix", () => {
 
     const logs: string[] = [];
     const origLog = console.log;
+    const origWrite = process.stdout.write.bind(process.stdout);
     console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    process.stdout.write = (s: string | Uint8Array) => { logs.push(String(s)); return true; };
 
     process.chdir(tmpDir);
     try {
@@ -729,6 +735,7 @@ describe("doctor --fix", () => {
       await runDoctor({ fix: true });
     } finally {
       console.log = origLog;
+      process.stdout.write = origWrite;
     }
 
     const output = logs.join("\n");
