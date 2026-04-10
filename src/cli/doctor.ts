@@ -400,6 +400,11 @@ export function checkShellPlugin(
  * Check session DAG integrity: every parentId must resolve to an existing session.
  * Read-only — reports dangling references, never modifies files.
  *
+ * NOTE: This is a point-in-time snapshot. During concurrent session creation,
+ * a partially-written session file may appear valid but reference a parent not yet
+ * visible in the directory listing. False-positive dangling-parentId warnings are
+ * possible but self-resolve on the next doctor run.
+ *
  * @param sessionsDir  Path to the .phase2s/sessions/ directory (injectable for testing)
  */
 export function checkSessionDag(sessionsDir: string): CheckResult {

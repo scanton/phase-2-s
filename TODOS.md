@@ -8,17 +8,27 @@
 
 ## Backlog — Post-Sprint 47 /review findings (2026-04-09)
 
-- [ ] **ABA lock problem in `releasePosixLock`** — If process A holds `.state.lock` for >30 s (pathological), process B's stale-lock check removes it, process C acquires a new lock, then A's `finally` calls `releasePosixLock` and unlinks C's lock. Fix: read the lock file's PID before `unlinkSync`; only unlink if the PID matches `process.pid`. Affects both `.state.lock` and `.index.lock`.
+- [x] **ABA lock problem in `releasePosixLock`** — PID guard added: reads lock file PID before `unlinkSync`, only unlinks if PID matches `process.pid`. `Number.isInteger` guard added for corrupt/empty lock files. Covers both `.state.lock` and `.index.lock`. **Completed:** v1.22.2 (2026-04-09)
 
-- [ ] **`listSessions` stale index paths** — The index fast-path returns file paths for sessions that may have been deleted from disk since the index was written. The caller gets a path that doesn't exist. Fix: add an `existsSync` check on each returned path in the fast-path result, or strip missing paths before returning. No rebuild is needed — just filter.
+- [x] **`listSessions` stale index paths** — `existsSync` filter added to both the index fast-path and the rebuild slow-path. Sessions deleted from disk since the index was written are silently skipped. **Completed:** v1.22.2 (2026-04-09)
 
-- [ ] **NFS `O_EXCL` non-atomicity** — `{ flag: "wx" }` is atomic on local POSIX filesystems but is not guaranteed on NFSv2/v3 mounts. Add a JSDoc comment to `acquirePosixLock` noting this limitation, and document it in `CONTRIBUTING.md`. No code change needed for now — most Phase2S users are single-machine; NFS support is a V2 concern.
+- [x] **NFS `O_EXCL` non-atomicity** — JSDoc added to `acquirePosixLock` noting that `{ flag: "wx" }` is atomic on local POSIX filesystems but not on NFSv2/v3 mounts. Same note added to `CONTRIBUTING.md`. **Completed:** v1.22.2 (2026-04-09)
 
-- [ ] **`rebuildSessionIndex` bypasses `.index.lock`** — `upsertSessionIndex` acquires `.index.lock` before its tmp-write+rename, but `rebuildSessionIndex` writes the same `index.json` without holding the lock. A concurrent `upsertSessionIndex` can interleave, losing the rebuilt index. Fix: have `rebuildSessionIndex` also acquire `.index.lock` before writing.
+- [x] **`rebuildSessionIndex` bypasses `.index.lock`** — `rebuildSessionIndex` now acquires `.index.lock` before writing, returns `null` on lock-miss (handled gracefully by `listSessions`), releases lock in `finally`. **Completed:** v1.22.2 (2026-04-09)
 
-- [ ] **Index staleness detection / `doctor --fix`** — There is no way to force an index rebuild short of deleting `index.json` by hand. Add a `doctor --fix` flag that calls `rebuildSessionIndex()` and reports how many entries were recovered. Also consider a background entry-count comparison in `listSessions` to detect divergence (count on disk vs count in index).
+- [ ] **Index staleness detection / `doctor --fix`** — There is no way to force an index rebuild short of deleting `index.json` by hand. Add a `doctor --fix` flag that calls `rebuildSessionIndex()` and reports how many entries were recovered. Also consider a background entry-count comparison in `listSessions` to detect divergence (count on disk vs count in index). **Deferred to Sprint 49** (feature-flavored, needs its own design pass).
 
-- [ ] **`checkSessionDag` concurrency false positives** — The `readdirSync` + `readFileSync` loop in `checkSessionDag` can observe a partially-created session file during concurrent writes, producing a false-positive dangling-parentId warning. Fix: wrap each `readFileSync`+`JSON.parse` in try-catch (already done for corrupt files), and document that the check is a point-in-time snapshot.
+- [x] **`checkSessionDag` concurrency false positives** — JSDoc added documenting the point-in-time snapshot caveat and that false-positive dangling-parentId warnings self-resolve on the next `doctor` run. **Completed:** v1.22.2 (2026-04-09)
+
+---
+
+## Backlog — Post-Sprint 47b adversarial review findings (2026-04-09)
+
+- [x] **`migrateAll` lock uses empty content** — Lock now writes `process.pid.toString()` and `finally` calls `releasePosixLock(lockPath)` instead of bare `unlinkSync`. ABA hole closed. **Completed:** v1.22.2 /review pass (2026-04-09)
+
+- [x] **`rebuildSessionIndex` lock starvation** — Restructured: all `readdir` + `readFile` calls happen before lock acquisition; the lock is held only for the O(1) `renameSync`. `upsertSessionIndex` callers no longer exhaust the wait budget during rebuilds. Also changed: lock contention now returns the built-but-unpersisted index (not null) so callers always get valid data. **Completed:** v1.22.2 /review pass (2026-04-09)
+
+- [ ] **`writeReplState` fixed `.tmp` suffix (no PID)** — Uses `path + ".tmp"` (shared suffix). If two processes both proceed without the lock (the `acquirePosixLock` false-return path), they can collide on the temp file. Fix: use `path + ".tmp." + process.pid` matching the pattern in `upsertSessionIndex`. **Priority:** P3
 
 ---
 

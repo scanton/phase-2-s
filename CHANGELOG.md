@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.22.2 — 2026-04-09
+
+Sprint 47 post-review — session lock correctness sweep: ABA lock fix, stale path filtering, index lock on rebuild.
+
+### Fixed
+
+- **ABA lock race in `releasePosixLock`** — Before unlinking a lock file, the function now reads the file's PID and only proceeds if it matches the current process. Without this guard, a stale-lock cleanup by a second process (combined with a third acquiring a new lock) could cause the original holder's `finally` block to silently delete a live lock. The fix also adds a `Number.isInteger` guard so empty or corrupt lock files are treated as not-owned and left for the stale timeout to handle.
+- **`listSessions` stale path filter** — Both the index fast path and the rebuild slow path now filter results with `existsSync` before returning. Sessions deleted from disk since the index was written are silently skipped instead of returning paths that no longer exist.
+- **`rebuildSessionIndex` lock starvation closed** — The function previously held `.index.lock` for the entire scan-and-readFile loop (O(N) async I/O), starving concurrent `upsertSessionIndex` callers when sessions were numerous. Restructured: all `readdir` + `readFile` calls happen before lock acquisition; the lock is held only for the O(1) `renameSync`. Lock contention now returns the built-but-unpersisted index (not `null`) so callers always get valid data. Return type changed from `Promise<SessionIndex | null>` to `Promise<SessionIndex>`.
+- **`migrateAll` ABA hole closed** — The migration lock previously wrote an empty string to the lock file (instead of the current PID), making it indistinguishable from an abandoned lock. The `finally` block used a bare `unlinkSync` rather than the ABA-safe `releasePosixLock`. Both fixed: lock now writes `process.pid.toString()`, and `finally` calls `releasePosixLock(lockPath)`.
+- **`releasePosixLock` decimal PID guard** — `parseInt("3.7", 10)` returns 3, which `Number.isInteger(3)` would pass, potentially treating a decimal PID as a valid match. Changed to `Number(content.trim())` so `"3.7"` produces 3.7, which `Number.isInteger` correctly rejects.
+- **`writeReplState` temp file permissions** — Temp file is now created with `mode: 0o600` (owner-read/write only) matching the permissions on the final `state.json`.
+- **NFS lock atomicity documented** — `acquirePosixLock` now has a JSDoc note that `{ flag: "wx" }` is atomic on local POSIX filesystems but not on NFSv2/v3 mounts. The same note appears in `CONTRIBUTING.md`.
+- **`checkSessionDag` concurrency caveat documented** — JSDoc clarifies that the function takes a point-in-time snapshot; false-positive dangling-parentId warnings are possible during concurrent session creation but self-resolve on the next `doctor` run.
+
 ## v1.22.1 — 2026-04-09
 
 Sprint 47 — Session infrastructure: atomic state lock, O(1) conversation listing, DAG integrity check.

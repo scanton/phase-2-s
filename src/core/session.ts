@@ -135,9 +135,13 @@ const SESSION_PREVIEW_MAX_CHARS = 80;
 // ---------------------------------------------------------------------------
 
 /**
- * Acquire a POSIX exclusive-create lock file.
+ * Acquires a POSIX exclusive-create lock file.
  * Stale locks (older than STALE_LOCK_TIMEOUT_MS) are removed automatically.
  * Retries once after LOCK_RETRY_DELAY_MS on contention.
+ *
+ * NOTE: `{ flag: "wx" }` is atomic on local POSIX filesystems (Linux, macOS).
+ * It is NOT guaranteed atomic on NFSv2/v3 mounts. For NFS environments,
+ * consider a fencing token or a distributed lock service.
  *
  * @returns `true` if the lock was acquired, `false` if we're proceeding without it.
  * @throws  Any error other than EEXIST from the underlying writeFileSync.
@@ -175,11 +179,23 @@ async function acquirePosixLock(lockFile: string): Promise<boolean> {
 }
 
 /**
- * Release a POSIX lock file acquired by acquirePosixLock().
- * Best-effort — errors are silently ignored.
+ * Releases a POSIX lock file if its recorded PID matches the current process.
+ *
+ * Reads the lock file's PID before unlinking. Only unlinks if the PID matches
+ * the current process — guards against the ABA scenario where a stale-lock
+ * cleanup removed our lock and another process acquired a new one before our
+ * finally block runs. If the PID doesn't match, the unlink is skipped silently.
+ *
+ * Uses Number() (not parseInt) to parse the PID so that decimal strings like
+ * "3.7" fail the Number.isInteger guard rather than silently truncating to 3.
  */
-function releasePosixLock(lockFile: string): void {
-  try { unlinkSync(lockFile); } catch { /* best-effort */ }
+export function releasePosixLock(lockFile: string): void {
+  try {
+    const content = readFileSync(lockFile, "utf-8");
+    const pid = Number(content.trim());
+    if (!Number.isInteger(pid) || pid !== process.pid) return; // not our lock (or unreadable) — skip
+    unlinkSync(lockFile);
+  } catch { /* already gone — fine */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +230,7 @@ export async function writeReplState(cwd: string, state: ReplState): Promise<voi
   try {
     const path = replStatePath(cwd);
     const tmp = path + ".tmp";
-    writeFileSync(tmp, JSON.stringify(state, null, 2), "utf-8");
+    writeFileSync(tmp, JSON.stringify(state, null, 2), { encoding: "utf-8", mode: 0o600 });
     renameSync(tmp, path);
   } finally {
     if (lockAcquired) releasePosixLock(lockFile);
@@ -319,9 +335,20 @@ export async function upsertSessionIndex(cwd: string, meta: SessionMeta & { upda
 /**
  * Rebuild the session index from scratch by scanning all session files.
  * Called automatically when the index is missing or corrupt.
+ *
+ * Acquires `.index.lock` only for the final tmp+rename write — O(1) — so the
+ * lock hold time is short regardless of how many session files exist. All
+ * readdir + readFile calls happen before lock acquisition.
+ *
+ * Returns null if the lock is held by a concurrent upsert — the caller in
+ * `listSessions` handles this gracefully by returning an empty result set.
  */
-async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
+export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
   const dir = sessionsDir(cwd);
+
+  // --- Phase 1: scan + read, all outside the lock ---
+  // If the sessions dir doesn't exist, return an empty index without touching
+  // any lock. (acquirePosixLock would ENOENT on a missing parent directory.)
   let entries: string[];
   try {
     entries = await readdir(dir);
@@ -360,9 +387,22 @@ async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
     }
   }
 
-  // Write the rebuilt index to disk (best-effort).
-  // Use a per-process tmp path to avoid colliding with concurrent upsertSessionIndex writes.
+  // --- Phase 2: write under the lock (O(1)) ---
+  // Acquire the index lock only for the rename so hold time is minimal.
+  // A concurrent upsertSessionIndex will wait at most LOCK_RETRY_DELAY_MS
+  // for the rename to complete, which is a single syscall.
+  const lockFile = sessionIndexLockPath(cwd);
+  const acquired = await acquirePosixLock(lockFile);
+  if (!acquired) {
+    // Lock is held. Return the index we built — the rebuild data is still
+    // valid even though we couldn't write it. listSessions() can use it
+    // directly for this call without touching disk.
+    return index;
+  }
+
   try {
+    // Write the rebuilt index to disk (best-effort).
+    // Use a per-process tmp path to avoid colliding with concurrent writes.
     const indexPath = sessionIndexPath(cwd);
     await mkdir(dirname(indexPath), { recursive: true });
     const tmp = indexPath + ".tmp." + process.pid;
@@ -370,6 +410,8 @@ async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
     renameSync(tmp, indexPath);
   } catch {
     /* best-effort */
+  } finally {
+    releasePosixLock(lockFile);
   }
 
   return index;
@@ -442,7 +484,7 @@ export async function migrateAll(cwd: string): Promise<void> {
   // both running migration at the same time. POSIX "wx" flag is atomic.
   const lockPath = manifestPath + ".lock";
   try {
-    writeFileSync(lockPath, "", { flag: "wx" });
+    writeFileSync(lockPath, process.pid.toString(), { flag: "wx", mode: 0o600 });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "EEXIST") {
       console.error(chalk.dim("Migration already in progress — skipping."));
@@ -454,7 +496,7 @@ export async function migrateAll(cwd: string): Promise<void> {
   try {
     await migrateAllLocked(cwd, dir, manifestPath, allEntries);
   } finally {
-    try { unlinkSync(lockPath); } catch { /* ignore — lock cleanup is best-effort */ }
+    releasePosixLock(lockPath);
   }
 }
 
@@ -714,12 +756,17 @@ export async function listSessions(cwd: string): Promise<Array<{ meta: SessionMe
         },
         path: join(dir, `${entry.id}.json`),
         firstMessage: entry.firstMessage,
-      }));
+      }))
+      // Stale entries (sessions deleted from disk since last index write) are silently
+      // skipped here. They accumulate in index.json until the next full rebuildSessionIndex().
+      // No active pruning is needed — the next rebuild cleans them up.
+      .filter((e) => existsSync(e.path));
     results.sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt));
     return results;
   }
 
-  // Slow path: scan all session files, then rebuild the index
+  // Slow path: scan all session files, then rebuild the index.
+  // rebuildSessionIndex always returns a valid index (even if it couldn't persist it).
   const rebuiltIndex = await rebuildSessionIndex(cwd);
   const results = Object.values(rebuiltIndex.sessions)
     .filter((entry) => uuidPattern.test(`${entry.id}.json`))
@@ -733,7 +780,8 @@ export async function listSessions(cwd: string): Promise<Array<{ meta: SessionMe
       },
       path: join(dir, `${entry.id}.json`),
       firstMessage: entry.firstMessage,
-    }));
+    }))
+    .filter((e) => existsSync(e.path)); // Stale index entries skipped (same as fast-path)
   results.sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt));
   return results;
 }

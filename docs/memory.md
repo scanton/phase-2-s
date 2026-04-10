@@ -213,6 +213,7 @@ Everything goes to `.phase2s/` inside your project directory. Nothing writes out
 | Path | What's there | When it's created |
 |------|-------------|-------------------|
 | `.phase2s/sessions/<uuid>.json` | Full conversation history (tool calls included, v2 format) | After every turn |
+| `.phase2s/sessions/index.json` | O(1) session index (id, parentId, branchName, createdAt per entry) | Updated on every `saveSession`/`cloneSession`; rebuilt automatically if missing or corrupt |
 | `.phase2s/state.json` | Active session UUID pointer | On each session start |
 | `.phase2s/memory/learnings.jsonl` | Persistent learnings from `/remember` | When you run `/remember` |
 | `.phase2s/skills/<name>/SKILL.md` | Custom skills from `/skill` | When you run `/skill` |
