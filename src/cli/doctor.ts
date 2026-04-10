@@ -396,6 +396,76 @@ export function checkShellPlugin(
   };
 }
 
+/**
+ * Check session DAG integrity: every parentId must resolve to an existing session.
+ * Read-only — reports dangling references, never modifies files.
+ *
+ * @param sessionsDir  Path to the .phase2s/sessions/ directory (injectable for testing)
+ */
+export function checkSessionDag(sessionsDir: string): CheckResult {
+  let files: string[];
+  try {
+    files = readdirSync(sessionsDir);
+  } catch {
+    // Sessions dir doesn't exist yet (fresh install) — nothing to check
+    return { name: "Session DAG", ok: true, detail: "no sessions found" };
+  }
+
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
+  const sessionFiles = files.filter((f) => uuidPattern.test(f));
+
+  if (sessionFiles.length === 0) {
+    return { name: "Session DAG", ok: true, detail: "no sessions found" };
+  }
+
+  // Build id → parentId map
+  const idSet = new Set<string>();
+  const danglingRefs: Array<{ sessionId: string; parentId: string }> = [];
+
+  const parsed: Array<{ id: string; parentId: string | null }> = [];
+  for (const f of sessionFiles) {
+    try {
+      const raw = readFileSync(join(sessionsDir, f), "utf-8");
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      if (
+        data.schemaVersion === 2 &&
+        data.meta &&
+        typeof (data.meta as Record<string, unknown>).id === "string"
+      ) {
+        const meta = data.meta as { id: string; parentId?: string | null };
+        idSet.add(meta.id);
+        parsed.push({ id: meta.id, parentId: meta.parentId ?? null });
+      }
+    } catch {
+      /* skip corrupt files */
+    }
+  }
+
+  for (const { id, parentId } of parsed) {
+    if (parentId !== null && !idSet.has(parentId)) {
+      danglingRefs.push({ sessionId: id, parentId });
+    }
+  }
+
+  if (danglingRefs.length === 0) {
+    return {
+      name: "Session DAG",
+      ok: true,
+      detail: `${parsed.length} sessions, 0 dangling references`,
+    };
+  }
+
+  const list = danglingRefs
+    .map((r) => `${r.sessionId.slice(0, 8)}... → ${r.parentId.slice(0, 8)}... (not found)`)
+    .join(", ");
+  return {
+    name: "Session DAG",
+    ok: false,
+    detail: `${danglingRefs.length} dangling parent ${danglingRefs.length === 1 ? "reference" : "references"}: ${list}`,
+    fix: "These sessions are still usable. To clean up, delete them manually from .phase2s/sessions/",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // runDoctor — entry point
 // ---------------------------------------------------------------------------
@@ -430,6 +500,7 @@ export async function runDoctor(): Promise<void> {
     checkShellPlugin(),
     checkTmux(),
     checkGitWorktree(),
+    checkSessionDag(resolve(".phase2s", "sessions")),
   ];
 
   // Filter out N/A checks (provider binary for non-binary providers)

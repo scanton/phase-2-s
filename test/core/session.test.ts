@@ -10,6 +10,8 @@ import {
   readReplState,
   writeReplState,
   getSessionPreview,
+  readSessionIndex,
+  upsertSessionIndex,
   type SessionMeta,
 } from "../../src/core/session.js";
 import { Conversation } from "../../src/core/conversation.js";
@@ -439,15 +441,15 @@ describe("readReplState() / writeReplState()", () => {
     expect(readReplState(tmpDir)).toBeNull();
   });
 
-  it("roundtrips currentSessionId", () => {
-    writeReplState(tmpDir, { currentSessionId: "abc-123" });
+  it("roundtrips currentSessionId", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "abc-123" });
     const state = readReplState(tmpDir);
     expect(state?.currentSessionId).toBe("abc-123");
   });
 
-  it("overwrites previous state", () => {
-    writeReplState(tmpDir, { currentSessionId: "first" });
-    writeReplState(tmpDir, { currentSessionId: "second" });
+  it("overwrites previous state", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "first" });
+    await writeReplState(tmpDir, { currentSessionId: "second" });
     expect(readReplState(tmpDir)?.currentSessionId).toBe("second");
   });
 });
@@ -503,5 +505,281 @@ describe("getSessionPreview()", () => {
     writeFileSync(path, "not json at all");
     const preview = await getSessionPreview(path);
     expect(preview).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// writeReplState() — POSIX lock
+// ---------------------------------------------------------------------------
+
+describe("writeReplState() lock", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-lock-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("writes state.json atomically", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "abc-123" });
+    const state = readReplState(tmpDir);
+    expect(state?.currentSessionId).toBe("abc-123");
+  });
+
+  it("overwrites existing state.json", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "first" });
+    await writeReplState(tmpDir, { currentSessionId: "second" });
+    expect(readReplState(tmpDir)?.currentSessionId).toBe("second");
+  });
+
+  it("releases lock file after write", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "abc" });
+    const lockPath = join(tmpDir, ".phase2s", ".state.lock");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("removes stale lock (older than 30s) before acquiring", async () => {
+    // Create a stale lock (mtime in the past)
+    const phase2sDir = join(tmpDir, ".phase2s");
+    mkdirSync(phase2sDir, { recursive: true });
+    const lockPath = join(phase2sDir, ".state.lock");
+    writeFileSync(lockPath, "99999"); // stale: mtime = now, but we'll backdate it
+
+    // Manually set mtime to 60 seconds ago via utime
+    const { utimesSync } = await import("node:fs");
+    const sixtySecsAgo = (Date.now() - 60_000) / 1000;
+    utimesSync(lockPath, sixtySecsAgo, sixtySecsAgo);
+
+    // Should succeed (stale lock removed) without throwing
+    await expect(writeReplState(tmpDir, { currentSessionId: "after-stale" })).resolves.not.toThrow();
+    expect(readReplState(tmpDir)?.currentSessionId).toBe("after-stale");
+  });
+
+  it("proceeds without lock when contended (retry-once path)", async () => {
+    // Simulate contention: create a fresh lock file that won't be removed
+    const phase2sDir = join(tmpDir, ".phase2s");
+    mkdirSync(phase2sDir, { recursive: true });
+    const lockPath = join(phase2sDir, ".state.lock");
+    writeFileSync(lockPath, "99999"); // fresh lock (not stale)
+
+    // writeReplState should still write state.json even without winning the lock
+    await expect(writeReplState(tmpDir, { currentSessionId: "contended" })).resolves.not.toThrow();
+    expect(readReplState(tmpDir)?.currentSessionId).toBe("contended");
+
+    // Clean up the contention lock
+    unlinkSync(lockPath);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session index — upsertSessionIndex / readSessionIndex / listSessions
+// ---------------------------------------------------------------------------
+
+describe("upsertSessionIndex()", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-index-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("creates the index on first upsert", async () => {
+    const meta = makeMeta();
+    await upsertSessionIndex(tmpDir, meta, "hello world");
+    const index = await readSessionIndex(tmpDir);
+    expect(index).not.toBeNull();
+    expect(index!.version).toBe(1);
+    expect(index!.sessions[meta.id]).toBeDefined();
+    expect(index!.sessions[meta.id].firstMessage).toBe("hello world");
+  });
+
+  it("merges without overwriting existing entries", async () => {
+    const meta1 = makeMeta({ id: "00000000-0000-0000-0000-000000000001" });
+    const meta2 = makeMeta({ id: "00000000-0000-0000-0000-000000000002" });
+    await upsertSessionIndex(tmpDir, meta1, "first session");
+    await upsertSessionIndex(tmpDir, meta2, "second session");
+    const index = await readSessionIndex(tmpDir);
+    expect(Object.keys(index!.sessions)).toHaveLength(2);
+    expect(index!.sessions[meta1.id].firstMessage).toBe("first session");
+    expect(index!.sessions[meta2.id].firstMessage).toBe("second session");
+  });
+
+  it("stores parentId in the index entry", async () => {
+    const meta = makeMeta({
+      id: "00000000-0000-0000-0000-000000000002",
+      parentId: "00000000-0000-0000-0000-000000000001",
+    });
+    await upsertSessionIndex(tmpDir, meta, "child session");
+    const index = await readSessionIndex(tmpDir);
+    expect(index!.sessions[meta.id].parentId).toBe("00000000-0000-0000-0000-000000000001");
+  });
+});
+
+describe("readSessionIndex()", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-index-read-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns null when no index exists", async () => {
+    const index = await readSessionIndex(tmpDir);
+    expect(index).toBeNull();
+  });
+
+  it("returns null for corrupt index", async () => {
+    const indexPath = join(tmpDir, ".phase2s", "sessions", "index.json");
+    mkdirSync(join(tmpDir, ".phase2s", "sessions"), { recursive: true });
+    writeFileSync(indexPath, "not json");
+    const index = await readSessionIndex(tmpDir);
+    expect(index).toBeNull();
+  });
+});
+
+describe("listSessions() — index fast path", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-list-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns empty array when no sessions exist", async () => {
+    const sessions = await listSessions(tmpDir);
+    expect(sessions).toEqual([]);
+  });
+
+  it("returns firstMessage from index without reading session files", async () => {
+    const meta = makeMeta();
+    await upsertSessionIndex(tmpDir, meta, "quick brown fox");
+    // Create the session file so the path is valid, but index should be used
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${meta.id}.json`),
+      JSON.stringify({ schemaVersion: 2, meta, messages: [{ role: "user", content: "quick brown fox" }] }),
+    );
+
+    const sessions = await listSessions(tmpDir);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].firstMessage).toBe("quick brown fox");
+    expect(sessions[0].meta.id).toBe(meta.id);
+  });
+
+  it("falls back to disk scan and rebuilds index when index is missing", async () => {
+    const meta = makeMeta();
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${meta.id}.json`),
+      JSON.stringify({
+        schemaVersion: 2,
+        meta,
+        messages: [{ role: "user", content: "fallback message" }],
+      }),
+    );
+
+    // No index yet
+    const sessions = await listSessions(tmpDir);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].firstMessage).toBe("fallback message");
+
+    // Index should now be rebuilt on disk
+    const index = await readSessionIndex(tmpDir);
+    expect(index).not.toBeNull();
+    expect(index!.sessions[meta.id]).toBeDefined();
+  });
+
+  it("sorts sessions newest-first by createdAt", async () => {
+    const older = makeMeta({
+      id: "00000000-0000-0000-0000-000000000001",
+      createdAt: "2026-01-01T10:00:00.000Z",
+      updatedAt: "2026-01-01T10:00:00.000Z",
+    });
+    const newer = makeMeta({
+      id: "00000000-0000-0000-0000-000000000002",
+      createdAt: "2026-04-01T10:00:00.000Z",
+      updatedAt: "2026-04-01T10:00:00.000Z",
+    });
+    await upsertSessionIndex(tmpDir, older, "old");
+    await upsertSessionIndex(tmpDir, newer, "new");
+
+    const sessions = await listSessions(tmpDir);
+    expect(sessions[0].meta.id).toBe(newer.id);
+    expect(sessions[1].meta.id).toBe(older.id);
+  });
+});
+
+describe("saveSession() — index upsert side-effect", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-save-index-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("updates the session index after saving", async () => {
+    const meta = makeMeta();
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, `${meta.id}.json`);
+    const conv = makeConv("hello from saveSession");
+
+    await saveSession(path, conv, meta);
+
+    // Give the fire-and-forget upsert time to complete
+    await new Promise((r) => setTimeout(r, 100));
+
+    const index = await readSessionIndex(tmpDir);
+    expect(index).not.toBeNull();
+    expect(index!.sessions[meta.id]).toBeDefined();
+    expect(index!.sessions[meta.id].firstMessage).toBe("hello from saveSession");
+  });
+});
+
+describe("cloneSession() — index upsert side-effect", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-clone-index-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("adds the cloned session to the index", async () => {
+    const sourceMeta = makeMeta({ id: "00000000-0000-0000-0000-000000000001" });
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${sourceMeta.id}.json`),
+      JSON.stringify({
+        schemaVersion: 2,
+        meta: sourceMeta,
+        messages: [{ role: "user", content: "original message" }],
+      }),
+    );
+
+    const result = await cloneSession(tmpDir, sourceMeta.id, "test-branch");
+
+    // Give fire-and-forget upsert time to complete
+    await new Promise((r) => setTimeout(r, 100));
+
+    const index = await readSessionIndex(tmpDir);
+    expect(index).not.toBeNull();
+    expect(index!.sessions[result.id]).toBeDefined();
+    expect(index!.sessions[result.id].parentId).toBe(sourceMeta.id);
+    expect(index!.sessions[result.id].firstMessage).toBe("original message");
   });
 });

@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.22.1 — 2026-04-09
+
+Sprint 47 — Session infrastructure: atomic state lock, O(1) conversation listing, DAG integrity check.
+
+### Added
+
+- **POSIX exclusive-create lock for `state.json`** — `writeReplState` is now async and serializes concurrent writes via `.phase2s/.state.lock` (`{ flag: "wx" }`, atomic on POSIX). Stale locks older than 30 s (crashed processes) are removed automatically. Retries once after 50 ms on contention; proceeds without the lock if still blocked, preserving liveness.
+- **Session index at `.phase2s/sessions/index.json`** — `listSessions` reads from an O(1) index instead of scanning every session file. The index is updated fire-and-forget on every `saveSession` and `cloneSession` call. If the index is missing or corrupt, `listSessions` falls back to a full disk scan and rebuilds the index automatically.
+- **Index lock (`.phase2s/sessions/.index.lock`)** — `upsertSessionIndex` is protected by the same POSIX lock pattern as `writeReplState`, preventing concurrent REPL instances from losing index updates to last-writer-wins races.
+- **`phase2s doctor` DAG integrity check** — `checkSessionDag` reads all session files, builds the id set, and flags any session whose `parentId` references a non-existent session. Reported as a warning (not a blocking error).
+
+### Fixed
+
+- **`conversations` O(n) disk reads eliminated** — The browser previously read every session file to extract the first message preview. It now reads a single index file instead, making startup fast regardless of session count.
+- **`writeReplState` call sites updated** — Three `await`-less calls in `src/cli/index.ts` now correctly `await` the async function.
+- **Index upsert errors surfaced** — Fire-and-forget index upserts now emit a `chalk.dim` warning to stderr on failure instead of swallowing errors silently.
+
 ## v1.22.0 — 2026-04-09
 
 Sprint 46 — AI-generated commit messages (`phase2s commit`).
