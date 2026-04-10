@@ -16,6 +16,14 @@ phase2s doctor
 
 It reports pass/fail for: Node.js version (>= 20 required), provider binary in PATH (codex, ollama), API key for your configured provider, `.phase2s.yaml` validity, and `.phase2s/` working directory writability. Each failure includes a one-line fix instruction.
 
+To repair a corrupted or out-of-sync session index, run:
+
+```bash
+phase2s doctor --fix
+```
+
+This rebuilds the session index from disk, reports recovered and cleaned-up entries, and exits 1 if the write fails. Useful in CI and after a crash.
+
 ---
 
 ## Enabling a direct API provider
@@ -174,6 +182,19 @@ model: gpt-4o  # literal — always uses this model, ignores tier config
 - You type `/review src/core/agent.ts` — uses `smart_model`. Review needs reasoning depth, not speed.
 
 Without `fast_model` / `smart_model` configured, all skills use the same model. Tier routing is optional.
+
+**Switch tiers mid-session with `:re`:**
+
+In the REPL, you can switch the reasoning tier for the current session without leaving:
+
+```
+:re high     # route normal turns through smart_model
+:re low      # route normal turns through fast_model
+:re default  # reset to config model
+:re          # show current tier and resolved model
+```
+
+`:re` applies to REPL normal turns only. Skills invoked with `/skill-name` keep their declared tier from SKILL.md frontmatter.
 
 **Note on Satori with Option A:** `/satori` works with Codex CLI (Option A). The retry loop, context snapshots, and attempt logs all work. You just don't get model tier routing — satori uses whatever model Codex is configured to use in `~/.codex/config.toml`.
 
