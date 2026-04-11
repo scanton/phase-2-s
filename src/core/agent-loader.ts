@@ -154,7 +154,7 @@ async function loadAgentsFromDir(dir: string, isBuiltIn: boolean): Promise<Agent
  * If the override adds a tool not in the built-in list, that tool is filtered
  * out with a warning.
  */
-function applyOverrideRestrict(builtIn: AgentDef, override: AgentDef): AgentDef {
+export function applyOverrideRestrict(builtIn: AgentDef, override: AgentDef): AgentDef {
   if (override.tools === undefined) {
     // No tools field in override — inherit built-in's tool list
     return { ...override, tools: builtIn.tools, isBuiltIn: false };
@@ -230,12 +230,12 @@ export function buildRegistryForAgent(def: AgentDef, opts: RegistryOptions = {})
  * policy is applied. Custom agents (new ids) are loaded unrestricted.
  */
 export async function loadAgents(cwd: string): Promise<Map<string, AgentDef>> {
-  // Load built-ins
-  const builtInDefs = await loadAgentsFromDir(bundledAgentsDir(), true);
-
-  // Load project overrides
+  // Load built-ins and project overrides in parallel
   const projectDir = join(cwd, ".phase2s", "agents");
-  const projectDefs = await loadAgentsFromDir(projectDir, false);
+  const [builtInDefs, projectDefs] = await Promise.all([
+    loadAgentsFromDir(bundledAgentsDir(), true),
+    loadAgentsFromDir(projectDir, false),
+  ]);
 
   // Build lookup map of built-ins by id
   const builtInById = new Map<string, AgentDef>();
@@ -256,11 +256,29 @@ export async function loadAgents(cwd: string): Promise<Map<string, AgentDef>> {
     }
   }
 
+  // Collect built-in aliases to prevent custom agents from hijacking them.
+  // A custom agent that declares alias ":build" would silently overwrite Ares's
+  // alias in the result Map, bypassing the override-restrict policy.
+  const builtInAliases = new Set<string>();
+  for (const def of finalById.values()) {
+    if (def.isBuiltIn) {
+      for (const alias of def.aliases) {
+        builtInAliases.add(alias);
+      }
+    }
+  }
+
   // Build the final Map with all ids + aliases as keys
   const result = new Map<string, AgentDef>();
   for (const def of finalById.values()) {
     result.set(def.id, def);
     for (const alias of def.aliases) {
+      if (!def.isBuiltIn && builtInAliases.has(alias)) {
+        console.warn(
+          `Warning: custom agent '${def.id}' declares alias '${alias}' which is reserved by a built-in agent — this alias will be ignored.`,
+        );
+        continue;
+      }
       result.set(alias, def);
     }
   }

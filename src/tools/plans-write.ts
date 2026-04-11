@@ -69,8 +69,9 @@ export function createPlansWriteTool(cwd: string): ToolDefinition {
       throw new Error("Path outside plans directory");
     }
 
-    // Separator-aware prefix check: "plans/" must not match "plans-evil/"
-    if (!resolved.startsWith(realPlansDir + sep) && resolved !== realPlansDir) {
+    // Separator-aware prefix check: path must be INSIDE plans/ (not plans/ itself).
+    // "plans/" must not match "plans-evil/" and writing to "plans" dir itself is rejected.
+    if (!resolved.startsWith(realPlansDir + sep)) {
       throw new Error(`Path outside plans directory: ${rawPath}`);
     }
 

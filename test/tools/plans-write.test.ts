@@ -115,29 +115,11 @@ describe("plans_write tool", () => {
 
   it("rejects a path that resolves to plans/ itself (not a file)", async () => {
     const tool = createPlansWriteTool(cwd);
-    // Writing to "plans" (without trailing slash or filename) resolves to the directory itself.
-    // This is rejected because it's not inside plans/ + sep + filename.
+    // Writing to "plans" (without filename) resolves to the plans/ directory itself.
+    // The sandbox requires startsWith(plansDir + sep), so the directory itself is rejected.
     const result = await tool.execute({ path: "plans", content: "Should not write." });
-    // The write itself would succeed (it would create the file "plans"),
-    // but the sandbox check uses startsWith(plansDir + sep) which would be:
-    // "/tmp/test/plans".startsWith("/tmp/test/plans/") → false
-    // Exception: resolved === realPlansDir is also allowed, but that means we'd be writing TO the directory
-    // which writeFile would fail on anyway. Let's just verify no escape to outside plans/.
-    // Actually this is tricky — "plans" resolves to cwd/plans which IS the plansDir.
-    // The sandbox allows resolved === realPlansDir, so this might succeed.
-    // Let's check what the actual behavior is.
-    if (result.success) {
-      // If it succeeded, verify it wrote to cwd/plans (not elsewhere)
-      const writtenPath = join(cwd, "plans");
-      try {
-        await readFile(writtenPath, "utf-8");
-        // It wrote to the plans path — this is expected if it treats plans/ as a file
-      } catch {
-        // File creation may have failed
-      }
-    }
-    // The important thing is it doesn't escape to outside cwd
-    expect(result.error ?? "").not.toContain("/etc");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("outside plans directory");
   });
 
   it("rejects path with multiple ../ escapes", async () => {

@@ -67,6 +67,20 @@ function resolveReasoningModel(
 }
 
 /**
+ * Resolve an AgentDef model tier ("fast" | "smart" | literal) to an actual model ID.
+ * Returns undefined if the tier maps to an unconfigured model (fall through to config.model).
+ */
+function resolveAgentModel(
+  agentModel: string,
+  config: { smart_model?: string; fast_model?: string; model?: string },
+): string | undefined {
+  if (agentModel === "smart") return config.smart_model;
+  if (agentModel === "fast") return config.fast_model;
+  // Literal model string (e.g. "gpt-4o") — always valid
+  return agentModel;
+}
+
+/**
  * Find the most recently active session file via state.json.
  * Returns null if no active session is recorded or the file is missing.
  */
@@ -759,6 +773,8 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   // Resolve which agent to activate at startup.
   // On --resume, restore the saved activeAgentId from state.json (if present + still valid).
   let activeAgentId: string | undefined;
+  // Track the active AgentDef to apply its model tier to normal REPL turns.
+  let activeAgentDef: AgentDef | undefined;
   if (opts.resume) {
     const state = readReplState(process.cwd());
     const savedId = state?.activeAgentId;
@@ -777,6 +793,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   if (activeAgentId) {
     const def = agentDefs.get(activeAgentId)!;
     agent.switchAgentDef(def);
+    activeAgentDef = def;
     console.log(chalk.cyan(`→ Resumed as: ${def.id} (${def.title})\n`));
   }
 
@@ -933,9 +950,18 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     }
 
     // Agent switching — :ares / :build / :apollo / :ask / :athena / :plan / :agent <id>
+    // Also supports colon-prefixed ids: :apollo, :ares, :athena (strips leading colon).
     {
-      // Collect all colon aliases from the loaded agent map
-      const agentSwitchKey = agentDefs.has(trimmed) ? trimmed : undefined;
+      // Check direct key first (handles bare ids like "apollo" and colon-aliases like ":ask").
+      // Also handle ":apollo" / ":ares" / ":athena" — colon-prefixed bare ids that are not
+      // aliases but are documented as valid commands. Strip the leading colon and look up.
+      const strippedKey =
+        trimmed.startsWith(":") && !trimmed.startsWith(":agent ") ? trimmed.slice(1) : "";
+      const agentSwitchKey = agentDefs.has(trimmed)
+        ? trimmed
+        : strippedKey && agentDefs.has(strippedKey)
+          ? strippedKey
+          : undefined;
       const agentFromCmd = agentSwitchKey
         ? agentDefs.get(agentSwitchKey)!
         : trimmed.startsWith(":agent ")
@@ -945,6 +971,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
       if (agentFromCmd) {
         agent.switchAgentDef(agentFromCmd);
         activeAgentId = agentFromCmd.id;
+        activeAgentDef = agentFromCmd;
         // Persist the active agent so --resume restores it
         const state = readReplState(process.cwd());
         await writeReplState(process.cwd(), {
@@ -1184,8 +1211,11 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     }
 
     // Normal message — stream deltas as they arrive
-    // Apply reasoningOverride (set by :re command) — only affects normal turns, not skill invocations.
-    const normalTurnModel = resolveReasoningModel(reasoningOverride, config);
+    // Model priority: :re override > active agent's model tier > config.model
+    // :re is user-explicit and always wins; agent model is applied when no :re override is set.
+    const normalTurnModel =
+      resolveReasoningModel(reasoningOverride, config) ??
+      (activeAgentDef ? resolveAgentModel(activeAgentDef.model, config) : undefined);
     process.stdout.write(chalk.bold("\nassistant > "));
     try {
       await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel });

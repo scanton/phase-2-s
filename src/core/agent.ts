@@ -60,10 +60,12 @@ export class Agent {
   private config: Config;
   private maxTurns: number;
   private cwd: string;
+  private learnings: string | undefined;
 
   constructor(opts: AgentOptions) {
     this.config = opts.config;
     this.cwd = opts.cwd ?? process.cwd();
+    this.learnings = opts.learnings;
     const baseRegistry = opts.tools ?? createDefaultRegistry({
       allowDestructive: opts.config.allowDestructive,
       cwd: this.cwd,
@@ -130,9 +132,12 @@ export class Agent {
       cwd: this.cwd,
       browserEnabled: this.config.browser,
     };
-    this.tools = buildRegistryForAgent(def, registryOpts);
+    const builtRegistry = buildRegistryForAgent(def, registryOpts);
+    // Re-apply project config allow/deny list so switchAgentDef cannot bypass
+    // restrictions that were applied in the constructor.
+    this.tools = builtRegistry.allowed(this.config.tools, this.config.deny);
 
-    const newSystemPrompt = buildSystemPrompt(this.tools.list(), def.systemPrompt);
+    const newSystemPrompt = buildSystemPrompt(this.tools.list(), def.systemPrompt, this.learnings);
     const msgs = this.conversation.getMessages();
     const nonSystemMessages = msgs.filter((m) => m.role !== "system");
     this.conversation = Conversation.fromMessages([
