@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { access, constants } from "node:fs/promises";
-import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
@@ -43,8 +43,27 @@ function findVersion(): string {
 }
 const VERSION = findVersion();
 
-/** Directory for session auto-saves. */
-const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
+/**
+ * Directory for session auto-saves.
+ * Evaluated lazily so that `-C /path` (process.chdir) is applied before the path is resolved.
+ */
+function sessionDir(): string {
+  return join(process.cwd(), ".phase2s", "sessions");
+}
+
+/**
+ * Resolve the model override for a REPL turn based on the active :re tier.
+ * Returns undefined (fall through to config.model) when no override is active
+ * or when the tier-specific model is not configured.
+ */
+function resolveReasoningModel(
+  override: "high" | "low" | undefined,
+  config: { smart_model?: string; fast_model?: string },
+): string | undefined {
+  if (override === "high") return config.smart_model;
+  if (override === "low") return config.fast_model;
+  return undefined;
+}
 
 /**
  * Find the most recently active session file via state.json.
@@ -53,7 +72,7 @@ const SESSION_DIR = join(process.cwd(), ".phase2s", "sessions");
 async function findLatestSession(): Promise<string | null> {
   const state = readReplState(process.cwd());
   if (!state?.currentSessionId) return null;
-  const path = join(SESSION_DIR, `${state.currentSessionId}.json`);
+  const path = join(sessionDir(), `${state.currentSessionId}.json`);
   try {
     await access(path, constants.R_OK);
     return path;
@@ -75,7 +94,33 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("-p, --provider <provider>", "LLM provider (codex-cli | openai-api)")
     .option("-m, --model <model>", "Model to use")
     .option("--system <prompt>", "Custom system prompt")
-    .option("--resume", "Resume the most recent session");
+    .option("--resume", "Resume the most recent session")
+    .option("-C, --cwd <path>", "Run as if started in <path> — useful for IDE integrations");
+
+  // Apply -C before any subcommand runs.
+  // process.chdir() here means all subsequent process.cwd() calls (including sessionDir())
+  // resolve relative to the target directory.
+  program.hook("preAction", () => {
+    const opts = program.opts<{ cwd?: string }>();
+    if (!opts.cwd) return;
+    const target = resolve(opts.cwd);
+    try {
+      const stat = statSync(target);
+      if (!stat.isDirectory()) {
+        console.error(chalk.red(`phase2s: -C: not a directory: ${target}`));
+        process.exit(1);
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        console.error(chalk.red(`phase2s: -C: no such directory: ${target}`));
+      } else {
+        console.error(chalk.red(`phase2s: -C: ${(err as NodeJS.ErrnoException).message}`));
+      }
+      process.exit(1);
+    }
+    process.chdir(target);
+  });
 
   // Default command: interactive REPL
   program
@@ -365,9 +410,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
   program
     .command("doctor")
     .description("Check Phase2S installation health — Node version, auth, config, working dir")
-    .action(async () => {
+    .option("--fix", "Rebuild session index and run DAG integrity check")
+    .action(async (cmdOpts: { fix?: boolean }) => {
       const { runDoctor } = await import("./doctor.js");
-      await runDoctor();
+      await runDoctor({ fix: !!cmdOpts.fix });
     });
 
   // Shell integration setup
@@ -694,7 +740,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
   await writeReplState(process.cwd(), { currentSessionId: sessionId });
 
   // activeSessionPath and sessionMeta are mutable — :clone updates both
-  let activeSessionPath = join(SESSION_DIR, `${sessionId}.json`);
+  let activeSessionPath = join(sessionDir(), `${sessionId}.json`);
 
   console.log(chalk.bold(`\nPhase2S v${VERSION}`));
   console.log(chalk.dim("Type your message and press Enter. Type /quit to exit.\n"));
@@ -708,6 +754,13 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
 
   const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr });
   const skills = await loadAllSkills();
+
+  /**
+   * In-memory reasoning tier override. Controlled by :re [high|low|default].
+   * Applies only to normal REPL turns — skill invocations use their own skill.model.
+   * Never written to disk (session-scoped only).
+   */
+  let reasoningOverride: "high" | "low" | undefined;
 
   // Ensure stdin is open and stays open for the full session
   process.stdin.resume();
@@ -810,6 +863,39 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
 
     if (trimmed === "/help") {
       printHelp(skills);
+      continue;
+    }
+
+    // :re [high|low|default] — switch reasoning effort tier for this session
+    if (trimmed === ":re" || trimmed.startsWith(":re ")) {
+      const arg = trimmed.slice(":re".length).trim().toLowerCase();
+      if (arg === "") {
+        // Show current state
+        const tier = reasoningOverride ?? "default";
+        const model = resolveReasoningModel(reasoningOverride, config) ?? config.model ?? "default";
+        const overrideSuffix = reasoningOverride ? chalk.dim(" [overridden — use :re default to reset]") : "";
+        console.log(chalk.cyan(`→ Reasoning: ${tier} (${model})${overrideSuffix}`));
+      } else if (arg === "high") {
+        const model = config.smart_model ?? config.model ?? "default";
+        if (!config.smart_model) {
+          console.log(chalk.yellow(`⚠  smart_model not configured — using default model (${model})`));
+        }
+        reasoningOverride = "high";
+        console.log(chalk.cyan(`→ Reasoning: high (${model}) for this session`));
+      } else if (arg === "low") {
+        const model = config.fast_model ?? config.model ?? "default";
+        if (!config.fast_model) {
+          console.log(chalk.yellow(`⚠  fast_model not configured — using default model (${model})`));
+        }
+        reasoningOverride = "low";
+        console.log(chalk.cyan(`→ Reasoning: low (${model}) for this session`));
+      } else if (arg === "default") {
+        reasoningOverride = undefined;
+        const model = config.model ?? "default";
+        console.log(chalk.cyan(`→ Reasoning: default (${model})`));
+      } else {
+        console.log(chalk.red(`Unknown tier: ${arg}. Valid options: high | low | default`));
+      }
       continue;
     }
 
@@ -1026,9 +1112,11 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     }
 
     // Normal message — stream deltas as they arrive
+    // Apply reasoningOverride (set by :re command) — only affects normal turns, not skill invocations.
+    const normalTurnModel = resolveReasoningModel(reasoningOverride, config);
     process.stdout.write(chalk.bold("\nassistant > "));
     try {
-      await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk) });
+      await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel });
       process.stdout.write("\n\n");
       await saveSession();
     } catch (err) {

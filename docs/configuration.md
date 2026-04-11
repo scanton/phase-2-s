@@ -179,6 +179,8 @@ All config file settings can be overridden with environment variables. Environme
 | `PHASE2S_TEAMS_WEBHOOK` | `notify.teams` | Microsoft Teams incoming webhook URL for dark factory run notifications |
 | `PHASE2S_TELEGRAM_BOT_TOKEN` | `notify.telegram.token` | Telegram bot token (from @BotFather) for dark factory run notifications |
 | `PHASE2S_TELEGRAM_CHAT_ID` | `notify.telegram.chatId` | Telegram chat ID (string; run `phase2s init --telegram-setup` to find it) |
+| `PHASE2S_TOOL_ERROR_REFLECTION` | — | Set to `off` to disable structured tool-error reflection in satori (attempt 1 only) |
+| `PHASE2S_DOOM_LOOP_REFLECTION` | — | Set to `off` to revert to one-liner retry prompt instead of doom-loop reflection protocol |
 | `PHASE2S_CODEX_PATH` | — | Path to codex binary if not on PATH |
 | `OPENAI_API_KEY` | — | API key for `openai-api` provider |
 | `ANTHROPIC_API_KEY` | — | API key for `anthropic` provider |
@@ -388,12 +390,14 @@ Commands:
     --preview              Print proposed message and exit without committing
   conversations            Browse session history (fzf interactive or plain table)
   doctor                   Installation health check
+    --fix                  Rebuild session index and run DAG integrity check; exits 1 on failure
   upgrade                  Check for and install updates
   mcp                      Start as an MCP server for Claude Code
 
 Options:
   -p, --provider <provider>  LLM provider (codex-cli | openai-api | anthropic | ollama | openrouter | gemini)
   -m, --model <model>        Model to use
+  -C, --cwd <path>           Run as if started in <path> (equivalent to cd before running)
   --system <prompt>          Custom system prompt
   --resume                   Resume the most recent saved session
   -V, --version              Show version

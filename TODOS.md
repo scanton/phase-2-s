@@ -16,7 +16,7 @@
 
 - [x] **`rebuildSessionIndex` bypasses `.index.lock`** — `rebuildSessionIndex` now acquires `.index.lock` before writing, returns `null` on lock-miss (handled gracefully by `listSessions`), releases lock in `finally`. **Completed:** v1.22.2 (2026-04-09)
 
-- [ ] **Index staleness detection / `doctor --fix`** — There is no way to force an index rebuild short of deleting `index.json` by hand. Add a `doctor --fix` flag that calls `rebuildSessionIndex()` and reports how many entries were recovered. Also consider a background entry-count comparison in `listSessions` to detect divergence (count on disk vs count in index). **Deferred to Sprint 49** (feature-flavored, needs its own design pass).
+- [x] **Index staleness detection / `doctor --fix`** — `phase2s doctor --fix` flag added. Calls `rebuildSessionIndexStrict()`, reports recovered/cleaned-up entries, runs `checkSessionDag`, exits 1 on write failure. **Completed:** v1.23.0 (2026-04-10)
 
 - [x] **`checkSessionDag` concurrency false positives** — JSDoc added documenting the point-in-time snapshot caveat and that false-positive dangling-parentId warnings self-resolve on the next `doctor` run. **Completed:** v1.22.2 (2026-04-09)
 
@@ -74,9 +74,11 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [x] **Doom-loop prevention template** — Forge has `forge-doom-loop-reminder.md`, a system prompt fragment that explicitly reminds the AI not to get stuck retrying the same failing operation. We have `max_tool_failure_per_turn` equivalents but no explicit anti-doom-loop prompt engineering. Worth adding to satori's retry prompt. **Completed:** v1.22.3 — structured reflection protocol in `buildSatoriContext()` (Sprint 48, 2026-04-09)
 
-- [ ] **Tool error reflection** — Forge has `forge-partial-tool-error-reflection.md`, a prompt fragment injected when a tool fails, asking the AI to reflect on what went wrong before retrying. Phase2S's satori loop does failure analysis, but it happens at the outer goal level. Inner-loop (per-tool) reflection would catch more errors earlier.
+- [x] **Tool error reflection** — Forge has `forge-partial-tool-error-reflection.md`, a prompt fragment injected when a tool fails, asking the AI to reflect on what went wrong before retrying. Phase2S's satori loop does failure analysis, but it happens at the outer goal level. Inner-loop (per-tool) reflection would catch more errors earlier. **Completed:** v1.23.0 (2026-04-10) — `TOOL_ERROR_REFLECTION_FRAGMENT` injected by `runOnce()` on attempt 1; disable with `PHASE2S_TOOL_ERROR_REFLECTION=off`.
 
-- [ ] **`:reasoning-effort` per-session control** — Forge exposes `reasoning-effort` as a session-level override (`:re high`). Users can switch between fast/cheap and slow/deep reasoning without editing config. Phase2S has `fast_model`/`smart_model` tiers but no interactive switcher during a session.
+- [x] **`:reasoning-effort` per-session control** — Forge exposes `reasoning-effort` as a session-level override (`:re high`). Users can switch between fast/cheap and slow/deep reasoning without editing config. Phase2S has `fast_model`/`smart_model` tiers but no interactive switcher during a session. **Completed:** v1.23.0 (2026-04-10) — `:re [high|low|default]` REPL command in `src/cli/index.ts`; applies to normal turns only.
+
+- [ ] **`:re` in goal executor context** — The `:re` switcher (v1.23.0) applies to REPL turns only. `phase2s goal` subtask model resolution (`resolveSubtaskModel` in `src/goal/parallel-executor.ts`) is unaffected by `:re`. Future work: thread the REPL session reasoningOverride into the executor context, probably via a config override passed through `runGoal()`. **Deferred post-Sprint 49.**
 
 ### Tier 3 — Worth noting
 

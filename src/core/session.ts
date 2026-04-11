@@ -335,27 +335,23 @@ export async function upsertSessionIndex(cwd: string, meta: SessionMeta & { upda
 }
 
 /**
- * Rebuild the session index from scratch by scanning all session files.
- * Called automatically when the index is missing or corrupt.
+ * Scan the sessions directory and build an in-memory SessionIndex.
+ * All I/O runs outside any lock — callers acquire the lock only for the
+ * final atomic rename (O(1) lock hold time regardless of session count).
  *
- * Acquires `.index.lock` only for the final tmp+rename write — O(1) — so the
- * lock hold time is short regardless of how many session files exist. All
- * readdir + readFile calls happen before lock acquisition.
- *
- * Returns null if the lock is held by a concurrent upsert — the caller in
- * `listSessions` handles this gracefully by returning an empty result set.
+ * Returns null when the directory does not exist so callers can early-return
+ * without touching the lock (acquirePosixLock requires the parent dir to exist).
  */
-export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
-  const dir = sessionsDir(cwd);
-
-  // --- Phase 1: scan + read, all outside the lock ---
-  // If the sessions dir doesn't exist, return an empty index without touching
-  // any lock. (acquirePosixLock would ENOENT on a missing parent directory.)
+async function scanSessionsDir(dir: string): Promise<SessionIndex | null> {
   let entries: string[];
   try {
     entries = await readdir(dir);
-  } catch {
-    return { version: 1, sessions: {} };
+  } catch (err) {
+    // ENOENT → directory doesn't exist, signal "no sessions" to callers.
+    // Any other error (EACCES, EPERM, EIO, etc.) propagates so user-facing
+    // commands like `doctor --fix` can exit 1 instead of silently misreporting.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
   }
 
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
@@ -389,6 +385,29 @@ export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
     }
   }
 
+  return index;
+}
+
+/**
+ * Rebuild the session index from scratch by scanning all session files.
+ * Called automatically when the index is missing or corrupt.
+ *
+ * Acquires `.index.lock` only for the final tmp+rename write — O(1) — so the
+ * lock hold time is short regardless of how many session files exist. All
+ * readdir + readFile calls happen before lock acquisition.
+ *
+ * Returns null if the lock is held by a concurrent upsert — the caller in
+ * `listSessions` handles this gracefully by returning an empty result set.
+ */
+export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
+  const dir = sessionsDir(cwd);
+
+  // --- Phase 1: scan + read, all outside the lock ---
+  // null means the sessions dir doesn't exist — early return to avoid
+  // ENOENT in acquirePosixLock (which requires the parent dir to exist).
+  const index = await scanSessionsDir(dir);
+  if (index === null) return { version: 1, sessions: {} };
+
   // --- Phase 2: write under the lock (O(1)) ---
   // Acquire the index lock only for the rename so hold time is minimal.
   // A concurrent upsertSessionIndex will wait at most LOCK_RETRY_DELAY_MS
@@ -412,6 +431,54 @@ export async function rebuildSessionIndex(cwd: string): Promise<SessionIndex> {
     renameSync(tmp, indexPath);
   } catch {
     /* best-effort */
+  } finally {
+    releasePosixLock(lockFile);
+  }
+
+  return index;
+}
+
+/**
+ * Like rebuildSessionIndex but rethrows write failures instead of swallowing them.
+ * Use this for user-facing repair commands (e.g. `doctor --fix`) where a silent
+ * write failure would be worse than an error.
+ *
+ * Scan failures (e.g. sessions dir unreadable) return an empty index (same as
+ * rebuildSessionIndex). This function additionally propagates index-write failures
+ * and throws on lock contention instead of silently returning.
+ */
+export async function rebuildSessionIndexStrict(cwd: string): Promise<SessionIndex> {
+  const dir = sessionsDir(cwd);
+
+  // Phase 1: scan outside the lock (shared with rebuildSessionIndex)
+  // null means the sessions dir doesn't exist — return empty index early.
+  const index = await scanSessionsDir(dir);
+  if (index === null) return { version: 1, sessions: {} };
+
+  const lockFile = sessionIndexLockPath(cwd);
+  const acquired = await acquirePosixLock(lockFile);
+  if (!acquired) {
+    // Strict variant: lock contention is an error — caller (doctor --fix) must know
+    // the index was NOT written. Returning silently would give false confidence.
+    throw new Error(
+      "Could not acquire session index lock — another phase2s process is running. " +
+      "Wait a moment and try again, or delete `.phase2s/sessions/.index.lock` manually if no other process is running.",
+    );
+  }
+
+  try {
+    const indexPath = sessionIndexPath(cwd);
+    await mkdir(dirname(indexPath), { recursive: true });
+    const tmp = indexPath + ".tmp." + process.pid;
+    await writeFile(tmp, JSON.stringify(index, null, 2), { encoding: "utf-8", mode: 0o600 });
+    try {
+      renameSync(tmp, indexPath);
+    } catch (renameErr) {
+      // Clean up orphaned tmp file before re-throwing.
+      try { unlinkSync(tmp); } catch { /* best-effort */ }
+      throw renameErr;
+    }
+    // NOTE: unlike rebuildSessionIndex, write failures are NOT swallowed here.
   } finally {
     releasePosixLock(lockFile);
   }

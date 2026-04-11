@@ -27,6 +27,19 @@ export interface AgentRunOptions {
   postRun?: (result: SatoriResult) => Promise<void>;
 }
 
+/**
+ * Tool error reflection fragment — injected into the conversation when a tool
+ * call fails, before the next LLM turn. Mirrors the doom-loop 3-question structure
+ * for consistency. Controlled via PHASE2S_TOOL_ERROR_REFLECTION=off.
+ */
+const TOOL_ERROR_REFLECTION_FRAGMENT = `\n## Tool failure reflection
+Before retrying, answer these three questions:
+1. What specifically failed? (name the tool, the input, the error message)
+2. Why did your approach cause this failure?
+3. What are you doing DIFFERENTLY in your next attempt — not just the same call with slightly different parameters?
+
+If you cannot identify a meaningfully different approach, do NOT retry. Explain the blocker instead.`;
+
 export interface AgentOptions {
   config: Config;
   tools?: ToolRegistry;
@@ -135,10 +148,18 @@ export class Agent {
    * Run one pass of the agent loop (inner loop — does NOT add userMessage to conversation).
    * Called by run() after the user message is already added.
    */
-  private async runOnce(
-    onDelta?: (text: string) => void,
-    modelOverride?: string,
-  ): Promise<string> {
+  private async runOnce(opts: {
+    onDelta?: (text: string) => void;
+    modelOverride?: string;
+    /** When true, injects a reflection fragment after a tool failure before the next LLM turn.
+     *  Set to false for satori attempts 2+ (doom-loop context already provides the directive). */
+    toolReflectionEnabled?: boolean;
+  } = {}): Promise<string> {
+    const { onDelta, modelOverride, toolReflectionEnabled = true } = opts;
+    const reflectionEnabled =
+      toolReflectionEnabled &&
+      process.env.PHASE2S_TOOL_ERROR_REFLECTION !== "off";
+
     let turns = 0;
 
     while (turns < this.maxTurns) {
@@ -175,6 +196,7 @@ export class Agent {
 
       this.conversation.addAssistant(text, toolCalls);
 
+      let hadToolError = false;
       for (const call of toolCalls) {
         log.tool(call.name, truncate(call.arguments, 100));
 
@@ -183,6 +205,7 @@ export class Agent {
           args = JSON.parse(call.arguments);
         } catch {
           this.conversation.addToolResult(call.id, `Error: Invalid JSON arguments`);
+          hadToolError = true;
           continue;
         }
 
@@ -195,13 +218,21 @@ export class Agent {
           } else {
             log.tool(call.name, `Error: ${result.error}`);
             resultContent = `Error: ${result.error}`;
+            hadToolError = true;
           }
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           log.tool(call.name, `Unexpected error: ${msg}`);
           resultContent = `Error: ${msg}`;
+          hadToolError = true;
         }
         this.conversation.addToolResult(call.id, resultContent);
+      }
+
+      // Inject tool error reflection after all tool results are added, once per turn.
+      // This gives the LLM explicit reflection directives before its next response.
+      if (hadToolError && reflectionEnabled) {
+        this.conversation.addUser(TOOL_ERROR_REFLECTION_FRAGMENT);
       }
     }
 
@@ -230,7 +261,12 @@ export class Agent {
 
       let lastText = "";
       for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
-        lastText = await this.runOnce(opts.onDelta, opts.modelOverride);
+        // Tool reflection only on attempt 1 — attempts 2+ already have doom-loop context.
+        lastText = await this.runOnce({
+          onDelta: opts.onDelta,
+          modelOverride: opts.modelOverride,
+          toolReflectionEnabled: attempt === 1,
+        });
 
         const { exitCode, output } = await this.runVerify(verifyCommand, opts.verifyFn);
         const passed = exitCode === 0;
@@ -260,7 +296,7 @@ export class Agent {
     }
 
     // Normal single-pass mode
-    return this.runOnce(opts.onDelta, opts.modelOverride);
+    return this.runOnce({ onDelta: opts.onDelta, modelOverride: opts.modelOverride });
   }
 }
 

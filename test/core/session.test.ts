@@ -13,6 +13,7 @@ import {
   readSessionIndex,
   upsertSessionIndex,
   rebuildSessionIndex,
+  rebuildSessionIndexStrict,
   releasePosixLock,
   type SessionMeta,
 } from "../../src/core/session.js";
@@ -965,6 +966,80 @@ describe("rebuildSessionIndex() — lock", () => {
     // No lock file should have been created
     const lockPath = join(tmpDir, ".phase2s", "sessions", ".index.lock");
     expect(existsSync(lockPath)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rebuildSessionIndexStrict() — strict variant (throws on lock contention)
+// ---------------------------------------------------------------------------
+
+describe("rebuildSessionIndexStrict()", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-rebuild-strict-test-"));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("scans session files and returns an index when sessions dir exists", async () => {
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    const meta = makeMeta();
+    writeFileSync(
+      join(dir, `${meta.id}.json`),
+      JSON.stringify({ schemaVersion: 2, meta, messages: [{ role: "user", content: "strict test" }] }),
+      { encoding: "utf-8", mode: 0o600 },
+    );
+
+    const result = await rebuildSessionIndexStrict(tmpDir);
+
+    expect(result.sessions[meta.id]).toBeDefined();
+    expect(result.sessions[meta.id].firstMessage).toBe("strict test");
+    // Lock should be released
+    const lockPath = join(dir, ".index.lock");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("returns empty index when sessions directory does not exist", async () => {
+    const result = await rebuildSessionIndexStrict(tmpDir);
+    expect(result).toEqual({ version: 1, sessions: {} });
+  });
+
+  it("skips corrupt session files and continues building the index", async () => {
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    // Write a valid session
+    const meta = makeMeta();
+    writeFileSync(
+      join(dir, `${meta.id}.json`),
+      JSON.stringify({ schemaVersion: 2, meta, messages: [] }),
+      { encoding: "utf-8", mode: 0o600 },
+    );
+    // Write a corrupt session file (same UUID pattern, bad JSON)
+    const corruptId = "cccccccc-dddd-eeee-ffff-000000000000";
+    writeFileSync(join(dir, `${corruptId}.json`), "{ not: json", { encoding: "utf-8" });
+
+    const result = await rebuildSessionIndexStrict(tmpDir);
+
+    // Valid session indexed, corrupt one skipped
+    expect(result.sessions[meta.id]).toBeDefined();
+    expect(result.sessions[corruptId]).toBeUndefined();
+  });
+
+  it("throws when the index lock is held by another process (key difference from rebuildSessionIndex)", async () => {
+    const dir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(dir, { recursive: true });
+    // Pre-place a fresh lock to simulate concurrent access (high mtime = not stale)
+    const lockPath = join(dir, ".index.lock");
+    writeFileSync(lockPath, "99999");
+
+    await expect(rebuildSessionIndexStrict(tmpDir)).rejects.toThrow(/lock/i);
+
+    // Lock should still be held by the simulated concurrent process
+    expect(existsSync(lockPath)).toBe(true);
+    try { unlinkSync(lockPath); } catch { /* cleanup */ }
   });
 });
 

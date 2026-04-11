@@ -116,6 +116,30 @@ describe("translateMessages", () => {
     expect(result).toHaveLength(1);
     expect(result[0].role).toBe("user");
   });
+
+  it("merges a plain user message following tool results into the same synthetic user message (prevents Anthropic 400)", () => {
+    // Reproduces the tool error reflection scenario: after tool results, agent.ts injects
+    // a plain user message via addUser(TOOL_ERROR_REFLECTION_FRAGMENT). Without the merge,
+    // this creates two consecutive user messages which the Anthropic API rejects with 400.
+    const msgs = [
+      { role: "user" as const, content: "do the thing" },
+      { role: "assistant" as const, content: "calling tool", toolCalls: [{ id: "tc1", name: "fail_tool", arguments: "{}" }] },
+      { role: "tool" as const, content: "Error: intentional failure", toolCallId: "tc1" },
+      { role: "user" as const, content: "## Tool failure reflection\nBefore retrying..." },
+    ];
+    const result = translateMessages(msgs);
+    // Should produce: user, assistant, user — NOT user, assistant, user, user
+    expect(result).toHaveLength(3);
+    expect(result[0].role).toBe("user");
+    expect(result[1].role).toBe("assistant");
+    expect(result[2].role).toBe("user");
+    // The synthetic user message must contain both the tool_result AND the reflection text
+    const synthUser = result[2];
+    expect(Array.isArray(synthUser.content)).toBe(true);
+    const blocks = synthUser.content as Array<{ type: string }>;
+    expect(blocks.some((b) => b.type === "tool_result")).toBe(true);
+    expect(blocks.some((b) => b.type === "text")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
