@@ -127,6 +127,34 @@ describe("-C / --cwd flag", () => {
 
     expect(chdirSpy).not.toHaveBeenCalled();
   });
+
+  it("calls process.chdir before the doctor subcommand action runs (preAction fires for non-completion subcommands)", async () => {
+    // Guard for the primary use case: `phase2s -C ~/my-project` fires preAction before
+    // the default command OR any named subcommand. This tests with `doctor` (not `completion`)
+    // to verify the hook isn't limited to a single subcommand.
+    const target = join(tmpDir, "doctest");
+    mkdirSync(target, { recursive: true });
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    const origWrite = process.stdout.write.bind(process.stdout);
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    process.stdout.write = ((s: string | Uint8Array) => { logs.push(String(s)); return true; }) as typeof process.stdout.write;
+
+    try {
+      // process.chdir is mocked (no-op), so doctor runs from original cwd — that's fine,
+      // this test only cares that chdir was called with the right path before the action.
+      await main(["node", "phase2s", "-C", target, "doctor"]);
+    } finally {
+      console.log = origLog;
+      process.stdout.write = origWrite;
+    }
+
+    expect(chdirSpy).toHaveBeenCalledWith(target);
+    // Doctor output confirms the action did run after chdir
+    const output = logs.join("\n");
+    expect(output).toContain("Phase2S doctor");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -707,11 +707,11 @@ describe("doctor --fix", () => {
     }
 
     const output = logs.join("\n");
-    expect(output).toContain("Recovered: 0 sessions");
-    expect(output).toContain("index was current");
+    // No index and no sessions → "Nothing to repair" (fresh/wiped install case)
+    expect(output).toContain("Nothing to repair");
   });
 
-  it("reports DAG warnings when sessions have dangling parentIds", async () => {
+  it("reports DAG warnings and exits 1 when sessions have dangling parentIds", async () => {
     const sessDir = join(tmpDir, ".phase2s", "sessions");
     mkdirSync(sessDir, { recursive: true });
     // Session with a parentId that doesn't exist
@@ -728,14 +728,17 @@ describe("doctor --fix", () => {
     const origWrite = process.stdout.write.bind(process.stdout);
     console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
     process.stdout.write = (s: string | Uint8Array) => { logs.push(String(s)); return true; };
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: number | string | null | undefined) => { throw new Error("process.exit called"); });
 
     process.chdir(tmpDir);
     try {
       const { runDoctor } = await import("../../src/cli/doctor.js");
-      await runDoctor({ fix: true });
+      await expect(runDoctor({ fix: true })).rejects.toThrow("process.exit called");
+      expect(exitSpy).toHaveBeenCalledWith(1);
     } finally {
       console.log = origLog;
       process.stdout.write = origWrite;
+      exitSpy.mockRestore();
     }
 
     const output = logs.join("\n");
@@ -769,6 +772,121 @@ describe("doctor --fix", () => {
       process.stdout.write = origWrite;
       exitSpy.mockRestore();
       strictSpy.mockRestore();
+    }
+  });
+
+  it("reports 'index was current' when sessions exist and index is already up to date", async () => {
+    const sessDir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(sessDir, { recursive: true });
+    const sessionId = "aaaaaaaa-bbbb-cccc-dddd-ffffffffffff";
+    const sessionData = {
+      schemaVersion: 2,
+      meta: { id: sessionId, parentId: null, branchName: "main", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+      messages: [{ role: "user", content: "hello" }],
+    };
+    writeFileSync(join(sessDir, `${sessionId}.json`), JSON.stringify(sessionData));
+
+    // First run to build the index (before = 0, after = 1, recovered = 1)
+    process.chdir(tmpDir);
+    {
+      const { runDoctor: first } = await import("../../src/cli/doctor.js");
+      await first({ fix: true });
+    }
+    vi.resetModules();
+
+    // Second run — index is already current (before = 1, after = 1, recovered = 0)
+    const logs: string[] = [];
+    const origLog = console.log;
+    const origWrite = process.stdout.write.bind(process.stdout);
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    process.stdout.write = (s: string | Uint8Array) => { logs.push(String(s)); return true; };
+
+    try {
+      const { runDoctor } = await import("../../src/cli/doctor.js");
+      await runDoctor({ fix: true });
+    } finally {
+      console.log = origLog;
+      process.stdout.write = origWrite;
+    }
+
+    const output = logs.join("\n");
+    expect(output).toContain("Recovered: 0 sessions");
+    expect(output).toContain("index was current");
+  });
+
+  it("reports cleaned-up stale entries when index has more sessions than exist on disk", async () => {
+    // Regression test for v1.23.0 fix: stale-entry count was negative and output was misleading.
+    const sessDir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(sessDir, { recursive: true });
+
+    // Write a session file so the index gets built with 1 entry.
+    const sessionId = "aaaaaaaa-bbbb-cccc-dddd-aaaaaaaaaaaa";
+    const sessionData = {
+      schemaVersion: 2,
+      meta: { id: sessionId, parentId: null, branchName: "main", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+      messages: [],
+    };
+    writeFileSync(join(sessDir, `${sessionId}.json`), JSON.stringify(sessionData));
+
+    // Build the initial index (1 session).
+    process.chdir(tmpDir);
+    {
+      const { runDoctor: first } = await import("../../src/cli/doctor.js");
+      await first({ fix: true });
+    }
+    vi.resetModules();
+
+    // Delete the session file to simulate a stale index (index has 1, disk has 0).
+    const { unlinkSync } = await import("node:fs");
+    unlinkSync(join(sessDir, `${sessionId}.json`));
+    vi.resetModules();
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    const origWrite = process.stdout.write.bind(process.stdout);
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    process.stdout.write = (s: string | Uint8Array) => { logs.push(String(s)); return true; };
+
+    try {
+      const { runDoctor } = await import("../../src/cli/doctor.js");
+      await runDoctor({ fix: true });
+    } finally {
+      console.log = origLog;
+      process.stdout.write = origWrite;
+    }
+
+    const output = logs.join("\n");
+    expect(output).toContain("Cleaned up: 1 stale entry");
+    expect(output).toContain("was 1, now 0");
+  });
+
+  it("exits 1 when sessions dir exists but is unreadable (EACCES)", async () => {
+    // Regression test: EACCES should propagate, not be silently treated as "Cleaned up N entries".
+    // Skip on CI environments where tests run as root (root ignores chmod 000).
+    if (process.getuid && process.getuid() === 0) return;
+
+    const sessDir = join(tmpDir, ".phase2s", "sessions");
+    mkdirSync(sessDir, { recursive: true });
+    // Make the sessions dir unreadable
+    const { chmodSync } = await import("node:fs");
+    chmodSync(sessDir, 0o000);
+
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: number | string | null | undefined) => { throw new Error("process.exit called"); });
+    const origErr = console.error;
+    const origWrite = process.stdout.write.bind(process.stdout);
+    console.error = () => {};
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+
+    process.chdir(tmpDir);
+    try {
+      const { runDoctor } = await import("../../src/cli/doctor.js");
+      await expect(runDoctor({ fix: true })).rejects.toThrow("process.exit called");
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    } finally {
+      chmodSync(sessDir, 0o755); // restore so rmSync in afterEach can clean up
+      console.error = origErr;
+      process.stdout.write = origWrite;
+      exitSpy.mockRestore();
     }
   });
 

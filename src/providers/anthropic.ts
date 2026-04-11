@@ -95,7 +95,24 @@ export function translateMessages(messages: Message[]): AnthropicMessage[] {
       continue;
     }
 
-    // Plain user or assistant message
+    // Plain user or assistant message.
+    // Special case: if the previous Anthropic message is a synthetic user message
+    // containing tool_result content blocks (built above from "tool" role messages),
+    // merge this plain string into it as an additional text block rather than creating
+    // a second consecutive user message — which the Anthropic API rejects with a 400.
+    if (msg.role === "user") {
+      const last = result[result.length - 1];
+      if (
+        last &&
+        last.role === "user" &&
+        Array.isArray(last.content) &&
+        last.content.length > 0 &&
+        (last.content[0] as AnthropicContentBlock).type === "tool_result"
+      ) {
+        (last.content as AnthropicContentBlock[]).push({ type: "text", text: msg.content });
+        continue;
+      }
+    }
     result.push({
       role: msg.role as "user" | "assistant",
       content: msg.content,

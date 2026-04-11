@@ -848,6 +848,59 @@ describe("tool error reflection", () => {
     expect(reflectionCalls.length).toBe(1);
   });
 
+  it("injects reflection exactly once when one tool fails and one succeeds in the same turn", async () => {
+    // Regression guard: hadToolError is set by ANY failing tool in the turn.
+    // With mixed results (one fail + one success), reflection fires exactly once.
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "fail_tool",
+      description: "Always fails",
+      parameters: z.object({}),
+      async execute(_args: unknown) {
+        return { success: false, output: "", error: "intentional failure" };
+      },
+    });
+    registry.register({
+      name: "ok_tool",
+      description: "Always succeeds",
+      parameters: z.object({}),
+      async execute(_args: unknown) {
+        return { success: true, output: "ok" };
+      },
+    });
+
+    // Single turn: two tool calls (fail_tool and ok_tool) in the same streaming response,
+    // then final text. Build chunks manually because makeToolCallChunks always uses index 0.
+    const base = { id: "chatcmpl-test", object: "chat.completion.chunk" as const, created: 1234567890, model: "gpt-4o" };
+    const twoToolChunks: import("openai/resources/chat/completions.js").ChatCompletionChunk[] = [
+      { ...base, choices: [{ index: 0, delta: { role: "assistant", content: null, tool_calls: [{ index: 0, id: "call_fail", type: "function" as const, function: { name: "fail_tool", arguments: "" } }] }, finish_reason: null, logprobs: null }] },
+      { ...base, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: "{}" } }] }, finish_reason: null, logprobs: null }] },
+      { ...base, choices: [{ index: 0, delta: { tool_calls: [{ index: 1, id: "call_ok", type: "function" as const, function: { name: "ok_tool", arguments: "" } }] }, finish_reason: null, logprobs: null }] },
+      { ...base, choices: [{ index: 0, delta: { tool_calls: [{ index: 1, function: { arguments: "{}" } }] }, finish_reason: null, logprobs: null }] },
+      { ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" as const, logprobs: null }] },
+    ];
+    const fakeClient = makeStreamingFakeClient([
+      twoToolChunks,
+      makeTextChunks("Mixed outcome — reflecting once"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({
+      config: minimalConfig,
+      provider,
+      tools: registry,
+      systemPrompt: "You are a test assistant.",
+    });
+
+    const conversationAddUserSpy = vi.spyOn(agent.getConversation(), "addUser");
+
+    await agent.run("Call both tools");
+
+    const reflectionCalls = conversationAddUserSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("Tool failure reflection"),
+    );
+    expect(reflectionCalls.length).toBe(1);
+  });
+
   it("does not inject reflection on satori attempt 2+ (doom-loop takes over)", async () => {
     // Attempt 1 fails verification → doom-loop context injected → attempt 2 should NOT
     // get tool reflection even if a tool fails (toolReflectionEnabled=false for attempt 2+).

@@ -592,6 +592,9 @@ async function runDoctorFix(): Promise<void> {
   } else if (recovered < 0) {
     // Stale index entries removed (session files were deleted since last index write).
     console.log(chalk.yellow(`  Cleaned up: ${Math.abs(recovered)} stale entr${Math.abs(recovered) === 1 ? "y" : "ies"} (was ${beforeCount}, now ${afterCount})`));
+  } else if (existingIndex === null && afterCount === 0) {
+    // No index and no sessions — fresh install or wiped sessions dir.
+    console.log(chalk.dim(`  Nothing to repair — no sessions found.`));
   } else {
     console.log(chalk.dim(`  Recovered: 0 sessions (index was current — ${afterCount} entries)`));
   }
@@ -605,6 +608,11 @@ async function runDoctorFix(): Promise<void> {
     if (dagResult.fix) {
       console.log(chalk.dim(`    ${dagResult.fix}`));
     }
+    // Exit 1 on any DAG failure so scripts and CI can detect incomplete repairs.
+    // Dangling parentIds self-resolve over time, but we still signal non-zero so
+    // the caller knows the index is not fully clean.
+    console.log("");
+    process.exit(1);
   }
 
   console.log("");

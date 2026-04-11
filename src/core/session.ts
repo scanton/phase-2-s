@@ -346,8 +346,12 @@ async function scanSessionsDir(dir: string): Promise<SessionIndex | null> {
   let entries: string[];
   try {
     entries = await readdir(dir);
-  } catch {
-    return null;
+  } catch (err) {
+    // ENOENT → directory doesn't exist, signal "no sessions" to callers.
+    // Any other error (EACCES, EPERM, EIO, etc.) propagates so user-facing
+    // commands like `doctor --fix` can exit 1 instead of silently misreporting.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
   }
 
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
@@ -458,7 +462,7 @@ export async function rebuildSessionIndexStrict(cwd: string): Promise<SessionInd
     // the index was NOT written. Returning silently would give false confidence.
     throw new Error(
       "Could not acquire session index lock — another phase2s process is running. " +
-      "Wait 30 seconds and try again, or delete `.phase2s/sessions/.index.lock` manually if no other process is running.",
+      "Wait a moment and try again, or delete `.phase2s/sessions/.index.lock` manually if no other process is running.",
     );
   }
 
