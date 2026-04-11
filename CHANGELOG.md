@@ -6,7 +6,7 @@ Sprint 49 — Vegetables Sprint: five deferred items shipped before the next arc
 
 ### Added
 
-- **`phase2s doctor --fix`** — Rebuilds the session index from disk and runs the DAG integrity check. Surfaces orphaned or stale index entries, reports recovered sessions, and exits 1 if the write fails. Previously the only way to recover a corrupted index was to delete it by hand.
+- **`phase2s doctor --fix`** — Rebuilds the session index from disk and runs the DAG integrity check. Surfaces orphaned or stale index entries, reports recovered sessions, and exits 1 on any failure (write error, permission denied on sessions directory, or DAG integrity warnings). Previously the only way to recover a corrupted index was to delete it by hand.
 - **`-C <path>` global flag** — Run any phase2s command as if started in `<path>`. Evaluated before any subcommand runs (`process.chdir()` via Commander `preAction` hook), so `phase2s -C ~/my-project conversations` works without wrapping in a `cd`. Error messages distinguish "no such directory" from "not a directory."
 - **`:re [high|low|default]` REPL command** — Switch reasoning effort in the current session without editing `.phase2s.yaml`. `:re high` routes normal turns through `smart_model`, `:re low` through `fast_model`, `:re default` resets to config. `:re` with no args shows the current tier and model. Applies to normal turns only; skill invocations keep their declared model tier.
 - **Tool error reflection in satori** — When a tool call fails during a satori subtask attempt, a structured three-question reflection fragment is injected before the next retry. Fires on attempt 1 only to avoid double-reflection noise from the doom-loop protocol. Disable with `PHASE2S_TOOL_ERROR_REFLECTION=off`.
@@ -18,6 +18,10 @@ Sprint 49 — Vegetables Sprint: five deferred items shipped before the next arc
 - **`doctor --fix` stale-entry count** — When session files had been deleted since the last index write, the recovered count was negative and the output misleadingly said "index was current." Now correctly reports "Cleaned up: N stale entries."
 - **`-C` validation TOCTOU** — The `-C` hook previously called `existsSync` then `statSync` separately, creating a race window. Collapsed to a single `statSync` call with ENOENT handling.
 - **`:re` case sensitivity** — `:re HIGH` now works; arguments are lowercased before matching.
+- **Anthropic consecutive-user-message 400** — `translateMessages()` in the Anthropic provider now merges a trailing plain user message into the preceding synthetic tool-result user message as a `text` block, instead of emitting a second `user`-role message. Without this fix, enabling tool error reflection with the Anthropic provider caused a 400 "consecutive user messages" rejection on every tool-failure retry.
+- **`doctor --fix` silently swallowed EACCES** — `scanSessionsDir()` previously caught all `readdir` errors and returned `null`, causing a permission-denied error on the sessions directory to masquerade as "Cleaned up N stale entries" and exit 0. Now only `ENOENT` returns null; other errors propagate so `doctor --fix` exits 1 with the real error.
+- **`doctor --fix` DAG failure did not exit 1** — DAG integrity warnings were logged but the process still exited 0, contradicting the documented "exits 1 on failure" contract. Now exits 1 immediately after logging DAG warnings.
+- **`doctor --fix` fresh-install messaging** — On a clean install with no sessions and no index, the output previously said "index was current — 0 entries," which is confusing when there is nothing to index. Now says "Nothing to repair — no sessions found."
 
 ## v1.22.3 — 2026-04-09
 

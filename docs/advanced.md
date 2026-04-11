@@ -22,7 +22,7 @@ To repair a corrupted or out-of-sync session index, run:
 phase2s doctor --fix
 ```
 
-This rebuilds the session index from disk, reports recovered and cleaned-up entries, and exits 1 if the write fails. Useful in CI and after a crash.
+This rebuilds the session index from disk, reports recovered and cleaned-up entries, and exits 1 on any failure: write errors, permission denied on the sessions directory, or DAG integrity warnings (orphaned parent references). Useful in CI and after a crash.
 
 ---
 
