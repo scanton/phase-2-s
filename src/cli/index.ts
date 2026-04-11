@@ -955,6 +955,14 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         continue;
       }
 
+      // :agent <id> with an unrecognized id — specific error before the generic catch-all
+      if (trimmed.startsWith(":agent ")) {
+        const requestedId = trimmed.slice(":agent ".length).trim();
+        console.log(chalk.yellow(`Agent '${requestedId}' not found.`));
+        console.log(chalk.dim("Try :agents to list available agents."));
+        continue;
+      }
+
       // Unknown colon command (not :re, :clone, :commit, :agents, or a known agent alias)
       if (trimmed.startsWith(":") && !trimmed.startsWith(":clone") && !trimmed.startsWith(":commit") && !trimmed.startsWith(":re")) {
         console.log(chalk.yellow(`Unknown command: ${trimmed}`));
