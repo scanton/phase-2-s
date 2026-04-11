@@ -204,6 +204,46 @@ This uses your ChatGPT subscription for all the implementation work. No API key 
 
 ---
 
+## Meet the A-team: Apollo, Athena, Ares
+
+Phase2S ships three named agent personas, each with a distinct job and a hard-wired tool set. Switch mid-session without losing your conversation history.
+
+```
+you > :ask  (or: apollo)     — Switch to Apollo: read-only Q&A, fast model
+you > :plan (or: athena)     — Switch to Athena: planning assistant, writes to plans/
+you > :build (or: ares)      — Switch to Ares: full access, default agent
+you > :agents                — List all available agents with aliases and tool counts
+```
+
+| Agent | Alias | Model | Tools | Best for |
+|-------|-------|-------|-------|----------|
+| **Apollo** | `:ask` | fast | glob, grep, file_read, browser | Questions, code exploration, "how does X work?" |
+| **Athena** | `:plan` | smart | read tools + `plans_write` | Design docs, implementation plans, architecture notes |
+| **Ares** | `:build` | smart | all tools | Writing code, running tests, shipping features |
+
+Tool enforcement is hard. Apollo cannot write files — not because the system prompt says so, but because `file_write` is literally not in its registry. Athena can only write inside `plans/`. Project overrides in `.phase2s/agents/` can narrow a built-in's tool list but never expand it.
+
+```bash
+# Apollo answers a question about your codebase
+you > :ask
+you > how does the session locking work?
+
+# Athena writes a plan (saved to plans/ automatically)
+you > :plan
+you > design the rate limiting system before we build it
+
+# Ares ships it
+you > :build
+you > implement the plan in plans/rate-limiting.md
+
+# Custom agents: add .phase2s/agents/scout.md to your project
+you > :agent scout
+```
+
+Active agent is saved on `--resume` — pick up where you left off with the same persona active.
+
+---
+
 ## All 29 skills
 
 ```
@@ -234,6 +274,7 @@ phase2s skills --json # machine-readable for scripts
 ## Docs
 
 - [Getting started](docs/getting-started.md) — first install, first session, all four provider options
+- [Named agents](docs/agents.md) — Apollo, Athena, Ares, custom agents, override-restrict policy
 - [Dark factory](docs/dark-factory.md) — write a spec, run `phase2s goal`, get a feature
 - [Claude Code integration](docs/claude-code.md) — MCP setup, adversarial review, CLAUDE.md routing rules
 - [Skills reference](docs/skills.md) — all 29 skills with examples
@@ -489,6 +530,7 @@ browser: true  # requires playwright installed
 - [x] `:re [high|low|default]` — REPL reasoning-effort switcher. Changes the active reasoning level mid-session without leaving the REPL. Applies to normal turns only; skills keep their declared model tier.
 - [x] Tool error reflection — when a tool call fails on attempt 1 of a satori run, a structured 3-question reflection prompt is injected before the retry to help the model self-correct. Set `PHASE2S_TOOL_ERROR_REFLECTION=off` to disable.
 - [x] Bash `:()` limitation docs — `phase2s setup --bash` now prints a warning about `${VAR:=default}` expansion conflicts; the same explanation is documented in `docs/getting-started.md`.
+- [x] Named agents (Apollo / Athena / Ares) — three built-in personas with hard-wired tool registries. Apollo (`:ask`, fast, read-only), Athena (`:plan`, smart, writes only to `plans/`), Ares (`:build`, smart, full access). Switch mid-session with `:ask`, `:plan`, `:build`, or `:agent <id>`. Override-restrict policy prevents project configs from expanding a built-in's tool list. Resume persistence saves the active agent across sessions. 1191 tests.
 
 ---
 

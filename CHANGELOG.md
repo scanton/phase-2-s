@@ -20,7 +20,7 @@ Sprint 50 — Named Agents: three built-in agent personas with hard tool registr
 
 ### Fixed
 
-- **`src/skills/loader.ts` DRY violation** — Inline frontmatter parsing replaced with the shared `parseFrontmatter()` utility. Reduces duplicate parsing logic across two loaders.
+- **Skill and agent loaders now share one YAML parser** — `src/skills/loader.ts` was duplicating the frontmatter parsing logic that `agent-loader.ts` also needed. Both now use `parseFrontmatter()` from `src/utils/frontmatter.ts`. One less place to update if the format ever changes.
 
 ## v1.23.0 — 2026-04-10
 
