@@ -24,6 +24,7 @@ import {
   writeReplState,
   type SessionMeta,
 } from "../core/session.js";
+import { loadAgents, formatAgentsList, type AgentDef } from "../core/agent-loader.js";
 import { runConversationsBrowser } from "./conversations.js";
 
 const _require = createRequire(import.meta.url);
@@ -63,6 +64,20 @@ function resolveReasoningModel(
   if (override === "high") return config.smart_model;
   if (override === "low") return config.fast_model;
   return undefined;
+}
+
+/**
+ * Resolve an AgentDef model tier ("fast" | "smart" | literal) to an actual model ID.
+ * Returns undefined if the tier maps to an unconfigured model (fall through to config.model).
+ */
+function resolveAgentModel(
+  agentModel: string,
+  config: { smart_model?: string; fast_model?: string; model?: string },
+): string | undefined {
+  if (agentModel === "smart") return config.smart_model;
+  if (agentModel === "fast") return config.fast_model;
+  // Literal model string (e.g. "gpt-4o") — always valid
+  return agentModel;
 }
 
 /**
@@ -752,7 +767,36 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     log.dim(`Learnings: ${learningsList.length} ${learningsList.length === 1 ? "entry" : "entries"} from .phase2s/memory/`);
   }
 
+  // Load named agent definitions (built-ins + project overrides)
+  const agentDefs = await loadAgents(process.cwd());
+
+  // Resolve which agent to activate at startup.
+  // On --resume, restore the saved activeAgentId from state.json (if present + still valid).
+  let activeAgentId: string | undefined;
+  // Track the active AgentDef to apply its model tier to normal REPL turns.
+  let activeAgentDef: AgentDef | undefined;
+  if (opts.resume) {
+    const state = readReplState(process.cwd());
+    const savedId = state?.activeAgentId;
+    if (savedId) {
+      if (agentDefs.has(savedId)) {
+        activeAgentId = savedId;
+      } else {
+        console.log(chalk.yellow(`Warning: saved agent '${savedId}' no longer exists — reverting to default (ares)\n`));
+      }
+    }
+  }
+
   const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr });
+
+  // Apply restored agent persona if resuming with one active
+  if (activeAgentId) {
+    const def = agentDefs.get(activeAgentId)!;
+    agent.switchAgentDef(def);
+    activeAgentDef = def;
+    console.log(chalk.cyan(`→ Resumed as: ${def.id} (${def.title})\n`));
+  }
+
   const skills = await loadAllSkills();
 
   /**
@@ -897,6 +941,61 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         console.log(chalk.red(`Unknown tier: ${arg}. Valid options: high | low | default`));
       }
       continue;
+    }
+
+    // :agents — list available named agents
+    if (trimmed === ":agents") {
+      console.log(chalk.bold("\n" + formatAgentsList(agentDefs) + "\n"));
+      continue;
+    }
+
+    // Agent switching — :ares / :build / :apollo / :ask / :athena / :plan / :agent <id>
+    // Also supports colon-prefixed ids: :apollo, :ares, :athena (strips leading colon).
+    {
+      // Check direct key first (handles bare ids like "apollo" and colon-aliases like ":ask").
+      // Also handle ":apollo" / ":ares" / ":athena" — colon-prefixed bare ids that are not
+      // aliases but are documented as valid commands. Strip the leading colon and look up.
+      const strippedKey =
+        trimmed.startsWith(":") && !trimmed.startsWith(":agent ") ? trimmed.slice(1) : "";
+      const agentSwitchKey = agentDefs.has(trimmed)
+        ? trimmed
+        : strippedKey && agentDefs.has(strippedKey)
+          ? strippedKey
+          : undefined;
+      const agentFromCmd = agentSwitchKey
+        ? agentDefs.get(agentSwitchKey)!
+        : trimmed.startsWith(":agent ")
+          ? agentDefs.get(trimmed.slice(":agent ".length).trim())
+          : undefined;
+
+      if (agentFromCmd) {
+        agent.switchAgentDef(agentFromCmd);
+        activeAgentId = agentFromCmd.id;
+        activeAgentDef = agentFromCmd;
+        // Persist the active agent so --resume restores it
+        const state = readReplState(process.cwd());
+        await writeReplState(process.cwd(), {
+          currentSessionId: state?.currentSessionId ?? sessionId,
+          activeAgentId: agentFromCmd.id,
+        });
+        console.log(chalk.cyan(`→ Switched to: ${agentFromCmd.id} (${agentFromCmd.title})\n`));
+        continue;
+      }
+
+      // :agent <id> with an unrecognized id — specific error before the generic catch-all
+      if (trimmed.startsWith(":agent ")) {
+        const requestedId = trimmed.slice(":agent ".length).trim();
+        console.log(chalk.yellow(`Agent '${requestedId}' not found.`));
+        console.log(chalk.dim("Try :agents to list available agents."));
+        continue;
+      }
+
+      // Unknown colon command (not :re, :clone, :commit, :agents, or a known agent alias)
+      if (trimmed.startsWith(":") && !trimmed.startsWith(":clone") && !trimmed.startsWith(":commit") && !trimmed.startsWith(":re")) {
+        console.log(chalk.yellow(`Unknown command: ${trimmed}`));
+        console.log(chalk.dim("Try /help for available commands and :agents for agent list."));
+        continue;
+      }
     }
 
     // :clone <uuid> — fork the specified session into a new one
@@ -1112,8 +1211,11 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     }
 
     // Normal message — stream deltas as they arrive
-    // Apply reasoningOverride (set by :re command) — only affects normal turns, not skill invocations.
-    const normalTurnModel = resolveReasoningModel(reasoningOverride, config);
+    // Model priority: :re override > active agent's model tier > config.model
+    // :re is user-explicit and always wins; agent model is applied when no :re override is set.
+    const normalTurnModel =
+      resolveReasoningModel(reasoningOverride, config) ??
+      (activeAgentDef ? resolveAgentModel(activeAgentDef.model, config) : undefined);
     process.stdout.write(chalk.bold("\nassistant > "));
     try {
       await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel });

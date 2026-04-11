@@ -55,6 +55,8 @@ export interface SessionV2 {
 /** Repl-level state: which session is currently active. */
 export interface ReplState {
   currentSessionId: string;
+  /** Active agent persona id (e.g. "apollo", "athena", "ares"). Absent = default Ares. */
+  activeAgentId?: string;
 }
 
 /** One entry in the session index, cached for fast listing. */

@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.24.0 — 2026-04-10
+
+Sprint 50 — Named Agents: three built-in agent personas with hard tool registry enforcement, REPL switching, and resume persistence.
+
+### Added
+
+- **Named agent personas** — Three built-in agents, each with a constrained tool registry enforced at the registry level (not the system prompt level):
+  - **Apollo** (`:ask` alias, `fast` model) — Read-only Q&A. Tools: `glob`, `grep`, `file_read`, `browser`. No write access.
+  - **Athena** (`:plan` alias, `smart` model) — Planning assistant. Tools: `glob`, `grep`, `file_read`, `browser`, `plans_write`. Cannot execute shell or overwrite source files.
+  - **Ares** (`:build` alias, `smart` model) — Full-access default agent. Full tool registry including `shell`, `file_write`, and all read tools.
+- **`plans_write` tool** — Sandboxed write tool for Athena that restricts writes to the `plans/` directory. Separator-aware path check prevents `plans-evil/` bypass. Refuses to truncate existing files to empty content. Auto-creates `plans/` on first write.
+- **`:agents` REPL command** — Lists all available agents with their id, aliases, model tier, and tool count.
+- **Agent switching commands** — Type `:apollo`, `:ask`, `:athena`, `:plan`, `:ares`, `:build`, or `:agent <id>` to switch agent mid-session. Preserves conversation history; only the tool registry and system prompt change.
+- **`--resume` agent persistence** — Active agent is saved to `ReplState` (`session.ts`) and restored on `phase2s --resume`. If the saved agent no longer exists, falls back to default with a warning.
+- **Project agent overrides** — Place `.phase2s/agents/<name>.md` to override a built-in agent's system prompt. Override-restrict policy: project overrides may only narrow the tool list, never expand it. `tools: []` in an override is treated as explicit deny-all (not "no restriction").
+- **Custom agents** — Any `.phase2s/agents/<name>.md` with a new id (not overriding a built-in) is loaded as an unrestricted custom agent.
+- **`src/utils/frontmatter.ts`** — Shared YAML frontmatter parser used by both skill loader and agent loader. Handles CRLF line endings, malformed YAML (returns empty meta rather than throwing), and trims the body.
+
+### Fixed
+
+- **Skill and agent loaders now share one YAML parser** — `src/skills/loader.ts` was duplicating the frontmatter parsing logic that `agent-loader.ts` also needed. Both now use `parseFrontmatter()` from `src/utils/frontmatter.ts`. One less place to update if the format ever changes.
+
 ## v1.23.0 — 2026-04-10
 
 Sprint 49 — Vegetables Sprint: five deferred items shipped before the next architecture sprint.

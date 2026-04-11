@@ -3,9 +3,10 @@ import { promisify } from "node:util";
 import type { Config } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { createProvider, type Provider } from "../providers/index.js";
-import { createDefaultRegistry, type ToolRegistry } from "../tools/index.js";
+import { createDefaultRegistry, type ToolRegistry, type RegistryOptions } from "../tools/index.js";
 import { buildSystemPrompt } from "../utils/prompt.js";
 import { log } from "../utils/logger.js";
+import { buildRegistryForAgent, type AgentDef } from "./agent-loader.js";
 
 const execAsync = promisify(exec);
 
@@ -58,12 +59,16 @@ export class Agent {
   private conversation: Conversation;
   private config: Config;
   private maxTurns: number;
+  private cwd: string;
+  private learnings: string | undefined;
 
   constructor(opts: AgentOptions) {
     this.config = opts.config;
+    this.cwd = opts.cwd ?? process.cwd();
+    this.learnings = opts.learnings;
     const baseRegistry = opts.tools ?? createDefaultRegistry({
       allowDestructive: opts.config.allowDestructive,
-      cwd: opts.cwd ?? process.cwd(),
+      cwd: this.cwd,
       browserEnabled: opts.config.browser,
     });
     // Apply per-project allow/deny list from config (deny overrides allow)
@@ -108,6 +113,39 @@ export class Agent {
     // getMessages() copy would otherwise share the same Message object reference.
     const merged = systemMsg ? [{ ...systemMsg }, ...nonSystemMessages] : nonSystemMessages;
     this.conversation = Conversation.fromMessages(merged);
+  }
+
+  /**
+   * Switch the active agent persona in-place.
+   *
+   * Updates the tool registry and rebuilds the system prompt from the new AgentDef.
+   * Conversation history is preserved — only the system message is replaced.
+   * This is used by REPL commands like :apollo, :athena, :ares to switch agents
+   * mid-session without losing context.
+   *
+   * Model overrides from the AgentDef are applied per-request via resolveModel(),
+   * so no provider reconstruction is needed.
+   */
+  switchAgentDef(def: AgentDef): void {
+    const registryOpts: RegistryOptions = {
+      allowDestructive: this.config.allowDestructive,
+      cwd: this.cwd,
+      browserEnabled: this.config.browser,
+    };
+    const builtRegistry = buildRegistryForAgent(def, registryOpts);
+    // Re-apply project config allow/deny list so switchAgentDef cannot bypass
+    // restrictions that were applied in the constructor.
+    this.tools = builtRegistry.allowed(this.config.tools, this.config.deny);
+
+    const newSystemPrompt = buildSystemPrompt(this.tools.list(), def.systemPrompt, this.learnings);
+    const msgs = this.conversation.getMessages();
+    const nonSystemMessages = msgs.filter((m) => m.role !== "system");
+    this.conversation = Conversation.fromMessages([
+      { role: "system", content: newSystemPrompt },
+      ...nonSystemMessages,
+    ]);
+
+    log.dim(`Switched to agent: ${def.id} [${def.model}, ${def.tools === undefined ? "all tools" : `${def.tools.length} tools`}]`);
   }
 
   /**

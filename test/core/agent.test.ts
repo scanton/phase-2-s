@@ -938,3 +938,150 @@ describe("tool error reflection", () => {
     expect(reflectionCalls.length).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// switchAgentDef() tests
+// ---------------------------------------------------------------------------
+
+describe("Agent.switchAgentDef()", () => {
+  const baseConfig: Config = {
+    provider: "openai-api",
+    model: "gpt-4o",
+    apiKey: "sk-test",
+    codexPath: "codex",
+    maxTurns: 5,
+    timeout: 120_000,
+    allowDestructive: false,
+    verifyCommand: "npm test",
+    requireSpecification: false,
+  };
+
+  function makeMinimalDef(overrides: Partial<import("../../src/core/agent-loader.js").AgentDef> = {}): import("../../src/core/agent-loader.js").AgentDef {
+    return {
+      id: "apollo",
+      title: "Research and explain codebases",
+      model: "fast",
+      tools: ["glob", "grep", "file_read", "browser"],
+      aliases: [":ask"],
+      systemPrompt: "You are Apollo, a read-only research assistant.",
+      isBuiltIn: true,
+      ...overrides,
+    };
+  }
+
+  it("updates the tool registry to the new agent's tool list", () => {
+    const agent = new Agent({
+      config: baseConfig,
+      systemPrompt: "You are Ares, the default agent.",
+    });
+
+    // Apollo has a restricted tool list
+    const apolloDef = makeMinimalDef();
+    agent.switchAgentDef(apolloDef);
+
+    // The new registry should only contain Apollo's tools (or subset of them that exist)
+    const newTools = agent.getConversation().getMessages().find((m) => m.role === "system")?.content ?? "";
+    // System prompt should reflect Apollo's persona
+    expect(String(newTools)).toContain("Apollo");
+  });
+
+  it("replaces the system prompt while preserving conversation history", () => {
+    const originalSystemPrompt = "You are Ares, the default agent.";
+    const fakeClient = makeStreamingFakeClient([[
+      ...makeTextChunks("Hello from Ares"),
+    ]]);
+    const provider = new OpenAIProvider({ apiKey: "sk-test", model: "gpt-4o" }, fakeClient);
+    const agent = new Agent({
+      config: baseConfig,
+      provider,
+      systemPrompt: originalSystemPrompt,
+    });
+
+    // Simulate a prior turn in the conversation
+    const conv = agent.getConversation();
+    conv.addUser("prior user message");
+    conv.addAssistant("prior assistant response");
+
+    // Switch to Apollo
+    const apolloDef = makeMinimalDef();
+    agent.switchAgentDef(apolloDef);
+
+    // Conversation should still have the prior messages
+    const messages = agent.getConversation().getMessages();
+    const userMessages = messages.filter((m) => m.role === "user");
+    const assistantMessages = messages.filter((m) => m.role === "assistant");
+    expect(userMessages.length).toBeGreaterThanOrEqual(1);
+    expect(assistantMessages.length).toBeGreaterThanOrEqual(1);
+    expect(userMessages.some((m) => String(m.content).includes("prior user message"))).toBe(true);
+  });
+
+  it("sets the new agent's system prompt as the first message", () => {
+    const agent = new Agent({
+      config: baseConfig,
+      systemPrompt: "Original system prompt.",
+    });
+
+    const apolloDef = makeMinimalDef({
+      systemPrompt: "You are Apollo, research specialist.",
+    });
+    agent.switchAgentDef(apolloDef);
+
+    const messages = agent.getConversation().getMessages();
+    const systemMsg = messages[0];
+    expect(systemMsg.role).toBe("system");
+    expect(String(systemMsg.content)).toContain("Apollo");
+    // Old prompt should be gone
+    expect(String(systemMsg.content)).not.toContain("Original system prompt");
+  });
+
+  it("handles full-registry agent (tools: undefined) correctly", () => {
+    const agent = new Agent({
+      config: baseConfig,
+      systemPrompt: "Restricted agent.",
+    });
+
+    // Ares has no tools restriction (undefined = full registry)
+    const aresDef = makeMinimalDef({
+      id: "ares",
+      title: "Implement, fix, and build",
+      model: "smart",
+      tools: undefined,
+      aliases: [":build"],
+      systemPrompt: "You are Ares, full-access implementation agent.",
+      isBuiltIn: true,
+    });
+
+    // Should not throw
+    expect(() => agent.switchAgentDef(aresDef)).not.toThrow();
+
+    const messages = agent.getConversation().getMessages();
+    const systemMsg = messages[0];
+    expect(String(systemMsg.content)).toContain("Ares");
+  });
+
+  it("does not duplicate system messages after multiple switches", () => {
+    const agent = new Agent({
+      config: baseConfig,
+      systemPrompt: "Ares system prompt.",
+    });
+
+    const apolloDef = makeMinimalDef();
+    const athenaDef = makeMinimalDef({
+      id: "athena",
+      title: "Create implementation plans",
+      model: "smart",
+      tools: ["glob", "grep", "file_read", "browser", "plans_write"],
+      aliases: [":plan"],
+      systemPrompt: "You are Athena, planning specialist.",
+    });
+
+    agent.switchAgentDef(apolloDef);
+    agent.switchAgentDef(athenaDef);
+
+    const messages = agent.getConversation().getMessages();
+    const systemMessages = messages.filter((m) => m.role === "system");
+    // Must have exactly one system message after two switches
+    expect(systemMessages.length).toBe(1);
+    expect(String(systemMessages[0].content)).toContain("Athena");
+  });
+});

@@ -6,6 +6,18 @@
 
 ---
 
+## Backlog — Post-Sprint 50 /review findings (2026-04-10)
+
+- [ ] **`plans/` symlink escape** — If `plans/` is itself a symlink pointing outside the project, `plans_write` will follow it. The `realpath()` call on the parent only runs on the parent directory, not on `plans/` itself in a pre-flight check. Fix: add a `realpath` check on `plansDir` at tool-creation time (not per-call) and refuse if it resolves outside `cwd`. Low risk in practice — someone would have to deliberately symlink their `plans/` dir.
+
+- [ ] **`plans/` TOCTOU on `mkdir`** — `assertInPlansSandbox` runs, returns the resolved path, then `mkdir` runs. Between those two calls a symlink could be substituted. True TOCTOU; mitigation is `O_NOFOLLOW` on the final `writeFile`. Low priority — exploiting this requires a race condition in a local filesystem.
+
+- [ ] **`--sandbox` flag for interactive REPL** — `phase2s --sandbox <name>` creates an isolated git worktree and starts the session inside it. Already have the worktree infrastructure from parallel goal execution. Useful for exploration without risking the main branch.
+
+- [ ] **`:re` in goal executor context** — The `:re` switcher (v1.23.0) applies to REPL turns only. `phase2s goal` subtask model resolution (`resolveSubtaskModel` in `src/goal/parallel-executor.ts`) is unaffected. Future: thread `reasoningOverride` through `runGoal()`. **Deferred post-Sprint 50.**
+
+---
+
 ## Backlog — Post-Sprint 47 /review findings (2026-04-09)
 
 - [x] **ABA lock problem in `releasePosixLock`** — PID guard added: reads lock file PID before `unlinkSync`, only unlinks if PID matches `process.pid`. `Number.isInteger` guard added for corrupt/empty lock files. Covers both `.state.lock` and `.index.lock`. **Completed:** v1.22.2 (2026-04-09)
@@ -56,7 +68,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [x] **ZSH plugin / shell intercept mode** — Forge's biggest UX differentiator. Install a ZSH plugin once (`phase2s setup`) and type `: <prompt>` from anywhere in your shell without entering the REPL. Forge intercepts lines starting with `:` before the shell sees them. We could do the same with `ps2` or `p2` prefix. Would dramatically lower friction for quick asks, commit messages, and shell suggestions. Also ship `:commit` (AI commit message) and `:suggest "find large log files"` (natural language → shell command, puts it in your buffer). Forge's ZSH plugin is their #1 stickiness driver. **Completed:** v1.20.0 (2026-04-07)
 
-- [ ] **Named agent personas (sage / muse / forge)** — Forge ships 3 distinct agents: `forge` (read-write, implementation), `sage` (read-only, research/Q&A), `muse` (read-only, planning, writes to `plans/`). Phase2S has skills, but no agent personas. A `phase2s ask "how does X work?"` that's explicitly read-only with a different system prompt would be immediately useful. Maps to: `phase2s ask` (≈ sage), `phase2s plan` (≈ muse), existing REPL (≈ forge). Would clarify when to use what.
+- [x] **Named agent personas (sage / muse / forge)** — Forge ships 3 distinct agents: `forge` (read-write, implementation), `sage` (read-only, research/Q&A), `muse` (read-only, planning, writes to `plans/`). Phase2S has skills, but no agent personas. A `phase2s ask "how does X work?"` that's explicitly read-only with a different system prompt would be immediately useful. Maps to: `phase2s ask` (≈ sage), `phase2s plan` (≈ muse), existing REPL (≈ forge). Would clarify when to use what. **Completed:** v1.24.0 (2026-04-10) — Apollo (`:ask`, fast, read-only), Athena (`:plan`, smart, `plans/` only), Ares (`:build`, smart, full access). Hard tool-registry enforcement, override-restrict policy, project custom agents, resume persistence.
 
 - [x] **Conversation persistence + management** — `phase2s conversations` (fzf browser) + `:clone <uuid>` (session branching DAG). **Completed:** v1.21.0 (2026-04-09)
 
@@ -88,7 +100,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [ ] **`AGENTS.md` support** — Forge automatically reads `AGENTS.md` (project root or `~/forge/AGENTS.md`) at the start of every session — persistent project-level AI instructions for coding conventions, commit style, things to avoid. Phase2S reads `.phase2s.yaml` for config but nothing equivalent for freeform "developer handbook" instructions. An `AGENTS.md` equivalent (or a `instructions:` key in `.phase2s.yaml`) would make customization more discoverable.
 
-- [ ] **`forge -C /path/to/project`** — start Phase2S in a specific directory without `cd`ing. Small but useful for scripts and IDE integrations. `phase2s -C /path` should be straightforward.
+- [x] **`forge -C /path/to/project`** — start Phase2S in a specific directory without `cd`ing. Small but useful for scripts and IDE integrations. `phase2s -C /path` should be straightforward. **Completed:** v1.23.0 (2026-04-10) — `-C <path>` global flag via Commander `preAction` hook.
 
 ---
 
@@ -843,4 +855,4 @@ These were flagged but not fixed — they need deeper analysis before touching.
 
 - [x] **migrateAll stale lockfile on SIGKILL** — If a Phase2S process is killed with SIGKILL while migration is running, the `finally` block never executes and `.phase2s/sessions/migration.json.lock` is never cleaned up. Every subsequent startup detects EEXIST and silently skips migration forever. Fix: use mtime-based TTL (steal lock if > 60s old) or write `process.pid` to the lockfile and check liveness on EEXIST with `process.kill(pid, 0)`. **Completed:** v1.22.3 — PID liveness check with SIGKILL recovery (Sprint 48, 2026-04-09)
 
-- [ ] **Bash `:()` override — `${VAR:=default}` incompatibility** — The bash plugin shadows the `:` builtin. Patterns like `: ${JAVA_HOME:=/usr/lib/jvm/default}` in `.bash_profile` expand before the function call, passing the expanded value to `phase2s run` instead of being a no-op. Users with this pattern should switch to `export VAR=${VAR:-default}` syntax. Document in `phase2s setup --bash` output and getting-started.md. Same inherent trade-off as the ZSH override. Target: Sprint 47 docs pass.
+- [x] **Bash `:()` override — `${VAR:=default}` incompatibility** — The bash plugin shadows the `:` builtin. Patterns like `: ${JAVA_HOME:=/usr/lib/jvm/default}` in `.bash_profile` expand before the function call, passing the expanded value to `phase2s run` instead of being a no-op. Users with this pattern should switch to `export VAR=${VAR:-default}` syntax. Document in `phase2s setup --bash` output and getting-started.md. Same inherent trade-off as the ZSH override. **Completed:** v1.23.0 (2026-04-10) — warning added to setup output and getting-started.md.
