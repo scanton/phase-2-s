@@ -61,4 +61,18 @@ describe("resolveAgentModel", () => {
   it("returns undefined when 'fast' but fast_model not configured", () => {
     expect(resolveAgentModel("fast", { smart_model: "claude-opus-4-5" })).toBeUndefined();
   });
+
+  it("returns undefined for empty-string agentModel (guard against bad config)", () => {
+    expect(resolveAgentModel("", full)).toBeUndefined();
+  });
+});
+
+describe("resolveReasoningModel — empty-string config guard", () => {
+  it("returns undefined when smart_model is '' (empty string config)", () => {
+    expect(resolveReasoningModel("high", { smart_model: "" })).toBeUndefined();
+  });
+
+  it("returns undefined when fast_model is '' (empty string config)", () => {
+    expect(resolveReasoningModel("low", { fast_model: "" })).toBeUndefined();
+  });
 });

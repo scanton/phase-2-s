@@ -887,7 +887,7 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     // Dispatch stateless colon commands via pure handler (see src/cli/colon-commands.ts).
     // :clone and :commit are handled below — they require nextLine() from this scope.
     {
-      const action = handleColonCommand(trimmed, { agentDefs, config });
+      const action = handleColonCommand(trimmed, { agentDefs });
       switch (action.type) {
         case "not_handled":
           break; // fall through to :clone/:commit/:skill/normal-turn handling
@@ -943,6 +943,15 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
         case "error":
           console.log(chalk.red(action.message));
           continue;
+
+        default: {
+          // TypeScript exhaustiveness guard — if a new ColonAction variant is
+          // added to colon-commands.ts and not handled here, this becomes a
+          // compile error instead of a silent fall-through to agent.run().
+          const _never: never = action;
+          void _never;
+          continue;
+        }
       }
     }
 

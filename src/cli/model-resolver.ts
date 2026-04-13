@@ -14,8 +14,8 @@ export function resolveReasoningModel(
   override: "high" | "low" | undefined,
   config: { smart_model?: string; fast_model?: string },
 ): string | undefined {
-  if (override === "high") return config.smart_model;
-  if (override === "low") return config.fast_model;
+  if (override === "high") return config.smart_model || undefined;
+  if (override === "low") return config.fast_model || undefined;
   return undefined;
 }
 
@@ -27,8 +27,9 @@ export function resolveAgentModel(
   agentModel: string,
   config: { smart_model?: string; fast_model?: string; model?: string },
 ): string | undefined {
-  if (agentModel === "smart") return config.smart_model;
-  if (agentModel === "fast") return config.fast_model;
+  if (!agentModel) return undefined;
+  if (agentModel === "smart") return config.smart_model || undefined;
+  if (agentModel === "fast") return config.fast_model || undefined;
   // Literal model string (e.g. "gpt-4o") — always valid
   return agentModel;
 }

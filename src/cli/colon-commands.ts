@@ -39,7 +39,6 @@ export type ColonAction =
 
 export interface ColonCommandCtx {
   agentDefs: Map<string, AgentDef>;
-  config: { smart_model?: string; fast_model?: string; model?: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -49,11 +48,13 @@ export interface ColonCommandCtx {
 /**
  * Classify a trimmed REPL input string into a ColonAction.
  *
- * Routing table:
- *   plain text / :clone / :commit   → not_handled  (owned by REPL loop)
+ * Routing table (in order of evaluation):
+ *   bare agent id (e.g. "ares")      → switch_agent  (no colon; checked first)
+ *   other plain text                 → not_handled  (pass to skill/LLM)
+ *   :clone / :commit prefix          → not_handled  (owned by REPL loop — need nextLine())
  *   :re [tier]                       → show_reasoning | set_reasoning | error
  *   :agents                          → list_agents
- *   known agent id or alias          → switch_agent  (bare ids are documented, e.g. "ares")
+ *   colon agent id/alias (e.g. ":ares", ":build")  → switch_agent
  *   :agent <id> with unknown id      → unknown_agent
  *   other :xyz                       → unknown_command
  */

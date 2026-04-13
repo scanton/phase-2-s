@@ -16,6 +16,8 @@
 
 - [ ] **`:re` in goal executor context** — The `:re` switcher (v1.23.0) applies to REPL turns only. `phase2s goal` subtask model resolution (`resolveSubtaskModel` in `src/goal/parallel-executor.ts`) is unaffected. Future: thread `reasoningOverride` through `runGoal()`. **After Sprint 51:** import `resolveReasoningModel` from `src/cli/model-resolver.ts` instead of inlining the logic. **Deferred post-Sprint 50.**
 
+- [ ] **Decompose `src/mcp/server.ts`** — 674-line file (13 churn touches vs 35 for index.ts — lower urgency). Extract `skillToTool`/`toolNameToSkillName` into `src/mcp/tools.ts`, `setupSkillsWatcher` into `src/mcp/watcher.ts`, `handleRequest` into `src/mcp/handler.ts`. **Scheduled Sprint 52.**
+
 ---
 
 ## Backlog — Post-Sprint 47 /review findings (2026-04-09)
