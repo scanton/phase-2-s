@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.26.0 — 2026-04-13
+
+Sprint 52 — MCP Server Decomposition + `--sandbox` flag.
+
+### Added
+
+- **`phase2s --sandbox <name>`** — Start an isolated REPL session inside a fresh git worktree (`sandbox/<name>` branch, `.worktrees/sandbox-<name>` path). When you exit, you're asked whether to merge back into your original branch. Four-state detection handles resume, stale entry recovery, orphaned directory cleanup, and fresh creation. Uncommitted changes inside the sandbox trigger a warning and second confirmation before merge cleanup — your work is never silently discarded. Use it for spikes, experiments, or risky refactors you want to try before touching your main branch.
+
+- **MCP session persistence** — Conversation history now persists across multiple calls to the same skill within a Claude Code session. The MCP server maintains a `sessionConversations` map (one `Conversation` per skill, keyed by skill name). Multi-turn skills like `/satori` and `/consensus-plan` resume where they left off rather than starting cold on each invocation.
+
+- **MCP crash guard** — Uncaught errors in `handleRequest` are now caught at the server loop level and returned as JSON-RPC `-32603` internal errors. Previously, a filesystem error (e.g., EACCES on disk full) during `state_write` could crash the MCP server and require a Claude Code project reload.
+
+### Changed
+
+- **`src/mcp/server.ts`** decomposed into four focused modules:
+  - `src/mcp/tools.ts` — MCP tool descriptors, type definitions, and conversion utilities (`skillToTool`, `toolNameToSkillName`, `STATE_TOOLS`, `GOAL_TOOL`, `REPORT_TOOL`)
+  - `src/mcp/watcher.ts` — Skills directory hot-reload watcher with debounce (`WATCHER_DEBOUNCE_MS = 80`)
+  - `src/mcp/handler.ts` — JSON-RPC request handler (`handleRequest`) with all protocol logic
+  - `src/mcp/server.ts` — Slim barrel entry point: stdin loop, config pre-loading, session conversation map
+
+- **Config pre-loading** — `loadConfig()` is called once at MCP server startup and forwarded to `handleRequest` as an optional `preloadedConfig` parameter. Eliminates one disk read per tool call.
+
+### Tests
+
+- `test/cli/sandbox.test.ts` (new, 28 assertions) — full sandbox state machine: slugify, four-state detection, merge-back flows, uncommitted work warning, resume forwarding, checkout vs merge failure distinction
+- `test/mcp/server.test.ts` — crash guard: mocked `state_write` throws EACCES, server returns JSON-RPC error instead of crashing
+
 ## v1.25.0 — 2026-04-12
 
 Sprint 51 — Decompose index.ts: pure refactor that extracts colon command dispatch and model resolvers out of the 1,444-line `src/cli/index.ts` god file.

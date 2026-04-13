@@ -298,6 +298,6 @@ Claude Code reads CLAUDE.md before every session and will follow it.
 
 **MCP server notes**
 
-Each tool call is stateless — a fresh agent is created for each invocation. Multi-turn conversation history doesn't persist across MCP calls. If you need conversation continuity, use the Phase2S REPL directly.
+Conversation history persists across multiple calls to the same skill within a Claude Code session. The MCP server keeps one conversation per skill — so if you call `phase2s__consensus_plan` twice in the same session, the second call picks up where the first left off. To get a fresh conversation, reload the project in Claude Code (which restarts the MCP server). For continuity across separate Claude Code sessions, use the Phase2S REPL directly.
 
 If you create a new skill during a REPL session, it won't appear as a Claude Code tool until you restart the MCP server (close and reopen the project in Claude Code).
