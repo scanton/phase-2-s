@@ -21,7 +21,7 @@ import { createInterface } from "node:readline";
 import { loadSkillsFromDir } from "../skills/loader.js";
 import { join } from "node:path";
 import { Conversation } from "../core/conversation.js";
-import { handleRequest } from "./handler.js";
+import { handleRequest, type JSONRPCRequest } from "./handler.js";
 import { buildNotification, MCP_SERVER_VERSION } from "./tools.js";
 import { setupSkillsWatcher } from "./watcher.js";
 
@@ -124,7 +124,7 @@ export async function runMCPServer(cwd: string): Promise<void> {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    let request: { jsonrpc: "2.0"; id: number | string | null; method: string; params?: unknown };
+    let request: JSONRPCRequest;
     try {
       request = JSON.parse(trimmed);
     } catch {

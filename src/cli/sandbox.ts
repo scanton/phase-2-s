@@ -42,8 +42,8 @@ export function slugify(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
+    .slice(0, 40)            // truncate first, then strip — prevents trailing hyphen after cut
+    .replace(/^-+|-+$/g, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ export async function startSandbox(
     execSync("git worktree prune", { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
     try {
       execSync(
-        `git worktree add "${worktreePath}" ${branchName}`,
+        `git worktree add "${worktreePath}" "${branchName}"`,
         { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
       );
     } catch (err) {
@@ -144,15 +144,35 @@ export async function startSandbox(
       process.exit(1);
     }
   } else if (!inGit && dirExists) {
-    // State (c): directory exists but git doesn't know about it (leftover from crash)
-    // Remove the orphaned directory and recreate fresh
+    // State (c): directory exists but git doesn't know about it (leftover from crash).
+    // Remove the orphaned directory, then recreate — but check if the branch already
+    // exists in git first. If it does (e.g. crash happened after branch creation but
+    // before worktree registration), use the existing branch (no -b). Using -b on an
+    // existing branch would fail and leave the user with a deleted directory and no worktree.
     console.log(`Removing orphaned worktree directory for sandbox '${name}'...`);
+    const branchAlreadyExists = (() => {
+      try {
+        return execSync(
+          `git branch --list "${branchName}"`,
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
+        ).trim().length > 0;
+      } catch {
+        return false;
+      }
+    })();
     rmSync(worktreePath, { recursive: true });
     try {
-      execSync(
-        `git worktree add -b "${branchName}" "${worktreePath}" HEAD`,
-        { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
-      );
+      if (branchAlreadyExists) {
+        execSync(
+          `git worktree add "${worktreePath}" "${branchName}"`,
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
+        );
+      } else {
+        execSync(
+          `git worktree add -b "${branchName}" "${worktreePath}" HEAD`,
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
+        );
+      }
     } catch (err) {
       console.error(`Failed to create sandbox: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
@@ -215,8 +235,11 @@ async function promptMergeBack(
 
   if (wantsYes) {
     try {
+      // Explicitly checkout the original branch before merging — guards against the case
+      // where the user checked out a different branch externally during the sandbox session.
+      execSync(`git checkout "${originalBranch}"`, { cwd: originalCwd, encoding: "utf8", stdio: "pipe" });
       execSync(
-        `git merge --no-ff ${branchName} -m "sandbox: merge ${slugName}"`,
+        `git merge --no-ff "${branchName}" -m "sandbox: merge ${slugName}"`,
         { cwd: originalCwd, encoding: "utf8", stdio: "pipe" },
       );
       // Clean up: remove worktree + branch

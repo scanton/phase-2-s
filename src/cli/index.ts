@@ -127,14 +127,18 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       if (opts.sandbox) {
         const { startSandbox } = await import("./sandbox.js");
         await startSandbox(opts.sandbox, process.cwd(), configOverrides);
+        await disposeBrowser().catch(() => {});
         process.exit(0);
         return;
       }
 
       const config = await loadConfig(configOverrides);
       await interactiveMode(config, { resume: !!opts.resume });
-      // interactiveMode now returns instead of calling process.exit(0) directly,
-      // so we exit here to ensure codex subprocesses don't keep the process alive.
+      // interactiveMode now returns instead of calling process.exit(0) directly.
+      // Explicitly await disposeBrowser before exiting so Chromium doesn't become
+      // a zombie — the process.once("exit") handler fires synchronously and cannot
+      // await async cleanup.
+      await disposeBrowser().catch(() => {});
       process.exit(0);
     });
 
@@ -405,6 +409,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         await writeReplState(process.cwd(), { currentSessionId: selectedId });
         const config = await loadConfig({});
         await interactiveMode(config, { resume: true });
+        await disposeBrowser().catch(() => {});
         process.exit(0);
       }
     });

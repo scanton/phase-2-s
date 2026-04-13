@@ -84,6 +84,14 @@ describe("slugify()", () => {
     expect(slugify(long).length).toBeLessThanOrEqual(40);
   });
 
+  it("does not leave trailing hyphen after truncation at word boundary", () => {
+    // 39 a's + space + "b" = 41 chars → slug = "a...a-b" (41 chars) → truncate to 40 = "a...a-" → strip → "a...a"
+    const input = "a".repeat(39) + " b";
+    const result = slugify(input);
+    expect(result).not.toMatch(/-$/);
+    expect(result.length).toBeLessThanOrEqual(40);
+  });
+
   it("returns empty string for all-non-alphanumeric input", () => {
     expect(slugify("!!!")).toBe("");
   });
@@ -181,6 +189,33 @@ describe("startSandbox() — state detection", () => {
     );
     expect(addCalls).toHaveLength(1);
     expect(addCalls[0][0]).toContain("-b");
+  });
+
+  it("state (c): branch already exists → rmSync + add without -b (no data loss)", async () => {
+    // Dir exists, not in git, but branch also already exists in git (crash after branch created)
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      if (cmd.includes("branch --list")) return "sandbox/mytest\n"; // branch exists
+      if (cmd.includes("worktree add")) return "";
+      return "";
+    });
+    mockExistsSync.mockReturnValue(true);
+
+    await startSandbox("mytest", projectCwd, {});
+
+    // rmSync should have been called (directory cleanup)
+    expect(mockRmSync).toHaveBeenCalledWith(
+      expect.stringContaining("sandbox-mytest"),
+      { recursive: true },
+    );
+
+    // The add command should NOT use -b (branch already exists)
+    const addCalls = mockExecSync.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    );
+    expect(addCalls).toHaveLength(1);
+    expect(addCalls[0][0]).not.toContain("-b");
   });
 
   it("state (d): neither → creates fresh with -b", async () => {

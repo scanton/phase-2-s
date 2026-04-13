@@ -14,6 +14,14 @@
 
 - [ ] **`phase2s --sandbox list` (or `phase2s sandboxes`)** — Show all active sandboxes (branches matching `sandbox/*` + their worktree paths + creation date). Currently users must run `git worktree list` manually. Low effort, high discoverability. Zero user-facing state needed — just `git worktree list --porcelain` filtered by branch prefix. **Post-Sprint 52 (v1.27.0+).**
 
+- [ ] **SIGINT-during-agent.run() UX regression** — After the SIGINT refactor (v1.26.0), Ctrl-C during an active Codex call kills the process immediately with no cleanup. Root cause: `agent.run()` is not AbortController-aware. Fix: thread an `AbortController` through `agent.run()`, signal it on SIGINT, and let the in-flight request resolve gracefully before calling `rl.close()`. Requires changes to `src/core/agent.ts` and the SIGINT handler in `src/cli/index.ts`. **v1.27.0.**
+
+- [ ] **`--sandbox` uncommitted work warning** — In state (c) (orphaned directory, not in git), `rmSync` deletes the directory before the new worktree is created. If the directory contains uncommitted work that the user manually added, it is silently lost. Fix: before `rmSync`, check for uncommitted changes (`git -C "${worktreePath}" status --porcelain` if it's a valid git worktree, or just a file count) and warn the user with an explicit prompt before deleting. **Post-Sprint 52.**
+
+- [ ] **`--sandbox` name collision across slugs** — Two names that slugify to the same value (e.g. "my feature" and "my_feature") will silently share the same worktree. This is rarely a problem in practice but could surprise users. Fix: detect collision at startup and either warn or append a short random suffix (e.g. `-a3f`). **Post-Sprint 52.**
+
+- [ ] **`--sandbox` shell injection via projectCwd** — `projectCwd` is interpolated directly into execSync commands (`git -C "${projectCwd}"`). If the path contains shell metacharacters this could be exploited. In practice this path comes from `process.cwd()` (CLI) or `cwd` (MCP), both of which are trusted, so risk is low. Fix: use the `cwd` option on `execSync` instead of embedding the path in the command string. **Low priority.**
+
 ---
 
 ## Backlog — Post-Sprint 50 /review findings (2026-04-10)
@@ -22,11 +30,11 @@
 
 - [ ] **`plans/` TOCTOU on `mkdir`** — `assertInPlansSandbox` runs, returns the resolved path, then `mkdir` runs. Between those two calls a symlink could be substituted. True TOCTOU; mitigation is `O_NOFOLLOW` on the final `writeFile`. Low priority — exploiting this requires a race condition in a local filesystem.
 
-- [ ] **`--sandbox` flag for interactive REPL** — `phase2s --sandbox <name>` creates an isolated git worktree and starts the session inside it. Already have the worktree infrastructure from parallel goal execution. Useful for exploration without risking the main branch.
+- [x] **`--sandbox` flag for interactive REPL** — `phase2s --sandbox <name>` creates an isolated git worktree and starts the session inside it. Already have the worktree infrastructure from parallel goal execution. Useful for exploration without risking the main branch. **Completed: v1.26.0 (2026-04-13)**
 
 - [ ] **`:re` in goal executor context** — The `:re` switcher (v1.23.0) applies to REPL turns only. `phase2s goal` subtask model resolution (`resolveSubtaskModel` in `src/goal/parallel-executor.ts`) is unaffected. Future: thread `reasoningOverride` through `runGoal()`. **After Sprint 51:** import `resolveReasoningModel` from `src/cli/model-resolver.ts` instead of inlining the logic. **Deferred post-Sprint 50.**
 
-- [ ] **Decompose `src/mcp/server.ts`** — 674-line file (13 churn touches vs 35 for index.ts — lower urgency). Extract `skillToTool`/`toolNameToSkillName` into `src/mcp/tools.ts`, `setupSkillsWatcher` into `src/mcp/watcher.ts`, `handleRequest` into `src/mcp/handler.ts`. **Scheduled Sprint 52.**
+- [x] **Decompose `src/mcp/server.ts`** — 674-line file (13 churn touches vs 35 for index.ts — lower urgency). Extract `skillToTool`/`toolNameToSkillName` into `src/mcp/tools.ts`, `setupSkillsWatcher` into `src/mcp/watcher.ts`, `handleRequest` into `src/mcp/handler.ts`. **Completed: v1.26.0 (2026-04-13)**
 
 ---
 
@@ -84,7 +92,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [x] **Conversation persistence + management** — `phase2s conversations` (fzf browser) + `:clone <uuid>` (session branching DAG). **Completed:** v1.21.0 (2026-04-09)
 
-- [ ] **`--sandbox` flag for interactive mode** — `forge --sandbox experiment-name` creates an isolated git worktree + branch automatically, then starts the session inside it. No manual worktree setup. We already have worktrees for parallel goal execution; exposing `phase2s --sandbox feature-name` for interactive exploration would be a natural extension.
+- [x] **`--sandbox` flag for interactive mode** — `forge --sandbox experiment-name` creates an isolated git worktree + branch automatically, then starts the session inside it. No manual worktree setup. We already have worktrees for parallel goal execution; exposing `phase2s --sandbox feature-name` for interactive exploration would be a natural extension. **Completed: v1.26.0 (2026-04-13)**
 
 - [x] **Lightweight AI commit message** — `phase2s commit` (no args) reads the diff, writes a commit message, and commits immediately. `phase2s commit --preview` shows the message first. Our `/ship` skill does this but it's heavyweight (full diff review + version bump). A standalone `phase2s commit` command for quick commits would fill the gap. Forge uses this as a gateway feature — people install just for the commit UX, then discover the rest. **Completed:** v1.22.0 (2026-04-09)
 
