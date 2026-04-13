@@ -400,6 +400,7 @@ Options:
   -C, --cwd <path>           Run as if started in <path> (equivalent to cd before running)
   --system <prompt>          Custom system prompt
   --resume                   Resume the most recent saved session
+  --sandbox <name>           Start in an isolated git worktree (branch: sandbox/<name>)
   -V, --version              Show version
   -h, --help                 Show help
 ```

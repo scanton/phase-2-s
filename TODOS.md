@@ -6,17 +6,45 @@
 
 ---
 
+## Backlog — Post-Sprint 52 /plan-eng-review findings (2026-04-13)
+
+- [ ] **`--sandbox` non-git directory handling** — `phase2s --sandbox foo` in a non-git directory fails with raw git errors. `git branch --show-current` throws (not returns empty) when there's no git repo, so the detached-HEAD guard doesn't catch it. Fix: pre-flight check for git repo (`git rev-parse --is-inside-work-tree` or similar) with a clear error message: "phase2s --sandbox requires a git repository." Low risk, high discoverability value. **Post-Sprint 52.**
+
+- [ ] **`--sandbox` dirty working tree auto-stash** — If the parent repo has uncommitted staged changes when `phase2s --sandbox foo` runs, git may refuse to create the worktree. Currently unhandled — user gets raw git stderr. Fix: detect dirty state before worktree creation, offer to stash (`git stash`) and unstash after sandbox exit. Same pattern as parallel-executor. **Post-Sprint 52 (v1.27.0).**
+
+- [ ] **`phase2s --sandbox list` (or `phase2s sandboxes`)** — Show all active sandboxes (branches matching `sandbox/*` + their worktree paths + creation date). Currently users must run `git worktree list` manually. Low effort, high discoverability. Zero user-facing state needed — just `git worktree list --porcelain` filtered by branch prefix. **Post-Sprint 52 (v1.27.0+).**
+
+- [ ] **SIGINT-during-agent.run() UX regression** — After the SIGINT refactor (v1.26.0), Ctrl-C during an active Codex call kills the process immediately with no cleanup. Root cause: `agent.run()` is not AbortController-aware. Fix: thread an `AbortController` through `agent.run()`, signal it on SIGINT, and let the in-flight request resolve gracefully before calling `rl.close()`. Requires changes to `src/core/agent.ts` and the SIGINT handler in `src/cli/index.ts`. **v1.27.0.**
+
+- [x] **`--sandbox` uncommitted work warning** — Before merge cleanup, check `git status --porcelain` in the worktree. If dirty, warn and require explicit confirmation before `git worktree remove --force` discards uncommitted changes. **Completed: v1.26.0 (2026-04-13, Codex adversarial follow-up)**
+
+- [ ] **`--sandbox` name collision across slugs** — Two names that slugify to the same value (e.g. "my feature" and "my_feature") will silently share the same worktree. This is rarely a problem in practice but could surprise users. Fix: detect collision at startup and either warn or append a short random suffix (e.g. `-a3f`). **Post-Sprint 52.**
+
+- [ ] **`--sandbox` shell injection via projectCwd** — `projectCwd` is interpolated directly into execSync commands (`git -C "${projectCwd}"`). If the path contains shell metacharacters this could be exploited. In practice this path comes from `process.cwd()` (CLI) or `cwd` (MCP), both of which are trusted, so risk is low. Fix: use the `cwd` option on `execSync` instead of embedding the path in the command string. **Low priority.**
+
+- [ ] **`--sandbox` state (b) TOCTOU: branch deleted between prune and worktree-add** — State (b) path: `git worktree prune` removes stale worktree ref, then `git worktree add <path> <branch>` assumes the branch still exists. If another process (CI cleanup, user in another terminal) runs `git branch -D sandbox/...` between those two operations, the add fails with "branch not found". Current behavior: `console.error + process.exit(1)`. Mitigation: re-check `git branch --list "${branchName}"` after pruning; fall through to state (d) (fresh create) if branch is gone. **Low priority — requires a tight race window.**
+
+- [ ] **`toolNameToSkillName` lossy for underscore skill names** — `skillToTool` replaces `-` → `_` in skill names when building the tool name. `toolNameToSkillName` reverses with `_` → `-`. A skill named `my_skill` maps to tool `phase2s__my_skill` but reverse-maps to `my-skill`, causing `skills.find()` to return undefined and a `-32601 Tool not found` error. Fix: store original skill name in the tool's `_skillName` metadata field and use that in `handleRequest` instead of the round-tripped name. Low probability (current skills use hyphens), but will become a problem if users create underscore-named skills. **v1.27.0.**
+
+- [ ] **`watcher.ts` fs.watch handle not stored — can't stop watchers** — `setupSkillsWatcher` calls `fs.watch()` but discards the returned `FSWatcher`. There is no way to stop the watcher (e.g. for test cleanup or graceful MCP server shutdown). If `runMCPServer` is called multiple times (tests, future restart logic), multiple watchers pile up on the same directory. Fix: return the `FSWatcher` handle and call `.close()` on server shutdown. **v1.27.0.**
+
+- [ ] **`listWorktreePaths` swallows errors → could misclassify healthy worktrees** — `listWorktreePaths()` catches all errors and returns `[]`. If `git worktree list --porcelain` fails transiently (git lock, permissions), the state machine treats the healthy registered worktree as "not in git" (state c) and may delete the directory then attempt recreation. Fix: distinguish `ENOENT`/lock failures (abort with error) from "no worktrees" (return empty). Conservative: if `git worktree list` throws, exit with a clear error rather than silently misclassifying. **v1.27.0.**
+
+- [ ] **`askLine` on paused stdin after SIGINT** — Adversarial finding: if SIGINT pauses stdin via `rl.close()`, a subsequent `createInterface({ input: process.stdin })` in `askLine` might not resume it. **Investigated 2026-04-13**: `createInterface` calls `input.resume()` internally (confirmed via Node.js v25.8.2 testing — `readable.readableFlowing` goes from `false` to `true` on construction). Not a real issue on current runtime. Re-evaluate if Node minimum version changes significantly.
+
+---
+
 ## Backlog — Post-Sprint 50 /review findings (2026-04-10)
 
 - [ ] **`plans/` symlink escape** — If `plans/` is itself a symlink pointing outside the project, `plans_write` will follow it. The `realpath()` call on the parent only runs on the parent directory, not on `plans/` itself in a pre-flight check. Fix: add a `realpath` check on `plansDir` at tool-creation time (not per-call) and refuse if it resolves outside `cwd`. Low risk in practice — someone would have to deliberately symlink their `plans/` dir.
 
 - [ ] **`plans/` TOCTOU on `mkdir`** — `assertInPlansSandbox` runs, returns the resolved path, then `mkdir` runs. Between those two calls a symlink could be substituted. True TOCTOU; mitigation is `O_NOFOLLOW` on the final `writeFile`. Low priority — exploiting this requires a race condition in a local filesystem.
 
-- [ ] **`--sandbox` flag for interactive REPL** — `phase2s --sandbox <name>` creates an isolated git worktree and starts the session inside it. Already have the worktree infrastructure from parallel goal execution. Useful for exploration without risking the main branch.
+- [x] **`--sandbox` flag for interactive REPL** — `phase2s --sandbox <name>` creates an isolated git worktree and starts the session inside it. Already have the worktree infrastructure from parallel goal execution. Useful for exploration without risking the main branch. **Completed: v1.26.0 (2026-04-13)**
 
 - [ ] **`:re` in goal executor context** — The `:re` switcher (v1.23.0) applies to REPL turns only. `phase2s goal` subtask model resolution (`resolveSubtaskModel` in `src/goal/parallel-executor.ts`) is unaffected. Future: thread `reasoningOverride` through `runGoal()`. **After Sprint 51:** import `resolveReasoningModel` from `src/cli/model-resolver.ts` instead of inlining the logic. **Deferred post-Sprint 50.**
 
-- [ ] **Decompose `src/mcp/server.ts`** — 674-line file (13 churn touches vs 35 for index.ts — lower urgency). Extract `skillToTool`/`toolNameToSkillName` into `src/mcp/tools.ts`, `setupSkillsWatcher` into `src/mcp/watcher.ts`, `handleRequest` into `src/mcp/handler.ts`. **Scheduled Sprint 52.**
+- [x] **Decompose `src/mcp/server.ts`** — 674-line file (13 churn touches vs 35 for index.ts — lower urgency). Extract `skillToTool`/`toolNameToSkillName` into `src/mcp/tools.ts`, `setupSkillsWatcher` into `src/mcp/watcher.ts`, `handleRequest` into `src/mcp/handler.ts`. **Completed: v1.26.0 (2026-04-13)**
 
 ---
 
@@ -74,7 +102,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [x] **Conversation persistence + management** — `phase2s conversations` (fzf browser) + `:clone <uuid>` (session branching DAG). **Completed:** v1.21.0 (2026-04-09)
 
-- [ ] **`--sandbox` flag for interactive mode** — `forge --sandbox experiment-name` creates an isolated git worktree + branch automatically, then starts the session inside it. No manual worktree setup. We already have worktrees for parallel goal execution; exposing `phase2s --sandbox feature-name` for interactive exploration would be a natural extension.
+- [x] **`--sandbox` flag for interactive mode** — `forge --sandbox experiment-name` creates an isolated git worktree + branch automatically, then starts the session inside it. No manual worktree setup. We already have worktrees for parallel goal execution; exposing `phase2s --sandbox feature-name` for interactive exploration would be a natural extension. **Completed: v1.26.0 (2026-04-13)**
 
 - [x] **Lightweight AI commit message** — `phase2s commit` (no args) reads the diff, writes a commit message, and commits immediately. `phase2s commit --preview` shows the message first. Our `/ship` skill does this but it's heavyweight (full diff review + version bump). A standalone `phase2s commit` command for quick commits would fill the gap. Forge uses this as a gateway feature — people install just for the commit UX, then discover the rest. **Completed:** v1.22.0 (2026-04-09)
 

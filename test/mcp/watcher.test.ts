@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { setupSkillsWatcher } from "../../src/mcp/server.js";
+import { setupSkillsWatcher } from "../../src/mcp/watcher.js";
 import type { Skill } from "../../src/skills/types.js";
 
 // ---------------------------------------------------------------------------
