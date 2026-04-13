@@ -25,6 +25,11 @@ export interface MCPTool {
     properties: Record<string, unknown>;
     required: string[];
   };
+  /** Original skill name before the hyphen→underscore MCP naming transformation.
+   * Stored so toolNameToSkillName() round-trip is not needed for lookup —
+   * avoids the bug where a skill named `my_skill` would reverse-map to `my-skill`.
+   * Prefixed with `_` to signal it is an internal routing property, not an LLM input. */
+  _skillName?: string;
 }
 
 /**
@@ -84,6 +89,7 @@ export function skillToTool(skill: Skill): MCPTool {
       properties,
       required: ["prompt"],
     },
+    _skillName: skill.name,
   };
 }
 

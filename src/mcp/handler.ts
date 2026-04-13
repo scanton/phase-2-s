@@ -232,7 +232,12 @@ export async function handleRequest(
     // -----------------------------------------------------------------------
     // Skill tools — look up by name.
     // -----------------------------------------------------------------------
-    const skillName = toolNameToSkillName(toolName);
+    // Use _skillName from the tool descriptor to survive the hyphen→underscore
+    // round-trip for skills whose names contain underscores natively.
+    // (e.g. a skill named "my_skill" maps to tool "phase2s__my_skill" but
+    // toolNameToSkillName would reverse to "my-skill" — wrong.)
+    const toolObj = skills.map(skillToTool).find((t) => t.name === toolName);
+    const skillName = toolObj?._skillName ?? toolNameToSkillName(toolName);
     const skill = skills.find((s) => s.name === skillName);
 
     if (!skill) {
