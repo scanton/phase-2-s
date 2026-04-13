@@ -50,19 +50,73 @@ export function slugify(name: string): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Represents a single worktree entry from `git worktree list --porcelain`.
+ */
+interface WorktreeEntry {
+  path: string;
+  commit: string;
+  branch: string; // full ref, e.g. "refs/heads/sandbox/foo". Empty string for detached HEAD.
+}
+
+/**
+ * Parse `git worktree list --porcelain` output into structured entries.
+ * Throws if the git command fails (caller decides how to handle).
+ * Each worktree block is separated by a blank line.
+ */
+function parseWorktreePorcelain(cwd: string): WorktreeEntry[] {
+  const out = execSync("git worktree list --porcelain", { cwd, encoding: "utf8", stdio: "pipe" });
+  const entries: WorktreeEntry[] = [];
+  // Blocks are separated by blank lines
+  for (const block of out.split(/\n\n+/)) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) continue;
+    const pathLine = lines.find((l) => l.startsWith("worktree "));
+    const headLine = lines.find((l) => l.startsWith("HEAD "));
+    const branchLine = lines.find((l) => l.startsWith("branch "));
+    if (!pathLine) continue;
+    entries.push({
+      path: pathLine.slice("worktree ".length),
+      commit: headLine ? headLine.slice("HEAD ".length) : "",
+      branch: branchLine ? branchLine.slice("branch ".length) : "",
+    });
+  }
+  return entries;
+}
+
+/**
  * Return the list of worktree paths currently registered with git.
- * Parses `git worktree list --porcelain` output.
+ * Returns empty array on any error (conservative — callers use this for existence checks).
  */
 function listWorktreePaths(cwd: string): string[] {
   try {
-    const out = execSync("git worktree list --porcelain", { cwd, encoding: "utf8", stdio: "pipe" });
-    return out
-      .split("\n")
-      .filter((l) => l.startsWith("worktree "))
-      .map((l) => l.slice("worktree ".length).trim());
+    return parseWorktreePorcelain(cwd).map((e) => e.path);
   } catch {
     return [];
   }
+}
+
+/**
+ * Sandbox entry for display in `phase2s sandboxes`.
+ */
+export interface SandboxEntry {
+  name: string;   // slug only, e.g. "spike-foo"
+  path: string;   // absolute worktree path
+  commit: string; // short commit hash (7 chars)
+}
+
+/**
+ * List all active sandbox worktrees for the given repo root.
+ * Throws if git is unavailable or cwd is not a git repo.
+ */
+export function listSandboxes(cwd: string): SandboxEntry[] {
+  const entries = parseWorktreePorcelain(cwd);
+  return entries
+    .filter((e) => e.branch.startsWith("refs/heads/sandbox/"))
+    .map((e) => ({
+      name: e.branch.slice("refs/heads/sandbox/".length),
+      path: e.path,
+      commit: e.commit.slice(0, 7),
+    }));
 }
 
 /**

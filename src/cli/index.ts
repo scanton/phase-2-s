@@ -468,6 +468,46 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       await runCommitFlow(config, { auto: cmdOpts.auto, preview: cmdOpts.preview });
     });
 
+  // Sandbox listing command
+  program
+    .command("sandboxes")
+    .description("List active sandbox worktrees for this repository")
+    .action(async () => {
+      const { listSandboxes } = await import("./sandbox.js");
+      let sandboxes: import("./sandbox.js").SandboxEntry[];
+      try {
+        sandboxes = listSandboxes(process.cwd());
+      } catch {
+        console.error("Error: phase2s sandboxes requires a git repository.");
+        process.exit(1);
+      }
+
+      if (sandboxes.length === 0) {
+        console.log("(none)");
+        return;
+      }
+
+      // Table output: SANDBOX / PATH / COMMIT
+      // Column widths: max content width, minimum 16 / 40 / 8 chars respectively.
+      const nameWidth = Math.max(16, ...sandboxes.map((s) => s.name.length));
+      const pathWidth = Math.max(40, ...sandboxes.map((s) => s.path.length));
+      const commitWidth = 8;
+
+      const truncate = (s: string, w: number) =>
+        s.length > w ? s.slice(0, w - 1) + "\u2026" : s;
+
+      const pad = (s: string, w: number) => s.padEnd(w);
+
+      console.log(
+        `${pad("SANDBOX", nameWidth)}  ${pad("PATH", pathWidth)}  COMMIT`,
+      );
+      for (const s of sandboxes) {
+        console.log(
+          `${pad(truncate(s.name, nameWidth), nameWidth)}  ${pad(truncate(s.path, pathWidth), pathWidth)}  ${s.commit.slice(0, commitWidth)}`,
+        );
+      }
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")
@@ -781,6 +821,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
   }
 
   const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr });
+  // AbortController for cooperative SIGINT cancellation.
+  // Aborted in the SIGINT handler; signal is passed to every agent.run() call so the
+  // in-flight Codex/provider request is cancelled rather than waiting to finish.
+  const sigintController = new AbortController();
 
   // Apply restored agent persona if resuming with one active
   if (activeAgentId) {
@@ -857,6 +901,9 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       process.stderr.write("Warning: session save failed on exit — last turn may not be saved.\n");
     }
     log.info("Goodbye!");
+    // Abort any in-flight agent.run() call so the provider cancels its HTTP request
+    // or spawned process. The signal is already wired into chatStream() for all providers.
+    sigintController.abort();
     rl.close();
     // Don't call process.exit(0) here — let interactiveMode return so callers
     // (e.g. sandbox.ts try/finally) can run their cleanup before exit.
@@ -1163,6 +1210,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
               modelOverride: skill.model,
               maxRetries: skill.retries,
               verifyCommand: config.verifyCommand,
+              signal: sigintController.signal,
               preRun: () => writeContextSnapshot(finalExpanded, config),
               postRun: async (result) => {
                 attempts.push(result);
@@ -1177,7 +1225,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
         } else {
           // Normal skill run
           try {
-            const response = await agent.run(finalExpanded, { modelOverride: skill.model });
+            const response = await agent.run(finalExpanded, { modelOverride: skill.model, signal: sigintController.signal });
             console.log(chalk.bold("\nassistant > ") + response + "\n");
             await saveSession();
           } catch (err) {
@@ -1196,7 +1244,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       (activeAgentDef ? resolveAgentModel(activeAgentDef.model, config) : undefined);
     process.stdout.write(chalk.bold("\nassistant > "));
     try {
-      await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel });
+      await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel, signal: sigintController.signal });
       process.stdout.write("\n\n");
       await saveSession();
     } catch (err) {
