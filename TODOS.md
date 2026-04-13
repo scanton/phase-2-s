@@ -12,9 +12,9 @@
 
 - [ ] **`--sandbox` dirty working tree auto-stash** — If the parent repo has uncommitted staged changes when `phase2s --sandbox foo` runs, git may refuse to create the worktree. Currently unhandled — user gets raw git stderr. Fix: detect dirty state before worktree creation, offer to stash (`git stash`) and unstash after sandbox exit. Same pattern as parallel-executor. **Post-Sprint 52 (v1.27.0).**
 
-- [ ] **`phase2s --sandbox list` (or `phase2s sandboxes`)** — Show all active sandboxes (branches matching `sandbox/*` + their worktree paths + creation date). Currently users must run `git worktree list` manually. Low effort, high discoverability. Zero user-facing state needed — just `git worktree list --porcelain` filtered by branch prefix. **Post-Sprint 52 (v1.27.0+).**
+- [x] **`phase2s sandboxes`** — Lists all active sandbox worktrees (branches matching `sandbox/*`) with path and short commit hash in a padded table. `(none)` when empty. **Completed: v1.27.0 (2026-04-13)**
 
-- [ ] **SIGINT-during-agent.run() UX regression** — After the SIGINT refactor (v1.26.0), Ctrl-C during an active Codex call kills the process immediately with no cleanup. Root cause: `agent.run()` is not AbortController-aware. Fix: thread an `AbortController` through `agent.run()`, signal it on SIGINT, and let the in-flight request resolve gracefully before calling `rl.close()`. Requires changes to `src/core/agent.ts` and the SIGINT handler in `src/cli/index.ts`. **v1.27.0.**
+- [x] **SIGINT-during-agent.run() UX regression** — AbortSignal threaded through all providers. Ctrl-C now cancels the in-flight HTTP request or Codex process immediately without spurious error messages. **Completed: v1.27.0 (2026-04-13)**
 
 - [x] **`--sandbox` uncommitted work warning** — Before merge cleanup, check `git status --porcelain` in the worktree. If dirty, warn and require explicit confirmation before `git worktree remove --force` discards uncommitted changes. **Completed: v1.26.0 (2026-04-13, Codex adversarial follow-up)**
 
@@ -24,7 +24,7 @@
 
 - [ ] **`--sandbox` state (b) TOCTOU: branch deleted between prune and worktree-add** — State (b) path: `git worktree prune` removes stale worktree ref, then `git worktree add <path> <branch>` assumes the branch still exists. If another process (CI cleanup, user in another terminal) runs `git branch -D sandbox/...` between those two operations, the add fails with "branch not found". Current behavior: `console.error + process.exit(1)`. Mitigation: re-check `git branch --list "${branchName}"` after pruning; fall through to state (d) (fresh create) if branch is gone. **Low priority — requires a tight race window.**
 
-- [ ] **`toolNameToSkillName` lossy for underscore skill names** — `skillToTool` replaces `-` → `_` in skill names when building the tool name. `toolNameToSkillName` reverses with `_` → `-`. A skill named `my_skill` maps to tool `phase2s__my_skill` but reverse-maps to `my-skill`, causing `skills.find()` to return undefined and a `-32601 Tool not found` error. Fix: store original skill name in the tool's `_skillName` metadata field and use that in `handleRequest` instead of the round-tripped name. Low probability (current skills use hyphens), but will become a problem if users create underscore-named skills. **v1.27.0.**
+- [x] **`toolNameToSkillName` lossy for underscore skill names** — Fixed by storing `_skillName` on the MCPTool descriptor in `skillToTool()` and reading it directly in `handleRequest` instead of the lossy round-trip. **Completed: v1.27.0 (2026-04-13)**
 
 - [ ] **`watcher.ts` fs.watch handle not stored — can't stop watchers** — `setupSkillsWatcher` calls `fs.watch()` but discards the returned `FSWatcher`. There is no way to stop the watcher (e.g. for test cleanup or graceful MCP server shutdown). If `runMCPServer` is called multiple times (tests, future restart logic), multiple watchers pile up on the same directory. Fix: return the `FSWatcher` handle and call `.close()` on server shutdown. **v1.27.0.**
 

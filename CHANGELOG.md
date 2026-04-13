@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.27.0 — 2026-04-13
+
+Sprint 53 — SIGINT Cooperative Cancellation + `phase2s sandboxes` + MCP Correctness.
+
+### Added
+
+- **`phase2s sandboxes`** — New command that lists all active sandbox worktrees for the current repository. Shows sandbox name, worktree path, and short commit hash in a padded table. Prints `(none)` when no sandbox worktrees exist. The missing "ls" for `--sandbox`.
+
+- **Cooperative SIGINT cancellation** — Ctrl-C during an active provider call now cancels the in-flight request rather than waiting for it to finish. `AbortSignal` is threaded through `agent.run()` → `chatStream()` → all 7 providers. Codex processes receive `SIGTERM`; SDK-based providers (OpenAI, Anthropic, Ollama, OpenRouter, Gemini, MiniMax) pass the signal to the SDK's HTTP layer. Abort errors from the SDK are suppressed cleanly — no spurious error messages on voluntary cancel.
+
+### Fixed
+
+- **MCP underscore skill names** — A custom skill named `my_skill` (with native underscores) previously resolved to `my-skill` via the `toolNameToSkillName` round-trip, causing `-32601 Tool not found` for any MCP invocation. `skillToTool()` now stores the original skill name in `_skillName` on the tool descriptor; `handleRequest` uses it directly instead of reversing the hyphen→underscore transform.
+
 ## v1.26.0 — 2026-04-13
 
 Sprint 52 — MCP Server Decomposition + `--sandbox` flag.
