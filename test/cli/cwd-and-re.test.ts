@@ -186,60 +186,6 @@ describe(":re switcher — sessionDir() lazy evaluation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// :re integration — model override passed to agent.run()
-// ---------------------------------------------------------------------------
-
-describe(":re model override integration", () => {
-  // Testing the REPL loop directly would require a full readline harness.
-  // We verify the resolve logic (reasoningOverride → modelOverride) is correct
-  // by checking the config resolution inline.
-  it("resolves 'high' override to config.smart_model", () => {
-    const config = { model: "gpt-4o", smart_model: "claude-opus-4-5", fast_model: "gpt-4o-mini" };
-    const reasoningOverride: "high" | "low" | undefined = "high";
-    const modelOverride = reasoningOverride === "high"
-      ? config.smart_model
-      : reasoningOverride === "low"
-        ? config.fast_model
-        : undefined;
-    expect(modelOverride).toBe("claude-opus-4-5");
-  });
-
-  it("resolves 'low' override to config.fast_model", () => {
-    const config = { model: "gpt-4o", smart_model: "claude-opus-4-5", fast_model: "gpt-4o-mini" };
-    const reasoningOverride: "high" | "low" | undefined = "low";
-    const modelOverride = reasoningOverride === "high"
-      ? config.smart_model
-      : reasoningOverride === "low"
-        ? config.fast_model
-        : undefined;
-    expect(modelOverride).toBe("gpt-4o-mini");
-  });
-
-  it("resolves undefined override to undefined (no override)", () => {
-    const config = { model: "gpt-4o", smart_model: "claude-opus-4-5", fast_model: "gpt-4o-mini" };
-    const reasoningOverride: "high" | "low" | undefined = undefined;
-    const modelOverride = reasoningOverride === "high"
-      ? config.smart_model
-      : reasoningOverride === "low"
-        ? config.fast_model
-        : undefined;
-    expect(modelOverride).toBeUndefined();
-  });
-
-  it("falls back to default model when smart_model is not configured", () => {
-    const config = { model: "gpt-4o", smart_model: undefined as string | undefined, fast_model: "gpt-4o-mini" };
-    const reasoningOverride: "high" | "low" | undefined = "high";
-    // When smart_model is undefined, modelOverride is undefined → agent uses config.model
-    const modelOverride = reasoningOverride === "high"
-      ? config.smart_model
-      : reasoningOverride === "low"
-        ? config.fast_model
-        : undefined;
-    expect(modelOverride).toBeUndefined(); // falls back to default
-  });
-});
-
-// ---------------------------------------------------------------------------
 // :re case-sensitivity regression (Sprint 49 fix: toLowerCase before matching)
 // ---------------------------------------------------------------------------
 
