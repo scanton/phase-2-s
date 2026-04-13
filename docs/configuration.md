@@ -403,6 +403,9 @@ Options:
   --sandbox <name>           Start in an isolated git worktree (branch: sandbox/<name>)
   -V, --version              Show version
   -h, --help                 Show help
+
+Subcommands:
+  sandboxes                  List all active sandbox worktrees with name, path, and commit
 ```
 
 Command-line flags override both `.phase2s.yaml` and environment variables.
