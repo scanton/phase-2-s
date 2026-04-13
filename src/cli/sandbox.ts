@@ -40,9 +40,8 @@ import { interactiveMode } from "./index.js";
 export function slugify(name: string): string {
   return name
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 40)            // truncate first, then strip — prevents trailing hyphen after cut
+    .replace(/[^a-z0-9]+/g, "-")  // collapses runs of non-alphanumeric chars → single hyphen
+    .slice(0, 40)                  // truncate first, then strip — prevents trailing hyphen after cut
     .replace(/^-+|-+$/g, "");
 }
 
@@ -92,6 +91,7 @@ export async function startSandbox(
   name: string,
   projectCwd: string,
   configOverrides: Partial<Config> = {},
+  resume = false,
 ): Promise<void> {
   // -------------------------------------------------------------------------
   // 1. Slugify and derive names
@@ -110,7 +110,6 @@ export async function startSandbox(
   // -------------------------------------------------------------------------
   // 2. Capture original context
   // -------------------------------------------------------------------------
-  const originalCwd = projectCwd;
   const originalBranch = currentBranch(projectCwd);
 
   if (!originalBranch) {
@@ -201,7 +200,7 @@ export async function startSandbox(
   const config = await loadConfig(configOverrides);
 
   try {
-    await interactiveMode(config);
+    await interactiveMode(config, { resume });
   } catch {
     // interactiveMode should resolve after the SIGINT refactor, but guard against
     // edge-case rejections (e.g. uncaught errors mid-session). Either way, we
@@ -211,10 +210,10 @@ export async function startSandbox(
     // 5. On REPL exit — chdir back FIRST (before any git operations that might
     //    remove the worktree directory we're standing in), then prompt for merge.
     // -------------------------------------------------------------------------
-    process.chdir(originalCwd);
+    process.chdir(projectCwd);
 
     console.log(`\nSandbox '${name}' ended.`);
-    await promptMergeBack(name, slugName, branchName, worktreePath, originalBranch, originalCwd);
+    await promptMergeBack(name, slugName, branchName, worktreePath, originalBranch, projectCwd);
   }
 }
 
@@ -245,7 +244,7 @@ async function promptMergeBack(
   branchName: string,
   worktreePath: string,
   originalBranch: string,
-  originalCwd: string,
+  projectCwd: string,
 ): Promise<void> {
   const answer = await askLine(`Merge sandbox back into '${originalBranch}'? [y/N] `);
   const wantsYes = answer.trim().toLowerCase() === "y";
@@ -263,28 +262,40 @@ async function promptMergeBack(
       }
     }
 
+    // Separate try blocks so checkout failure (branch deleted externally) is not
+    // misdiagnosed as a merge conflict.
     try {
       // Explicitly checkout the original branch before merging — guards against the case
       // where the user checked out a different branch externally during the sandbox session.
-      execSync(`git checkout "${originalBranch}"`, { cwd: originalCwd, encoding: "utf8", stdio: "pipe" });
+      execSync(`git checkout "${originalBranch}"`, { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
+    } catch (checkoutErr) {
+      console.log(`\nCould not return to branch '${originalBranch}'. It may have been deleted or renamed.`);
+      console.log(`Error: ${checkoutErr instanceof Error ? checkoutErr.message : String(checkoutErr)}`);
+      console.log(`Sandbox branch '${branchName}' and worktree preserved at ${worktreePath}`);
+      return;
+    }
+
+    try {
       execSync(
         `git merge --no-ff "${branchName}" -m "sandbox: merge ${slugName}"`,
-        { cwd: originalCwd, encoding: "utf8", stdio: "pipe" },
+        { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
       );
       // Clean up: remove worktree + branch
       try {
-        execSync(`git worktree remove --force "${worktreePath}"`, { cwd: originalCwd, encoding: "utf8", stdio: "pipe" });
+        execSync(`git worktree remove --force "${worktreePath}"`, { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
       } catch { /* ignore — directory may be already gone */ }
       try {
-        execSync(`git branch -D ${branchName}`, { cwd: originalCwd, encoding: "utf8", stdio: "pipe" });
+        execSync(`git branch -D "${branchName}"`, { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
       } catch { /* ignore — branch deletion failure is non-fatal */ }
       console.log(`Sandbox '${name}' merged into '${originalBranch}' and cleaned up.`);
     } catch {
-      // Merge conflict or other failure — preserve worktree
-      console.log(`\nMerge conflicts — your working tree has unresolved files.`);
-      console.log(`To abort:   git merge --abort`);
-      console.log(`To resolve: fix conflicts, git add, git commit`);
-      console.log(`Worktree preserved at .worktrees/sandbox-${slugName}`);
+      // Merge conflict — preserve worktree.
+      // Note: the merge ran in the main repo (projectCwd), not in the sandbox worktree.
+      // Conflicts must be resolved there, not in the sandbox worktree.
+      console.log(`\nMerge failed. Conflicts are in your main repo, not the sandbox worktree.`);
+      console.log(`To abort the merge:  cd ${projectCwd} && git merge --abort`);
+      console.log(`To resolve manually: cd ${projectCwd}, fix conflicts, git add, git commit`);
+      console.log(`Sandbox branch '${branchName}' and worktree preserved for reference.`);
     }
   } else {
     console.log(`Sandbox preserved. Resume with: phase2s --sandbox ${name}`);

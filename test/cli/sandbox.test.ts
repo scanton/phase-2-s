@@ -437,7 +437,8 @@ describe("startSandbox() — merge-back", () => {
 
     const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(allOutput).toContain("git merge --abort");
-    expect(allOutput).toContain("Worktree preserved");
+    // Message was updated to point clearly to main repo (not sandbox worktree)
+    expect(allOutput).toMatch(/Merge failed|Conflicts are in your main repo|worktree preserved/i);
 
     // worktree remove should NOT have been called (conflict path preserves it)
     const removeCalls = mockExecSync.mock.calls.filter(
@@ -734,6 +735,87 @@ describe("startSandbox() — uncommitted work warning on merge", () => {
     expect(questionMock).toHaveBeenCalledTimes(1);
     const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(allOutput).not.toMatch(/uncommitted/i);
+
+    consoleSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review-pass fixes (2026-04-13 /review workflow)
+// ---------------------------------------------------------------------------
+
+describe("startSandbox() — review-pass: resume forwarding + checkout split", () => {
+  const projectCwd = "/fake/project";
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await resetInteractiveModeMock();
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      if (cmd.includes("worktree add")) return "";
+      if (cmd.includes("status --porcelain")) return ""; // clean
+      return "";
+    });
+    mockExistsSync.mockReturnValue(false);
+    vi.spyOn(process, "chdir").mockImplementation(() => {});
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("resume=true is forwarded to interactiveMode", async () => {
+    const { interactiveMode } = await import("../../src/cli/index.js");
+
+    await startSandbox("mytest", projectCwd, {}, /* resume= */ true);
+
+    expect(interactiveMode).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ resume: true }),
+    );
+  });
+
+  it("resume=false (default) passes resume:false to interactiveMode", async () => {
+    const { interactiveMode } = await import("../../src/cli/index.js");
+
+    await startSandbox("mytest", projectCwd, {});
+
+    expect(interactiveMode).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ resume: false }),
+    );
+  });
+
+  it("checkout failure → distinct error message, no merge-conflict message", async () => {
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockReturnValue({
+      question: vi.fn((_p: string, cb: (a: string) => void) => cb("y")),
+      close: vi.fn(),
+    } as ReturnType<typeof createInterface>);
+
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      if (cmd.includes("worktree add")) return "";
+      if (cmd.includes("status --porcelain")) return "";
+      if (cmd.includes("git checkout")) throw new Error("pathspec 'main' did not match");
+      return "";
+    });
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await startSandbox("mytest", projectCwd, {});
+
+    const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(allOutput).toMatch(/Could not return to branch|deleted or renamed/i);
+    expect(allOutput).not.toMatch(/Merge failed|merge --abort/);
+
+    const mergeCalls = mockExecSync.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("git merge"),
+    );
+    expect(mergeCalls).toHaveLength(0);
 
     consoleSpy.mockRestore();
   });

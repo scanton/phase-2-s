@@ -22,6 +22,7 @@ import { loadSkillsFromDir } from "../skills/loader.js";
 import { join } from "node:path";
 import { Conversation } from "../core/conversation.js";
 import { handleRequest, type JSONRPCRequest } from "./handler.js";
+import { loadConfig } from "../core/config.js";
 import { buildNotification, MCP_SERVER_VERSION } from "./tools.js";
 import { setupSkillsWatcher } from "./watcher.js";
 
@@ -58,6 +59,10 @@ export { setupSkillsWatcher } from "./watcher.js";
 export async function runMCPServer(cwd: string): Promise<void> {
   const skillsDir = join(cwd, ".phase2s", "skills");
   let skills = await loadSkillsFromDir(skillsDir);
+
+  // Load config once at startup — avoids per-request disk reads in handleRequest.
+  // If config loading fails, fall back to undefined so handleRequest uses loadConfig().
+  const serverConfig = await loadConfig().catch(() => undefined);
 
   // One Conversation per skill, scoped to this process lifetime (= one Claude
   // Code project session). Multi-turn skills like /satori and /consensus-plan
@@ -138,7 +143,7 @@ export async function runMCPServer(cwd: string): Promise<void> {
 
     let response;
     try {
-      response = await handleRequest(request, skills, cwd, sessionConversations);
+      response = await handleRequest(request, skills, cwd, sessionConversations, serverConfig);
     } catch (err) {
       // Guard against uncaught throws from handleRequest (e.g. EACCES/ENOSPC on
       // state_write). Return a JSON-RPC internal error rather than crashing the server.

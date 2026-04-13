@@ -8,9 +8,12 @@ import { watch } from "node:fs";
 import { loadSkillsFromDir } from "../skills/loader.js";
 import type { Skill } from "../skills/types.js";
 
+/** Debounce window for hot-reload in milliseconds. 80ms catches burst writes without flickering. */
+const WATCHER_DEBOUNCE_MS = 80;
+
 /**
  * Watch the skills directory for new SKILL.md files. When a change is
- * detected (debounced 80ms), reload skills and call notify() so the server
+ * detected (debounced WATCHER_DEBOUNCE_MS), reload skills and call notify() so the server
  * can send a notifications/tools/list_changed message to the MCP client.
  *
  * Silently skips watching if the directory does not exist.
@@ -35,7 +38,7 @@ export function setupSkillsWatcher(
             // Reload errors are silently ignored — stale skill list is better
             // than crashing the server.
           });
-      }, 80);
+      }, WATCHER_DEBOUNCE_MS);
     });
   } catch {
     // Skills directory doesn't exist or isn't watchable — skip silently.

@@ -126,7 +126,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
       if (opts.sandbox) {
         const { startSandbox } = await import("./sandbox.js");
-        await startSandbox(opts.sandbox, process.cwd(), configOverrides);
+        await startSandbox(opts.sandbox, process.cwd(), configOverrides, !!opts.resume);
         await disposeBrowser().catch(() => {});
         process.exit(0);
         return;

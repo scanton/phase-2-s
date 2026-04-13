@@ -22,6 +22,16 @@
 
 - [ ] **`--sandbox` shell injection via projectCwd** — `projectCwd` is interpolated directly into execSync commands (`git -C "${projectCwd}"`). If the path contains shell metacharacters this could be exploited. In practice this path comes from `process.cwd()` (CLI) or `cwd` (MCP), both of which are trusted, so risk is low. Fix: use the `cwd` option on `execSync` instead of embedding the path in the command string. **Low priority.**
 
+- [ ] **`--sandbox` state (b) TOCTOU: branch deleted between prune and worktree-add** — State (b) path: `git worktree prune` removes stale worktree ref, then `git worktree add <path> <branch>` assumes the branch still exists. If another process (CI cleanup, user in another terminal) runs `git branch -D sandbox/...` between those two operations, the add fails with "branch not found". Current behavior: `console.error + process.exit(1)`. Mitigation: re-check `git branch --list "${branchName}"` after pruning; fall through to state (d) (fresh create) if branch is gone. **Low priority — requires a tight race window.**
+
+- [ ] **`toolNameToSkillName` lossy for underscore skill names** — `skillToTool` replaces `-` → `_` in skill names when building the tool name. `toolNameToSkillName` reverses with `_` → `-`. A skill named `my_skill` maps to tool `phase2s__my_skill` but reverse-maps to `my-skill`, causing `skills.find()` to return undefined and a `-32601 Tool not found` error. Fix: store original skill name in the tool's `_skillName` metadata field and use that in `handleRequest` instead of the round-tripped name. Low probability (current skills use hyphens), but will become a problem if users create underscore-named skills. **v1.27.0.**
+
+- [ ] **`watcher.ts` fs.watch handle not stored — can't stop watchers** — `setupSkillsWatcher` calls `fs.watch()` but discards the returned `FSWatcher`. There is no way to stop the watcher (e.g. for test cleanup or graceful MCP server shutdown). If `runMCPServer` is called multiple times (tests, future restart logic), multiple watchers pile up on the same directory. Fix: return the `FSWatcher` handle and call `.close()` on server shutdown. **v1.27.0.**
+
+- [ ] **`listWorktreePaths` swallows errors → could misclassify healthy worktrees** — `listWorktreePaths()` catches all errors and returns `[]`. If `git worktree list --porcelain` fails transiently (git lock, permissions), the state machine treats the healthy registered worktree as "not in git" (state c) and may delete the directory then attempt recreation. Fix: distinguish `ENOENT`/lock failures (abort with error) from "no worktrees" (return empty). Conservative: if `git worktree list` throws, exit with a clear error rather than silently misclassifying. **v1.27.0.**
+
+- [ ] **`askLine` on paused stdin after SIGINT** — Adversarial finding: if SIGINT pauses stdin via `rl.close()`, a subsequent `createInterface({ input: process.stdin })` in `askLine` might not resume it. **Investigated 2026-04-13**: `createInterface` calls `input.resume()` internally (confirmed via Node.js v25.8.2 testing — `readable.readableFlowing` goes from `false` to `true` on construction). Not a real issue on current runtime. Re-evaluate if Node minimum version changes significantly.
+
 ---
 
 ## Backlog — Post-Sprint 50 /review findings (2026-04-10)

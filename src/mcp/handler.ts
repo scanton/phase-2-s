@@ -5,7 +5,7 @@
  * Contains handleRequest — the bulk of the MCP protocol logic (~278 lines).
  */
 
-import { loadConfig } from "../core/config.js";
+import { loadConfig, type Config } from "../core/config.js";
 import { Agent } from "../core/agent.js";
 import { Conversation } from "../core/conversation.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
@@ -49,12 +49,16 @@ export interface JSONRPCResponse {
  *                             When provided, tools/call reuses the existing Conversation
  *                             for each skill across multiple invocations rather than
  *                             starting cold every call.
+ * @param preloadedConfig      Pre-loaded config from server startup. When provided,
+ *                             avoids the per-request disk read. Tests omit this param
+ *                             to use the default loadConfig() path.
  */
 export async function handleRequest(
   request: JSONRPCRequest,
   skills: Skill[],
   cwd: string,
   sessionConversations?: Map<string, Conversation>,
+  preloadedConfig?: Config,
 ): Promise<JSONRPCResponse> {
   // -----------------------------------------------------------------------
   // initialize
@@ -262,7 +266,10 @@ export async function handleRequest(
     const fullPrompt = substitutedTemplate + (userPrompt ? `\n\n## Input\n\n${userPrompt}` : "");
 
     try {
-      const config = await loadConfig();
+      // Use pre-loaded config if available (avoids per-request disk read).
+      // Tests that call handleRequest directly omit preloadedConfig and
+      // fall back to the default loadConfig() path.
+      const config = preloadedConfig ?? await loadConfig();
 
       // Session persistence: look up an existing Conversation for this skill.
       // On the first call the map has no entry and Agent creates a fresh one.
