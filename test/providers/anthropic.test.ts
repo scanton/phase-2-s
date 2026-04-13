@@ -331,3 +331,59 @@ describe("AnthropicProvider", () => {
     expect((toolEvents[0].calls[1] as { id: string }).id).toBe("tc2");
   });
 });
+
+// ---------------------------------------------------------------------------
+// AnthropicProvider — AbortSignal propagation
+// ---------------------------------------------------------------------------
+
+describe("AnthropicProvider — AbortSignal cancellation", () => {
+  it("passes signal as second argument to messages.stream() when provided", async () => {
+    const events = [
+      { type: "message_delta", delta: { stop_reason: "end_turn" } },
+      { type: "message_stop" },
+    ];
+
+    const mockClient = {
+      messages: { stream: vi.fn().mockReturnValue(mockStream(events)) },
+    };
+
+    const provider = new AnthropicProvider(makeConfig(), mockClient as never);
+    const controller = new AbortController();
+
+    for await (const _ of provider.chatStream(
+      [{ role: "user", content: "hi" }],
+      [],
+      { signal: controller.signal },
+    )) { /* drain */ }
+
+    // Second argument to messages.stream() must include the signal
+    expect(mockClient.messages.stream).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+
+  it("does not pass signal options when no signal is provided", async () => {
+    const events = [
+      { type: "message_delta", delta: { stop_reason: "end_turn" } },
+      { type: "message_stop" },
+    ];
+
+    const mockClient = {
+      messages: { stream: vi.fn().mockReturnValue(mockStream(events)) },
+    };
+
+    const provider = new AnthropicProvider(makeConfig(), mockClient as never);
+
+    for await (const _ of provider.chatStream(
+      [{ role: "user", content: "hi" }],
+      [],
+    )) { /* drain */ }
+
+    // Without a signal, messages.stream() second arg must be undefined
+    expect(mockClient.messages.stream).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+    );
+  });
+});

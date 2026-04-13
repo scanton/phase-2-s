@@ -196,3 +196,84 @@ describe("CodexProvider JSONL streaming", () => {
     expect(textEvents[0]).toEqual({ type: "text", content: "done" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// AbortSignal cooperative cancellation
+// ---------------------------------------------------------------------------
+
+describe("CodexProvider — AbortSignal cancellation", () => {
+  beforeEach(() => {
+    vi.mocked(spawn).mockReset();
+  });
+
+  it("calls proc.kill('SIGTERM') and stops streaming when signal is aborted", async () => {
+    // Use a proc that never sends any output — it just hangs until aborted.
+    const stdout = new Readable({ read() {} });
+    const stderr = new Readable({ read() {} });
+    const proc = new EventEmitter() as EventEmitter & {
+      stdout: Readable;
+      stderr: Readable;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    proc.stdout = stdout;
+    proc.stderr = stderr;
+    proc.kill = vi.fn(() => {
+      // Simulate the process dying after SIGTERM
+      proc.emit("close", null);
+      return true;
+    });
+
+    vi.mocked(spawn).mockReturnValue(proc as ReturnType<typeof spawn>);
+
+    const controller = new AbortController();
+    const provider = new CodexProvider(mockConfig);
+
+    // Abort immediately after the next microtask (before proc sends any output)
+    const streamPromise = (async () => {
+      const events: ProviderEvent[] = [];
+      for await (const event of provider.chatStream(mockMessages, [], { signal: controller.signal })) {
+        events.push(event);
+      }
+      return events;
+    })();
+
+    // Abort on next tick — process hasn't produced output yet
+    await new Promise((r) => setImmediate(r));
+    controller.abort();
+
+    await streamPromise;
+    expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  it("passes signal through ChatStreamOptions — kill is called when signal is pre-aborted", async () => {
+    // Pre-abort the signal before calling chatStream. The abort listener fires
+    // synchronously when addEventListener is called (signal is already aborted).
+    // We must iterate the generator to trigger the body execution.
+    const controller = new AbortController();
+    controller.abort(); // abort BEFORE chatStream
+
+    const proc = new EventEmitter() as EventEmitter & {
+      stdout: Readable;
+      stderr: Readable;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    proc.stdout = new Readable({ read() {} });
+    proc.stderr = new Readable({ read() {} });
+    proc.kill = vi.fn(() => {
+      // Simulate process death — no output was produced so we don't emit close here
+      // (finish() is already called before kill in the impl)
+      return true;
+    });
+    vi.mocked(spawn).mockReturnValue(proc as ReturnType<typeof spawn>);
+
+    const provider = new CodexProvider(mockConfig);
+
+    // Iterate the generator to trigger the body (generators are lazy)
+    const events: ProviderEvent[] = [];
+    for await (const event of provider.chatStream(mockMessages, [], { signal: controller.signal })) {
+      events.push(event);
+    }
+
+    expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+});

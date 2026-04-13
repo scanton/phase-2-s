@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { slugify, startSandbox } from "../../src/cli/sandbox.js";
+import { slugify, startSandbox, listSandboxes } from "../../src/cli/sandbox.js";
 import { execSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -127,7 +127,7 @@ describe("startSandbox() — state detection", () => {
     // Worktree IS in git list AND dir exists
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
-      if (cmd.includes("worktree list")) return `worktree /fake/project\nworktree ${worktreePath}\nHEAD abc\n`;
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\nbranch refs/heads/main\n\nworktree ${worktreePath}\nHEAD abc\nbranch refs/heads/sandbox/mytest\n\n`;
       return "";
     });
     mockExistsSync.mockReturnValue(true);
@@ -147,7 +147,7 @@ describe("startSandbox() — state detection", () => {
     // Worktree IS in git list but dir does NOT exist
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
-      if (cmd.includes("worktree list")) return `worktree /fake/project\nworktree ${worktreePath}\nHEAD abc\n`;
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\nbranch refs/heads/main\n\nworktree ${worktreePath}\nHEAD abc\nbranch refs/heads/sandbox/mytest\n\n`;
       if (cmd.includes("worktree prune")) return "";
       if (cmd.includes("worktree add")) return "";
       return "";
@@ -540,7 +540,7 @@ describe("startSandbox() — additional correctness checks", () => {
     // State (b): in git, dir missing
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
-      if (cmd.includes("worktree list")) return `worktree /fake/project\nworktree /fake/project/.worktrees/sandbox-mytest\nHEAD abc\n`;
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\nbranch refs/heads/main\n\nworktree /fake/project/.worktrees/sandbox-mytest\nHEAD abc\nbranch refs/heads/sandbox/mytest\n\n`;
       if (cmd.includes("worktree prune")) return "";
       if (cmd.includes("worktree add")) return "";
       return "";
@@ -580,7 +580,7 @@ describe("startSandbox() — worktree add failure paths", () => {
     // In git but dir missing (state b), then add fails
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
-      if (cmd.includes("worktree list")) return `worktree /fake/project\nworktree /fake/project/.worktrees/sandbox-mytest\nHEAD abc\n`;
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\nbranch refs/heads/main\n\nworktree /fake/project/.worktrees/sandbox-mytest\nHEAD abc\nbranch refs/heads/sandbox/mytest\n\n`;
       if (cmd.includes("worktree prune")) return "";
       if (cmd.includes("worktree add")) throw new Error("branch already exists");
       return "";
@@ -818,5 +818,118 @@ describe("startSandbox() — review-pass: resume forwarding + checkout split", (
     expect(mergeCalls).toHaveLength(0);
 
     consoleSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listSandboxes() — porcelain parsing and sandbox filtering
+// ---------------------------------------------------------------------------
+
+describe("listSandboxes()", () => {
+  const projectCwd = "/fake/project";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const PORCELAIN_WITH_SANDBOXES = [
+    "worktree /fake/project",
+    "HEAD abc1234def5678",
+    "branch refs/heads/main",
+    "",
+    "worktree /fake/project/.worktrees/sandbox-spike-foo",
+    "HEAD aabbccdd11223344",
+    "branch refs/heads/sandbox/spike-foo",
+    "",
+    "worktree /fake/project/.worktrees/sandbox-rate-limiter",
+    "HEAD 99887766554433aa",
+    "branch refs/heads/sandbox/rate-limiter",
+    "",
+  ].join("\n");
+
+  it("returns only sandbox worktrees (filters refs/heads/sandbox/ prefix)", () => {
+    mockExecSync.mockReturnValue(PORCELAIN_WITH_SANDBOXES);
+
+    const sandboxes = listSandboxes(projectCwd);
+
+    expect(sandboxes).toHaveLength(2);
+    expect(sandboxes[0].name).toBe("spike-foo");
+    expect(sandboxes[1].name).toBe("rate-limiter");
+  });
+
+  it("extracts path and short commit hash for each sandbox", () => {
+    mockExecSync.mockReturnValue(PORCELAIN_WITH_SANDBOXES);
+
+    const sandboxes = listSandboxes(projectCwd);
+
+    expect(sandboxes[0].path).toBe("/fake/project/.worktrees/sandbox-spike-foo");
+    expect(sandboxes[0].commit).toBe("aabbccd"); // 7-char slice
+    expect(sandboxes[1].path).toBe("/fake/project/.worktrees/sandbox-rate-limiter");
+    expect(sandboxes[1].commit).toBe("9988776"); // 7-char slice
+  });
+
+  it("returns empty array when no sandbox worktrees exist", () => {
+    mockExecSync.mockReturnValue(
+      "worktree /fake/project\nHEAD abc1234\nbranch refs/heads/main\n\n",
+    );
+
+    const sandboxes = listSandboxes(projectCwd);
+
+    expect(sandboxes).toHaveLength(0);
+  });
+
+  it("returns empty array when output is empty (no worktrees)", () => {
+    mockExecSync.mockReturnValue("");
+
+    const sandboxes = listSandboxes(projectCwd);
+
+    expect(sandboxes).toHaveLength(0);
+  });
+
+  it("throws when git command fails (not a git repo)", () => {
+    mockExecSync.mockImplementation(() => {
+      throw new Error("fatal: not a git repository");
+    });
+
+    expect(() => listSandboxes(projectCwd)).toThrow("fatal: not a git repository");
+  });
+
+  it("does not include the main worktree (HEAD branch not sandbox/)", () => {
+    mockExecSync.mockReturnValue(PORCELAIN_WITH_SANDBOXES);
+
+    const sandboxes = listSandboxes(projectCwd);
+
+    // Main worktree is refs/heads/main — must not appear
+    expect(sandboxes.every((s) => s.name !== "main")).toBe(true);
+    expect(sandboxes.every((s) => s.path !== "/fake/project")).toBe(true);
+  });
+
+  it("excludes detached-HEAD worktrees (no branch line → branch is empty string)", () => {
+    // A worktree checked out in detached HEAD state has no 'branch' line in porcelain
+    // output. parseWorktreePorcelain sets branch to "" in that case. listSandboxes
+    // filters on startsWith("refs/heads/sandbox/") so detached worktrees are silently
+    // excluded — this test documents that behavior as intentional.
+    const porcelainWithDetached = [
+      "worktree /fake/project",
+      "HEAD abc1234def5678",
+      "branch refs/heads/main",
+      "",
+      "worktree /fake/project/.worktrees/detached-wt",
+      "HEAD deadbeef12345678",
+      // No 'branch' line — detached HEAD
+      "",
+      "worktree /fake/project/.worktrees/sandbox-active",
+      "HEAD aabbccdd11223344",
+      "branch refs/heads/sandbox/active",
+      "",
+    ].join("\n");
+    mockExecSync.mockReturnValue(porcelainWithDetached);
+
+    const sandboxes = listSandboxes(projectCwd);
+
+    // Only the sandbox/ worktree is returned; detached worktree is excluded
+    expect(sandboxes).toHaveLength(1);
+    expect(sandboxes[0].name).toBe("active");
+    expect(sandboxes[0].path).toBe("/fake/project/.worktrees/sandbox-active");
   });
 });

@@ -1085,3 +1085,70 @@ describe("Agent.switchAgentDef()", () => {
     expect(String(systemMessages[0].content)).toContain("Athena");
   });
 });
+
+// ---------------------------------------------------------------------------
+// AbortSignal cooperative cancellation
+// ---------------------------------------------------------------------------
+
+describe("Agent — AbortSignal cancellation", () => {
+  it("passes signal through to chatStream via AgentRunOptions", async () => {
+    // Build a provider stub that captures the options passed to chatStream.
+    let capturedOptions: import("../../src/providers/types.js").ChatStreamOptions | undefined;
+    const controller = new AbortController();
+
+    const stubProvider = {
+      name: "stub",
+      async *chatStream(
+        _messages: unknown,
+        _tools: unknown,
+        options?: import("../../src/providers/types.js").ChatStreamOptions,
+      ) {
+        capturedOptions = options;
+        yield { type: "text" as const, content: "hello" };
+        yield { type: "done" as const, stopReason: "stop" };
+      },
+    };
+
+    const agent = new Agent({
+      config: minimalConfig,
+      provider: stubProvider as unknown as import("../../src/providers/types.js").Provider,
+    });
+
+    await agent.run("say hi", { signal: controller.signal });
+
+    expect(capturedOptions?.signal).toBe(controller.signal);
+  });
+
+  it("stops satori retry loop when signal is aborted after first attempt", async () => {
+    const controller = new AbortController();
+    let callCount = 0;
+
+    const stubProvider = {
+      name: "stub",
+      async *chatStream() {
+        callCount++;
+        yield { type: "text" as const, content: `attempt ${callCount}` };
+        yield { type: "done" as const, stopReason: "stop" };
+      },
+    };
+
+    const agent = new Agent({
+      config: minimalConfig,
+      provider: stubProvider as unknown as import("../../src/providers/types.js").Provider,
+    });
+
+    await agent.run("do work", {
+      maxRetries: 3,
+      signal: controller.signal,
+      // verifyFn always fails (so satori would retry), but postRun aborts after attempt 1
+      verifyFn: async () => ({ exitCode: 1, output: "tests failed" }),
+      postRun: async () => {
+        // Abort after the first attempt completes — the loop checks signal before attempt 2
+        controller.abort();
+      },
+    });
+
+    // postRun aborts after attempt 1 — the pre-retry check should prevent attempt 2
+    expect(callCount).toBe(1);
+  });
+});

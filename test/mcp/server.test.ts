@@ -791,3 +791,116 @@ describe("MCP server crash guard — handleRequest throws on state_write filesys
     vi.restoreAllMocks();
   });
 });
+
+// ---------------------------------------------------------------------------
+// _skillName: toolNameToSkillName correctness (underscore bug fix)
+// ---------------------------------------------------------------------------
+
+describe("skillToTool() — _skillName property", () => {
+  it("stores the original skill name in _skillName", () => {
+    const skill: Skill = {
+      name: "my_skill",
+      description: "A skill with an underscore",
+      triggerPhrases: [],
+      promptTemplate: "do the thing",
+    };
+    const tool = skillToTool(skill);
+    expect(tool._skillName).toBe("my_skill");
+  });
+
+  it("MCP tool name uses underscores, but _skillName preserves original", () => {
+    const skill: Skill = {
+      name: "my_skill",
+      description: "A skill with an underscore",
+      triggerPhrases: [],
+      promptTemplate: "do the thing",
+    };
+    const tool = skillToTool(skill);
+    expect(tool.name).toBe("phase2s__my_skill");
+    expect(tool._skillName).toBe("my_skill"); // NOT "my-skill"
+  });
+
+  it("hyphen-named skills also get _skillName set correctly", () => {
+    const skill: Skill = {
+      name: "consensus-plan",
+      description: "Consensus planning",
+      triggerPhrases: [],
+      promptTemplate: "run three passes",
+    };
+    const tool = skillToTool(skill);
+    expect(tool.name).toBe("phase2s__consensus_plan");
+    expect(tool._skillName).toBe("consensus-plan");
+  });
+});
+
+describe("toolNameToSkillName() — regression: hyphens still round-trip", () => {
+  it("converts underscores to hyphens for hyphen-named skills", () => {
+    expect(toolNameToSkillName("phase2s__consensus_plan")).toBe("consensus-plan");
+  });
+
+  it("strips the phase2s__ prefix", () => {
+    expect(toolNameToSkillName("phase2s__health")).toBe("health");
+  });
+});
+
+describe("handleRequest tools/call — underscore skill lookup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("resolves an underscore-named skill via _skillName without -32601", async () => {
+    const underscoreSkill: Skill = {
+      name: "my_skill",
+      description: "A skill with underscore in name",
+      triggerPhrases: [],
+      promptTemplate: "do the underscore thing",
+    };
+
+    const response = await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 10,
+        method: "tools/call",
+        params: { name: "phase2s__my_skill", arguments: { prompt: "test" } },
+      },
+      [underscoreSkill],
+      process.cwd(),
+    );
+
+    // Should NOT return -32601 Tool not found
+    expect(response.error).toBeUndefined();
+    expect(response.result).toBeDefined();
+  });
+
+  it("returns -32601 for a truly unknown tool name", async () => {
+    const response = await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 11,
+        method: "tools/call",
+        params: { name: "phase2s__nonexistent_tool", arguments: { prompt: "test" } },
+      },
+      FIXTURE_SKILLS,
+      process.cwd(),
+    );
+
+    expect(response.error?.code).toBe(-32601);
+  });
+
+  it("hyphen-named skills still resolve correctly via fallback", async () => {
+    const response = await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 12,
+        method: "tools/call",
+        params: { name: "phase2s__consensus_plan", arguments: { prompt: "test" } },
+      },
+      FIXTURE_SKILLS,
+      process.cwd(),
+    );
+
+    // consensus-plan is in FIXTURE_SKILLS — should resolve without error
+    expect(response.error).toBeUndefined();
+    expect(response.result).toBeDefined();
+  });
+});
