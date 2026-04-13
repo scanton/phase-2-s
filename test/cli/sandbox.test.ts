@@ -521,3 +521,71 @@ describe("startSandbox() — additional correctness checks", () => {
     expect(addCalls[0][0]).toContain("sandbox/mytest");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Error-exit coverage (assertions 21–23)
+// ---------------------------------------------------------------------------
+
+describe("startSandbox() — worktree add failure paths", () => {
+  const projectCwd = "/fake/project";
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await resetInteractiveModeMock();
+    vi.spyOn(process, "chdir").mockImplementation(() => {});
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("state (b): worktree add throws → exits 1 with error message", async () => {
+    // In git but dir missing (state b), then add fails
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nworktree /fake/project/.worktrees/sandbox-mytest\nHEAD abc\n`;
+      if (cmd.includes("worktree prune")) return "";
+      if (cmd.includes("worktree add")) throw new Error("branch already exists");
+      return "";
+    });
+    mockExistsSync.mockReturnValue(false);
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await startSandbox("mytest", projectCwd, {});
+    expect(process.exit).toHaveBeenCalledWith(1);
+    consoleSpy.mockRestore();
+  });
+
+  it("state (c): worktree add throws after rmSync → exits 1 with error message", async () => {
+    // Dir exists but not in git (state c), then add fails
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      if (cmd.includes("worktree add")) throw new Error("Permission denied");
+      return "";
+    });
+    mockExistsSync.mockReturnValue(true);
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await startSandbox("mytest", projectCwd, {});
+    expect(process.exit).toHaveBeenCalledWith(1);
+    consoleSpy.mockRestore();
+  });
+
+  it("state (d): worktree add throws on fresh create → exits 1 with error message", async () => {
+    // Nothing exists (state d), fresh add fails
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      if (cmd.includes("worktree add")) throw new Error("disk full");
+      return "";
+    });
+    mockExistsSync.mockReturnValue(false);
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await startSandbox("mytest", projectCwd, {});
+    expect(process.exit).toHaveBeenCalledWith(1);
+    consoleSpy.mockRestore();
+  });
+});
