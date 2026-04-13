@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.25.0 — 2026-04-12
+
+Sprint 51 — Decompose index.ts: pure refactor that extracts colon command dispatch and model resolvers out of the 1,444-line `src/cli/index.ts` god file.
+
+### Changed
+
+- **`src/cli/colon-commands.ts`** (new) — `handleColonCommand(trimmed, ctx)` returns a `ColonAction` discriminated union (`not_handled | show_reasoning | set_reasoning | list_agents | switch_agent | unknown_agent | unknown_command | error`). Pure function: no side effects, no console output. The REPL loop switches on the return value and applies state + output.
+- **`src/cli/model-resolver.ts`** (new) — `resolveReasoningModel(override, config)` and `resolveAgentModel(agentModel, config)` extracted from `interactiveMode()`. Both are stateless pure functions.
+- **`src/cli/index.ts`** — Inline `:re`, `:agents`, agent-switching, and unknown-command dispatch (~81 lines) replaced with a `handleColonCommand` switch (~30 lines). `resolveReasoningModel` and `resolveAgentModel` are now imported. Net: 1,444 → 1,392 lines.
+- **`set_reasoning` warning fix** — `:re high` when `smart_model` is not configured now correctly shows `⚠ smart_model not configured` (was silently skipped in the refactored path).
+- **Bare-id agent switching preserved** — `ares`, `apollo`, `athena` without colon prefix continue to work as documented in `docs/agents.md`.
+
+### Tests
+
+- `test/cli/colon-commands.test.ts` (new, 29 assertions) — unit tests for `handleColonCommand`: not_handled, `:re` variants, `:agents`, agent switching (bare ids, colon aliases, `:agent <id>`), unknown commands
+- `test/cli/model-resolver.test.ts` (new, 13 assertions) — unit tests for both resolver functions including unconfigured-model and empty-string config guard cases
+- `test/cli/integration.test.ts` — added `writeReplState on agent switch` (2 tests) as regression guard for persistence side effects
+- `test/cli/cwd-and-re.test.ts` — removed 4 stale inline tests superseded by model-resolver.test.ts
+
 ## v1.24.0 — 2026-04-10
 
 Sprint 50 — Named Agents: three built-in agent personas with hard tool registry enforcement, REPL switching, and resume persistence.

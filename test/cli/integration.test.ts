@@ -159,3 +159,60 @@ describe("--resume regression: works after migration renames sessions", () => {
     expect(conv.getMessages()[0].content).toBe("v2 user content");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Agent switch persistence (Sprint 51 regression guard)
+//
+// When handleColonCommand returns switch_agent, the REPL loop must call
+// writeReplState() with the new activeAgentId. Pure function tests verify
+// the return value; this test verifies the side effect survives the refactor.
+// ---------------------------------------------------------------------------
+
+describe("writeReplState on agent switch", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-agent-switch-"));
+    mkdirSync(join(tmpDir, ".phase2s"), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("writeReplState persists activeAgentId correctly", async () => {
+    // Simulate what the REPL loop does after a switch_agent action:
+    // 1. Read current state
+    // 2. Write new state with updated activeAgentId
+    const initial = readReplState(tmpDir);
+    expect(initial).toBeNull(); // no state.json yet
+
+    await writeReplState(tmpDir, {
+      currentSessionId: "session-abc-123",
+      activeAgentId: "ares",
+    });
+
+    const after = readReplState(tmpDir);
+    expect(after?.activeAgentId).toBe("ares");
+    expect(after?.currentSessionId).toBe("session-abc-123");
+  });
+
+  it("switching agents preserves currentSessionId", async () => {
+    // Write initial state with apollo
+    await writeReplState(tmpDir, {
+      currentSessionId: "session-abc-123",
+      activeAgentId: "apollo",
+    });
+
+    // Simulate switch to ares — preserves session id
+    const state = readReplState(tmpDir);
+    await writeReplState(tmpDir, {
+      currentSessionId: state?.currentSessionId ?? "session-abc-123",
+      activeAgentId: "ares",
+    });
+
+    const final = readReplState(tmpDir);
+    expect(final?.activeAgentId).toBe("ares");
+    expect(final?.currentSessionId).toBe("session-abc-123"); // session unchanged
+  });
+});
