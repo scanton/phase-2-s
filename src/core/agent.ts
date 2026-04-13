@@ -20,6 +20,10 @@ export interface SatoriResult {
 export interface AgentRunOptions {
   onDelta?: (text: string) => void;
   modelOverride?: string;
+  /** AbortSignal for cooperative cancellation (e.g. from SIGINT handler).
+   * When aborted, the current chatStream call is cancelled and run() returns
+   * without completing the full conversation. */
+  signal?: AbortSignal;
   // Satori options:
   maxRetries?: number;
   verifyCommand?: string;
@@ -189,11 +193,12 @@ export class Agent {
   private async runOnce(opts: {
     onDelta?: (text: string) => void;
     modelOverride?: string;
+    signal?: AbortSignal;
     /** When true, injects a reflection fragment after a tool failure before the next LLM turn.
      *  Set to false for satori attempts 2+ (doom-loop context already provides the directive). */
     toolReflectionEnabled?: boolean;
   } = {}): Promise<string> {
-    const { onDelta, modelOverride, toolReflectionEnabled = true } = opts;
+    const { onDelta, modelOverride, signal, toolReflectionEnabled = true } = opts;
     const reflectionEnabled =
       toolReflectionEnabled &&
       process.env.PHASE2S_TOOL_ERROR_REFLECTION !== "off";
@@ -213,7 +218,7 @@ export class Agent {
       for await (const event of this.provider.chatStream(
         this.conversation.getMessages(),
         this.tools.toOpenAI(),
-        resolvedModel ? { model: resolvedModel } : undefined,
+        (resolvedModel || signal) ? { model: resolvedModel, signal } : undefined,
       )) {
         if (event.type === "text") {
           text += event.content;
@@ -299,12 +304,19 @@ export class Agent {
 
       let lastText = "";
       for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
+        // Cooperative cancellation: check before each retry attempt.
+        if (opts.signal?.aborted) break;
+
         // Tool reflection only on attempt 1 — attempts 2+ already have doom-loop context.
         lastText = await this.runOnce({
           onDelta: opts.onDelta,
           modelOverride: opts.modelOverride,
+          signal: opts.signal,
           toolReflectionEnabled: attempt === 1,
         });
+
+        // Check again after the (potentially long) runOnce completes.
+        if (opts.signal?.aborted) break;
 
         const { exitCode, output } = await this.runVerify(verifyCommand, opts.verifyFn);
         const passed = exitCode === 0;
@@ -334,7 +346,7 @@ export class Agent {
     }
 
     // Normal single-pass mode
-    return this.runOnce({ onDelta: opts.onDelta, modelOverride: opts.modelOverride });
+    return this.runOnce({ onDelta: opts.onDelta, modelOverride: opts.modelOverride, signal: opts.signal });
   }
 }
 

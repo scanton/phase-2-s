@@ -18,6 +18,7 @@ export interface OpenAIClientLike {
         messages: unknown[];
         tools?: unknown[];
         stream: true;
+        signal?: AbortSignal;
       }): Promise<AsyncIterable<ChatCompletionChunk>>;
     };
   };
@@ -85,6 +86,7 @@ export class OpenAIProvider implements Provider {
       messages: openaiMessages,
       tools: tools.length > 0 ? tools : undefined,
       stream: true,
+      signal: options?.signal,
     });
 
     let lastFinishReason: string | null = null;
@@ -92,46 +94,56 @@ export class OpenAIProvider implements Provider {
     // OpenAI sends tool call data split across multiple chunks, indexed by position.
     const toolCallAccum: Array<{ id: string; name: string; arguments: string }> = [];
 
-    for await (const chunk of stream) {
-      const choice = chunk.choices[0];
-      if (!choice) continue;
+    try {
+      for await (const chunk of stream) {
+        const choice = chunk.choices[0];
+        if (!choice) continue;
 
-      const delta = choice.delta;
-      const finishReason = choice.finish_reason ?? null;
-      if (finishReason) lastFinishReason = finishReason;
+        const delta = choice.delta;
+        const finishReason = choice.finish_reason ?? null;
+        if (finishReason) lastFinishReason = finishReason;
 
-      // Early-exit for terminal finish reasons that block normal output.
-      // These come on the final chunk which has no content delta.
-      if (finishReason === "length") {
-        log.warn("Response truncated (finish_reason: length). Consider a shorter prompt.");
-        yield { type: "text", content: "\n\n[Note: response was truncated]" };
-        yield { type: "done", stopReason: "length" };
-        return;
-      }
-      if (finishReason === "content_filter") {
-        log.warn("Response blocked by OpenAI content filter (finish_reason: content_filter).");
-        yield { type: "text", content: "[Response blocked by content filter]" };
-        yield { type: "done", stopReason: "content_filter" };
-        return;
-      }
-
-      // Yield text delta if present
-      if (delta?.content) {
-        yield { type: "text", content: delta.content };
-      }
-
-      // Accumulate tool call fragments by chunk index.
-      // - The 'id' and 'function.name' arrive only in the first chunk for each index.
-      // - 'function.arguments' is split across multiple chunks and must be concatenated.
-      for (const tcDelta of delta?.tool_calls ?? []) {
-        const i = tcDelta.index;
-        if (!toolCallAccum[i]) {
-          toolCallAccum[i] = { id: "", name: "", arguments: "" };
+        // Early-exit for terminal finish reasons that block normal output.
+        // These come on the final chunk which has no content delta.
+        if (finishReason === "length") {
+          log.warn("Response truncated (finish_reason: length). Consider a shorter prompt.");
+          yield { type: "text", content: "\n\n[Note: response was truncated]" };
+          yield { type: "done", stopReason: "length" };
+          return;
         }
-        if (tcDelta.id) toolCallAccum[i].id = tcDelta.id;
-        if (tcDelta.function?.name) toolCallAccum[i].name = tcDelta.function.name;
-        if (tcDelta.function?.arguments) toolCallAccum[i].arguments += tcDelta.function.arguments;
+        if (finishReason === "content_filter") {
+          log.warn("Response blocked by OpenAI content filter (finish_reason: content_filter).");
+          yield { type: "text", content: "[Response blocked by content filter]" };
+          yield { type: "done", stopReason: "content_filter" };
+          return;
+        }
+
+        // Yield text delta if present
+        if (delta?.content) {
+          yield { type: "text", content: delta.content };
+        }
+
+        // Accumulate tool call fragments by chunk index.
+        // - The 'id' and 'function.name' arrive only in the first chunk for each index.
+        // - 'function.arguments' is split across multiple chunks and must be concatenated.
+        for (const tcDelta of delta?.tool_calls ?? []) {
+          const i = tcDelta.index;
+          if (!toolCallAccum[i]) {
+            toolCallAccum[i] = { id: "", name: "", arguments: "" };
+          }
+          if (tcDelta.id) toolCallAccum[i].id = tcDelta.id;
+          if (tcDelta.function?.name) toolCallAccum[i].name = tcDelta.function.name;
+          if (tcDelta.function?.arguments) toolCallAccum[i].arguments += tcDelta.function.arguments;
+        }
       }
+    } catch (err) {
+      // If the stream was aborted by the caller (SIGINT), suppress the SDK error — it
+      // is not a failure. The OpenAI SDK throws APIUserAbortError when the signal fires.
+      if (options?.signal?.aborted) {
+        yield { type: "done", stopReason: "stop" };
+        return;
+      }
+      throw err;
     }
 
     // Filter out any sparse-array holes (undefined slots from non-contiguous indices).

@@ -21,6 +21,9 @@ export type ProviderEvent =
 
 export interface ChatStreamOptions {
   model?: string;
+  /** AbortSignal for cooperative cancellation. When aborted, chatStream() cancels the
+   * in-flight HTTP request or spawned process and stops yielding events. */
+  signal?: AbortSignal;
 }
 
 export interface Provider {

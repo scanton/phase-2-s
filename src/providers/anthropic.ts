@@ -174,13 +174,16 @@ export class AnthropicProvider implements Provider {
 
     const model = options?.model ?? this.model;
 
-    const stream = this.client.messages.stream({
-      model,
-      max_tokens: this.maxTokens,
-      ...(systemMsg ? { system: systemMsg.content } : {}),
-      messages: translateMessages(chatMessages),
-      ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
-    });
+    const stream = this.client.messages.stream(
+      {
+        model,
+        max_tokens: this.maxTokens,
+        ...(systemMsg ? { system: systemMsg.content } : {}),
+        messages: translateMessages(chatMessages),
+        ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
+      },
+      options?.signal ? { signal: options.signal } : undefined,
+    );
 
     // pendingTools accumulates tool call data by content block index.
     // Flushed at message_stop (not content_block_stop) to handle multi-tool turns correctly.
@@ -221,6 +224,13 @@ export class AnthropicProvider implements Provider {
         }
       }
     } catch (err) {
+      // If the stream was aborted by the caller (SIGINT), suppress the error — it is not
+      // a failure. The Anthropic SDK throws APIUserAbortError when the signal fires.
+      if (options?.signal?.aborted) {
+        yield { type: "done", stopReason: "stop" };
+        doneEmitted = true;
+        return;
+      }
       const errMsg = err instanceof Error ? err.message : String(err);
       log.error(`AnthropicProvider: stream error — ${errMsg}`);
       yield { type: "error", error: errMsg };

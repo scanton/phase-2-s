@@ -146,6 +146,26 @@ export class CodexProvider implements Provider {
       wakeUp = null;
     };
 
+    // Cooperative cancellation: if the caller aborts, kill the codex process.
+    // Call finish() BEFORE proc.kill() so that the synchronous "close" event
+    // emitted by the OS (or mock) after kill sees finished=true and skips the
+    // "exited with code null" error path.
+    // Defined after finish() so the handler can reference it safely.
+    // Also check signal.aborted immediately — addEventListener does not fire
+    // retroactively for signals that were already aborted before the listener was added.
+    const abortHandler = () => {
+      finish();
+      try {
+        proc.kill("SIGTERM");
+      } catch {
+        // ESRCH: process already exited between the abort and the kill — safe to ignore.
+      }
+    };
+    options?.signal?.addEventListener("abort", abortHandler, { once: true });
+    if (options?.signal?.aborted) {
+      abortHandler();
+    }
+
     // JSONL line parser — called for each complete line from stdout
     const processLine = (line: string): void => {
       if (!line) return;
