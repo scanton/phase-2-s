@@ -15,7 +15,7 @@ Sprint 51 — Decompose index.ts: pure refactor that extracts colon command disp
 ### Tests
 
 - `test/cli/colon-commands.test.ts` (new, 29 assertions) — unit tests for `handleColonCommand`: not_handled, `:re` variants, `:agents`, agent switching (bare ids, colon aliases, `:agent <id>`), unknown commands
-- `test/cli/model-resolver.test.ts` (new, 10 assertions) — unit tests for both resolver functions including unconfigured-model gap cases
+- `test/cli/model-resolver.test.ts` (new, 13 assertions) — unit tests for both resolver functions including unconfigured-model and empty-string config guard cases
 - `test/cli/integration.test.ts` — added `writeReplState on agent switch` (2 tests) as regression guard for persistence side effects
 - `test/cli/cwd-and-re.test.ts` — removed 4 stale inline tests superseded by model-resolver.test.ts
 
