@@ -84,6 +84,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("-m, --model <model>", "Model to use")
     .option("--system <prompt>", "Custom system prompt")
     .option("--resume", "Resume the most recent session")
+    .option("-s, --sandbox <name>", "Start session in an isolated git worktree named <name>")
     .option("-C, --cwd <path>", "Run as if started in <path> — useful for IDE integrations");
 
   // Apply -C before any subcommand runs.
@@ -117,12 +118,24 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .description("Start an interactive chat session")
     .action(async () => {
       const opts = program.opts();
-      const config = await loadConfig({
+      const configOverrides = {
         provider: opts.provider,
         model: opts.model,
         systemPrompt: opts.system,
-      });
+      };
+
+      if (opts.sandbox) {
+        const { startSandbox } = await import("./sandbox.js");
+        await startSandbox(opts.sandbox, process.cwd(), configOverrides);
+        process.exit(0);
+        return;
+      }
+
+      const config = await loadConfig(configOverrides);
       await interactiveMode(config, { resume: !!opts.resume });
+      // interactiveMode now returns instead of calling process.exit(0) directly,
+      // so we exit here to ensure codex subprocesses don't keep the process alive.
+      process.exit(0);
     });
 
   // One-shot mode
@@ -392,6 +405,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         await writeReplState(process.cwd(), { currentSessionId: selectedId });
         const config = await loadConfig({});
         await interactiveMode(config, { resume: true });
+        process.exit(0);
       }
     });
 
@@ -659,7 +673,7 @@ async function writeSatoriLog(
  * it terminates if the event loop drains while awaiting between turns —
  * which is exactly what happens while the LLM is streaming.
  */
-async function interactiveMode(config: Config, opts: { resume?: boolean } = {}): Promise<void> {
+export async function interactiveMode(config: Config, opts: { resume?: boolean } = {}): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
   if (!checkOpenAIKey(config)) process.exit(1);
   if (!checkAnthropicKey(config)) process.exit(1);
@@ -839,8 +853,8 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     }
     log.info("Goodbye!");
     rl.close();
-    // Best-effort browser cleanup before exit
-    disposeBrowser().catch(() => {}).finally(() => process.exit(0));
+    // Don't call process.exit(0) here — let interactiveMode return so callers
+    // (e.g. sandbox.ts try/finally) can run their cleanup before exit.
   });
 
   /** Wait for the next line of input. Returns null if stdin closes. */
@@ -876,7 +890,9 @@ async function interactiveMode(config: Config, opts: { resume?: boolean } = {}):
     if (trimmed === "/quit" || trimmed === "/exit") {
       log.info("Goodbye!");
       rl.close();
-      process.exit(0);
+      break;
+      // Don't call process.exit(0) here — let interactiveMode return so callers
+      // (e.g. sandbox.ts try/finally) can run their cleanup before exit.
     }
 
     if (trimmed === "/help") {

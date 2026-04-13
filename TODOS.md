@@ -6,6 +6,16 @@
 
 ---
 
+## Backlog — Post-Sprint 52 /plan-eng-review findings (2026-04-13)
+
+- [ ] **`--sandbox` non-git directory handling** — `phase2s --sandbox foo` in a non-git directory fails with raw git errors. `git branch --show-current` throws (not returns empty) when there's no git repo, so the detached-HEAD guard doesn't catch it. Fix: pre-flight check for git repo (`git rev-parse --is-inside-work-tree` or similar) with a clear error message: "phase2s --sandbox requires a git repository." Low risk, high discoverability value. **Post-Sprint 52.**
+
+- [ ] **`--sandbox` dirty working tree auto-stash** — If the parent repo has uncommitted staged changes when `phase2s --sandbox foo` runs, git may refuse to create the worktree. Currently unhandled — user gets raw git stderr. Fix: detect dirty state before worktree creation, offer to stash (`git stash`) and unstash after sandbox exit. Same pattern as parallel-executor. **Post-Sprint 52 (v1.27.0).**
+
+- [ ] **`phase2s --sandbox list` (or `phase2s sandboxes`)** — Show all active sandboxes (branches matching `sandbox/*` + their worktree paths + creation date). Currently users must run `git worktree list` manually. Low effort, high discoverability. Zero user-facing state needed — just `git worktree list --porcelain` filtered by branch prefix. **Post-Sprint 52 (v1.27.0+).**
+
+---
+
 ## Backlog — Post-Sprint 50 /review findings (2026-04-10)
 
 - [ ] **`plans/` symlink escape** — If `plans/` is itself a symlink pointing outside the project, `plans_write` will follow it. The `realpath()` call on the parent only runs on the parent directory, not on `plans/` itself in a pre-flight check. Fix: add a `realpath` check on `plansDir` at tool-creation time (not per-call) and refuse if it resolves outside `cwd`. Low risk in practice — someone would have to deliberately symlink their `plans/` dir.
