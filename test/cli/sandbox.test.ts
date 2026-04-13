@@ -624,3 +624,117 @@ describe("startSandbox() — worktree add failure paths", () => {
     consoleSpy.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Uncommitted work warning (Codex adversarial review, 2026-04-13)
+// ---------------------------------------------------------------------------
+
+describe("startSandbox() — uncommitted work warning on merge", () => {
+  const projectCwd = "/fake/project";
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await resetInteractiveModeMock();
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      if (cmd.includes("worktree add")) return "";
+      if (cmd.includes("status --porcelain")) return " M modified-file.ts\n"; // dirty worktree
+      return "";
+    });
+    mockExistsSync.mockReturnValue(false);
+    vi.spyOn(process, "chdir").mockImplementation(() => {});
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("dirty sandbox + merge Y + confirm Y → proceeds with merge despite uncommitted work", async () => {
+    const { createInterface } = await import("node:readline");
+    let callCount = 0;
+    // First question: "Merge?" → "y"; Second question: "Discard?" → "y"
+    vi.mocked(createInterface).mockReturnValue({
+      question: vi.fn((_p: string, cb: (a: string) => void) => {
+        callCount++;
+        cb(callCount === 1 ? "y" : "y");
+      }),
+      close: vi.fn(),
+    } as ReturnType<typeof createInterface>);
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await startSandbox("mytest", projectCwd, {});
+
+    // Warning was shown
+    const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(allOutput).toMatch(/uncommitted changes/i);
+
+    // Merge was still executed
+    const mergeCalls = mockExecSync.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("git merge"),
+    );
+    expect(mergeCalls).toHaveLength(1);
+
+    consoleSpy.mockRestore();
+  });
+
+  it("dirty sandbox + merge Y + confirm N → merge cancelled, no git merge called", async () => {
+    const { createInterface } = await import("node:readline");
+    let callCount = 0;
+    // First question: "Merge?" → "y"; Second question: "Discard?" → "n"
+    vi.mocked(createInterface).mockReturnValue({
+      question: vi.fn((_p: string, cb: (a: string) => void) => {
+        callCount++;
+        cb(callCount === 1 ? "y" : "n");
+      }),
+      close: vi.fn(),
+    } as ReturnType<typeof createInterface>);
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await startSandbox("mytest", projectCwd, {});
+
+    // Merge was NOT executed
+    const mergeCalls = mockExecSync.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("git merge"),
+    );
+    expect(mergeCalls).toHaveLength(0);
+
+    // Cancellation message shown
+    const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(allOutput).toMatch(/cancelled/i);
+
+    consoleSpy.mockRestore();
+  });
+
+  it("clean sandbox + merge Y → no uncommitted-work prompt shown", async () => {
+    // Override execSync to return empty status (clean worktree)
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      if (cmd.includes("worktree add")) return "";
+      if (cmd.includes("status --porcelain")) return ""; // clean
+      return "";
+    });
+
+    const { createInterface } = await import("node:readline");
+    const questionMock = vi.fn((_p: string, cb: (a: string) => void) => cb("y"));
+    vi.mocked(createInterface).mockReturnValue({
+      question: questionMock,
+      close: vi.fn(),
+    } as ReturnType<typeof createInterface>);
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await startSandbox("mytest", projectCwd, {});
+
+    // Only one readline question (the merge prompt) — no discard-confirm prompt
+    expect(questionMock).toHaveBeenCalledTimes(1);
+    const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(allOutput).not.toMatch(/uncommitted/i);
+
+    consoleSpy.mockRestore();
+  });
+});

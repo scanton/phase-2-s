@@ -16,7 +16,7 @@
 
 - [ ] **SIGINT-during-agent.run() UX regression** — After the SIGINT refactor (v1.26.0), Ctrl-C during an active Codex call kills the process immediately with no cleanup. Root cause: `agent.run()` is not AbortController-aware. Fix: thread an `AbortController` through `agent.run()`, signal it on SIGINT, and let the in-flight request resolve gracefully before calling `rl.close()`. Requires changes to `src/core/agent.ts` and the SIGINT handler in `src/cli/index.ts`. **v1.27.0.**
 
-- [ ] **`--sandbox` uncommitted work warning** — In state (c) (orphaned directory, not in git), `rmSync` deletes the directory before the new worktree is created. If the directory contains uncommitted work that the user manually added, it is silently lost. Fix: before `rmSync`, check for uncommitted changes (`git -C "${worktreePath}" status --porcelain` if it's a valid git worktree, or just a file count) and warn the user with an explicit prompt before deleting. **Post-Sprint 52.**
+- [x] **`--sandbox` uncommitted work warning** — Before merge cleanup, check `git status --porcelain` in the worktree. If dirty, warn and require explicit confirmation before `git worktree remove --force` discards uncommitted changes. **Completed: v1.26.0 (2026-04-13, Codex adversarial follow-up)**
 
 - [ ] **`--sandbox` name collision across slugs** — Two names that slugify to the same value (e.g. "my feature" and "my_feature") will silently share the same worktree. This is rarely a problem in practice but could surprise users. Fix: detect collision at startup and either warn or append a short random suffix (e.g. `-a3f`). **Post-Sprint 52.**
 

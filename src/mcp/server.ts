@@ -136,7 +136,19 @@ export async function runMCPServer(cwd: string): Promise<void> {
       continue;
     }
 
-    const response = await handleRequest(request, skills, cwd, sessionConversations);
+    let response;
+    try {
+      response = await handleRequest(request, skills, cwd, sessionConversations);
+    } catch (err) {
+      // Guard against uncaught throws from handleRequest (e.g. EACCES/ENOSPC on
+      // state_write). Return a JSON-RPC internal error rather than crashing the server.
+      respond({
+        jsonrpc: "2.0",
+        id: (request as { id?: unknown }).id ?? null,
+        error: { code: -32603, message: `Internal error: ${err instanceof Error ? err.message : String(err)}` },
+      });
+      continue;
+    }
     respond(response);
   }
 }

@@ -222,6 +222,23 @@ export async function startSandbox(
 // Merge-back prompt
 // ---------------------------------------------------------------------------
 
+/**
+ * Return true if the worktree has uncommitted changes (staged or unstaged).
+ * Returns false on any error (conservative: assume clean rather than blocking).
+ */
+function hasUncommittedChanges(worktreePath: string): boolean {
+  try {
+    const out = execSync("git status --porcelain", {
+      cwd: worktreePath,
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    return out.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function promptMergeBack(
   name: string,
   slugName: string,
@@ -234,6 +251,18 @@ async function promptMergeBack(
   const wantsYes = answer.trim().toLowerCase() === "y";
 
   if (wantsYes) {
+    // Warn before cleanup if the sandbox has uncommitted work that would be lost
+    // when we run `git worktree remove --force` after a successful merge.
+    if (hasUncommittedChanges(worktreePath)) {
+      console.log(`\nWarning: sandbox '${name}' has uncommitted changes.`);
+      console.log(`These will be permanently lost after merge cleanup.`);
+      const confirm = await askLine(`Proceed anyway and discard uncommitted work? [y/N] `);
+      if (confirm.trim().toLowerCase() !== "y") {
+        console.log(`Merge cancelled. Commit or stash your changes first, then re-run phase2s --sandbox ${name}.`);
+        return;
+      }
+    }
+
     try {
       // Explicitly checkout the original branch before merging — guards against the case
       // where the user checked out a different branch externally during the sandbox session.

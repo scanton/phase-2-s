@@ -761,3 +761,33 @@ describe("REPORT_TOOL descriptor", () => {
     expect(content[0].text).toContain("Goal complete");
   });
 });
+
+// ---------------------------------------------------------------------------
+// MCP server crash guard (Codex adversarial review, 2026-04-13)
+//
+// handleRequest() does not guard writeRawState() — a filesystem error
+// (EACCES, ENOSPC) propagates as a throw. The runMCPServer loop now wraps
+// handleRequest in try/catch and returns a -32603 JSON-RPC error instead of
+// crashing the process. This test verifies that handleRequest propagates the
+// throw (documents the contract so if handler.ts ever swallows it, we know).
+// ---------------------------------------------------------------------------
+
+describe("MCP server crash guard — handleRequest throws on state_write filesystem error", () => {
+  it("handleRequest propagates writeRawState EACCES as a thrown error", async () => {
+    const stateMod = await import("../../src/core/state.js");
+    vi.spyOn(stateMod, "writeRawState").mockImplementation(() => {
+      throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+    });
+
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 99,
+      method: "tools/call",
+      params: { name: "phase2s__state_write", arguments: { key: "somekey", value: "val" } },
+    };
+
+    await expect(handleRequest(request, [], process.cwd())).rejects.toThrow("EACCES");
+
+    vi.restoreAllMocks();
+  });
+});
