@@ -139,10 +139,10 @@ describe("setupSkillsWatcher (Sprint 12)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// FSWatcher handle return value (Sprint 54 — v1.28.0)
+// Watcher handle return value (Sprint 54 — v1.28.0)
 // ---------------------------------------------------------------------------
 
-describe("setupSkillsWatcher — FSWatcher handle (Sprint 54)", () => {
+describe("setupSkillsWatcher — watcher handle (Sprint 54)", () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
@@ -158,7 +158,7 @@ describe("setupSkillsWatcher — FSWatcher handle (Sprint 54)", () => {
     vi.useRealTimers();
   });
 
-  it("returns an FSWatcher when the directory is watchable", async () => {
+  it("returns a watcher handle when the directory is watchable", async () => {
     const watcher = setupSkillsWatcher("/project/.phase2s/skills", vi.fn(), vi.fn());
     expect(watcher).not.toBeNull();
     expect(typeof watcher?.close).toBe("function");
@@ -216,6 +216,34 @@ describe("setupSkillsWatcher — FSWatcher handle (Sprint 54)", () => {
     // Here we verify the close() was invoked — that's the contract.
     expect(mockClose).not.toHaveBeenCalled(); // close was called on the inner mock
     expect(onReload).not.toHaveBeenCalled();
+  });
+
+  it("close() cancels a pending debounce timer before stopping the watcher", async () => {
+    // Verify that calling close() mid-debounce clears the timer, so onReload
+    // is NOT called after the watcher is shut down.
+    const mockClose = vi.fn();
+    const { watch } = await import("node:fs");
+    vi.mocked(watch).mockImplementation((_path, _opts, cb) => {
+      // Immediately invoke the watch callback to start the debounce timer
+      setTimeout(() => (cb as () => void)(), 0);
+      return { close: mockClose } as unknown as ReturnType<typeof import("node:fs").watch>;
+    });
+
+    const { loadSkillsFromDir } = await import("../../src/skills/loader.js");
+    vi.mocked(loadSkillsFromDir).mockResolvedValue([]);
+    const onReload = vi.fn();
+
+    const watcher = setupSkillsWatcher("/project/.phase2s/skills", onReload, vi.fn());
+
+    // Advance time enough to trigger the watch callback but not past the debounce
+    await vi.advanceTimersByTimeAsync(10);
+    // Now close — should cancel the pending debounce
+    watcher?.close();
+    // Run all remaining timers — the debounce should NOT fire
+    await vi.runAllTimersAsync();
+
+    expect(onReload).not.toHaveBeenCalled();
+    expect(mockClose).toHaveBeenCalledTimes(1);
   });
 
   it("server teardown pattern: watcher?.close() is safe when watcher is null", () => {

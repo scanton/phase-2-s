@@ -26,7 +26,7 @@
 
 - [x] **`toolNameToSkillName` lossy for underscore skill names** — Fixed by storing `_skillName` on the MCPTool descriptor in `skillToTool()` and reading it directly in `handleRequest` instead of the lossy round-trip. **Completed: v1.27.0 (2026-04-13)**
 
-- [x] **`watcher.ts` fs.watch handle not stored — can't stop watchers** — `setupSkillsWatcher` now returns `FSWatcher | null`. `runMCPServer` stores the handle and calls `watcher?.close()` before `process.exit(0)` in the `rl.on("close")` handler. **Completed: v1.28.0 (2026-04-13)**
+- [x] **`watcher.ts` fs.watch handle not stored — can't stop watchers** — `setupSkillsWatcher` now returns `{ close(): void } | null`. The close method cancels any pending debounce timer before stopping the watcher, preventing a stale reload from firing on a closed stream. `runMCPServer` stores the handle and calls `watcher?.close()` in the `rl.on("close")` handler. **Completed: v1.28.0 (2026-04-13)**
 
 - [x] **`listWorktreePaths` swallows errors → could misclassify healthy worktrees** — Now distinguishes ENOENT (git binary not installed → return []) from all other errors (git available but failed → rethrow). Exported as `@internal` for testability. **Completed: v1.28.0 (2026-04-13)**
 
