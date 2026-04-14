@@ -6,7 +6,7 @@ Sprint 54 — Housekeeping: watcher teardown, sandbox guard, test coverage.
 
 ### Added
 
-- **`--sandbox` non-git guard** — Running `phase2s --sandbox` outside a git repository now exits immediately with a clear message ("Error: phase2s --sandbox requires a git repository") instead of producing a confusing "detached HEAD" error. Three lines of actionable guidance are printed before exit.
+- **`--sandbox` non-git guard** — Running `phase2s --sandbox` now exits immediately with a clear error message if the target directory doesn't exist or isn't a git repository, rather than producing a confusing "detached HEAD" error. Two cases distinguished: a missing directory says "does not exist"; an existing directory outside a repo says "not a git repository" and suggests `git init`.
 
 - **Watcher teardown handle** — `setupSkillsWatcher()` now returns a `{ close(): void }` handle. The MCP server stores it and calls `watcher?.close()` on shutdown, cleaning up the debounce timer and stopping the fs.watch listener. Prevents watcher pile-up on repeated server restarts.
 
@@ -19,7 +19,7 @@ Sprint 54 — Housekeeping: watcher teardown, sandbox guard, test coverage.
 
 ### Fixed
 
-- **`listWorktreePaths` now rethrows non-ENOENT errors** — Previously it swallowed all errors, which could silently misclassify a registered worktree as absent. Now only ENOENT (git binary not found) returns `[]`; any other error (git lock, permission denied, non-zero exit) is rethrown so callers fail loudly.
+- **`listWorktreePaths` now rethrows non-ENOENT errors** — Previously it swallowed all errors, which could silently misclassify a registered worktree as absent. Now only ENOENT (cwd does not exist) returns `[]`; any other error (git lock, permission denied, non-zero exit) is rethrown so callers fail loudly. Note: with string-form `execSync`, ENOENT signals a missing working directory, not an absent git binary (a missing git binary produces exit code 127 instead).
 
 - **Watcher debounce timer cleared on close** — Calling `close()` on the watcher handle now cancels any pending 80ms debounce before stopping the fs.Watcher. Previously a timer started just before shutdown could fire once more and attempt to write to a closed stream.
 
