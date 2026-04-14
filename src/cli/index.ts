@@ -488,10 +488,11 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       }
 
       // Table output: SANDBOX / PATH / COMMIT
-      // Column widths: max content width, minimum 16 / 40 / 8 chars respectively.
+      // Column widths: max content width, minimum 16 / 40 / 7 chars respectively.
+      // commitWidth = 7 matches the 7-char short hash produced by listSandboxes().
       const nameWidth = Math.max(16, ...sandboxes.map((s) => s.name.length));
       const pathWidth = Math.max(40, ...sandboxes.map((s) => s.path.length));
-      const commitWidth = 8;
+      const commitWidth = 7;
 
       const truncate = (s: string, w: number) =>
         s.length > w ? s.slice(0, w - 1) + "\u2026" : s;

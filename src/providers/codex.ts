@@ -218,20 +218,27 @@ export class CodexProvider implements Provider {
       finish(new Error(`Failed to spawn codex: ${err.message}`));
     });
 
-    // Generator loop: drain the queue, wait for more, repeat until done
-    while (true) {
-      while (pendingEvents.length > 0) {
-        yield pendingEvents.shift()!;
+    // Generator loop: drain the queue, wait for more, repeat until done.
+    // try/finally ensures the abort listener is removed when the generator exits
+    // (normal return, throw, or early .return() from consumer) so the shared
+    // sigintController.signal doesn't accumulate stale listeners across turns.
+    try {
+      while (true) {
+        while (pendingEvents.length > 0) {
+          yield pendingEvents.shift()!;
+        }
+        if (finished) {
+          if (finishError) throw finishError;
+          yield { type: "done", stopReason: "stop" };
+          return;
+        }
+        // Wait for the next push() or finish() call
+        await new Promise<void>((resolve) => {
+          wakeUp = resolve;
+        });
       }
-      if (finished) {
-        if (finishError) throw finishError;
-        yield { type: "done", stopReason: "stop" };
-        return;
-      }
-      // Wait for the next push() or finish() call
-      await new Promise<void>((resolve) => {
-        wakeUp = resolve;
-      });
+    } finally {
+      options?.signal?.removeEventListener("abort", abortHandler);
     }
   }
 }

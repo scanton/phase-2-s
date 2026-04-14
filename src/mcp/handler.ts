@@ -232,13 +232,14 @@ export async function handleRequest(
     // -----------------------------------------------------------------------
     // Skill tools — look up by name.
     // -----------------------------------------------------------------------
-    // Use _skillName from the tool descriptor to survive the hyphen→underscore
-    // round-trip for skills whose names contain underscores natively.
-    // (e.g. a skill named "my_skill" maps to tool "phase2s__my_skill" but
-    // toolNameToSkillName would reverse to "my-skill" — wrong.)
-    const toolObj = skills.map(skillToTool).find((t) => t.name === toolName);
-    const skillName = toolObj?._skillName ?? toolNameToSkillName(toolName);
-    const skill = skills.find((s) => s.name === skillName);
+    // Compare MCP tool names directly (avoids the lossy hyphen→underscore→hyphen
+    // round-trip that toolNameToSkillName() can't always reverse — e.g. a skill
+    // named "my_skill" would incorrectly map back to "my-skill").
+    // Fall back to the old derivation for any edge case not covered by skillToTool.
+    const skill =
+      skills.find((s) => skillToTool(s).name === toolName) ??
+      skills.find((s) => s.name === toolNameToSkillName(toolName));
+    const skillName = skill?.name ?? toolNameToSkillName(toolName);
 
     if (!skill) {
       return {
