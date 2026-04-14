@@ -49,6 +49,13 @@ export interface AgentOptions {
   config: Config;
   tools?: ToolRegistry;
   systemPrompt?: string;
+  /**
+   * Pre-formatted AGENTS.md block (from formatAgentsMdBlock()).
+   * Injected into the system prompt at construction and preserved across
+   * switchAgentDef() calls so project/user-global conventions survive
+   * persona switches.
+   */
+  agentsMdBlock?: string;
   provider?: Provider;
   conversation?: Conversation;
   /** Pre-formatted learnings string from formatLearningsForPrompt(). Injected into the system prompt. */
@@ -65,11 +72,18 @@ export class Agent {
   private maxTurns: number;
   private cwd: string;
   private learnings: string | undefined;
+  /**
+   * Pre-formatted AGENTS.md block (from formatAgentsMdBlock()).
+   * Tracked separately from config.systemPrompt so it can be re-injected on
+   * switchAgentDef() without carrying over the previous persona's instructions.
+   */
+  private agentsMdBlock: string | undefined;
 
   constructor(opts: AgentOptions) {
     this.config = opts.config;
     this.cwd = opts.cwd ?? process.cwd();
     this.learnings = opts.learnings;
+    this.agentsMdBlock = opts.agentsMdBlock;
     const baseRegistry = opts.tools ?? createDefaultRegistry({
       allowDestructive: opts.config.allowDestructive,
       cwd: this.cwd,
@@ -80,15 +94,19 @@ export class Agent {
     this._provider = opts.provider ?? createProvider(opts.config);
     this.maxTurns = opts.config.maxTurns;
 
+    // Combine config-level systemPrompt with AGENTS.md block so both are injected.
+    const baseCustomPrompt = opts.systemPrompt ?? opts.config.systemPrompt;
+    const customPrompt =
+      [baseCustomPrompt, this.agentsMdBlock].filter(Boolean).join("\n\n") || undefined;
+
+    // Always build the system prompt so it reflects the current tool list and config.
+    // When resuming (opts.conversation provided), merge via setConversation() which
+    // strips the stale system message from the loaded session and prepends this
+    // agent's fresh one — so AGENTS.md and current tools are always live.
+    const systemPrompt = buildSystemPrompt(this.tools.list(), customPrompt, opts.learnings);
+    this.conversation = new Conversation(systemPrompt);
     if (opts.conversation) {
-      this.conversation = opts.conversation;
-    } else {
-      const systemPrompt = buildSystemPrompt(
-        this.tools.list(),
-        opts.systemPrompt ?? opts.config.systemPrompt,
-        opts.learnings,
-      );
-      this.conversation = new Conversation(systemPrompt);
+      this.setConversation(opts.conversation);
     }
 
     log.dim(`Provider: ${this._provider.name} | Model: ${this.config.model}`);
@@ -147,7 +165,12 @@ export class Agent {
     // restrictions that were applied in the constructor.
     this.tools = builtRegistry.allowed(this.config.tools, this.config.deny);
 
-    const newSystemPrompt = buildSystemPrompt(this.tools.list(), def.systemPrompt, this.learnings);
+    // Combine the agent def's own persona prompt with the AGENTS.md block so
+    // project/user-global conventions survive persona switches.
+    // config.systemPrompt is intentionally NOT carried over — the new persona replaces it.
+    const combinedCustomPrompt =
+      [def.systemPrompt, this.agentsMdBlock].filter(Boolean).join("\n\n") || undefined;
+    const newSystemPrompt = buildSystemPrompt(this.tools.list(), combinedCustomPrompt, this.learnings);
     const msgs = this.conversation.getMessages();
     const nonSystemMessages = msgs.filter((m) => m.role !== "system");
     this.conversation = Conversation.fromMessages([

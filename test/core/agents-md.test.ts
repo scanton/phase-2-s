@@ -145,6 +145,28 @@ describe("loadAgentsMd", () => {
     warnSpy.mockRestore();
   });
 
+  it("8k char cap: truncates at last newline boundary when content has newlines", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const readFile = await getReadFileMock();
+    // Put a newline at position 8000, then more content up to 9000 chars.
+    // Truncation should land at position 8000, not 8192.
+    const beforeNewline = "C".repeat(8000);
+    const afterNewline = "D".repeat(999);
+    const bigContent = beforeNewline + "\n" + afterNewline;
+    readFile.mockImplementation((path) => {
+      if (String(path).includes("testuser")) return Promise.reject(makeEnoent());
+      return Promise.resolve(bigContent);
+    });
+
+    const result = await loadAgentsMd("/my/project");
+    expect(result).not.toBeNull();
+    // Should truncate at the newline at position 8000, not at 8192
+    expect(result!.length).toBe(8000);
+    expect(result!.endsWith("C")).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("truncated"));
+    warnSpy.mockRestore();
+  });
+
   it("content exactly at 8k chars: not truncated, no warning", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const readFile = await getReadFileMock();

@@ -241,9 +241,8 @@ describe("loadConfig — tools and deny (Sprint 13)", () => {
     expect(config.auto_compact_tokens).toBe(80_000);
   });
 
-  it("auto_compact_tokens: 0 is accepted (means disabled)", async () => {
-    const config = await loadConfig({ auto_compact_tokens: 0 });
-    expect(config.auto_compact_tokens).toBe(0);
+  it("auto_compact_tokens: 0 is rejected (must be >= 1 or unset to disable)", async () => {
+    await expect(loadConfig({ auto_compact_tokens: 0 } as never)).rejects.toThrow();
   });
 
   it("auto_compact_tokens: unset means undefined (disabled)", async () => {

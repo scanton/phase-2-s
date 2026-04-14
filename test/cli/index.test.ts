@@ -62,7 +62,7 @@ describe("shouldCompact", () => {
 // ---------------------------------------------------------------------------
 
 describe("getCompactBackupPath", () => {
-  it("replaces .json extension with .compact-backup.json", () => {
+  it("replaces .json extension with .compact-backup.json (no count)", () => {
     const sessionPath = "/some/dir/.phase2s/sessions/uuid-1234.json";
     const backupPath = getCompactBackupPath(sessionPath);
     expect(backupPath).toBe("/some/dir/.phase2s/sessions/uuid-1234.compact-backup.json");
@@ -73,6 +73,21 @@ describe("getCompactBackupPath", () => {
     const backupPath = getCompactBackupPath(sessionPath);
     expect(backupPath).toBe("/data/.json.storage/sessions/uuid.compact-backup.json");
   });
+
+  it("stamps the backup with compactCount when provided", () => {
+    const sessionPath = "/sessions/abc.json";
+    expect(getCompactBackupPath(sessionPath, 1)).toBe("/sessions/abc.compact-backup-1.json");
+    expect(getCompactBackupPath(sessionPath, 3)).toBe("/sessions/abc.compact-backup-3.json");
+  });
+
+  it("repeated compactions produce distinct backup files (no overwrite)", () => {
+    const sessionPath = "/sessions/abc.json";
+    const backup1 = getCompactBackupPath(sessionPath, 1);
+    const backup2 = getCompactBackupPath(sessionPath, 2);
+    expect(backup1).not.toBe(backup2);
+    expect(backup1).toContain("compact-backup-1");
+    expect(backup2).toContain("compact-backup-2");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -80,59 +95,39 @@ describe("getCompactBackupPath", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildCompactedMessages", () => {
-  it("keeps system message and prepends COMPACTED CONTEXT user message", () => {
-    const systemMsg = { role: "system" as const, content: "You are Phase2S" };
-    const originalMessages = [
-      systemMsg,
-      { role: "user" as const, content: "Hello" },
-      { role: "assistant" as const, content: "Hi" },
-    ];
+  it("returns exactly one user message with COMPACTED_CONTEXT_MARKER prefix", () => {
     const summary = "Files modified: src/foo.ts";
+    const result = buildCompactedMessages(summary);
 
-    const result = buildCompactedMessages(originalMessages, summary);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("user");
+    expect(result[0].content).toContain(COMPACTED_CONTEXT_MARKER);
+    expect(result[0].content).toContain(summary);
+  });
 
-    expect(result).toHaveLength(2);
-    expect(result[0]).toEqual(systemMsg);
-    expect(result[1].role).toBe("user");
-    expect(result[1].content).toContain(COMPACTED_CONTEXT_MARKER);
-    expect(result[1].content).toContain(summary);
+  it("does NOT include system messages (Agent.setConversation() handles those)", () => {
+    const summary = "Summary text";
+    const result = buildCompactedMessages(summary);
+
+    // Must be exactly 1 message — no system messages preserved here
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("user");
   });
 
   it("uses COMPACTED_CONTEXT_MARKER as the prefix (single source of truth)", () => {
-    const messages = [{ role: "user" as const, content: "Hello" }];
     const summary = "Summary text";
-    const result = buildCompactedMessages(messages, summary);
+    const result = buildCompactedMessages(summary);
     expect(result[0].content.startsWith(COMPACTED_CONTEXT_MARKER)).toBe(true);
   });
 
-  it("returns only compacted context when original had no system message", () => {
-    const originalMessages = [
-      { role: "user" as const, content: "Hello" },
-      { role: "assistant" as const, content: "Hi" },
-    ];
-    const summary = "Summary text";
-
-    const result = buildCompactedMessages(originalMessages, summary);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].content).toContain(COMPACTED_CONTEXT_MARKER);
+  it("summary content appears in the compacted message", () => {
+    const summary = "- Modified src/core/agent.ts\n- Decisions: use hybrid dependency graph";
+    const result = buildCompactedMessages(summary);
+    expect(result[0].content).toContain(summary);
   });
 
-  it("multiple system messages are all preserved", () => {
-    const messages = [
-      { role: "system" as const, content: "Instruction A" },
-      { role: "system" as const, content: "Instruction B" },
-      { role: "user" as const, content: "Hello" },
-    ];
-    const result = buildCompactedMessages(messages, "summary");
-    expect(result).toHaveLength(3); // 2 system + 1 compacted user
-    expect(result[0].content).toBe("Instruction A");
-    expect(result[1].content).toBe("Instruction B");
-    expect(result[2].content).toContain(COMPACTED_CONTEXT_MARKER);
-  });
-
-  it("empty messages array: returns only compacted context message", () => {
-    const result = buildCompactedMessages([], "summary");
+  it("empty summary: still produces a single user message", () => {
+    const result = buildCompactedMessages("");
     expect(result).toHaveLength(1);
     expect(result[0].content).toContain(COMPACTED_CONTEXT_MARKER);
   });

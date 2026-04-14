@@ -662,6 +662,91 @@ describe("Agent.setConversation() — system prompt preservation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Agent constructor — resume case (opts.conversation provided)
+// ---------------------------------------------------------------------------
+
+describe("Agent constructor — opts.conversation (resume)", () => {
+  const stubProvider = new OpenAIProvider(
+    { ...minimalConfig },
+    { chat: { completions: { create: vi.fn() } } } as unknown as Parameters<typeof OpenAIProvider>[1],
+  );
+
+  function makeResumedAgent(opts: {
+    systemPrompt?: string;
+    agentsMdBlock?: string;
+    resumedMessages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  }) {
+    const resumedConv = Conversation.fromMessages(opts.resumedMessages);
+    return new Agent({
+      config: minimalConfig,
+      provider: stubProvider,
+      systemPrompt: opts.systemPrompt,
+      agentsMdBlock: opts.agentsMdBlock,
+      conversation: resumedConv,
+    });
+  }
+
+  it("uses the current system prompt (not the stale one from the session)", () => {
+    const agent = makeResumedAgent({
+      systemPrompt: "Current system prompt",
+      resumedMessages: [
+        { role: "system", content: "Old stale system prompt from previous run" },
+        { role: "user", content: "prior user turn" },
+      ],
+    });
+    const msgs = agent.getConversation().getMessages();
+    const sysMsg = msgs.find((m) => m.role === "system");
+    expect(String(sysMsg?.content)).toContain("Current system prompt");
+    expect(String(sysMsg?.content)).not.toContain("Old stale system prompt");
+  });
+
+  it("preserves non-system conversation history from the resumed session", () => {
+    const agent = makeResumedAgent({
+      systemPrompt: "System",
+      resumedMessages: [
+        { role: "system", content: "Old system" },
+        { role: "user", content: "previous user message" },
+        { role: "assistant", content: "previous assistant reply" },
+      ],
+    });
+    const msgs = agent.getConversation().getMessages();
+    expect(msgs.some((m) => m.content === "previous user message")).toBe(true);
+    expect(msgs.some((m) => m.content === "previous assistant reply")).toBe(true);
+  });
+
+  it("injects AGENTS.md block into the system prompt on resume", () => {
+    const agentsMdBlock = "--- AGENTS.md ---\n# Conventions\n- No semicolons\n--- END AGENTS.md ---";
+    const agent = makeResumedAgent({
+      agentsMdBlock,
+      resumedMessages: [
+        { role: "system", content: "Old system without AGENTS.md" },
+        { role: "user", content: "a prior turn" },
+      ],
+    });
+    const msgs = agent.getConversation().getMessages();
+    const sysMsg = msgs.find((m) => m.role === "system");
+    // AGENTS.md should be present in the fresh system prompt
+    expect(String(sysMsg?.content)).toContain("No semicolons");
+    // The stale system message (without AGENTS.md) should NOT be the one used
+    expect(String(sysMsg?.content)).not.toContain("Old system without AGENTS.md");
+  });
+
+  it("exactly one system message after resume", () => {
+    const agent = makeResumedAgent({
+      systemPrompt: "Fresh system",
+      resumedMessages: [
+        { role: "system", content: "Old system A" },
+        { role: "system", content: "Old system B" },
+        { role: "user", content: "user turn" },
+      ],
+    });
+    const systemMsgs = agent.getConversation().getMessages().filter((m) => m.role === "system");
+    expect(systemMsgs).toHaveLength(1);
+    expect(String(systemMsgs[0].content)).toContain("Fresh system");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tool error reflection (Sprint 49)
 // ---------------------------------------------------------------------------
 
@@ -1083,6 +1168,59 @@ describe("Agent.switchAgentDef()", () => {
     // Must have exactly one system message after two switches
     expect(systemMessages.length).toBe(1);
     expect(String(systemMessages[0].content)).toContain("Athena");
+  });
+
+  it("AGENTS.md block survives a persona switch (persists in system prompt)", () => {
+    const agentsMdBlock = "--- AGENTS.md ---\n# Project conventions\n- No semicolons\n--- END AGENTS.md ---";
+    const agent = new Agent({
+      config: baseConfig,
+      systemPrompt: "Original config prompt.",
+      agentsMdBlock,
+    });
+
+    // Verify AGENTS.md is in the initial system prompt
+    const before = agent.getConversation().getMessages()[0];
+    expect(String(before.content)).toContain("No semicolons");
+
+    // Switch to Apollo persona
+    const apolloDef = makeMinimalDef({
+      systemPrompt: "You are Apollo, research specialist.",
+    });
+    agent.switchAgentDef(apolloDef);
+
+    const after = agent.getConversation().getMessages()[0];
+    // New persona must be present
+    expect(String(after.content)).toContain("Apollo");
+    // AGENTS.md must still be present
+    expect(String(after.content)).toContain("No semicolons");
+    // Old config.systemPrompt should NOT be carried over (persona replaced it)
+    expect(String(after.content)).not.toContain("Original config prompt");
+  });
+
+  it("AGENTS.md block persists across multiple consecutive persona switches", () => {
+    const agentsMdBlock = "--- AGENTS.md ---\n# Rules\n- Always write tests\n--- END AGENTS.md ---";
+    const agent = new Agent({
+      config: baseConfig,
+      agentsMdBlock,
+    });
+
+    const apolloDef = makeMinimalDef({ systemPrompt: "Apollo persona." });
+    const athenaDef = makeMinimalDef({
+      id: "athena",
+      title: "Athena",
+      model: "smart",
+      tools: [],
+      aliases: [":plan"],
+      systemPrompt: "Athena persona.",
+      isBuiltIn: true,
+    });
+
+    agent.switchAgentDef(apolloDef);
+    agent.switchAgentDef(athenaDef);
+
+    const systemMsg = agent.getConversation().getMessages()[0];
+    expect(String(systemMsg.content)).toContain("Athena persona");
+    expect(String(systemMsg.content)).toContain("Always write tests");
   });
 });
 

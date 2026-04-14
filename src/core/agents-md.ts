@@ -62,7 +62,9 @@ export async function loadAgentsMd(cwd: string): Promise<string | null> {
 
   if (combined.length > AGENTS_MD_CAP) {
     const originalKb = Math.ceil(combined.length / 1024);
-    const truncated = combined.slice(0, AGENTS_MD_CAP);
+    // Truncate at the last newline boundary so instructions are not cut mid-line.
+    const lastNewline = combined.lastIndexOf("\n", AGENTS_MD_CAP);
+    const truncated = combined.slice(0, lastNewline > 0 ? lastNewline : AGENTS_MD_CAP);
     console.warn(
       chalk.yellow(
         `⚠  AGENTS.md truncated to ${Math.round(AGENTS_MD_CAP / 1024)}k chars (was ${originalKb}k). Move rarely-needed content to comments or split into multiple files.`,

@@ -6,6 +6,18 @@
 
 ---
 
+## Backlog — Post-Sprint 55 adversarial review findings (2026-04-13)
+
+- [ ] **AGENTS.md injection for one-shot mode** — `phase2s run "..."` (non-interactive) does not load AGENTS.md. The interactive REPL does (`loadAgentsMd` called at startup). One-shot mode should call the same loader before constructing the Agent. Low risk for now — most AGENTS.md use is interactive. **INVESTIGATE before Sprint 56.**
+
+- [ ] **AGENTS.md injection for MCP tools** — MCP tool calls (via `runMCPServer`) spawn an Agent per request without loading AGENTS.md. Skills invoked via MCP skip project/user-global instruction files entirely. **INVESTIGATE before Sprint 56.**
+
+- [ ] **Last user message drop in `buildCompactionSummary`** — When the last message is a user message, it is dropped before the summary prompt to avoid consecutive-user-role rejection. This is correct for providers that reject consecutive user messages, but it silently discards context. Consider preserving the last user message by converting it to an assistant message or wrapping it in a system message. **Low priority — INVESTIGATE.**
+
+- [ ] **Non-atomic backup write** — `performCompaction` writes the backup file in a single `writeFile` call with no tmp-then-rename dance. A crash mid-write could leave a corrupt backup. Risk is low (backups are only read on manual recovery) but could be hardened. **Low priority — INVESTIGATE.**
+
+---
+
 ## Backlog — Post-Sprint 52 /plan-eng-review findings (2026-04-13)
 
 - [x] **`--sandbox` non-git directory handling** — Pre-flight `git rev-parse --is-inside-work-tree` check added to `startSandbox()`. User now gets "Error: phase2s --sandbox requires a git repository." instead of a misleading "detached HEAD" message or raw git stderr. **Completed: v1.28.0 (2026-04-13)**

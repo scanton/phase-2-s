@@ -50,29 +50,32 @@ export function shouldCompact(tokens: number, threshold: number | undefined): bo
 
 /**
  * Derive the backup file path from a session file path.
- * Replaces the `.json` extension with `.compact-backup.json`.
+ * When `compactCount` is provided, stamps the backup with the compaction number
+ * (e.g. `.compact-backup-2.json`) so repeated compactions don't overwrite earlier backups.
+ * Without a count, falls back to `.compact-backup.json` (used in tests / legacy callers).
  *
- * @param sessionPath  Absolute path to the active session JSON file.
+ * @param sessionPath   Absolute path to the active session JSON file.
+ * @param compactCount  Compaction number to stamp onto the filename (1-based).
  */
-export function getCompactBackupPath(sessionPath: string): string {
-  return sessionPath.replace(/\.json$/, ".compact-backup.json");
+export function getCompactBackupPath(sessionPath: string, compactCount?: number): string {
+  const suffix = compactCount !== undefined
+    ? `.compact-backup-${compactCount}.json`
+    : `.compact-backup.json`;
+  return sessionPath.replace(/\.json$/, suffix);
 }
 
 /**
- * Build the compacted message list from the original messages and the LLM summary.
+ * Build the compacted message list from the LLM summary.
  *
- * Keeps any system-role messages unchanged (they hold instructions/persona).
- * Prepends a single user-role message with the COMPACTED_CONTEXT_MARKER so the
- * next LLM call understands the history has been summarized.
+ * Returns a single user-role message prefixed with COMPACTED_CONTEXT_MARKER.
+ * System messages are intentionally NOT included here — Agent.setConversation()
+ * always strips incoming system messages and prepends the agent's own (current)
+ * system prompt, so including them would create stale duplicates.
  *
- * @param messages  Full conversation history (may include system messages).
  * @param summary   The compaction summary returned by buildCompactionSummary().
  */
-export function buildCompactedMessages(messages: Message[], summary: string): Message[] {
-  return [
-    ...messages.filter((m) => m.role === "system"),
-    { role: "user", content: `${COMPACTED_CONTEXT_MARKER}\n${summary}` },
-  ];
+export function buildCompactedMessages(summary: string): Message[] {
+  return [{ role: "user", content: `${COMPACTED_CONTEXT_MARKER}\n${summary}` }];
 }
 
 // ---------------------------------------------------------------------------
