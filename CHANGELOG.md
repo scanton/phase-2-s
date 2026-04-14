@@ -1,5 +1,41 @@
 # Changelog
 
+## v1.29.0 — 2026-04-13
+
+Sprint 55 — Context Compaction + AGENTS.md support.
+
+### Added
+
+- **Context compaction** — Long sessions can now be compacted on demand (`:compact` REPL command) or automatically when a token threshold is exceeded (`auto_compact_tokens` config). The session provider generates a structured summary covering files changed, decisions made, errors resolved, and current goal. The full conversation is replaced with a `[COMPACTED CONTEXT]` message, and a `.compact-backup.json` file is written before any destructive replacement. The `compact_count` field on `SessionMeta` tracks how many times a session has been compacted.
+
+- **AGENTS.md injection** — Phase2S now reads `~/.phase2s/AGENTS.md` (user-global) and `{cwd}/AGENTS.md` (project-level) at startup and injects their contents into the system prompt. Both can coexist; user-global content is prepended, project content appended. Content is capped at 8 192 chars with a warning. Drop project conventions in `AGENTS.md` and every session picks them up automatically.
+
+- **`auto_compact_tokens` config field** — Set a positive integer threshold (e.g. `auto_compact_tokens: 80000`) in `.phase2s.yaml` to trigger automatic compaction before each turn when estimated context exceeds the threshold. Unset disables auto-compaction (default).
+
+- **Doctor AGENTS.md check** — `phase2s doctor` now reports whether user-global and/or project-level `AGENTS.md` files are present, and tips the user to create one if neither exists.
+
+### Changed
+
+- **Compaction utilities** — `shouldCompact`, `getCompactBackupPath`, `buildCompactedMessages`, and `COMPACTED_CONTEXT_MARKER` are exported from `src/core/compaction.ts` as testable pure functions. `index.ts` delegates to them rather than embedding inline logic.
+
+- **`Agent.provider` getter** — The provider is now accessible via `agent.provider`. The private field was renamed `_provider` to avoid a naming conflict with the getter.
+
+### Fixed
+
+- **AGENTS.md drops on `--resume`** — Resuming a session with `--resume` previously discarded the AGENTS.md system prompt and replaced it with the stale one from the saved file. The agent now always rebuilds a fresh system prompt (including AGENTS.md) at construction time and uses `setConversation()` to merge resumed messages, leaving the current system prompt intact.
+
+- **AGENTS.md drops on persona switch** — Switching agent personas with `:ask`, `:plan`, `:build`, or `:agent <id>` previously overwrote the system prompt entirely, losing any AGENTS.md content. AGENTS.md is now stored separately from the per-persona `systemPrompt` and re-combined on every persona switch.
+
+- **Compaction backup overwrite on repeated `:compact`** — Compacting the same session twice overwrote the first backup with the second, destroying the earlier history snapshot. Backup paths are now stamped with the compaction count (`.compact-backup-1.json`, `.compact-backup-2.json`, ...), so each compaction writes a distinct file.
+
+- **Silent split-state on compaction save failure** — If the session file could not be saved after compaction, the in-memory conversation was already replaced with the compacted version but the saved file was not updated, causing an inconsistency on next resume. The failure is now caught and displays: "Compact applied in memory, but session save failed — compaction will be lost on restart."
+
+- **Token display off-by-1000x in compaction notice** — The status line showed e.g. "85000k tokens" because `estimateTokens()` returns raw tokens, not thousands. Now shows "85k tokens".
+
+- **`auto_compact_tokens: 0` passed validation** — Setting `0` previously passed Zod schema validation and would fire compaction on every turn. The field now requires a positive integer (`min(1)`); `0` is rejected with a clear validation error. Omit the field entirely to disable auto-compaction.
+
+- **`:compact` missing from `/help`** — The `:compact` REPL command was not listed in the `/help` output. It now appears alongside `/help`, `/quit`, and `/exit`.
+
 ## v1.28.0 — 2026-04-13
 
 Sprint 54 — Housekeeping: watcher teardown, sandbox guard, test coverage.

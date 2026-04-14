@@ -28,6 +28,8 @@ import { loadAgents, formatAgentsList, type AgentDef } from "../core/agent-loade
 import { runConversationsBrowser } from "./conversations.js";
 import { resolveReasoningModel, resolveAgentModel } from "./model-resolver.js";
 import { handleColonCommand } from "./colon-commands.js";
+import { buildCompactionSummary, buildCompactedMessages, getCompactBackupPath, shouldCompact } from "../core/compaction.js";
+import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -821,7 +823,16 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
   }
 
-  const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr });
+  // Load AGENTS.md (user-global + project-level) and inject into system prompt
+  const agentsMdContent = await loadAgentsMd(process.cwd());
+  if (agentsMdContent) {
+    log.dim(`AGENTS.md loaded (${agentsMdContent.length} chars)`);
+  }
+  const agentsMdBlock = agentsMdContent ? formatAgentsMdBlock(agentsMdContent) : undefined;
+
+  // Pass agentsMdBlock separately from config.systemPrompt so the Agent can re-inject
+  // it after switchAgentDef() (persona switches) without carrying over the old persona.
+  const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr, systemPrompt: config.systemPrompt, agentsMdBlock });
   // AbortController for cooperative SIGINT cancellation.
   // Aborted in the SIGINT handler; signal is passed to every agent.run() call so the
   // in-flight Codex/provider request is cancelled rather than waiting to finish.
@@ -929,6 +940,96 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
   };
 
   const writePrompt = () => process.stdout.write(chalk.green("you > "));
+
+  /**
+   * Compact the current session by replacing the conversation history with an
+   * LLM-generated summary. Writes a backup file before destructive replacement.
+   *
+   * On success: prints a notice, updates sessionMeta.compact_count, saves session.
+   * On failure: prints a warning, leaves session unchanged.
+   */
+  const performCompaction = async (): Promise<void> => {
+    const messages = agent.getConversation().getMessages();
+    const tokenEstimate = agent.getConversation().estimateTokens();
+    process.stdout.write(chalk.cyan(`↻ Compacting session (${Math.round(tokenEstimate / 1000)}k tokens)...`));
+
+    // Write backup before any destructive operation.
+    // If the backup fails, abort — it is unsafe to destroy history without a recovery file.
+    // Stamp with the next compact_count so repeated compactions don't overwrite earlier backups.
+    const nextCompactCount = (sessionMeta.compact_count ?? 0) + 1;
+    const backupPath = getCompactBackupPath(activeSessionPath, nextCompactCount);
+    try {
+      await writeFile(
+        backupPath,
+        JSON.stringify({ schemaVersion: 2, meta: sessionMeta, messages }, null, 2),
+        { encoding: "utf-8", mode: 0o600 },
+      );
+    } catch (err) {
+      process.stdout.write("\n");
+      console.warn(chalk.yellow(`⚠  Compaction aborted — could not write backup: ${err instanceof Error ? err.message : String(err)}`));
+      return;
+    }
+
+    let summary: string;
+    try {
+      summary = await buildCompactionSummary(agent.provider, messages);
+    } catch (err) {
+      process.stdout.write("\n");
+      console.warn(chalk.yellow(`⚠  Compaction failed: ${err instanceof Error ? err.message : String(err)}`));
+      return;
+    }
+
+    if (!summary.trim()) {
+      process.stdout.write("\n");
+      console.warn(chalk.yellow("⚠  Compaction returned empty summary — session not compacted."));
+      return;
+    }
+
+    agent.setConversation(Conversation.fromMessages(buildCompactedMessages(summary)));
+
+    // Increment compact_count in sessionMeta (persisted on next saveSession)
+    sessionMeta = {
+      ...sessionMeta,
+      compact_count: nextCompactCount,
+      updatedAt: new Date().toISOString(),
+    };
+
+    process.stdout.write(" done.\n");
+    justCompacted = true;
+
+    // Explicit error handling here (unlike the best-effort saveSession() used elsewhere):
+    // if persistence fails after compaction, the user's history is gone in memory only —
+    // warn them so they know the compact won't survive a restart.
+    try {
+      await saveSessionV2(process.cwd(), activeSessionPath, agent.getConversation(), sessionMeta);
+    } catch {
+      console.warn(chalk.yellow("⚠  Compact applied in memory, but session save failed — compaction will be lost on restart."));
+    }
+  };
+
+  // Guards against an auto-compact loop: if the LLM produces a summary that
+  // itself exceeds the threshold, the very next turn would fire compaction
+  // again before the user does anything. Reset to false after each normal turn.
+  let justCompacted = false;
+
+  /**
+   * Check if auto-compaction should fire and run it if so.
+   * Called PRE-TURN — before agent.run() — so the LLM processes the turn
+   * with a fresh context after compaction.
+   *
+   * Skips one turn immediately after a compaction to prevent an infinite loop
+   * where a verbose summary itself exceeds the threshold.
+   */
+  const maybeAutoCompact = async (): Promise<void> => {
+    if (justCompacted) {
+      justCompacted = false;
+      return;
+    }
+    const tokens = agent.getConversation().estimateTokens();
+    if (shouldCompact(tokens, config.auto_compact_tokens)) {
+      await performCompaction();
+    }
+  };
 
   // Main REPL loop
   while (true) {
@@ -1067,6 +1168,12 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       continue;
     }
 
+    // :compact — immediately compact the conversation history
+    if (trimmed === ":compact") {
+      await performCompaction();
+      continue;
+    }
+
     // :commit — generate an AI commit message for staged changes from inside the REPL
     if (trimmed === ":commit" || trimmed.startsWith(":commit ")) {
       const { buildCommitMessage, runCommitFlow, runGitCommit, SecretWarningError } = await import("./commit.js");
@@ -1202,6 +1309,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
 
         // Satori mode: skill declares retries > 0
         if (skill.retries && skill.retries > 0) {
+          await maybeAutoCompact();
           const slug = makeSlug(finalExpanded.slice(0, 100));
           const startedAt = new Date().toISOString();
           const attempts: import("../core/agent.js").SatoriResult[] = [];
@@ -1225,6 +1333,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           }
         } else {
           // Normal skill run
+          await maybeAutoCompact();
           try {
             const response = await agent.run(finalExpanded, { modelOverride: skill.model, signal: sigintController.signal });
             console.log(chalk.bold("\nassistant > ") + response + "\n");
@@ -1243,6 +1352,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     const normalTurnModel =
       resolveReasoningModel(reasoningOverride, config) ??
       (activeAgentDef ? resolveAgentModel(activeAgentDef.model, config) : undefined);
+    await maybeAutoCompact();
     process.stdout.write(chalk.bold("\nassistant > "));
     try {
       await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel, signal: sigintController.signal });
@@ -1461,6 +1571,7 @@ function printHelp(skills: Array<{ name: string; description: string }>): void {
   console.log("  /help    — Show this help");
   console.log("  /quit    — Exit the session");
   console.log("  /exit    — Exit the session");
+  console.log("  :compact — Compact conversation history to free context window");
   if (skills.length > 0) {
     console.log(chalk.bold("\nSkills:"));
     for (const skill of skills) {

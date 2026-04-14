@@ -95,6 +95,15 @@ provider: codex-cli
 # This limits runaway loops.
 maxTurns: 50
 
+# Auto-compact token threshold
+# When set to a positive integer, Phase2S automatically compacts the conversation
+# history before each turn when the estimated context size meets or exceeds this value.
+# Compaction replaces the full history with an LLM-generated summary and writes a
+# backup to <session>.compact-backup.json before replacing anything.
+# Use ':compact' in the REPL to trigger compaction manually at any time.
+# Unset disables auto-compaction (default). Must be a positive integer when set.
+# auto_compact_tokens: 80000
+
 # Satori verify command
 # Runs after each attempt to check if the task succeeded.
 # Must exit 0 for success, non-zero for failure.

@@ -6,6 +6,28 @@
 
 ---
 
+## Backlog — Post-Sprint 55 /review findings (2026-04-14)
+
+- [ ] **AGENTS.md memoization** — `loadAgentsMd(cwd)` performs two disk reads on every `Agent` construction. In MCP server mode (one Agent per request), this creates repeated I/O. Cache the result per `cwd` in a process-level Map so repeated calls in the same process are free. **INVESTIGATE before Sprint 57.**
+
+- [ ] **Cascading auto-compaction** — `justCompacted` flag only skips one turn. If the LLM generates a verbose summary (>50% of original size), the next user turn can push context back over threshold and trigger compaction again. Each cascade degrades summary fidelity. Consider: (a) compact_count cap, (b) hard size limit on summary, or (c) exponential threshold growth post-compact. **INVESTIGATE before Sprint 57.**
+
+- [ ] **Compaction error paths not tested** — `performCompaction()` has three failure branches (backup write fails, buildCompactionSummary returns empty, saveSessionV2 fails) but no automated tests cover them. Add targeted unit tests mocking each failure mode. **Add to Sprint 57 test pass.**
+
+---
+
+## Backlog — Post-Sprint 55 adversarial review findings (2026-04-13)
+
+- [ ] **AGENTS.md injection for one-shot mode** — `phase2s run "..."` (non-interactive) does not load AGENTS.md. The interactive REPL does (`loadAgentsMd` called at startup). One-shot mode should call the same loader before constructing the Agent. Low risk for now — most AGENTS.md use is interactive. **INVESTIGATE before Sprint 56.**
+
+- [ ] **AGENTS.md injection for MCP tools** — MCP tool calls (via `runMCPServer`) spawn an Agent per request without loading AGENTS.md. Skills invoked via MCP skip project/user-global instruction files entirely. **INVESTIGATE before Sprint 56.**
+
+- [ ] **Last user message drop in `buildCompactionSummary`** — When the last message is a user message, it is dropped before the summary prompt to avoid consecutive-user-role rejection. This is correct for providers that reject consecutive user messages, but it silently discards context. Consider preserving the last user message by converting it to an assistant message or wrapping it in a system message. **Low priority — INVESTIGATE.**
+
+- [ ] **Non-atomic backup write** — `performCompaction` writes the backup file in a single `writeFile` call with no tmp-then-rename dance. A crash mid-write could leave a corrupt backup. Risk is low (backups are only read on manual recovery) but could be hardened. **Low priority — INVESTIGATE.**
+
+---
+
 ## Backlog — Post-Sprint 52 /plan-eng-review findings (2026-04-13)
 
 - [x] **`--sandbox` non-git directory handling** — Pre-flight `git rev-parse --is-inside-work-tree` check added to `startSandbox()`. User now gets "Error: phase2s --sandbox requires a git repository." instead of a misleading "detached HEAD" message or raw git stderr. **Completed: v1.28.0 (2026-04-13)**
@@ -108,7 +130,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 ### Tier 2 — Meaningful improvements
 
-- [ ] **Context compaction** — Forge has `:compact` (manual) and auto-compaction at configurable token thresholds (100k by default). Phase2S sessions can run long and hit context limits silently. Expose `phase2s compact` in the REPL and add auto-compaction config to `.phase2s.yaml`. Forge's `forge-partial-summary-frame.md` template suggests they have a structured compaction summary format — worth borrowing.
+- [x] **Context compaction** — Forge has `:compact` (manual) and auto-compaction at configurable token thresholds (100k by default). Phase2S sessions can run long and hit context limits silently. Expose `phase2s compact` in the REPL and add auto-compaction config to `.phase2s.yaml`. Forge's `forge-partial-summary-frame.md` template suggests they have a structured compaction summary format — worth borrowing. **Completed: v1.29.0 (2026-04-13)**
 
 - [ ] **`@file` fuzzy attachment in REPL** — Type `@` in a prompt then Tab to fuzzy-search and attach files as `@[filename]`. Forge uses this to give the AI specific context without the user having to type full paths. Would integrate naturally with Phase2S's existing REPL.
 
@@ -128,7 +150,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [ ] **`:dump html`** — export a conversation as formatted HTML (not just JSONL). Useful for sharing run histories with teammates. We have `phase2s report` for dark factory runs; a general conversation export would be a lower-effort complement.
 
-- [ ] **`AGENTS.md` support** — Forge automatically reads `AGENTS.md` (project root or `~/forge/AGENTS.md`) at the start of every session — persistent project-level AI instructions for coding conventions, commit style, things to avoid. Phase2S reads `.phase2s.yaml` for config but nothing equivalent for freeform "developer handbook" instructions. An `AGENTS.md` equivalent (or a `instructions:` key in `.phase2s.yaml`) would make customization more discoverable.
+- [x] **`AGENTS.md` support** — Forge automatically reads `AGENTS.md` (project root or `~/forge/AGENTS.md`) at the start of every session — persistent project-level AI instructions for coding conventions, commit style, things to avoid. Phase2S reads `.phase2s.yaml` for config but nothing equivalent for freeform "developer handbook" instructions. An `AGENTS.md` equivalent (or a `instructions:` key in `.phase2s.yaml`) would make customization more discoverable. **Completed: v1.29.0 (2026-04-13)**
 
 - [x] **`forge -C /path/to/project`** — start Phase2S in a specific directory without `cd`ing. Small but useful for scripts and IDE integrations. `phase2s -C /path` should be straightforward. **Completed:** v1.23.0 (2026-04-10) — `-C <path>` global flag via Commander `preAction` hook.
 

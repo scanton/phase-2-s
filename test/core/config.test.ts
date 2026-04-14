@@ -233,4 +233,24 @@ describe("loadConfig — tools and deny (Sprint 13)", () => {
     expect(config.ollamaBaseUrl).toBe("http://192.168.1.50:11434/v1");
     expect(config.model).toBe("llama3.1:8b");
   });
+
+  // --- auto_compact_tokens (Sprint 55) ---
+
+  it("auto_compact_tokens: positive integer is accepted", async () => {
+    const config = await loadConfig({ auto_compact_tokens: 80_000 });
+    expect(config.auto_compact_tokens).toBe(80_000);
+  });
+
+  it("auto_compact_tokens: 0 is rejected (must be >= 1 or unset to disable)", async () => {
+    await expect(loadConfig({ auto_compact_tokens: 0 } as never)).rejects.toThrow();
+  });
+
+  it("auto_compact_tokens: unset means undefined (disabled)", async () => {
+    const config = await loadConfig({});
+    expect(config.auto_compact_tokens).toBeUndefined();
+  });
+
+  it("auto_compact_tokens: negative integer is rejected by schema", async () => {
+    await expect(loadConfig({ auto_compact_tokens: -1 } as never)).rejects.toThrow();
+  });
 });

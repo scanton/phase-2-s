@@ -82,6 +82,15 @@ const configSchema = z.object({
       chatId: z.string(),
     }).optional(),
   }).optional(),
+  /**
+   * Token threshold for automatic context compaction.
+   * After each assistant response, if the estimated token count exceeds this
+   * value, the session is compacted automatically before the next turn.
+   * Token count is estimated by Conversation.estimateTokens().
+   * Unset = disabled (default). Must be a positive integer (>= 1) to enable.
+   * Example: 80000 triggers compaction when context exceeds ~80k estimated tokens.
+   */
+  auto_compact_tokens: z.number().int().min(1).optional(),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };

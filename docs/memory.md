@@ -38,6 +38,39 @@ Everything is there: every message you sent, every model response, every tool ca
 
 ---
 
+## Context compaction
+
+Long sessions accumulate tens of thousands of tokens — tool call results, error messages, multiple satori attempts. At some point the model's context window fills up, responses get expensive, and earlier context gets truncated.
+
+Context compaction replaces the full conversation with an LLM-generated summary covering: files modified, decisions made, errors resolved, and the current goal. A backup of the original conversation is written before anything is replaced.
+
+**Compact on demand:**
+
+```
+you > :compact
+↻ Compacting session (42k tokens)...
+✔ Compacted to 1.2k tokens. Backup: .phase2s/sessions/abc-123.compact-backup-1.json
+```
+
+**Compact automatically:**
+
+```yaml
+# .phase2s.yaml
+auto_compact_tokens: 80000
+```
+
+With this set, Phase2S compacts automatically before each turn when the estimated context size meets or exceeds the threshold. After compaction, one turn is skipped before the guard re-checks — this prevents an immediate re-fire if the summary itself is large.
+
+**Backup files:**
+
+Before replacing anything, Phase2S writes a numbered backup to the same sessions directory. If something goes wrong, you can recover your full conversation from `.phase2s/sessions/<uuid>.compact-backup-1.json`. Subsequent compactions write `.compact-backup-2.json`, `.compact-backup-3.json`, etc. — no backup is ever overwritten.
+
+**Checking the summary:**
+
+The compacted summary appears as the first message in the resumed conversation. It starts with `[COMPACTED CONTEXT]` so it's easy to identify. The model has access to this summary for all future turns in the session.
+
+---
+
 ## Session branching
 
 Sessions are stored as a DAG — each one knows its parent. This lets you fork any past conversation and explore an alternative direction without losing your original work.
@@ -213,6 +246,7 @@ Everything goes to `.phase2s/` inside your project directory. Nothing writes out
 | Path | What's there | When it's created |
 |------|-------------|-------------------|
 | `.phase2s/sessions/<uuid>.json` | Full conversation history (tool calls included, v2 format) | After every turn |
+| `.phase2s/sessions/<uuid>.compact-backup-N.json` | Pre-compaction conversation backup (N = compaction count) | Before each `:compact` or auto-compact operation |
 | `.phase2s/sessions/index.json` | O(1) session index (id, parentId, branchName, createdAt per entry) | Updated on every `saveSession`/`cloneSession`; rebuilt automatically if missing or corrupt |
 | `.phase2s/state.json` | Active session UUID pointer | On each session start |
 | `.phase2s/memory/learnings.jsonl` | Persistent learnings from `/remember` | When you run `/remember` |

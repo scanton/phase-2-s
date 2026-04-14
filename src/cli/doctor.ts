@@ -555,6 +555,42 @@ export function checkSessionDag(sessionsDir: string): CheckResult {
   };
 }
 
+/**
+ * Tip: check whether AGENTS.md exists (project-level or user-global).
+ *
+ * Non-failing — AGENTS.md is optional. Returns ok:true regardless.
+ * Prints a tip if neither file exists, so new users know about the feature.
+ */
+export function checkAgentsMd(
+  cwd: string = process.cwd(),
+  phase2sDir: string = join(homedir(), ".phase2s"),
+): CheckResult {
+  const projectPath = join(cwd, "AGENTS.md");
+  const globalPath = join(phase2sDir, "AGENTS.md");
+
+  const projectExists = existsSync(projectPath);
+  const globalExists = existsSync(globalPath);
+
+  if (projectExists && globalExists) {
+    return {
+      name: "AGENTS.md",
+      ok: true,
+      detail: "project + user-global found (both will be injected)",
+    };
+  }
+  if (projectExists) {
+    return { name: "AGENTS.md", ok: true, detail: `found at ${projectPath}` };
+  }
+  if (globalExists) {
+    return { name: "AGENTS.md", ok: true, detail: `user-global found at ${globalPath}` };
+  }
+  return {
+    name: "AGENTS.md",
+    ok: true,
+    detail: "not found (tip: create AGENTS.md in your project root to inject coding conventions into every session)",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // runDoctor — entry point
 // ---------------------------------------------------------------------------
@@ -664,6 +700,7 @@ export async function runDoctor(opts: { fix?: boolean } = {}): Promise<void> {
     checkTmux(),
     checkGitWorktree(),
     checkSessionDag(resolve(".phase2s", "sessions")),
+    checkAgentsMd(),
   ];
 
   // Filter out N/A checks (provider binary for non-binary providers)
