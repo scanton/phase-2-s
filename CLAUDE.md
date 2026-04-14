@@ -35,6 +35,23 @@ Pass the full plan text as `prompt`. Read the structured output:
 - `phase2s__health` — codebase quality check
 - `phase2s__retro` — sprint retrospective
 
+## Sprint workflow — use feature branches
+
+**Always start a new sprint on a feature branch, not directly on `main`.**
+
+```bash
+git checkout main && git pull
+git checkout -b sprint-NN   # e.g. sprint-54
+```
+
+This enables the full workflow:
+- `/ship` creates a PR and a `v*.*.0` tag
+- `/review` has a real diff to review against `main`
+- `/document-release` runs in the expected pre-merge context
+- `/land-and-deploy` merges the PR with CI gate + readiness checks
+
+Direct-to-main bypasses all of this — no PR, no gated merge, no canary.
+
 ## Skill routing (gstack skills)
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
