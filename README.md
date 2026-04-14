@@ -280,7 +280,7 @@ phase2s skills --json # machine-readable for scripts
 - [Claude Code integration](docs/claude-code.md) — MCP setup, adversarial review, CLAUDE.md routing rules
 - [Skills reference](docs/skills.md) — all 29 skills with examples
 - [Workflows](docs/workflows.md) — real development sessions end to end
-- [Memory and persistence](docs/memory.md) — session resume, session branching and forking, `/remember`, what gets saved
+- [Memory and persistence](docs/memory.md) — session resume, context compaction (`:compact`), session branching and forking, `/remember`, what gets saved
 - [Writing custom skills](docs/writing-skills.md) — create your own `/commands`
 - [GitHub Action](docs/github-action.md) — `uses: scanton/phase2s@v1` for CI (requires API key)
 - [Advanced](docs/advanced.md) — streaming, model routing, tool allow/deny
@@ -551,7 +551,7 @@ browser: true  # requires playwright installed
 - [x] MCP underscore skill name fix — Skills with native underscores in their names (e.g. `my_skill`) previously caused `-32601 Tool not found`. Fixed by storing `_skillName` on the tool descriptor to survive the hyphen→underscore round-trip. 1,286 tests.
 - [x] `phase2s --sandbox` non-git guard — Running `--sandbox` outside a git repository or a non-existent directory now exits with a clear, actionable error instead of a misleading "detached HEAD" message. Two cases distinguished: directory doesn't exist vs. directory exists but isn't a git repo.
 - [x] MCP watcher teardown handle — `setupSkillsWatcher()` returns a `{ close(): void }` handle. The MCP server stores it and calls `watcher?.close()` on shutdown, cancelling any pending debounce timer before stopping the fs.watch listener. Prevents timer leaks on repeated server restarts. 1,354 tests.
-- [x] Context compaction + AGENTS.md — `:compact` REPL command (and `auto_compact_tokens` config for automatic compaction) replaces a long conversation with an LLM-generated summary, writing a `.compact-backup.json` before any destructive replacement. `AGENTS.md` in the project root (or `~/.phase2s/AGENTS.md` globally) is injected into the system prompt at startup. `phase2s doctor` reports AGENTS.md presence. Compaction utilities (`shouldCompact`, `buildCompactedMessages`, etc.) extracted to `src/core/compaction.ts` as pure, tested functions. 1,400 tests.
+- [x] Context compaction + AGENTS.md — `:compact` REPL command (and `auto_compact_tokens` config for automatic compaction) replaces a long conversation with an LLM-generated summary, writing a `.compact-backup.json` before any destructive replacement. `AGENTS.md` in the project root (or `~/.phase2s/AGENTS.md` globally) is injected into the system prompt at startup. `phase2s doctor` reports AGENTS.md presence. Compaction utilities (`shouldCompact`, `buildCompactedMessages`, etc.) extracted to `src/core/compaction.ts` as pure, tested functions. 1,409 tests.
 
 ---
 
