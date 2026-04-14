@@ -6,6 +6,16 @@
 
 ---
 
+## Backlog — Post-Sprint 55 /review findings (2026-04-14)
+
+- [ ] **AGENTS.md memoization** — `loadAgentsMd(cwd)` performs two disk reads on every `Agent` construction. In MCP server mode (one Agent per request), this creates repeated I/O. Cache the result per `cwd` in a process-level Map so repeated calls in the same process are free. **INVESTIGATE before Sprint 57.**
+
+- [ ] **Cascading auto-compaction** — `justCompacted` flag only skips one turn. If the LLM generates a verbose summary (>50% of original size), the next user turn can push context back over threshold and trigger compaction again. Each cascade degrades summary fidelity. Consider: (a) compact_count cap, (b) hard size limit on summary, or (c) exponential threshold growth post-compact. **INVESTIGATE before Sprint 57.**
+
+- [ ] **Compaction error paths not tested** — `performCompaction()` has three failure branches (backup write fails, buildCompactionSummary returns empty, saveSessionV2 fails) but no automated tests cover them. Add targeted unit tests mocking each failure mode. **Add to Sprint 57 test pass.**
+
+---
+
 ## Backlog — Post-Sprint 55 adversarial review findings (2026-04-13)
 
 - [ ] **AGENTS.md injection for one-shot mode** — `phase2s run "..."` (non-interactive) does not load AGENTS.md. The interactive REPL does (`loadAgentsMd` called at startup). One-shot mode should call the same loader before constructing the Agent. Low risk for now — most AGENTS.md use is interactive. **INVESTIGATE before Sprint 56.**

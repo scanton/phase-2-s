@@ -101,7 +101,7 @@ maxTurns: 50
 # Compaction replaces the full history with an LLM-generated summary and writes a
 # backup to <session>.compact-backup.json before replacing anything.
 # Use ':compact' in the REPL to trigger compaction manually at any time.
-# 0 or unset disables auto-compaction (default).
+# Unset disables auto-compaction (default). Must be a positive integer when set.
 # auto_compact_tokens: 80000
 
 # Satori verify command

@@ -951,7 +951,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
   const performCompaction = async (): Promise<void> => {
     const messages = agent.getConversation().getMessages();
     const tokenEstimate = agent.getConversation().estimateTokens();
-    process.stdout.write(chalk.cyan(`↻ Compacting session (${tokenEstimate}k tokens)...`));
+    process.stdout.write(chalk.cyan(`↻ Compacting session (${Math.round(tokenEstimate / 1000)}k tokens)...`));
 
     // Write backup before any destructive operation.
     // If the backup fails, abort — it is unsafe to destroy history without a recovery file.
@@ -1571,6 +1571,7 @@ function printHelp(skills: Array<{ name: string; description: string }>): void {
   console.log("  /help    — Show this help");
   console.log("  /quit    — Exit the session");
   console.log("  /exit    — Exit the session");
+  console.log("  :compact — Compact conversation history to free context window");
   if (skills.length > 0) {
     console.log(chalk.bold("\nSkills:"));
     for (const skill of skills) {
