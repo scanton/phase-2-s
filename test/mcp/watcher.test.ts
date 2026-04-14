@@ -187,17 +187,17 @@ describe("setupSkillsWatcher — watcher handle (Sprint 54)", () => {
   });
 
   it("closing the watcher stops further event callbacks from being invoked", async () => {
-    const mockClose = vi.fn();
     const { watch } = await import("node:fs");
-    // Return a watcher that stops calling the callback after close()
+    // Return a watcher that tracks whether close() was called via a flag.
     let watchCallback: (() => void) | null = null;
     let closed = false;
+    const mockClose = vi.fn().mockImplementation(() => {
+      closed = true;
+    });
     vi.mocked(watch).mockImplementation((_path, _opts, cb) => {
       watchCallback = cb as () => void;
       return {
-        close: vi.fn().mockImplementation(() => {
-          closed = true;
-        }),
+        close: mockClose,
       } as unknown as ReturnType<typeof import("node:fs").watch>;
     });
 
@@ -210,11 +210,11 @@ describe("setupSkillsWatcher — watcher handle (Sprint 54)", () => {
     // Close the watcher before any events fire
     watcher?.close();
     expect(closed).toBe(true);
+    expect(mockClose).toHaveBeenCalledTimes(1);
 
-    // Calling the callback after close is a no-op from the OS perspective.
-    // In the real world, fs.watch stops delivering events after close().
-    // Here we verify the close() was invoked — that's the contract.
-    expect(mockClose).not.toHaveBeenCalled(); // close was called on the inner mock
+    // Suppress unused-variable warning — watchCallback is captured to simulate
+    // the OS not delivering events after close().
+    void watchCallback;
     expect(onReload).not.toHaveBeenCalled();
   });
 

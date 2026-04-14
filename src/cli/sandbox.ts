@@ -102,8 +102,10 @@ export function listWorktreePaths(cwd: string): string[] {
   try {
     return parseWorktreePorcelain(cwd).map((e) => e.path);
   } catch (err: unknown) {
-    // Only swallow ENOENT (git binary not found). Any other error means git IS
-    // available but something went wrong — rethrow so callers fail loudly.
+    // Only swallow ENOENT (cwd does not exist — string-form execSync throws
+    // ENOENT when the working directory is missing, NOT when git is absent).
+    // Any other error means git IS available but something went wrong — rethrow
+    // so callers fail loudly.
     if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
       return [];
     }
@@ -179,10 +181,15 @@ export async function startSandbox(
       stdio: "pipe",
       encoding: "utf8",
     });
-  } catch {
-    console.error("Error: phase2s --sandbox requires a git repository.");
-    console.error(`'${projectCwd}' is not inside a git repository.`);
-    console.error("Run 'git init' to create one, or cd into an existing repo.");
+  } catch (err: unknown) {
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      console.error("Error: phase2s --sandbox requires an existing directory.");
+      console.error(`'${projectCwd}' does not exist.`);
+    } else {
+      console.error("Error: phase2s --sandbox requires a git repository.");
+      console.error(`'${projectCwd}' is not inside a git repository.`);
+      console.error("Run 'git init' to create one, or cd into an existing repo.");
+    }
     process.exit(1);
   }
 
