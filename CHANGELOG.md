@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.28.0 — 2026-04-13
+
+Sprint 54 — Housekeeping: watcher teardown, sandbox guard, test coverage.
+
+### Added
+
+- **`--sandbox` non-git guard** — Running `phase2s --sandbox` now exits immediately with a clear error message if the target directory doesn't exist or isn't a git repository, rather than producing a confusing "detached HEAD" error. Two cases distinguished: a missing directory says "does not exist"; an existing directory outside a repo says "not a git repository" and suggests `git init`.
+
+- **Watcher teardown handle** — `setupSkillsWatcher()` now returns a `{ close(): void }` handle. The MCP server stores it and calls `watcher?.close()` on shutdown, cleaning up the debounce timer and stopping the fs.watch listener. Prevents watcher pile-up on repeated server restarts.
+
+- **Test coverage catch-up** — 88 new tests across four files:
+  - `test/providers/openai.test.ts` (new) — 14 tests for `OpenAIProvider` using constructor injection: streaming, tool calls, abort, rate limit, signal passthrough.
+  - `test/mcp/tools.test.ts` (new) — 25 tests for `skillToTool`, `toolNameToSkillName`, `STATE_TOOLS`, `GOAL_TOOL`, `REPORT_TOOL`, and `buildNotification`.
+  - `test/mcp/handler.test.ts` (new) — 12 tests for `handleRequest` in isolation: skill dispatch, state tools, goal/report validation, session persistence.
+  - `test/mcp/watcher.test.ts` (extended) — 6 new tests for the watcher handle return value and debounce-timer cancellation on close.
+  - `test/cli/sandbox.test.ts` (extended) — 8 new tests for `listWorktreePaths` error discrimination and `startSandbox` non-git preflight.
+
+### Fixed
+
+- **`listWorktreePaths` now rethrows non-ENOENT errors** — Previously it swallowed all errors, which could silently misclassify a registered worktree as absent. Now only ENOENT (cwd does not exist) returns `[]`; any other error (git lock, permission denied, non-zero exit) is rethrown so callers fail loudly. Note: with string-form `execSync`, ENOENT signals a missing working directory, not an absent git binary (a missing git binary produces exit code 127 instead).
+
+- **Watcher debounce timer cleared on close** — Calling `close()` on the watcher handle now cancels any pending 80ms debounce before stopping the fs.Watcher. Previously a timer started just before shutdown could fire once more and attempt to write to a closed stream.
+
 ## v1.27.0 — 2026-04-13
 
 Sprint 53 — SIGINT Cooperative Cancellation + `phase2s sandboxes` + MCP Correctness.

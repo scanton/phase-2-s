@@ -85,13 +85,31 @@ function parseWorktreePorcelain(cwd: string): WorktreeEntry[] {
 
 /**
  * Return the list of worktree paths currently registered with git.
- * Returns empty array on any error (conservative — callers use this for existence checks).
+ *
+ * Returns [] only when git is not installed (ENOENT). Any other error (e.g.
+ * git lock, permission denied, non-zero exit) is rethrown — swallowing those
+ * would misclassify a healthy registered worktree as "not in git" and could
+ * cause the state machine to delete and recreate it unnecessarily.
+ *
+ * Asymmetry with listSandboxes: listSandboxes calls parseWorktreePorcelain
+ * directly and intentionally throws on ALL errors (the list command should fail
+ * loudly if git is broken). Only listWorktreePaths needs the ENOENT carve-out
+ * because it's used for worktree existence checks where "no git" = "no worktrees".
+ *
+ * @internal — exported for testability only.
  */
-function listWorktreePaths(cwd: string): string[] {
+export function listWorktreePaths(cwd: string): string[] {
   try {
     return parseWorktreePorcelain(cwd).map((e) => e.path);
-  } catch {
-    return [];
+  } catch (err: unknown) {
+    // Only swallow ENOENT (cwd does not exist — string-form execSync throws
+    // ENOENT when the working directory is missing, NOT when git is absent).
+    // Any other error means git IS available but something went wrong — rethrow
+    // so callers fail loudly.
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw err;
   }
 }
 
@@ -140,6 +158,11 @@ function currentBranch(cwd: string): string {
  * @param name            Raw name from the CLI (e.g. "spike new provider")
  * @param projectCwd      Project root (already resolved by -C preAction if present)
  * @param configOverrides CLI opts to forward to loadConfig (provider, model, systemPrompt)
+ *
+ * Dirty working tree note: staged or unstaged changes in the main worktree do NOT
+ * block `git worktree add` and do NOT propagate to the sandbox. The sandbox starts
+ * from HEAD — your uncommitted changes stay in the main worktree, isolated from the
+ * sandbox. No auto-stash is needed. (Verified: 2026-04-13, git 2.44+)
  */
 export async function startSandbox(
   name: string,
@@ -147,6 +170,29 @@ export async function startSandbox(
   configOverrides: Partial<Config> = {},
   resume = false,
 ): Promise<void> {
+  // -------------------------------------------------------------------------
+  // 0. Pre-flight: verify we're inside a git repository.
+  //    currentBranch() silently swallows non-git errors and returns "", which
+  //    produces a misleading "detached HEAD" message. Check explicitly first.
+  // -------------------------------------------------------------------------
+  try {
+    execSync("git rev-parse --is-inside-work-tree", {
+      cwd: projectCwd,
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+  } catch (err: unknown) {
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      console.error("Error: phase2s --sandbox requires an existing directory.");
+      console.error(`'${projectCwd}' does not exist.`);
+    } else {
+      console.error("Error: phase2s --sandbox requires a git repository.");
+      console.error(`'${projectCwd}' is not inside a git repository.`);
+      console.error("Run 'git init' to create one, or cd into an existing repo.");
+    }
+    process.exit(1);
+  }
+
   // -------------------------------------------------------------------------
   // 1. Slugify and derive names
   // -------------------------------------------------------------------------

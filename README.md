@@ -537,6 +537,8 @@ browser: true  # requires playwright installed
 - [x] `phase2s sandboxes` — List all active sandbox worktrees with name, path, and short commit hash. Prints `(none)` when empty. The "ls" for `--sandbox`.
 - [x] Cooperative SIGINT cancellation — Ctrl-C during an active provider call now cancels the in-flight HTTP request (SIGTERM for Codex, AbortSignal for SDK-based providers) instead of waiting for completion. Abort errors are suppressed cleanly. AbortSignal threaded through `agent.run()` → `chatStream()` across all 7 providers.
 - [x] MCP underscore skill name fix — Skills with native underscores in their names (e.g. `my_skill`) previously caused `-32601 Tool not found`. Fixed by storing `_skillName` on the tool descriptor to survive the hyphen→underscore round-trip. 1,286 tests.
+- [x] `phase2s --sandbox` non-git guard — Running `--sandbox` outside a git repository or a non-existent directory now exits with a clear, actionable error instead of a misleading "detached HEAD" message. Two cases distinguished: directory doesn't exist vs. directory exists but isn't a git repo.
+- [x] MCP watcher teardown handle — `setupSkillsWatcher()` returns a `{ close(): void }` handle. The MCP server stores it and calls `watcher?.close()` on shutdown, cancelling any pending debounce timer before stopping the fs.watch listener. Prevents timer leaks on repeated server restarts. 1,354 tests.
 
 ---
 
