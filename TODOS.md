@@ -8,9 +8,9 @@
 
 ## Backlog — Post-Sprint 52 /plan-eng-review findings (2026-04-13)
 
-- [ ] **`--sandbox` non-git directory handling** — `phase2s --sandbox foo` in a non-git directory fails with raw git errors. `git branch --show-current` throws (not returns empty) when there's no git repo, so the detached-HEAD guard doesn't catch it. Fix: pre-flight check for git repo (`git rev-parse --is-inside-work-tree` or similar) with a clear error message: "phase2s --sandbox requires a git repository." Low risk, high discoverability value. **Post-Sprint 52.**
+- [x] **`--sandbox` non-git directory handling** — Pre-flight `git rev-parse --is-inside-work-tree` check added to `startSandbox()`. User now gets "Error: phase2s --sandbox requires a git repository." instead of a misleading "detached HEAD" message or raw git stderr. **Completed: v1.28.0 (2026-04-13)**
 
-- [ ] **`--sandbox` dirty working tree auto-stash** — If the parent repo has uncommitted staged changes when `phase2s --sandbox foo` runs, git may refuse to create the worktree. Currently unhandled — user gets raw git stderr. Fix: detect dirty state before worktree creation, offer to stash (`git stash`) and unstash after sandbox exit. Same pattern as parallel-executor. **v1.28.0.**
+- [x] **`--sandbox` dirty working tree auto-stash** — Investigated 2026-04-13: `git worktree add` does NOT refuse on dirty main worktrees. Staged/unstaged changes stay in the main worktree and do not propagate to the sandbox — worktree isolation is the mechanism. No auto-stash needed. JSDoc note added to `startSandbox()` documenting this behavior. **Resolved: not a bug (2026-04-13)**
 
 - [x] **`phase2s sandboxes`** — Lists all active sandbox worktrees (branches matching `sandbox/*`) with path and short commit hash in a padded table. `(none)` when empty. **Completed: v1.27.0 (2026-04-13)**
 
@@ -26,9 +26,9 @@
 
 - [x] **`toolNameToSkillName` lossy for underscore skill names** — Fixed by storing `_skillName` on the MCPTool descriptor in `skillToTool()` and reading it directly in `handleRequest` instead of the lossy round-trip. **Completed: v1.27.0 (2026-04-13)**
 
-- [ ] **`watcher.ts` fs.watch handle not stored — can't stop watchers** — `setupSkillsWatcher` calls `fs.watch()` but discards the returned `FSWatcher`. There is no way to stop the watcher (e.g. for test cleanup or graceful MCP server shutdown). If `runMCPServer` is called multiple times (tests, future restart logic), multiple watchers pile up on the same directory. Fix: return the `FSWatcher` handle and call `.close()` on server shutdown. **v1.28.0.**
+- [x] **`watcher.ts` fs.watch handle not stored — can't stop watchers** — `setupSkillsWatcher` now returns `FSWatcher | null`. `runMCPServer` stores the handle and calls `watcher?.close()` before `process.exit(0)` in the `rl.on("close")` handler. **Completed: v1.28.0 (2026-04-13)**
 
-- [ ] **`listWorktreePaths` swallows errors → could misclassify healthy worktrees** — `listWorktreePaths()` catches all errors and returns `[]`. If `git worktree list --porcelain` fails transiently (git lock, permissions), the state machine treats the healthy registered worktree as "not in git" (state c) and may delete the directory then attempt recreation. Fix: distinguish `ENOENT`/lock failures (abort with error) from "no worktrees" (return empty). Conservative: if `git worktree list` throws, exit with a clear error rather than silently misclassifying. **v1.28.0.**
+- [x] **`listWorktreePaths` swallows errors → could misclassify healthy worktrees** — Now distinguishes ENOENT (git binary not installed → return []) from all other errors (git available but failed → rethrow). Exported as `@internal` for testability. **Completed: v1.28.0 (2026-04-13)**
 
 - [ ] **`askLine` on paused stdin after SIGINT** — Adversarial finding: if SIGINT pauses stdin via `rl.close()`, a subsequent `createInterface({ input: process.stdin })` in `askLine` might not resume it. **Investigated 2026-04-13**: `createInterface` calls `input.resume()` internally (confirmed via Node.js v25.8.2 testing — `readable.readableFlowing` goes from `false` to `true` on construction). Not a real issue on current runtime. Re-evaluate if Node minimum version changes significantly.
 

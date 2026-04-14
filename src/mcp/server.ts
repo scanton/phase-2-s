@@ -75,7 +75,9 @@ export async function runMCPServer(cwd: string): Promise<void> {
 
   // Watch for new skills added mid-session (e.g. via /skill). When detected,
   // reload the skills list and notify the MCP client so it re-fetches tools/list.
-  setupSkillsWatcher(
+  // Store the handle so we can close it cleanly on shutdown (prevents watcher
+  // pile-up if runMCPServer is called multiple times in tests or future restarts).
+  const watcher = setupSkillsWatcher(
     skillsDir,
     (updated) => {
       skills = updated;
@@ -108,6 +110,8 @@ export async function runMCPServer(cwd: string): Promise<void> {
       pendingResolve(null);
       pendingResolve = null;
     }
+    // Close the watcher before exiting so it doesn't accumulate across restarts.
+    watcher?.close();
     // Force exit so any in-flight codex subprocess doesn't keep us alive after
     // Claude Code has closed the connection. The "exit" event still fires on
     // process.exit(), so codex.ts cleanupTempDirs() runs before we die.

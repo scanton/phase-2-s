@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { slugify, startSandbox, listSandboxes } from "../../src/cli/sandbox.js";
+import { slugify, startSandbox, listSandboxes, listWorktreePaths } from "../../src/cli/sandbox.js";
 import { execSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -931,5 +931,180 @@ describe("listSandboxes()", () => {
     expect(sandboxes).toHaveLength(1);
     expect(sandboxes[0].name).toBe("active");
     expect(sandboxes[0].path).toBe("/fake/project/.worktrees/sandbox-active");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listWorktreePaths — error discrimination (Sprint 54, v1.28.0)
+// ---------------------------------------------------------------------------
+
+describe("listWorktreePaths() — error discrimination", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns an array of paths on success", () => {
+    const porcelain = [
+      "worktree /fake/project",
+      "HEAD abc1234",
+      "branch refs/heads/main",
+      "",
+      "worktree /fake/project/.worktrees/sandbox-foo",
+      "HEAD def5678",
+      "branch refs/heads/sandbox/foo",
+      "",
+    ].join("\n");
+    mockExecSync.mockReturnValue(porcelain);
+
+    const paths = listWorktreePaths("/fake/project");
+    expect(paths).toEqual([
+      "/fake/project",
+      "/fake/project/.worktrees/sandbox-foo",
+    ]);
+  });
+
+  it("returns [] when git binary is not found (ENOENT)", () => {
+    const enoentErr = Object.assign(new Error("spawn git ENOENT"), { code: "ENOENT" });
+    mockExecSync.mockImplementation(() => { throw enoentErr; });
+
+    const paths = listWorktreePaths("/fake/project");
+    expect(paths).toEqual([]);
+  });
+
+  it("rethrows when git fails for a non-ENOENT reason (e.g. lock, permissions)", () => {
+    const lockErr = Object.assign(new Error("fatal: Unable to create lock file"), { code: 128 });
+    mockExecSync.mockImplementation(() => { throw lockErr; });
+
+    expect(() => listWorktreePaths("/fake/project")).toThrow("Unable to create lock file");
+  });
+
+  it("rethrows even when error code is numeric (execSync non-zero exit)", () => {
+    // execSync throws with a numeric status code for non-zero exits, not "ENOENT".
+    // Only ENOENT (string) should be swallowed.
+    const exitErr = Object.assign(new Error("Command failed: git worktree list"), { status: 1 });
+    mockExecSync.mockImplementation(() => { throw exitErr; });
+
+    expect(() => listWorktreePaths("/fake/project")).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// startSandbox() — non-git pre-flight check (Sprint 54, v1.28.0, Item 3)
+// ---------------------------------------------------------------------------
+
+describe("startSandbox() — non-git pre-flight", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(process, "chdir").mockImplementation(() => {});
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("exits 1 with clear message when not in a git repository", async () => {
+    // git rev-parse --is-inside-work-tree throws when not in a git repo
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("rev-parse --is-inside-work-tree")) {
+        throw new Error("fatal: not a git repository");
+      }
+      return "";
+    });
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await startSandbox("mytest", "/not-a-git-dir", {});
+
+    expect(process.exit).toHaveBeenCalledWith(1);
+    const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("phase2s --sandbox requires a git repository.");
+
+    consoleSpy.mockRestore();
+  });
+
+  it("proceeds past pre-flight when inside a git repository", async () => {
+    // rev-parse succeeds → not a non-git dir
+    // Then branch --show-current returns a branch name
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("rev-parse --is-inside-work-tree")) return "true";
+      if (cmd.includes("branch --show-current")) return "main";
+      if (cmd.includes("worktree list")) return "worktree /fake/project\nHEAD abc1234\nbranch refs/heads/main\n";
+      if (cmd.includes("worktree add")) return "";
+      return "";
+    });
+    mockExistsSync.mockReturnValue(false);
+
+    // Should NOT call process.exit(1) for the non-git reason
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await startSandbox("mytest", "/fake/project", {});
+
+    const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).not.toContain("requires a git repository");
+
+    consoleSpy.mockRestore();
+  });
+
+  it("error message says 'phase2s --sandbox requires a git repository.' exactly", async () => {
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("rev-parse --is-inside-work-tree")) {
+        throw new Error("fatal: not a git repository");
+      }
+      return "";
+    });
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await startSandbox("mytest", "/not-a-git-dir", {});
+
+    const firstErrorLine = consoleSpy.mock.calls[0]?.[0] as string;
+    expect(firstErrorLine).toBe("Error: phase2s --sandbox requires a git repository.");
+
+    consoleSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// startSandbox() — dirty working tree (Sprint 54, v1.28.0, Item 4)
+// ---------------------------------------------------------------------------
+
+describe("startSandbox() — dirty working tree", () => {
+  const projectCwd = "/fake/project";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(process, "chdir").mockImplementation(() => {});
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("succeeds when the main worktree has staged changes (worktree isolation works)", async () => {
+    // Investigation result (2026-04-13): git worktree add does NOT refuse on dirty
+    // main worktrees. Staged/unstaged changes stay in the main worktree and do NOT
+    // propagate to the sandbox. No auto-stash is needed.
+    mockExecSync.mockImplementation((cmd: string) => {
+      // All git commands succeed — including worktree add with staged changes present
+      if (cmd.includes("rev-parse --is-inside-work-tree")) return "true";
+      if (cmd.includes("branch --show-current")) return "main";
+      if (cmd.includes("worktree list")) return "worktree /fake/project\nHEAD abc1234\nbranch refs/heads/main\n";
+      if (cmd.includes("worktree add")) return ""; // succeeds despite dirty tree
+      return "";
+    });
+    mockExistsSync.mockReturnValue(false);
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Should not exit with an error about dirty state
+    await startSandbox("spike-new-thing", projectCwd, {});
+
+    expect(process.exit).not.toHaveBeenCalledWith(1);
+    const errOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(errOutput).not.toMatch(/stash|dirty|uncommitted/i);
+
+    consoleSpy.mockRestore();
   });
 });
