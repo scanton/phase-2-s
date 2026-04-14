@@ -108,7 +108,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 ### Tier 2 — Meaningful improvements
 
-- [ ] **Context compaction** — Forge has `:compact` (manual) and auto-compaction at configurable token thresholds (100k by default). Phase2S sessions can run long and hit context limits silently. Expose `phase2s compact` in the REPL and add auto-compaction config to `.phase2s.yaml`. Forge's `forge-partial-summary-frame.md` template suggests they have a structured compaction summary format — worth borrowing.
+- [x] **Context compaction** — Forge has `:compact` (manual) and auto-compaction at configurable token thresholds (100k by default). Phase2S sessions can run long and hit context limits silently. Expose `phase2s compact` in the REPL and add auto-compaction config to `.phase2s.yaml`. Forge's `forge-partial-summary-frame.md` template suggests they have a structured compaction summary format — worth borrowing. **Completed: v1.29.0 (2026-04-13)**
 
 - [ ] **`@file` fuzzy attachment in REPL** — Type `@` in a prompt then Tab to fuzzy-search and attach files as `@[filename]`. Forge uses this to give the AI specific context without the user having to type full paths. Would integrate naturally with Phase2S's existing REPL.
 
@@ -128,7 +128,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [ ] **`:dump html`** — export a conversation as formatted HTML (not just JSONL). Useful for sharing run histories with teammates. We have `phase2s report` for dark factory runs; a general conversation export would be a lower-effort complement.
 
-- [ ] **`AGENTS.md` support** — Forge automatically reads `AGENTS.md` (project root or `~/forge/AGENTS.md`) at the start of every session — persistent project-level AI instructions for coding conventions, commit style, things to avoid. Phase2S reads `.phase2s.yaml` for config but nothing equivalent for freeform "developer handbook" instructions. An `AGENTS.md` equivalent (or a `instructions:` key in `.phase2s.yaml`) would make customization more discoverable.
+- [x] **`AGENTS.md` support** — Forge automatically reads `AGENTS.md` (project root or `~/forge/AGENTS.md`) at the start of every session — persistent project-level AI instructions for coding conventions, commit style, things to avoid. Phase2S reads `.phase2s.yaml` for config but nothing equivalent for freeform "developer handbook" instructions. An `AGENTS.md` equivalent (or a `instructions:` key in `.phase2s.yaml`) would make customization more discoverable. **Completed: v1.29.0 (2026-04-13)**
 
 - [x] **`forge -C /path/to/project`** — start Phase2S in a specific directory without `cd`ing. Small but useful for scripts and IDE integrations. `phase2s -C /path` should be straightforward. **Completed:** v1.23.0 (2026-04-10) — `-C <path>` global flag via Commander `preAction` hook.
 

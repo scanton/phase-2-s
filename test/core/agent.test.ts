@@ -1152,3 +1152,34 @@ describe("Agent — AbortSignal cancellation", () => {
     expect(callCount).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// provider getter (Sprint 55)
+// ---------------------------------------------------------------------------
+
+describe("Agent.provider getter", () => {
+  it("returns the provider passed in AgentOptions", () => {
+    const stubProvider = {
+      name: "my-stub",
+      chatStream: vi.fn(),
+    };
+
+    const agent = new Agent({
+      config: minimalConfig,
+      provider: stubProvider as unknown as import("../../src/providers/types.js").Provider,
+    });
+
+    expect(agent.provider).toBe(stubProvider);
+    expect(agent.provider.name).toBe("my-stub");
+  });
+
+  it("returns the provider created from config when no provider override is given", () => {
+    // Config uses openai-api provider so a real OpenAIProvider is constructed
+    const agent = new Agent({
+      config: { ...minimalConfig, provider: "openai-api" },
+    });
+    // The getter should return a Provider (not undefined, not null)
+    expect(agent.provider).toBeTruthy();
+    expect(typeof agent.provider.chatStream).toBe("function");
+  });
+});

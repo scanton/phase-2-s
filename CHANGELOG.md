@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.29.0 — 2026-04-13
+
+Sprint 55 — Context Compaction + AGENTS.md support.
+
+### Added
+
+- **Context compaction** — Long sessions can now be compacted on demand (`:compact` REPL command) or automatically when a token threshold is exceeded (`auto_compact_tokens` config). The session provider generates a structured summary covering files changed, decisions made, errors resolved, and current goal. The full conversation is replaced with a `[COMPACTED CONTEXT]` message, and a `.compact-backup.json` file is written before any destructive replacement. The `compact_count` field on `SessionMeta` tracks how many times a session has been compacted.
+
+- **AGENTS.md injection** — Phase2S now reads `~/.phase2s/AGENTS.md` (user-global) and `{cwd}/AGENTS.md` (project-level) at startup and injects their contents into the system prompt. Both can coexist; user-global content is prepended, project content appended. Content is capped at 8 192 chars with a warning. Drop project conventions in `AGENTS.md` and every session picks them up automatically.
+
+- **`auto_compact_tokens` config field** — Set an integer threshold (e.g. `auto_compact_tokens: 80000`) in `.phase2s.yaml` to trigger automatic compaction before each turn when estimated context exceeds the threshold. `0` or unset disables auto-compaction (default).
+
+- **Doctor AGENTS.md check** — `phase2s doctor` now reports whether user-global and/or project-level `AGENTS.md` files are present, and tips the user to create one if neither exists.
+
+### Changed
+
+- **Compaction utilities** — `shouldCompact`, `getCompactBackupPath`, `buildCompactedMessages`, and `COMPACTED_CONTEXT_MARKER` are exported from `src/core/compaction.ts` as testable pure functions. `index.ts` delegates to them rather than embedding inline logic.
+
+- **`Agent.provider` getter** — The provider is now accessible via `agent.provider`. The private field was renamed `_provider` to avoid a naming conflict with the getter.
+
 ## v1.28.0 — 2026-04-13
 
 Sprint 54 — Housekeeping: watcher teardown, sandbox guard, test coverage.

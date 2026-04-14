@@ -44,6 +44,8 @@ export interface SessionMeta {
   branchName: string;
   createdAt: string;
   updatedAt: string;
+  /** Number of times this session has been compacted. Incremented on each :compact or auto-compact. */
+  compact_count?: number;
 }
 
 export interface SessionV2 {

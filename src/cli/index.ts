@@ -28,6 +28,8 @@ import { loadAgents, formatAgentsList, type AgentDef } from "../core/agent-loade
 import { runConversationsBrowser } from "./conversations.js";
 import { resolveReasoningModel, resolveAgentModel } from "./model-resolver.js";
 import { handleColonCommand } from "./colon-commands.js";
+import { buildCompactionSummary, buildCompactedMessages, getCompactBackupPath, shouldCompact } from "../core/compaction.js";
+import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -821,7 +823,16 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
   }
 
-  const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr });
+  // Load AGENTS.md (user-global + project-level) and inject into system prompt
+  const agentsMdContent = await loadAgentsMd(process.cwd());
+  if (agentsMdContent) {
+    log.dim(`AGENTS.md loaded (${agentsMdContent.length} chars)`);
+  }
+  const agentsMdBlock = agentsMdContent ? formatAgentsMdBlock(agentsMdContent) : undefined;
+  // Combine config.systemPrompt with AGENTS.md block (both may be undefined)
+  const combinedSystemPrompt = [config.systemPrompt, agentsMdBlock].filter(Boolean).join("\n\n") || undefined;
+
+  const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr, systemPrompt: combinedSystemPrompt });
   // AbortController for cooperative SIGINT cancellation.
   // Aborted in the SIGINT handler; signal is passed to every agent.run() call so the
   // in-flight Codex/provider request is cancelled rather than waiting to finish.
@@ -929,6 +940,73 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
   };
 
   const writePrompt = () => process.stdout.write(chalk.green("you > "));
+
+  /**
+   * Compact the current session by replacing the conversation history with an
+   * LLM-generated summary. Writes a backup file before destructive replacement.
+   *
+   * On success: prints a notice, updates sessionMeta.compact_count, saves session.
+   * On failure: prints a warning, leaves session unchanged.
+   */
+  const performCompaction = async (): Promise<void> => {
+    const messages = agent.getConversation().getMessages();
+    const tokenEstimate = agent.getConversation().estimateTokens();
+    process.stdout.write(chalk.cyan(`↻ Compacting session (${tokenEstimate}k tokens)...`));
+
+    // Write backup before any destructive operation.
+    // If the backup fails, abort — it is unsafe to destroy history without a recovery file.
+    const backupPath = getCompactBackupPath(activeSessionPath);
+    try {
+      await writeFile(
+        backupPath,
+        JSON.stringify({ schemaVersion: 2, meta: sessionMeta, messages }, null, 2),
+        { encoding: "utf-8", mode: 0o600 },
+      );
+    } catch (err) {
+      process.stdout.write("\n");
+      console.warn(chalk.yellow(`⚠  Compaction aborted — could not write backup: ${err instanceof Error ? err.message : String(err)}`));
+      return;
+    }
+
+    let summary: string;
+    try {
+      summary = await buildCompactionSummary(agent.provider, messages);
+    } catch (err) {
+      process.stdout.write("\n");
+      console.warn(chalk.yellow(`⚠  Compaction failed: ${err instanceof Error ? err.message : String(err)}`));
+      return;
+    }
+
+    if (!summary.trim()) {
+      process.stdout.write("\n");
+      console.warn(chalk.yellow("⚠  Compaction returned empty summary — session not compacted."));
+      return;
+    }
+
+    agent.setConversation(Conversation.fromMessages(buildCompactedMessages(messages, summary)));
+
+    // Increment compact_count in sessionMeta (persisted on next saveSession)
+    sessionMeta = {
+      ...sessionMeta,
+      compact_count: (sessionMeta.compact_count ?? 0) + 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    process.stdout.write(" done.\n");
+    await saveSession();
+  };
+
+  /**
+   * Check if auto-compaction should fire and run it if so.
+   * Called PRE-TURN — before agent.run() — so the LLM processes the turn
+   * with a fresh context after compaction.
+   */
+  const maybeAutoCompact = async (): Promise<void> => {
+    const tokens = agent.getConversation().estimateTokens();
+    if (shouldCompact(tokens, config.auto_compact_tokens)) {
+      await performCompaction();
+    }
+  };
 
   // Main REPL loop
   while (true) {
@@ -1067,6 +1145,12 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       continue;
     }
 
+    // :compact — immediately compact the conversation history
+    if (trimmed === ":compact") {
+      await performCompaction();
+      continue;
+    }
+
     // :commit — generate an AI commit message for staged changes from inside the REPL
     if (trimmed === ":commit" || trimmed.startsWith(":commit ")) {
       const { buildCommitMessage, runCommitFlow, runGitCommit, SecretWarningError } = await import("./commit.js");
@@ -1202,6 +1286,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
 
         // Satori mode: skill declares retries > 0
         if (skill.retries && skill.retries > 0) {
+          await maybeAutoCompact();
           const slug = makeSlug(finalExpanded.slice(0, 100));
           const startedAt = new Date().toISOString();
           const attempts: import("../core/agent.js").SatoriResult[] = [];
@@ -1225,6 +1310,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           }
         } else {
           // Normal skill run
+          await maybeAutoCompact();
           try {
             const response = await agent.run(finalExpanded, { modelOverride: skill.model, signal: sigintController.signal });
             console.log(chalk.bold("\nassistant > ") + response + "\n");
@@ -1243,6 +1329,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     const normalTurnModel =
       resolveReasoningModel(reasoningOverride, config) ??
       (activeAgentDef ? resolveAgentModel(activeAgentDef.model, config) : undefined);
+    await maybeAutoCompact();
     process.stdout.write(chalk.bold("\nassistant > "));
     try {
       await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel, signal: sigintController.signal });

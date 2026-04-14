@@ -58,7 +58,7 @@ export interface AgentOptions {
 }
 
 export class Agent {
-  private provider: Provider;
+  private _provider: Provider;
   private tools: ToolRegistry;
   private conversation: Conversation;
   private config: Config;
@@ -77,7 +77,7 @@ export class Agent {
     });
     // Apply per-project allow/deny list from config (deny overrides allow)
     this.tools = baseRegistry.allowed(opts.config.tools, opts.config.deny);
-    this.provider = opts.provider ?? createProvider(opts.config);
+    this._provider = opts.provider ?? createProvider(opts.config);
     this.maxTurns = opts.config.maxTurns;
 
     if (opts.conversation) {
@@ -91,12 +91,18 @@ export class Agent {
       this.conversation = new Conversation(systemPrompt);
     }
 
-    log.dim(`Provider: ${this.provider.name} | Model: ${this.config.model}`);
+    log.dim(`Provider: ${this._provider.name} | Model: ${this.config.model}`);
   }
 
   getConversation(): Conversation {
     return this.conversation;
   }
+
+  /** Expose the active provider for compaction and other callers. */
+  get provider(): Provider {
+    return this._provider;
+  }
+
 
   /**
    * Replace the agent's active conversation with messages from a loaded session,
@@ -215,7 +221,7 @@ export class Agent {
 
       const resolvedModel = modelOverride ? this.resolveModel(modelOverride) : undefined;
 
-      for await (const event of this.provider.chatStream(
+      for await (const event of this._provider.chatStream(
         this.conversation.getMessages(),
         this.tools.toOpenAI(),
         (resolvedModel || signal) ? { model: resolvedModel, signal } : undefined,
