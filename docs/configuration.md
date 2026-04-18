@@ -359,6 +359,33 @@ This way the path is saved to `.phase2s/memory/learnings.jsonl` and injected int
 
 ---
 
+## AGENTS.md
+
+Drop a file named `AGENTS.md` in your project root (or `~/.phase2s/AGENTS.md` for global conventions). Phase2S reads it at startup and injects the contents into the system prompt automatically. Good for house rules: preferred libraries, commit message style, things the model should never do.
+
+```markdown
+# AGENTS.md
+Use TypeScript strict mode.
+Never use `any`.
+Commit messages: conventional commits (feat/fix/chore/refactor).
+```
+
+### Where AGENTS.md is injected
+
+| Mode | When loaded | Behavior on missing AGENTS.md |
+|------|-------------|-------------------------------|
+| REPL (`phase2s`) | Once at session start | Silently skipped |
+| One-shot (`phase2s run "..."`) | Once per invocation | Silently skipped |
+| MCP server (`phase2s mcp`) | Once at server startup | Silently skipped |
+
+### MCP server restart note
+
+The MCP server loads AGENTS.md once when it starts. If you change your `AGENTS.md` while a Claude Code session is open, the running server will not pick up the new content. Restart the MCP server (close and reopen Claude Code, or run `Cmd+Shift+P → MCP: Restart Server`) to apply changes.
+
+This matches how `.phase2s.yaml` config changes work — both require a server restart.
+
+---
+
 ## CLI options
 
 All config options can also be passed on the command line:
