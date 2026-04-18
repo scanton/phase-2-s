@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.30.0 — 2026-04-18
+
+Sprint 56 — AGENTS.md completion: one-shot and MCP injection.
+
+### Added
+
+- **AGENTS.md in one-shot mode** — `phase2s run "..."` now loads AGENTS.md and injects it into the system prompt, matching REPL behavior. ENOENT is silent; other filesystem errors (EACCES, EISDIR) are surfaced as dim warnings.
+
+- **AGENTS.md in MCP server** — The MCP server (`phase2s mcp`) loads AGENTS.md once at startup alongside config. Every tool call now receives the AGENTS.md block automatically. Changes to AGENTS.md during a running session require server restart (same behavior as `.phase2s.yaml` config changes).
+
+### Changed
+
+- **`handleRequest()` signature** — Added optional `agentsMdBlock?: string` as a 6th parameter. All existing callers continue to work without changes (param is optional).
+
+- **`oneShotMode()` exported** — The function is now exported from `src/cli/index.ts` to support direct unit testing.
+
+- **Error visibility for AGENTS.md load failures** — Non-ENOENT errors (permission denied, directory named AGENTS.md, etc.) now surface a warning instead of being swallowed silently.
+
+### Docs
+
+- **`docs/configuration.md`** — New `## AGENTS.md` section documents all three injection modes (REPL, one-shot, MCP) and the MCP server restart requirement.
+
+---
+
 ## v1.29.0 — 2026-04-13
 
 Sprint 55 — Context Compaction + AGENTS.md support.

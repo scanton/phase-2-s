@@ -23,10 +23,14 @@ import type { Config } from "../../src/core/config.js";
 // Mocks
 // ---------------------------------------------------------------------------
 
+// Capture the last Agent constructor opts so tests can assert on agentsMdBlock.
+let lastAgentOpts: Record<string, unknown> = {};
+
 vi.mock("../../src/core/agent.js", () => {
   class MockAgent {
     private _conversation: unknown;
-    constructor(opts: { config: unknown; conversation?: unknown }) {
+    constructor(opts: { config: unknown; conversation?: unknown; agentsMdBlock?: unknown }) {
+      lastAgentOpts = opts as Record<string, unknown>;
       this._conversation = opts.conversation ?? { _stub: true, _id: Math.random() };
     }
     run = vi.fn().mockResolvedValue("mocked agent response");
@@ -335,6 +339,42 @@ describe("handleRequest — goal and report validation", () => {
     );
     expect(resp.error?.code).toBe(-32602);
     expect(resp.error?.message).toContain("logFile");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agentsMdBlock injection
+// ---------------------------------------------------------------------------
+
+describe("handleRequest — agentsMdBlock injection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastAgentOpts = {};
+  });
+
+  it("passes agentsMdBlock to Agent constructor when provided", async () => {
+    const block = "--- AGENTS.md ---\n# Conventions\nUse TypeScript.\n--- END AGENTS.md ---";
+    await handleRequest(
+      { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "phase2s__adversarial", arguments: { prompt: "test" } } },
+      SKILLS,
+      CWD,
+      undefined,
+      CONFIG,
+      block,
+    );
+    expect(lastAgentOpts.agentsMdBlock).toBe(block);
+  });
+
+  it("passes undefined agentsMdBlock to Agent when param is omitted", async () => {
+    await handleRequest(
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "phase2s__adversarial", arguments: { prompt: "test" } } },
+      SKILLS,
+      CWD,
+      undefined,
+      CONFIG,
+      // agentsMdBlock omitted
+    );
+    expect(lastAgentOpts.agentsMdBlock).toBeUndefined();
   });
 });
 

@@ -8,7 +8,7 @@
 
 ## Backlog — Post-Sprint 55 /review findings (2026-04-14)
 
-- [ ] **AGENTS.md memoization** — `loadAgentsMd(cwd)` performs two disk reads on every `Agent` construction. In MCP server mode (one Agent per request), this creates repeated I/O. Cache the result per `cwd` in a process-level Map so repeated calls in the same process are free. **INVESTIGATE before Sprint 57.**
+- [x] **AGENTS.md memoization** — `loadAgentsMd(cwd)` performs two disk reads on every `Agent` construction. In MCP server mode (one Agent per request), this creates repeated I/O. Cache the result per `cwd` in a process-level Map so repeated calls in the same process are free. **Completed: v1.30.0 (2026-04-18)** — implemented as load-once at `runMCPServer()` startup (Approach A: startup variable, not module-level cache), which is zero reads per request in the long-lived MCP process. One-shot mode loads once per invocation (correct for a per-process call).
 
 - [ ] **Cascading auto-compaction** — `justCompacted` flag only skips one turn. If the LLM generates a verbose summary (>50% of original size), the next user turn can push context back over threshold and trigger compaction again. Each cascade degrades summary fidelity. Consider: (a) compact_count cap, (b) hard size limit on summary, or (c) exponential threshold growth post-compact. **INVESTIGATE before Sprint 57.**
 
@@ -18,9 +18,9 @@
 
 ## Backlog — Post-Sprint 55 adversarial review findings (2026-04-13)
 
-- [ ] **AGENTS.md injection for one-shot mode** — `phase2s run "..."` (non-interactive) does not load AGENTS.md. The interactive REPL does (`loadAgentsMd` called at startup). One-shot mode should call the same loader before constructing the Agent. Low risk for now — most AGENTS.md use is interactive. **INVESTIGATE before Sprint 56.**
+- [x] **AGENTS.md injection for one-shot mode** — `phase2s run "..."` (non-interactive) does not load AGENTS.md. The interactive REPL does (`loadAgentsMd` called at startup). One-shot mode should call the same loader before constructing the Agent. **Completed: v1.30.0 (2026-04-18)**
 
-- [ ] **AGENTS.md injection for MCP tools** — MCP tool calls (via `runMCPServer`) spawn an Agent per request without loading AGENTS.md. Skills invoked via MCP skip project/user-global instruction files entirely. **INVESTIGATE before Sprint 56.**
+- [x] **AGENTS.md injection for MCP tools** — MCP tool calls (via `runMCPServer`) spawn an Agent per request without loading AGENTS.md. Skills invoked via MCP skip project/user-global instruction files entirely. **Completed: v1.30.0 (2026-04-18)** — loaded once at server startup, passed through `handleRequest()` as `agentsMdBlock` on every tool call.
 
 - [ ] **Last user message drop in `buildCompactionSummary`** — When the last message is a user message, it is dropped before the summary prompt to avoid consecutive-user-role rejection. This is correct for providers that reject consecutive user messages, but it silently discards context. Consider preserving the last user message by converting it to an assistant message or wrapping it in a system message. **Low priority — INVESTIGATE.**
 

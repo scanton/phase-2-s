@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { Conversation } from "../core/conversation.js";
 import { handleRequest, type JSONRPCRequest } from "./handler.js";
 import { loadConfig } from "../core/config.js";
+import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
 import { buildNotification, MCP_SERVER_VERSION } from "./tools.js";
 import { setupSkillsWatcher } from "./watcher.js";
 
@@ -63,6 +64,19 @@ export async function runMCPServer(cwd: string): Promise<void> {
   // Load config once at startup — avoids per-request disk reads in handleRequest.
   // If config loading fails, fall back to undefined so handleRequest uses loadConfig().
   const serverConfig = await loadConfig().catch(() => undefined);
+
+  // Load AGENTS.md once at startup — avoids per-request disk reads in handleRequest.
+  // Changes during a running MCP session require server restart (same as config changes).
+  // ENOENT is silent (file absent). Non-ENOENT errors are surfaced to stderr so
+  // permission issues don't silently disappear (stderr doesn't corrupt JSON-RPC stdout).
+  const agentsMdContent = await loadAgentsMd(cwd).catch((err: unknown) => {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      process.stderr.write(`[phase2s] Warning: could not load AGENTS.md (${code ?? "unknown"}) — skipping.\n`);
+    }
+    return undefined;
+  });
+  const preloadedAgentsMdBlock = agentsMdContent ? formatAgentsMdBlock(agentsMdContent) : undefined;
 
   // One Conversation per skill, scoped to this process lifetime (= one Claude
   // Code project session). Multi-turn skills like /satori and /consensus-plan
@@ -147,7 +161,7 @@ export async function runMCPServer(cwd: string): Promise<void> {
 
     let response;
     try {
-      response = await handleRequest(request, skills, cwd, sessionConversations, serverConfig);
+      response = await handleRequest(request, skills, cwd, sessionConversations, serverConfig, preloadedAgentsMdBlock);
     } catch (err) {
       // Guard against uncaught throws from handleRequest (e.g. EACCES/ENOSPC on
       // state_write). Return a JSON-RPC internal error rather than crashing the server.

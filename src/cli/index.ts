@@ -1483,7 +1483,7 @@ export function resolveSkillRouting(
   return { effectivePrompt: prompt, modelOverride: undefined, routedSkillName: null, unknownSkillName: skillName };
 }
 
-async function oneShotMode(config: Config, prompt: string): Promise<void> {
+export async function oneShotMode(config: Config, prompt: string): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
   if (!checkOpenAIKey(config)) process.exit(1);
   if (!checkAnthropicKey(config)) process.exit(1);
@@ -1495,7 +1495,21 @@ async function oneShotMode(config: Config, prompt: string): Promise<void> {
     log.dim(`Learnings: ${learningsList.length} ${learningsList.length === 1 ? "entry" : "entries"} from .phase2s/memory/`);
   }
 
-  const agent = new Agent({ config, learnings: learningsStr });
+  // Sprint 56: load AGENTS.md (same logic as startReplMode() AGENTS.md load).
+  // ENOENT is silent (file simply absent). Other errors (EACCES, EISDIR, etc.)
+  // are surfaced as dim warnings so filesystem issues don't silently disappear.
+  let agentsMdBlock: string | undefined;
+  try {
+    const agentsMdContent = await loadAgentsMd(process.cwd());
+    agentsMdBlock = agentsMdContent ? formatAgentsMdBlock(agentsMdContent) : undefined;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      log.dim(`[phase2s] Could not load AGENTS.md (${code ?? "unknown"}) — skipping.`);
+    }
+  }
+
+  const agent = new Agent({ config, learnings: learningsStr, agentsMdBlock });
   let hasOutput = false;
 
   // Skill routing: if prompt starts with "/" look up and run the named skill

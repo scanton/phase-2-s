@@ -433,7 +433,7 @@ Use `--preview` in PR workflows to inspect proposed messages without committing 
 
 **AGENTS.md — project-level conventions:**
 
-Drop a file named `AGENTS.md` in your project root (or `~/.phase2s/AGENTS.md` for global conventions). Phase2S reads it at startup and injects the contents into the system prompt automatically. Good for house rules: preferred libraries, commit message style, things the model should never do.
+Drop a file named `AGENTS.md` in your project root (or `~/.phase2s/AGENTS.md` for global conventions). Phase2S reads it and injects the contents into the system prompt automatically — in the REPL, in one-shot mode (`phase2s run "..."`), and in the MCP server. Good for house rules: preferred libraries, commit message style, things the model should never do.
 
 ```
 # AGENTS.md
@@ -441,6 +441,8 @@ Always use pnpm, not npm.
 Write tests before implementation (TDD).
 Never commit directly to main.
 ```
+
+[Full injection modes and MCP restart note →](docs/configuration.md#agentsmd)
 
 **Custom system prompt:**
 
@@ -552,6 +554,7 @@ browser: true  # requires playwright installed
 - [x] `phase2s --sandbox` non-git guard — Running `--sandbox` outside a git repository or a non-existent directory now exits with a clear, actionable error instead of a misleading "detached HEAD" message. Two cases distinguished: directory doesn't exist vs. directory exists but isn't a git repo.
 - [x] MCP watcher teardown handle — `setupSkillsWatcher()` returns a `{ close(): void }` handle. The MCP server stores it and calls `watcher?.close()` on shutdown, cancelling any pending debounce timer before stopping the fs.watch listener. Prevents timer leaks on repeated server restarts. 1,354 tests.
 - [x] Context compaction + AGENTS.md — `:compact` REPL command (and `auto_compact_tokens` config for automatic compaction) replaces a long conversation with an LLM-generated summary, writing a `.compact-backup.json` before any destructive replacement. `AGENTS.md` in the project root (or `~/.phase2s/AGENTS.md` globally) is injected into the system prompt at startup. `phase2s doctor` reports AGENTS.md presence. Compaction utilities (`shouldCompact`, `buildCompactedMessages`, etc.) extracted to `src/core/compaction.ts` as pure, tested functions. 1,409 tests.
+- [x] AGENTS.md in one-shot and MCP modes — `phase2s run "..."` now loads AGENTS.md before constructing the agent, matching REPL behavior. The MCP server (`phase2s mcp`) loads AGENTS.md once at startup and passes it to every tool call — zero per-request I/O. Non-ENOENT load errors (permission denied, directory named AGENTS.md) surface as warnings instead of being swallowed silently. 1,471 tests.
 
 ---
 
