@@ -102,7 +102,7 @@ describe("oneShotMode — AGENTS.md injection (Sprint 56)", () => {
     const { oneShotMode } = await import("../../src/cli/index.js");
     await oneShotMode(makeConfig(), "what does this do?");
 
-    expect(loadAgentsMd).toHaveBeenCalled();
+    expect(loadAgentsMd).toHaveBeenCalledWith(process.cwd());
     expect(formatAgentsMdBlock).toHaveBeenCalledWith("# Conventions\nUse TypeScript.");
     expect(lastAgentOpts.agentsMdBlock).toBe("--- AGENTS.md ---\n# Conventions\n--- END AGENTS.md ---");
   });
@@ -123,7 +123,6 @@ describe("oneShotMode — AGENTS.md injection (Sprint 56)", () => {
     vi.mocked(loadAgentsMd).mockRejectedValue(enoent);
 
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    afterEach(() => consoleSpy.mockRestore());
 
     const { oneShotMode } = await import("../../src/cli/index.js");
     await expect(oneShotMode(makeConfig(), "what does this do?")).resolves.not.toThrow();

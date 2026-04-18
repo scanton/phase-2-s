@@ -1495,7 +1495,7 @@ export async function oneShotMode(config: Config, prompt: string): Promise<void>
     log.dim(`Learnings: ${learningsList.length} ${learningsList.length === 1 ? "entry" : "entries"} from .phase2s/memory/`);
   }
 
-  // Sprint 56: load AGENTS.md (same as REPL path at line ~827).
+  // Sprint 56: load AGENTS.md (same logic as startReplMode() AGENTS.md load).
   // ENOENT is silent (file simply absent). Other errors (EACCES, EISDIR, etc.)
   // are surfaced as dim warnings so filesystem issues don't silently disappear.
   let agentsMdBlock: string | undefined;
