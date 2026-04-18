@@ -1496,13 +1496,17 @@ export async function oneShotMode(config: Config, prompt: string): Promise<void>
   }
 
   // Sprint 56: load AGENTS.md (same as REPL path at line ~827).
-  // Errors are caught and logged as warnings — not fatal (consistent with REPL behavior).
+  // ENOENT is silent (file simply absent). Other errors (EACCES, EISDIR, etc.)
+  // are surfaced as dim warnings so filesystem issues don't silently disappear.
   let agentsMdBlock: string | undefined;
   try {
     const agentsMdContent = await loadAgentsMd(process.cwd());
     agentsMdBlock = agentsMdContent ? formatAgentsMdBlock(agentsMdContent) : undefined;
-  } catch {
-    log.dim("[phase2s] Could not load AGENTS.md — skipping.");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      log.dim(`[phase2s] Could not load AGENTS.md (${code ?? "unknown"}) — skipping.`);
+    }
   }
 
   const agent = new Agent({ config, learnings: learningsStr, agentsMdBlock });

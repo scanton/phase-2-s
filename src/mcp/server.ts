@@ -67,7 +67,15 @@ export async function runMCPServer(cwd: string): Promise<void> {
 
   // Load AGENTS.md once at startup — avoids per-request disk reads in handleRequest.
   // Changes during a running MCP session require server restart (same as config changes).
-  const agentsMdContent = await loadAgentsMd(cwd).catch(() => undefined);
+  // ENOENT is silent (file absent). Non-ENOENT errors are surfaced to stderr so
+  // permission issues don't silently disappear (stderr doesn't corrupt JSON-RPC stdout).
+  const agentsMdContent = await loadAgentsMd(cwd).catch((err: unknown) => {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      process.stderr.write(`[phase2s] Warning: could not load AGENTS.md (${code ?? "unknown"}) — skipping.\n`);
+    }
+    return undefined;
+  });
   const preloadedAgentsMdBlock = agentsMdContent ? formatAgentsMdBlock(agentsMdContent) : undefined;
 
   // One Conversation per skill, scoped to this process lifetime (= one Claude
