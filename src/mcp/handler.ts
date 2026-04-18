@@ -52,6 +52,9 @@ export interface JSONRPCResponse {
  * @param preloadedConfig      Pre-loaded config from server startup. When provided,
  *                             avoids the per-request disk read. Tests omit this param
  *                             to use the default loadConfig() path.
+ * @param agentsMdBlock        Pre-formatted AGENTS.md block from server startup.
+ *                             Loaded once in runMCPServer() to avoid per-request disk
+ *                             reads. Undefined when no AGENTS.md is present.
  */
 export async function handleRequest(
   request: JSONRPCRequest,
@@ -59,6 +62,7 @@ export async function handleRequest(
   cwd: string,
   sessionConversations?: Map<string, Conversation>,
   preloadedConfig?: Config,
+  agentsMdBlock?: string,
 ): Promise<JSONRPCResponse> {
   // -----------------------------------------------------------------------
   // initialize
@@ -281,7 +285,7 @@ export async function handleRequest(
       // On the first call the map has no entry and Agent creates a fresh one.
       // On subsequent calls the Agent resumes where it left off.
       const existingConversation = sessionConversations?.get(skillName);
-      const agent = new Agent({ config, conversation: existingConversation });
+      const agent = new Agent({ config, conversation: existingConversation, agentsMdBlock });
 
       const text = await agent.run(fullPrompt, { modelOverride: skill.model });
 

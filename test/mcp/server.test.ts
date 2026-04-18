@@ -19,13 +19,17 @@ import type { Skill } from "../../src/skills/types.js";
 // Mocks
 // ---------------------------------------------------------------------------
 
+// Capture the last Agent constructor opts so tests can assert on agentsMdBlock.
+let lastAgentOpts: Record<string, unknown> = {};
+
 // Mock Agent so tools/call tests don't spin up a real LLM.
 // Includes getConversation() so session persistence tests can verify the
 // conversation is threaded through correctly.
 vi.mock("../../src/core/agent.js", () => {
   class MockAgent {
     private _conversation: unknown;
-    constructor(opts: { config: unknown; conversation?: unknown }) {
+    constructor(opts: { config: unknown; conversation?: unknown; agentsMdBlock?: unknown }) {
+      lastAgentOpts = opts as Record<string, unknown>;
       // Reuse the injected conversation if provided; otherwise create a stub.
       this._conversation = opts.conversation ?? { _stub: true, _id: Math.random() };
     }
@@ -902,5 +906,40 @@ describe("handleRequest tools/call — underscore skill lookup", () => {
     // consensus-plan is in FIXTURE_SKILLS — should resolve without error
     expect(response.error).toBeUndefined();
     expect(response.result).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 56: agentsMdBlock injection via handleRequest (MCP path)
+// ---------------------------------------------------------------------------
+
+describe("handleRequest — agentsMdBlock injection (Sprint 56)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lastAgentOpts = {};
+  });
+
+  it("threads agentsMdBlock through to Agent constructor when provided", async () => {
+    const block = "--- AGENTS.md ---\n# Conventions\nUse TypeScript.\n--- END AGENTS.md ---";
+    const response = await handleRequest(
+      { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "phase2s__adversarial", arguments: { prompt: "test" } } },
+      FIXTURE_SKILLS,
+      process.cwd(),
+      undefined,
+      undefined,
+      block,
+    );
+    expect(response.error).toBeUndefined();
+    expect(lastAgentOpts.agentsMdBlock).toBe(block);
+  });
+
+  it("passes undefined agentsMdBlock to Agent when param is omitted (backward compat)", async () => {
+    const response = await handleRequest(
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "phase2s__adversarial", arguments: { prompt: "test" } } },
+      FIXTURE_SKILLS,
+      process.cwd(),
+    );
+    expect(response.error).toBeUndefined();
+    expect(lastAgentOpts.agentsMdBlock).toBeUndefined();
   });
 });
