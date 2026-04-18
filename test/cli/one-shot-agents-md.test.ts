@@ -12,7 +12,7 @@
  * - cli/index.ts internals (checkCodexBinary etc.) mocked via the module mocks below
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Config } from "../../src/core/config.js";
 
 // ---------------------------------------------------------------------------
@@ -117,13 +117,40 @@ describe("oneShotMode — AGENTS.md injection (Sprint 56)", () => {
     expect(lastAgentOpts.agentsMdBlock).toBeUndefined();
   });
 
-  it("skips AGENTS.md and continues when loadAgentsMd throws", async () => {
+  it("swallows ENOENT silently — no warning emitted, agentsMdBlock undefined", async () => {
     const { loadAgentsMd } = await import("../../src/core/agents-md.js");
-    vi.mocked(loadAgentsMd).mockRejectedValue(new Error("ENOENT"));
+    const enoent = Object.assign(new Error("no such file"), { code: "ENOENT" });
+    vi.mocked(loadAgentsMd).mockRejectedValue(enoent);
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    afterEach(() => consoleSpy.mockRestore());
 
     const { oneShotMode } = await import("../../src/cli/index.js");
-    // Should not throw — error is caught and logged as a warning
     await expect(oneShotMode(makeConfig(), "what does this do?")).resolves.not.toThrow();
     expect(lastAgentOpts.agentsMdBlock).toBeUndefined();
+    // No "[phase2s] Could not load AGENTS.md" warning should appear for ENOENT
+    const warned = consoleSpy.mock.calls.some((args) =>
+      String(args[1] ?? args[0]).includes("Could not load AGENTS.md"),
+    );
+    expect(warned).toBe(false);
+    consoleSpy.mockRestore();
+  });
+
+  it("emits a dim warning for non-ENOENT errors and keeps agentsMdBlock undefined", async () => {
+    const { loadAgentsMd } = await import("../../src/core/agents-md.js");
+    const accessErr = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    vi.mocked(loadAgentsMd).mockRejectedValue(accessErr);
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { oneShotMode } = await import("../../src/cli/index.js");
+    await expect(oneShotMode(makeConfig(), "what does this do?")).resolves.not.toThrow();
+    expect(lastAgentOpts.agentsMdBlock).toBeUndefined();
+    // The non-ENOENT branch calls log.dim → console.log with the warning text
+    const warned = consoleSpy.mock.calls.some((args) =>
+      String(args[1] ?? args[0]).includes("Could not load AGENTS.md"),
+    );
+    expect(warned).toBe(true);
+    consoleSpy.mockRestore();
   });
 });
