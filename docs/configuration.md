@@ -104,6 +104,16 @@ maxTurns: 50
 # Unset disables auto-compaction (default). Must be a positive integer when set.
 # auto_compact_tokens: 80000
 
+# Rate-limit auto-backoff threshold (openai-api and anthropic providers)
+# When a 429 response includes a Retry-After header, Phase2S sleeps and retries
+# automatically if the wait is at or below this threshold (in seconds). Retries
+# up to 3 total attempts per call. If the delay exceeds this value or no header
+# is present, Phase2S checkpoints and exits immediately (exit 2 for `goal`, exit 0
+# for the REPL) so you can switch providers or wait and resume.
+# Set to 0 to disable auto-backoff entirely (checkpoint immediately on any 429).
+# Default: 60
+# rate_limit_backoff_threshold: 60
+
 # Satori verify command
 # Runs after each attempt to check if the task succeeded.
 # Must exit 0 for success, non-zero for failure.

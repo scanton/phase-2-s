@@ -432,10 +432,46 @@ Acceptance criteria:
 ✓ All acceptance criteria met after 1 attempt(s).
 ```
 
-Exit code 0 on success, 1 on failure. Use in scripts:
+Exit codes:
+
+| Code | Meaning |
+|------|---------|
+| `0` | All acceptance criteria met |
+| `1` | Criteria not met after all attempts |
+| `2` | Rate-limited (paused, not failure) |
+
+Use in scripts:
 
 ```bash
-phase2s goal my-spec.md && echo "Done" || echo "Failed — check output"
+phase2s goal my-spec.md
+code=$?
+if [ $code -eq 0 ]; then echo "Done"
+elif [ $code -eq 2 ]; then echo "Paused — rate limited. Resume with --resume"
+else echo "Failed — check output"
+fi
+```
+
+### Rate-limit pause (exit 2)
+
+When the provider returns a 429 and the wait exceeds `rate_limit_backoff_threshold` (default 60 s), the dark factory saves progress and exits 2 instead of sitting idle. The interrupted sub-task is written to state as `"failed"` so `--resume` has full context.
+
+Resume after the rate limit clears:
+
+```bash
+# Same spec, same state file — picks up from the last completed sub-task
+phase2s goal my-spec.md --resume
+
+# Switch providers if your quota is exhausted
+phase2s goal my-spec.md --resume --provider anthropic
+```
+
+Auto-backoff is active by default: when `Retry-After` is ≤ 60 s the provider sleeps and retries transparently (up to 3 attempts). You only see the pause when the wait is too long or the header is absent.
+
+To disable auto-backoff entirely (exit 2 immediately on any 429):
+
+```yaml
+# .phase2s.yaml
+rate_limit_backoff_threshold: 0
 ```
 
 ---
