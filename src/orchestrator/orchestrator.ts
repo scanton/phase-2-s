@@ -19,6 +19,7 @@ import { schemaGate } from '../core/schema-gate.js';
 import type { RunLogger } from '../core/run-logger.js';
 import type { Provider } from '../providers/types.js';
 import type { Config } from '../core/config.js';
+import { RateLimitError } from '../core/rate-limit-error.js';
 
 /** Max bytes per upstream context file injection. Matches FAILURE_CONTEXT_MAX_BYTES in parallel-executor.ts */
 const CONTEXT_MAX_BYTES = 4096;
@@ -78,6 +79,10 @@ async function chatOnce(
     if (event.type === 'text') text += event.content;
     else if (event.type === 'error') throw new Error(event.error);
     else if (event.type === 'done') break;
+    else if (event.type === 'rate_limited') {
+      // Propagate rate limits so the outer orchestrator loop can checkpoint and pause.
+      throw new RateLimitError(event.retryAfter);
+    }
   }
   return text;
 }
@@ -268,6 +273,10 @@ async function replanOnFailure(
 
     return { jobs: revisedJobs, suspectIds };
   } catch (e) {
+    if (e instanceof RateLimitError) {
+      // Don't swallow rate limits — propagate so the orchestrator can checkpoint and pause.
+      throw e;
+    }
     logger.log({
       event: 'orchestrator_replan_failed',
       specHash,
@@ -509,8 +518,12 @@ export async function runOrchestrator(
               specHash,
               options,
             );
-          } catch {
-            // replanOnFailure threw unexpectedly — use fallback
+          } catch (replanErr) {
+            if (replanErr instanceof RateLimitError) {
+              // Propagate rate limits — they must checkpoint, not fall back to stale jobs.
+              throw replanErr;
+            }
+            // Other unexpected errors — use fallback (original behavior)
           }
 
           // Accumulate suspect IDs

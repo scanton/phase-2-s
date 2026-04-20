@@ -16,6 +16,7 @@ import { execSync, execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import chalk from "chalk";
 import { Agent } from "../core/agent.js";
+import { RateLimitError } from "../core/rate-limit-error.js";
 import { loadConfig } from "../core/config.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import type { SubTask, Spec } from "../core/spec-parser.js";
@@ -487,6 +488,12 @@ async function executeWorker(
   const durationStr = `${(durationMs / 1000).toFixed(1)}s`;
 
   if (workerError) {
+    // Rate limit errors must propagate — they are not per-worker failures.
+    // Re-throwing here causes Promise.all to reject, which executeLevel catches
+    // and re-throws to goal.ts for checkpointing and exit 2.
+    if (workerError instanceof RateLimitError) {
+      throw workerError;
+    }
     console.log(chalk.red(`  [Worker ${index}] Failed (${durationStr}): ${subtask.name}`));
     return {
       index,

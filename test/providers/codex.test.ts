@@ -277,3 +277,68 @@ describe("CodexProvider — AbortSignal cancellation", () => {
     expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rate limit detection via stderr (Sprint 58)
+// ---------------------------------------------------------------------------
+
+describe("CodexProvider rate limit detection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Build a mock proc that writes stderrContent to stderr, produces no stdout,
+   * then emits close with the given exit code.
+   */
+  function makeProcWithStderr(stderrContent: string, exitCode: number) {
+    const stdout = new Readable({ read() {} });
+    const stderr = new Readable({ read() {} });
+    const proc = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable };
+    proc.stdout = stdout;
+    proc.stderr = stderr;
+
+    setImmediate(() => {
+      stderr.push(stderrContent);
+      stderr.push(null);
+      stdout.push(null);
+      proc.emit("close", exitCode);
+    });
+    return proc;
+  }
+
+  it("yields rate_limited when stderr contains '429' and 'rate limit' keywords on non-zero exit", async () => {
+    const proc = makeProcWithStderr("Error: 429 Too Many Requests\nYou've exceeded the rate limit.", 1);
+    vi.mocked(spawn).mockReturnValue(proc as ReturnType<typeof spawn>);
+
+    const provider = new CodexProvider(mockConfig);
+    const events: ProviderEvent[] = [];
+    for await (const event of provider.chatStream(mockMessages, [])) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "rate_limited" });
+    // Should still emit done after rate_limited
+    expect(events).toContainEqual({ type: "done", stopReason: "stop" });
+  });
+
+  it("yields error (not rate_limited) when stderr has 429 but no 'rate limit' keyword", async () => {
+    const proc = makeProcWithStderr("HTTP status 429 — something else.", 1);
+    vi.mocked(spawn).mockReturnValue(proc as ReturnType<typeof spawn>);
+
+    const provider = new CodexProvider(mockConfig);
+    await expect(async () => {
+      for await (const _ of provider.chatStream(mockMessages, [])) { /* drain */ }
+    }).rejects.toThrow("Codex exited with code 1");
+  });
+
+  it("yields error (not rate_limited) on generic non-zero exit without stderr keywords", async () => {
+    const proc = makeProcWithStderr("some unrelated error output", 1);
+    vi.mocked(spawn).mockReturnValue(proc as ReturnType<typeof spawn>);
+
+    const provider = new CodexProvider(mockConfig);
+    await expect(async () => {
+      for await (const _ of provider.chatStream(mockMessages, [])) { /* drain */ }
+    }).rejects.toThrow("Codex exited with code 1");
+  });
+});

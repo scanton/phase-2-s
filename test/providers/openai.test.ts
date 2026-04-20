@@ -6,8 +6,10 @@
  * parameter — we pass a typed stub directly, same pattern as anthropic.test.ts.
  */
 
-import { describe, it, expect, vi } from "vitest";
-import { OpenAIProvider, type OpenAIClientLike } from "../../src/providers/openai.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import OpenAI from "openai";
+import { OpenAIProvider, type OpenAIClientLike, MAX_RATE_LIMIT_RETRIES, parseRetryAfter } from "../../src/providers/openai.js";
+import * as openaiModule from "../../src/providers/openai.js";
 import type { Message } from "../../src/providers/types.js";
 import type { Config } from "../../src/core/config.js";
 
@@ -323,10 +325,10 @@ describe("OpenAIProvider.chatStream — abort signal", () => {
     }).rejects.toThrow("400 Bad Request");
   });
 
-  it("throws on 429 Too Many Requests (no retry in v1.28.0)", async () => {
+  it("non-429 generic error still propagates as throw", async () => {
     const stream: AsyncIterable<object> = {
       async *[Symbol.asyncIterator]() {
-        throw new Error("429 Too Many Requests");
+        throw new Error("500 Internal Server Error");
       },
     };
     const mockCreate = vi.fn().mockResolvedValue(stream);
@@ -334,6 +336,182 @@ describe("OpenAIProvider.chatStream — abort signal", () => {
     const provider = new OpenAIProvider(makeConfig(), client);
     await expect(async () => {
       await collectEvents(provider, [{ role: "user", content: "hi" }]);
-    }).rejects.toThrow("429 Too Many Requests");
+    }).rejects.toThrow("500 Internal Server Error");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rate limit + auto-backoff (Sprint 58)
+// ---------------------------------------------------------------------------
+
+describe("OpenAIProvider rate limit and auto-backoff", () => {
+  let sleepSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    sleepSpy = vi.spyOn(openaiModule, "sleep").mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    sleepSpy.mockRestore();
+  });
+
+  /** Build a real OpenAI.APIError with status 429 and optional retry-after header. */
+  function make429Error(retryAfterSec?: number): OpenAI.APIError {
+    const headers: Record<string, string> = retryAfterSec !== undefined
+      ? { "retry-after": String(retryAfterSec) }
+      : {};
+    return OpenAI.APIError.generate(429, null, "Too Many Requests", headers as unknown as Headers);
+  }
+
+  it("yields rate_limited event on HTTP 429 (no auto-backoff when retryAfter > threshold)", async () => {
+    // retryAfter=120 > threshold=60 → no sleep, yield rate_limited immediately
+    const err = make429Error(120);
+    const mockCreate = vi.fn().mockRejectedValue(err);
+    const client: OpenAIClientLike = { chat: { completions: { create: mockCreate } } };
+    const provider = new OpenAIProvider(makeConfig({ rate_limit_backoff_threshold: 60 }), client);
+
+    const events = await collectEvents(provider, [{ role: "user", content: "hi" }]);
+    expect(events).toContainEqual({ type: "rate_limited", retryAfter: 120 });
+    expect(sleepSpy).not.toHaveBeenCalled();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("auto-backoff: sleeps and retries on short retryAfter, succeeds on retry", async () => {
+    // First call → 429 with retry-after: 5; second call → success stream.
+    // sleep() is an internal call in openai.ts (same-file), so vi.spyOn doesn't intercept it.
+    // We use vi.useFakeTimers() to make setTimeout resolve immediately.
+    vi.useFakeTimers();
+    try {
+      const err = make429Error(5);
+      const successStream: AsyncIterable<object> = {
+        async *[Symbol.asyncIterator]() {
+          yield { choices: [{ delta: { content: "hello" }, finish_reason: null }] };
+          yield { choices: [{ delta: {}, finish_reason: "stop" }] };
+        },
+      };
+      const mockCreate = vi.fn()
+        .mockRejectedValueOnce(err)
+        .mockResolvedValueOnce(successStream);
+      const client: OpenAIClientLike = { chat: { completions: { create: mockCreate } } };
+      const provider = new OpenAIProvider(makeConfig({ rate_limit_backoff_threshold: 60 }), client);
+
+      // Start the stream then flush all pending timers (the sleep) before awaiting.
+      const eventsPromise = collectEvents(provider, [{ role: "user", content: "hi" }]);
+      await vi.runAllTimersAsync();
+      const events = await eventsPromise;
+
+      // Should NOT see rate_limited — should see text + done from successful retry
+      expect(events.some((e) => (e as { type: string }).type === "rate_limited")).toBe(false);
+      expect(events).toContainEqual({ type: "text", content: "hello" });
+      expect(events).toContainEqual({ type: "done", stopReason: "stop" });
+      // Retry happened → create called twice
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("auto-backoff: max retries exhausted → yields rate_limited", async () => {
+    // MAX_RATE_LIMIT_RETRIES = 3 → 4th call is the limit, should yield rate_limited.
+    // Same fake-timer pattern to skip the backoff delays.
+    vi.useFakeTimers();
+    try {
+      const err = make429Error(5);
+      const mockCreate = vi.fn().mockRejectedValue(err);
+      const client: OpenAIClientLike = { chat: { completions: { create: mockCreate } } };
+      const provider = new OpenAIProvider(makeConfig({ rate_limit_backoff_threshold: 60 }), client);
+
+      const eventsPromise = collectEvents(provider, [{ role: "user", content: "hi" }]);
+      await vi.runAllTimersAsync();
+      const events = await eventsPromise;
+
+      expect(events).toContainEqual({ type: "rate_limited", retryAfter: 5 });
+      // total create calls = MAX_RATE_LIMIT_RETRIES (first try + retries up to budget)
+      expect(mockCreate).toHaveBeenCalledTimes(MAX_RATE_LIMIT_RETRIES);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("auto-backoff: threshold=0 disables backoff → yields rate_limited immediately", async () => {
+    const err = make429Error(5);
+    const mockCreate = vi.fn().mockRejectedValue(err);
+    const client: OpenAIClientLike = { chat: { completions: { create: mockCreate } } };
+    const provider = new OpenAIProvider(makeConfig({ rate_limit_backoff_threshold: 0 }), client);
+
+    const events = await collectEvents(provider, [{ role: "user", content: "hi" }]);
+    expect(events).toContainEqual({ type: "rate_limited", retryAfter: 5 });
+    expect(sleepSpy).not.toHaveBeenCalled();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("SIGINT abort is NOT treated as rate limit — does not yield rate_limited", async () => {
+    // Aborted signal: the error should yield done (stop), not rate_limited
+    const controller = new AbortController();
+    controller.abort();
+    const stream: AsyncIterable<object> = {
+      async *[Symbol.asyncIterator]() {
+        yield { choices: [{ delta: { content: "hi" }, finish_reason: null }] };
+      },
+    };
+    const mockCreate = vi.fn().mockResolvedValue(stream);
+    const client: OpenAIClientLike = { chat: { completions: { create: mockCreate } } };
+    const provider = new OpenAIProvider(makeConfig(), client);
+
+    const events = await collectEvents(provider, [{ role: "user", content: "hi" }], {
+      signal: controller.signal,
+    });
+    expect(events.every((e) => (e as { type: string }).type !== "rate_limited")).toBe(true);
+  });
+
+  it("429 with no Retry-After header → yields rate_limited with retryAfter: undefined", async () => {
+    // make429Error with no argument produces headers without retry-after
+    const headers: Record<string, string> = {};
+    const err = OpenAI.APIError.generate(429, null, "Too Many Requests", headers as unknown as Headers);
+    const mockCreate = vi.fn().mockRejectedValue(err);
+    const client: OpenAIClientLike = { chat: { completions: { create: mockCreate } } };
+    const provider = new OpenAIProvider(makeConfig({ rate_limit_backoff_threshold: 60 }), client);
+
+    const events = await collectEvents(provider, [{ role: "user", content: "hi" }]);
+    expect(events).toContainEqual({ type: "rate_limited", retryAfter: undefined });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseRetryAfter — edge cases
+// ---------------------------------------------------------------------------
+
+describe("parseRetryAfter", () => {
+  it("returns undefined for undefined input", () => {
+    expect(parseRetryAfter(undefined)).toBeUndefined();
+  });
+
+  it("returns undefined for empty string", () => {
+    expect(parseRetryAfter("")).toBeUndefined();
+  });
+
+  it("parses integer-seconds form", () => {
+    expect(parseRetryAfter("47")).toBe(47);
+    expect(parseRetryAfter("0")).toBe(0);
+    expect(parseRetryAfter("120")).toBe(120);
+  });
+
+  it("returns undefined for non-numeric, non-date string", () => {
+    expect(parseRetryAfter("not-a-number")).toBeUndefined();
+  });
+
+  it("parses HTTP-date form — returns non-negative seconds until that date", () => {
+    // A far-future date should return a positive number of seconds
+    const futureDate = new Date(Date.now() + 60_000).toUTCString(); // 60s from now
+    const result = parseRetryAfter(futureDate);
+    expect(result).toBeDefined();
+    expect(result!).toBeGreaterThan(0);
+    expect(result!).toBeLessThanOrEqual(61); // allow 1s tolerance
+  });
+
+  it("parses HTTP-date form — past date returns 0 (not negative)", () => {
+    const pastDate = new Date(Date.now() - 60_000).toUTCString(); // 60s ago
+    const result = parseRetryAfter(pastDate);
+    expect(result).toBe(0);
   });
 });

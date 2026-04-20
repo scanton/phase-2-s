@@ -30,8 +30,36 @@ import { resolveReasoningModel, resolveAgentModel } from "./model-resolver.js";
 import { handleColonCommand } from "./colon-commands.js";
 import { buildCompactionSummary, buildCompactedMessages, getCompactBackupPath, shouldCompact } from "../core/compaction.js";
 import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
+import { RateLimitError } from "../core/rate-limit-error.js";
+
+/**
+ * Hard cap on compaction summary size.
+ * If a summary exceeds this, it is truncated before being stored.
+ * Prevents cascading auto-compactions where a verbose summary itself
+ * triggers another compaction on the very next turn.
+ */
+const MAX_COMPACTION_SUMMARY_BYTES = 8192;
 
 const _require = createRequire(import.meta.url);
+
+/**
+ * Print a rate-limit pause message (REPL flavor) and exit 0.
+ * Session is already auto-saved (existing mechanism) so --resume will work.
+ * exit 0 = clean interactive pause, not an error.
+ */
+function printRateLimitAndExit(err: RateLimitError, sessionPath: string, provider: string): never {
+  const providerName = err.providerName ?? provider;
+  console.log();
+  console.log(`⏸  Rate limited (${providerName}).`);
+  console.log(`   Session saved to ${sessionPath}.`);
+  if (err.retryAfter !== undefined) {
+    console.log(`   Rate limit resets in ~${err.retryAfter}s.`);
+  }
+  console.log();
+  console.log("   Resume with:          phase2s --resume");
+  console.log("   Switch provider:      phase2s --resume --provider anthropic");
+  process.exit(0);
+}
 
 // Walk up from the current file to find the package.json that owns this source.
 // Works from src/cli/ (vitest / ts-node) and dist/src/cli/ (compiled runtime).
@@ -975,6 +1003,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       summary = await buildCompactionSummary(agent.provider, messages);
     } catch (err) {
       process.stdout.write("\n");
+      if (err instanceof RateLimitError) {
+        // Don't swallow rate limits — let the caller checkpoint and exit cleanly.
+        throw err;
+      }
       console.warn(chalk.yellow(`⚠  Compaction failed: ${err instanceof Error ? err.message : String(err)}`));
       return;
     }
@@ -983,6 +1015,15 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       process.stdout.write("\n");
       console.warn(chalk.yellow("⚠  Compaction returned empty summary — session not compacted."));
       return;
+    }
+
+    // Hard cap: a summary larger than 8 KB can itself exceed the compaction threshold,
+    // triggering an infinite auto-compact loop on the next turn. Truncate with a marker
+    // so the guard in maybeAutoCompact() can skip the next turn safely.
+    if (Buffer.byteLength(summary) > MAX_COMPACTION_SUMMARY_BYTES) {
+      const truncated = Buffer.from(summary).slice(0, MAX_COMPACTION_SUMMARY_BYTES).toString("utf-8");
+      // Trim to the last valid UTF-8 char boundary (slice may split a multibyte char)
+      summary = truncated.replace(/\uFFFD*$/, "") + "\n[summary truncated to prevent cascade]";
     }
 
     agent.setConversation(Conversation.fromMessages(buildCompactedMessages(summary)));
@@ -1027,7 +1068,14 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
     const tokens = agent.getConversation().estimateTokens();
     if (shouldCompact(tokens, config.auto_compact_tokens)) {
-      await performCompaction();
+      try {
+        await performCompaction();
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          printRateLimitAndExit(err, activeSessionPath, config.provider);
+        }
+        throw err;
+      }
     }
   };
 
@@ -1170,7 +1218,14 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
 
     // :compact — immediately compact the conversation history
     if (trimmed === ":compact") {
-      await performCompaction();
+      try {
+        await performCompaction();
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          printRateLimitAndExit(err, activeSessionPath, config.provider);
+        }
+        log.error(err instanceof Error ? err.message : String(err));
+      }
       continue;
     }
 
@@ -1329,6 +1384,9 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
             console.log(chalk.bold("\nassistant > ") + response + "\n");
             await saveSession();
           } catch (err) {
+            if (err instanceof RateLimitError) {
+              printRateLimitAndExit(err, activeSessionPath, config.provider);
+            }
             log.error(err instanceof Error ? err.message : String(err));
           }
         } else {
@@ -1339,6 +1397,9 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
             console.log(chalk.bold("\nassistant > ") + response + "\n");
             await saveSession();
           } catch (err) {
+            if (err instanceof RateLimitError) {
+              printRateLimitAndExit(err, activeSessionPath, config.provider);
+            }
             log.error(err instanceof Error ? err.message : String(err));
           }
         }
@@ -1360,6 +1421,9 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       await saveSession();
     } catch (err) {
       process.stdout.write("\n");
+      if (err instanceof RateLimitError) {
+        printRateLimitAndExit(err, activeSessionPath, config.provider);
+      }
       log.error(err instanceof Error ? err.message : String(err));
     }
   }

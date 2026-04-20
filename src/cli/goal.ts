@@ -25,6 +25,7 @@ import { resolve, dirname, basename } from "path";
 import chalk from "chalk";
 import { Agent } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
+import { RateLimitError } from "../core/rate-limit-error.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { parseSpec, type Spec, type SubTask } from "../core/spec-parser.js";
 import { computeSpecHash, readState, writeState, clearState, type GoalState, type LevelWorkerState } from "../core/state.js";
@@ -40,6 +41,37 @@ import { judgeRun } from "../eval/judge.js";
 
 /** Cap on bytes stored for failureContext per sub-task. */
 const FAILURE_CONTEXT_MAX_BYTES = 4096;
+
+/**
+ * Print a rate-limit pause message and exit 2.
+ * exit 2 = "paused, not failure" — machine-readable for CI/orchestrators.
+ * The caller already wrote state to disk before this is invoked.
+ */
+function handleRateLimitExit(
+  err: RateLimitError,
+  specFile: string,
+  completedCount: number | undefined,
+  totalCount: number,
+  checkpointed = true,
+): never {
+  console.log();
+  const countMsg = completedCount !== undefined
+    ? ` after completing ${completedCount}/${totalCount} sub-tasks`
+    : "";
+  console.log(`⏸  Rate limited (${err.providerName ?? "provider"})${countMsg}.`);
+  if (checkpointed) {
+    console.log("   Progress checkpointed.");
+  } else {
+    console.log("   Note: orchestrator mode does not checkpoint on rate limit — re-run to restart.");
+  }
+  if (err.retryAfter !== undefined) {
+    console.log(`   Rate limit resets in ~${err.retryAfter}s.`);
+  }
+  console.log();
+  console.log(`   Resume with:          phase2s goal ${specFile} --resume`);
+  console.log(`   Switch provider:      phase2s goal ${specFile} --resume --provider anthropic`);
+  process.exit(2);
+}
 
 export interface GoalOptions {
   maxAttempts?: string;
@@ -343,6 +375,11 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       await maybeNotify(options, config, orchGoalResult, basename(specPath));
       return orchGoalResult;
     } catch (err: unknown) {
+      if (err instanceof RateLimitError) {
+        // Orchestrator doesn't write to state.subTaskResults and doesn't checkpoint on
+        // rate limit — pass checkpointed=false so the message is honest.
+        handleRateLimitExit(err, basename(specPath), undefined, spec.decomposition.length, false);
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.error(chalk.red(`\nOrchestrator error: ${message}`));
       logger.log({ event: 'goal_error', message });
@@ -437,6 +474,10 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
           subsetToRun,
         });
       } catch (err: unknown) {
+        if (err instanceof RateLimitError) {
+          const completedCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
+          handleRateLimitExit(err, basename(specPath), completedCount, spec.decomposition.length);
+        }
         const message = err instanceof Error ? err.message : String(err);
         console.error(chalk.red(`\nParallel execution error: ${message}`));
         logger.log({ event: "goal_error", message });
@@ -536,6 +577,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   let previousFailureContext: string | undefined;
   let criteriaResults: Record<string, boolean> = {};
 
+  try {
   while (attempt < maxAttempts) {
     attempt++;
     state.attempt = attempt;
@@ -603,6 +645,21 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       const truncated = outputStr.slice(-FAILURE_CONTEXT_MAX_BYTES);
 
       if (satoriError) {
+        // Rate limit is not a failure — propagate so the outer try/catch can
+        // checkpoint and exit 2. But first, write the in-flight sub-task as
+        // "failed" so --resume has its partial failure context and attempt count.
+        // (Previously-completed sub-tasks are already in state; this covers
+        // the current one that was interrupted mid-run.)
+        if (satoriError instanceof RateLimitError) {
+          state.subTaskResults[indexKey] = {
+            status: "failed",
+            failureContext: truncated,
+            attempts: (priorResult?.attempts ?? 0) + 1,
+          };
+          state.lastUpdatedAt = new Date().toISOString();
+          writeState(specDir, specHash, state);
+          throw satoriError;
+        }
         // Sub-task threw — mark as failed, write checkpoint, continue.
         state.subTaskResults[indexKey] = {
           status: "failed",
@@ -682,6 +739,13 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       // We only keep the state for cross-run resumability, not within the same goal invocation.
       console.log(`\nRetrying ${subtasksToRun.length} sub-task(s): ${subtasksToRun.map((s) => s.name).join(", ")}`);
     }
+  }
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      const completedCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
+      handleRateLimitExit(err, basename(specPath), completedCount, spec.decomposition.length);
+    }
+    throw err;
   }
 
   console.log(`\n✗ Goal not achieved after ${maxAttempts} attempts.`);

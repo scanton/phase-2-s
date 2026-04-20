@@ -196,8 +196,16 @@ export class CodexProvider implements Provider {
       }
     });
 
-    // Consume stderr so the pipe buffer never fills and blocks codex.
-    proc.stderr.resume();
+    // Accumulate stderr — pipe buffer must not fill or codex blocks.
+    // Capped at 64 KB to prevent unbounded growth on noisy stderr.
+    // We check for rate-limit keywords ("429" + "rate limit") on close.
+    const STDERR_MAX_BYTES = 64 * 1024;
+    let stderrBuffer = "";
+    proc.stderr.on("data", (chunk: Buffer) => {
+      if (Buffer.byteLength(stderrBuffer) < STDERR_MAX_BYTES) {
+        stderrBuffer += chunk.toString();
+      }
+    });
 
     proc.on("close", (code) => {
       if (finished) return;
@@ -206,7 +214,14 @@ export class CodexProvider implements Provider {
       if (remaining) processLine(remaining);
 
       if (!hasProducedText && code !== 0) {
-        finish(new Error(`Codex exited with code ${code ?? "null"}`));
+        // Check stderr for rate limit signal before returning generic error.
+        const stderrLower = stderrBuffer.toLowerCase();
+        if (stderrLower.includes("429") && stderrLower.includes("rate limit")) {
+          push({ type: "rate_limited" });
+          finish();
+        } else {
+          finish(new Error(`Codex exited with code ${code ?? "null"}`));
+        }
       } else if (!hasProducedText) {
         finish(new Error("Codex produced no output"));
       } else {

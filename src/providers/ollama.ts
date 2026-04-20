@@ -18,6 +18,14 @@ import { log } from "../utils/logger.js";
  * Recommended models for tool-calling skills (/satori, /consensus-plan):
  *   qwen2.5-coder:7b or llama3.1:8b — both support function calling via Ollama.
  *   llama3.2 (3B) may drop tool calls on complex prompts.
+ *
+ * Rate limiting: local Ollama inference rarely returns HTTP 429 — it is bounded
+ * by local GPU/CPU capacity, not API quotas. If a remote Ollama server does return
+ * 429, the underlying OpenAIProvider auto-backoff logic handles it transparently
+ * (inherited via composition). No special handling needed here.
+ *
+ * TODO: If Ollama adds explicit rate-limit support (e.g. --max-concurrency), consider
+ * tuning rate_limit_backoff_threshold downward for local runners (short resets).
  */
 function isLocalUrl(url: string): boolean {
   try {

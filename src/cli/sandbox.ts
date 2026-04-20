@@ -13,6 +13,7 @@ import { execSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { createHash } from "node:crypto";
 import { loadConfig } from "../core/config.js";
 import type { Config } from "../core/config.js";
 import { interactiveMode } from "./index.js";
@@ -225,6 +226,10 @@ export async function startSandbox(
   const inGit = registeredPaths.includes(worktreePath);
   const dirExists = existsSync(worktreePath);
 
+  // Mutable effective paths — may be updated in state (d) on branch collision.
+  let effectiveWorktreePath = worktreePath;
+  let effectiveBranchName = branchName;
+
   if (inGit && dirExists) {
     // State (a): already exists and is healthy — resume
     console.log(`Resuming sandbox '${name}' at ${worktreePath}`);
@@ -277,23 +282,43 @@ export async function startSandbox(
       process.exit(1);
     }
   } else {
-    // State (d): fresh — no git entry, no directory
+    // State (d): fresh — no git entry, no directory.
+    // Check for branch name collision: the branch might exist from a prior sandbox run
+    // that was deleted but whose branch was kept. Append a 4-char MD5 suffix derived
+    // from the project cwd — deterministic (same cwd → same suffix) but unlikely to collide.
+    const branchCollision = (() => {
+      try {
+        return execSync(
+          `git branch --list "${branchName}"`,
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
+        ).trim().length > 0;
+      } catch {
+        return false;
+      }
+    })();
+    if (branchCollision) {
+      const suffix = createHash("md5").update(projectCwd).digest("hex").slice(0, 4);
+      const suffixedSlug = `${slugName}-${suffix}`;
+      effectiveBranchName = `sandbox/${suffixedSlug}`;
+      effectiveWorktreePath = join(projectCwd, ".worktrees", `sandbox-${suffixedSlug}`);
+      console.log(`Branch '${branchName}' already exists — using '${effectiveBranchName}' to avoid collision.`);
+    }
     try {
       execSync(
-        `git worktree add -b "${branchName}" "${worktreePath}" HEAD`,
+        `git worktree add -b "${effectiveBranchName}" "${effectiveWorktreePath}" HEAD`,
         { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
       );
     } catch (err) {
       console.error(`Failed to create sandbox: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
-    console.log(`Created sandbox '${name}' on branch ${branchName}`);
+    console.log(`Created sandbox '${name}' on branch ${effectiveBranchName}`);
   }
 
   // -------------------------------------------------------------------------
   // 4. Start the REPL inside the worktree
   // -------------------------------------------------------------------------
-  process.chdir(worktreePath);
+  process.chdir(effectiveWorktreePath);
 
   // loadConfig() reads from process.cwd() (now worktreePath). Config overrides
   // from CLI opts (provider, model, system) are forwarded so they're not lost.
@@ -313,7 +338,7 @@ export async function startSandbox(
     process.chdir(projectCwd);
 
     console.log(`\nSandbox '${name}' ended.`);
-    await promptMergeBack(name, slugName, branchName, worktreePath, originalBranch, projectCwd);
+    await promptMergeBack(name, slugName, effectiveBranchName, effectiveWorktreePath, originalBranch, projectCwd);
   }
 }
 

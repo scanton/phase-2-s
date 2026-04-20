@@ -253,4 +253,25 @@ describe("loadConfig — tools and deny (Sprint 13)", () => {
   it("auto_compact_tokens: negative integer is rejected by schema", async () => {
     await expect(loadConfig({ auto_compact_tokens: -1 } as never)).rejects.toThrow();
   });
+
+  // --- rate_limit_backoff_threshold (Sprint 58) ---
+
+  it("rate_limit_backoff_threshold: defaults to 60 when unset", async () => {
+    const config = await loadConfig({});
+    expect(config.rate_limit_backoff_threshold).toBe(60);
+  });
+
+  it("rate_limit_backoff_threshold: explicit value is accepted", async () => {
+    const config = await loadConfig({ rate_limit_backoff_threshold: 30 });
+    expect(config.rate_limit_backoff_threshold).toBe(30);
+  });
+
+  it("rate_limit_backoff_threshold: 0 is accepted (disables auto-backoff)", async () => {
+    const config = await loadConfig({ rate_limit_backoff_threshold: 0 });
+    expect(config.rate_limit_backoff_threshold).toBe(0);
+  });
+
+  it("rate_limit_backoff_threshold: negative value is rejected by schema", async () => {
+    await expect(loadConfig({ rate_limit_backoff_threshold: -1 } as never)).rejects.toThrow();
+  });
 });

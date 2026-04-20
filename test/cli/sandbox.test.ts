@@ -236,6 +236,77 @@ describe("startSandbox() — state detection", () => {
     expect(addCalls).toHaveLength(1);
     expect(addCalls[0][0]).toContain("-b");
   });
+
+  it("state (d): branch collision → uses MD5-suffixed branch and worktree path", async () => {
+    // Nothing registered, nothing on disk — but branch 'sandbox/mytest' already exists
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      if (cmd.includes("branch --list")) return "sandbox/mytest\n"; // collision!
+      if (cmd.includes("worktree add")) return "";
+      return "";
+    });
+    mockExistsSync.mockReturnValue(false);
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await startSandbox("mytest", projectCwd, {});
+
+    // The worktree add command should use a suffixed branch, not the original
+    const addCalls = mockExecSync.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    );
+    expect(addCalls).toHaveLength(1);
+    const addCmd = addCalls[0][0] as string;
+
+    // Should NOT use the bare branch name (collision avoided)
+    expect(addCmd).not.toContain('"sandbox/mytest" ');
+    // Should contain -b (fresh create)
+    expect(addCmd).toContain("-b");
+    // The suffixed branch should match the pattern sandbox/mytest-XXXX
+    expect(addCmd).toMatch(/sandbox\/mytest-[0-9a-f]{4}/);
+
+    // A console.log should mention the collision
+    const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(allOutput).toMatch(/already exists|collision/i);
+
+    consoleSpy.mockRestore();
+  });
+
+  it("state (d): MD5 suffix is deterministic — same projectCwd always gives same suffix", async () => {
+    // Run twice with the same projectCwd and a collision each time.
+    // Both runs should choose identical suffixed names.
+    const capturedBranches: string[] = [];
+
+    for (let i = 0; i < 2; i++) {
+      vi.clearAllMocks();
+      mockExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes("branch --show-current")) return "main\n";
+        if (cmd.includes("worktree list")) return `worktree ${projectCwd}\nHEAD abc\n`;
+        if (cmd.includes("branch --list")) return "sandbox/mytest\n"; // collision
+        if (cmd.includes("worktree add")) return "";
+        return "";
+      });
+      mockExistsSync.mockReturnValue(false);
+      vi.spyOn(process, "chdir").mockImplementation(() => {});
+      vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+      vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await startSandbox("mytest", projectCwd, {});
+
+      const addCalls = mockExecSync.mock.calls.filter(
+        (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+      );
+      const addCmd = addCalls[0][0] as string;
+      const match = addCmd.match(/sandbox\/(mytest-[0-9a-f]{4})/);
+      if (match) capturedBranches.push(match[1]);
+
+      vi.restoreAllMocks();
+    }
+
+    expect(capturedBranches).toHaveLength(2);
+    expect(capturedBranches[0]).toBe(capturedBranches[1]);
+  });
 });
 
 // ---------------------------------------------------------------------------

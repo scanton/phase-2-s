@@ -240,3 +240,56 @@ describe("AGENTS.md system prompt injection at startup", () => {
     expect(combined).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cascading compaction guard (Sprint 58)
+// ---------------------------------------------------------------------------
+
+describe("Cascading compaction guard — 8192-byte cap logic", () => {
+  const MAX_COMPACTION_SUMMARY_BYTES = 8192;
+
+  /**
+   * Apply the byte-cap truncation logic from index.ts performCompaction().
+   * Extracted here so we can unit-test the algorithm without spawning interactiveMode.
+   */
+  function applySummaryCap(summary: string): string {
+    if (Buffer.byteLength(summary) <= MAX_COMPACTION_SUMMARY_BYTES) {
+      return summary;
+    }
+    const truncated = Buffer.from(summary).slice(0, MAX_COMPACTION_SUMMARY_BYTES).toString("utf-8");
+    return truncated.replace(/\uFFFD*$/, "") + "\n[summary truncated to prevent cascade]";
+  }
+
+  it("leaves short summaries unchanged", () => {
+    const summary = "A".repeat(100);
+    expect(applySummaryCap(summary)).toBe(summary);
+  });
+
+  it("truncates summaries exactly over the 8192-byte cap", () => {
+    const longSummary = "B".repeat(9000); // 9000 bytes (ASCII — 1 byte each)
+    const result = applySummaryCap(longSummary);
+    expect(Buffer.byteLength(result)).toBeLessThan(MAX_COMPACTION_SUMMARY_BYTES + 100);
+    expect(result).toContain("[summary truncated to prevent cascade]");
+  });
+
+  it("leaves a summary that is exactly 8192 bytes unchanged", () => {
+    const exactly8k = "C".repeat(MAX_COMPACTION_SUMMARY_BYTES);
+    expect(applySummaryCap(exactly8k)).toBe(exactly8k);
+  });
+
+  it("truncation marker is appended after the cap cut", () => {
+    const longSummary = "X".repeat(10000);
+    const result = applySummaryCap(longSummary);
+    expect(result.endsWith("\n[summary truncated to prevent cascade]")).toBe(true);
+  });
+
+  it("handles multibyte UTF-8 characters near the boundary without producing replacement chars", () => {
+    // "é" is 2 bytes in UTF-8 — if we slice at an odd boundary we'd split it
+    // The cap logic strips trailing replacement characters (U+FFFD)
+    const emoji = "🔥".repeat(2100); // Each 🔥 is 4 bytes → ~8400 bytes
+    const result = applySummaryCap(emoji);
+    // Should not end with a replacement character
+    expect(result).not.toMatch(/\uFFFD/);
+    expect(result).toContain("[summary truncated to prevent cascade]");
+  });
+});

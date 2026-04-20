@@ -6,6 +6,28 @@
 
 ---
 
+## Backlog — Post-Sprint 58 adversarial findings (2026-04-20)
+
+- [ ] **Parallel executor: `Promise.all` abandons in-progress workers on first 429** — When one worker throws `RateLimitError`, remaining workers continue but their results are never merged. Any completed work is silently lost. Fix: `Promise.allSettled` + collect succeeded results before re-throwing. **INVESTIGATE post-Sprint 58.**
+
+- [ ] **`activeSessionPath` empty at first-turn rate limit in REPL** — `activeSessionPath` is set after first successful `saveSession`. If the very first turn rate-limits, `printRateLimitAndExit` prints an empty resume path. Fix: initialize `activeSessionPath` from `sessionFilePath` at session-create time. **INVESTIGATE post-Sprint 58.**
+
+- [ ] **Codex provider: partial text + silent 429 drop** — When `hasProducedText === true`, the stderr rate-limit check is skipped. If Codex emits partial output then exits non-zero with "429 rate limit" in stderr, the caller sees `done` (not `rate_limited`) and does not checkpoint. Fix: always check stderr for rate-limit signal on non-zero exit. **INVESTIGATE post-Sprint 58.**
+
+- [ ] **Orchestrator path does not checkpoint on rate limit** — When `chatOnce()` (used in the replan LLM call) hits a rate limit, `RateLimitError` propagates to `goal.ts` which exits 2. But the orchestrator doesn't write to `state.subTaskResults`, so there's nothing to resume. A `--resume` after an orchestrator rate limit would restart all sub-tasks from scratch. Fix: write partial orchestrator results to state before throwing, or add an `orchestrator_paused` state field. Currently the exit message is honest ("does not checkpoint on rate limit"), but resumability is missing. **Post-Sprint 58.**
+
+---
+
+## Backlog — Post-Sprint 58 /plan-eng-review findings (2026-04-20)
+
+- [ ] **`ProviderPausedError` generalization** — `RateLimitError` (HTTP 429) and auth-blocked responses (401/403 with "account suspended" / "key revoked" messages) have the same correct behavior: checkpoint, exit, print recovery message. Consider a broader `ProviderPausedError` class with a `kind: "rate_limited" | "blocked"` field. Same exit path, different message copy ("account blocked, contact provider" vs "rate limit resets in ~Xs"). Blocked by: rate-limit sprint must ship first. **Post-Sprint 58.**
+
+- [ ] **Per-provider auto-backoff depth tests** — Only OpenAI has the full sleep+retry+budget-exhausted test suite. Anthropic, Gemini, OpenRouter, Minimax, Codex each have one basic 429 test. The auto-backoff logic is copy-paste across providers. Fix: either extract the backoff into a shared utility (see below) and test it once, or add retry depth tests per provider. Currently low risk since logic is identical. **Post-Sprint 58.**
+
+- [ ] **Extract auto-backoff into `src/providers/backoff.ts`** — The 20-line backoff pattern (sleep + retry counter + configurable threshold check) will be duplicated in 5 providers in Sprint 58. A `withRateLimitBackoff(fn: () => Promise<T>, threshold: number): Promise<T | "rate_limited">` wrapper keeps providers lean and the logic testable once. Especially valuable now that `rate_limit_backoff_threshold` is configurable — one place to read the config instead of five. Depends on: Sprint 58 shipping. **Post-Sprint 58.**
+
+---
+
 ## Backlog — Post-Sprint 55 /review findings (2026-04-14)
 
 - [x] **AGENTS.md memoization** — `loadAgentsMd(cwd)` performs two disk reads on every `Agent` construction. In MCP server mode (one Agent per request), this creates repeated I/O. Cache the result per `cwd` in a process-level Map so repeated calls in the same process are free. **Completed: v1.30.0 (2026-04-18)** — implemented as load-once at `runMCPServer()` startup (Approach A: startup variable, not module-level cache), which is zero reads per request in the long-lived MCP process. One-shot mode loads once per invocation (correct for a per-process call).

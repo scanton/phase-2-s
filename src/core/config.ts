@@ -91,6 +91,16 @@ const configSchema = z.object({
    * Example: 80000 triggers compaction when context exceeds ~80k estimated tokens.
    */
   auto_compact_tokens: z.number().int().min(1).optional(),
+
+  /**
+   * Maximum Retry-After delay (in seconds) for automatic rate-limit backoff.
+   * When a provider returns HTTP 429 with a Retry-After header:
+   *   - If retryAfter <= this threshold AND fewer than MAX_RATE_LIMIT_RETRIES attempts: sleep and retry transparently.
+   *   - If retryAfter > this threshold or unknown or budget exhausted: yield rate_limited event immediately.
+   * Default: 60. Increase to allow longer invisible waits (e.g. 120 for providers with longer reset windows).
+   * Set to 0 to disable auto-backoff entirely (always checkpoint immediately on rate limit).
+   */
+  rate_limit_backoff_threshold: z.number().int().min(0).default(60),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };

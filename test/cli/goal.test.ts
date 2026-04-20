@@ -3,6 +3,7 @@ import { buildSatoriContext, buildAdversarialPrompt, checkCriteria, runCommand, 
 import { computeSpecHash, readState, writeState } from "../../src/core/state.js";
 import type { SubTask, Spec } from "../../src/core/spec-parser.js";
 import { Agent } from "../../src/core/agent.js";
+import { RateLimitError } from "../../src/core/rate-limit-error.js";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,6 +16,10 @@ import { tmpdir } from "node:os";
 const mockReviewResponse = vi.hoisted(() => ({
   value: "VERDICT: CHALLENGED\nSTRONGEST_CONCERN: Spec is too vague.\nOBJECTIONS:\n1. No concrete test.\nAPPROVE_IF: Add specific tests.",
 }));
+
+// Hoisted error override: when non-null, agent.run() rejects with this error.
+// Reset to null in beforeEach to avoid cross-test contamination.
+const mockAgentShouldReject = vi.hoisted(() => ({ error: null as Error | null }));
 
 vi.mock("../../src/core/config.js", () => ({
   loadConfig: vi.fn().mockResolvedValue({
@@ -36,7 +41,10 @@ vi.mock("../../src/core/memory.js", () => ({
 
 vi.mock("../../src/core/agent.js", () => {
   class MockAgent {
-    run = vi.fn().mockImplementation(() => Promise.resolve(mockReviewResponse.value));
+    run = vi.fn().mockImplementation(() => {
+      if (mockAgentShouldReject.error) return Promise.reject(mockAgentShouldReject.error);
+      return Promise.resolve(mockReviewResponse.value);
+    });
     getConversation() { return {}; }
   }
   return { Agent: MockAgent };
@@ -378,6 +386,7 @@ describe("runGoal — reviewBeforeRun with CHALLENGED verdict", () => {
     // Reset to CHALLENGED response before each test
     mockReviewResponse.value =
       "VERDICT: CHALLENGED\nSTRONGEST_CONCERN: Spec is too vague.\nOBJECTIONS:\n1. No concrete test.\nAPPROVE_IF: Add specific tests.";
+    mockAgentShouldReject.error = null;
   });
 
   afterEach(() => {
@@ -420,6 +429,7 @@ describe("runGoal — dryRun: true", () => {
     mkdirSync(tmpDir, { recursive: true });
     specPath = join(tmpDir, "spec.md");
     writeFileSync(specPath, MINIMAL_SPEC_MD, "utf8");
+    mockAgentShouldReject.error = null;
   });
 
   afterEach(() => {
@@ -481,5 +491,95 @@ echo done
     const output = logMessages.join("\n");
     expect(output).toContain("Sub-tasks (1)");
     expect(output).toContain("Token bucket implementation");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runGoal — RateLimitError → exit 2 (Sprint 58)
+// ---------------------------------------------------------------------------
+
+describe("runGoal — RateLimitError → checkpoint + exit 2", () => {
+  let tmpDir: string;
+  let specPath: string;
+
+  // A spec that has one sub-task and no reviewBeforeRun (skip adversarial).
+  const SPEC_WITH_SUBTASK = `# Rate Limit Test Spec
+
+## Problem Statement
+Test rate limit handling.
+
+## Decomposition
+### Sub-task 1: Token bucket implementation
+- **Input:** Request with user ID
+- **Output:** RateLimiter class
+- **Success criteria:** Unit tests pass
+
+## Acceptance Criteria
+- It works
+
+## Eval Command
+\`\`\`
+echo done
+\`\`\`
+`;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `phase2s-goal-ratelimit-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+    specPath = join(tmpDir, "spec.md");
+    writeFileSync(specPath, SPEC_WITH_SUBTASK, "utf8");
+    mockAgentShouldReject.error = null;
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    mockAgentShouldReject.error = null;
+    vi.restoreAllMocks();
+  });
+
+  it("sequential path: agent throws RateLimitError → process.exit(2) called", async () => {
+    const rateLimitErr = new RateLimitError(60, "openai");
+    mockAgentShouldReject.error = rateLimitErr;
+
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // runGoal won't throw (process.exit is mocked) but will call exit(2)
+    await runGoal(specPath, { reviewBeforeRun: false }).catch(() => {});
+
+    expect(exitSpy).toHaveBeenCalledWith(2);
+  });
+
+  it("sequential path: rate limit message mentions provider and resume command", async () => {
+    const rateLimitErr = new RateLimitError(30, "openai");
+    mockAgentShouldReject.error = rateLimitErr;
+
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    const logMessages: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg: unknown) => logMessages.push(String(msg)));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await runGoal(specPath, { reviewBeforeRun: false }).catch(() => {});
+
+    const allOutput = logMessages.join("\n");
+    expect(allOutput).toMatch(/rate limited/i);
+    expect(allOutput).toContain("openai");
+    expect(allOutput).toMatch(/--resume/);
+  });
+
+  it("RateLimitError with retryAfter shows the reset time in output", async () => {
+    const rateLimitErr = new RateLimitError(120, "anthropic");
+    mockAgentShouldReject.error = rateLimitErr;
+
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    const logMessages: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg: unknown) => logMessages.push(String(msg)));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await runGoal(specPath, { reviewBeforeRun: false }).catch(() => {});
+
+    const allOutput = logMessages.join("\n");
+    expect(allOutput).toContain("120");
   });
 });

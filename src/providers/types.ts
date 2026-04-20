@@ -17,7 +17,11 @@ export type ProviderEvent =
   | { type: "text"; content: string }
   | { type: "tool_calls"; calls: ToolCall[] }
   | { type: "done"; stopReason: string }
-  | { type: "error"; error: string };
+  | { type: "error"; error: string }
+  /** Provider was rate-limited (HTTP 429). Auto-backoff budget exhausted or delay too long.
+   * agent.ts catches this and throws RateLimitError, which propagates to the REPL or goal runner
+   * for checkpointing and a clean exit. */
+  | { type: "rate_limited"; retryAfter?: number };
 
 export interface ChatStreamOptions {
   model?: string;

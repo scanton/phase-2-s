@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { makeWorktreeSlug, resetWorktreeLocks, resolveSubtaskModel, buildWorkerPrompt } from "../../src/goal/parallel-executor.js";
 import { stashIfDirty, unstash } from "../../src/goal/merge-strategy.js";
+import { RateLimitError } from "../../src/core/rate-limit-error.js";
 import { makeTempRepo, commitFile, withTempRepo } from "./helpers.js";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -493,5 +494,99 @@ describe("buildWorkerPrompt — Sprint 57: revisedDescription branch", () => {
     expect(prompt).toContain("Level 1 modified:");
     expect(prompt).toContain("REVISED INSTRUCTIONS");
     expect(prompt).toContain("Revised: add NOT NULL constraint");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RateLimitError propagation contract (Sprint 58)
+//
+// executeWorker (private) re-throws RateLimitError so Promise.all rejects —
+// the error propagates to goal.ts for checkpointing + exit 2 rather than
+// being collected as a "failed WorkerResult".
+//
+// We can't call executeWorker directly (private), but we can verify the
+// invariants the implementation depends on:
+//   1. RateLimitError is distinguishable from generic errors via instanceof
+//   2. Throwing inside Promise.all propagates out (not swallowed)
+//   3. Generic errors inside a catch-and-collect block are NOT re-thrown
+// ---------------------------------------------------------------------------
+
+describe("RateLimitError propagation contract — parallel-executor", () => {
+  it("RateLimitError is an Error instance (instanceof chain for re-throw detection)", () => {
+    const err = new RateLimitError(60, "openai");
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect(err.name).toBe("RateLimitError");
+  });
+
+  it("RateLimitError is distinguishable from generic Error (discriminant for selective re-throw)", () => {
+    const rlErr = new RateLimitError(30, "anthropic");
+    const genericErr = new Error("subtask failed: npm test exited 1");
+    expect(rlErr instanceof RateLimitError).toBe(true);
+    expect(genericErr instanceof RateLimitError).toBe(false);
+  });
+
+  it("RateLimitError thrown inside Promise.all propagates out — not silently collected", async () => {
+    // Simulates the worker batch loop:
+    //   Promise.all(workers.map(executeWorker))
+    // where one worker re-throws RateLimitError.
+    const rlErr = new RateLimitError(120, "openai");
+
+    const workerLikeTask = async (shouldRateLimit: boolean): Promise<string> => {
+      let workerError: unknown = null;
+      try {
+        if (shouldRateLimit) throw rlErr;
+        return "success";
+      } catch (err) {
+        workerError = err;
+      }
+      if (workerError instanceof RateLimitError) {
+        throw workerError; // re-throw — this is what executeWorker does
+      }
+      return "failed-but-collected";
+    };
+
+    // When a worker re-throws RateLimitError, Promise.all rejects
+    await expect(
+      Promise.all([workerLikeTask(false), workerLikeTask(true)]),
+    ).rejects.toThrow("Rate limited");
+  });
+
+  it("generic worker errors are collected as failed results (not re-thrown)", async () => {
+    const workerLikeTask = async (shouldFail: boolean): Promise<{ status: string }> => {
+      let workerError: unknown = null;
+      try {
+        if (shouldFail) throw new Error("subtask failed");
+        return { status: "passed" };
+      } catch (err) {
+        workerError = err;
+      }
+      if (workerError instanceof RateLimitError) {
+        throw workerError;
+      }
+      // Generic error → return failed result (not re-throw)
+      return { status: "failed" };
+    };
+
+    const results = await Promise.all([workerLikeTask(false), workerLikeTask(true)]);
+    expect(results[0].status).toBe("passed");
+    expect(results[1].status).toBe("failed"); // collected, not thrown
+  });
+
+  it("RateLimitError message includes provider name (with retryAfter)", () => {
+    const err = new RateLimitError(45, "openai-api");
+    expect(err.message).toBe("Rate limited by openai-api — retry after 45s");
+  });
+
+  it("RateLimitError message includes provider name (without retryAfter)", () => {
+    const err = new RateLimitError(undefined, "anthropic");
+    expect(err.message).toBe("Rate limited by anthropic");
+  });
+
+  it("RateLimitError message falls back to 'provider' when providerName is undefined", () => {
+    const err = new RateLimitError();
+    expect(err.message).toBe("Rate limited by provider");
+    expect(err.retryAfter).toBeUndefined();
+    expect(err.providerName).toBeUndefined();
   });
 });
