@@ -1,5 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import Anthropic from "@anthropic-ai/sdk";
 import { translateMessages, AnthropicProvider } from "../../src/providers/anthropic.js";
+import * as openaiModule from "../../src/providers/openai.js";
 import type { Message } from "../../src/providers/types.js";
 import type { Config } from "../../src/core/config.js";
 
@@ -385,5 +387,157 @@ describe("AnthropicProvider — AbortSignal cancellation", () => {
       expect.any(Object),
       undefined,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rate limit + auto-backoff (Sprint 58)
+// ---------------------------------------------------------------------------
+
+describe("AnthropicProvider rate limit handling", () => {
+  let sleepSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    sleepSpy = vi.spyOn(openaiModule, "sleep").mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    sleepSpy.mockRestore();
+  });
+
+  function make429Error(retryAfterSec?: number): Anthropic.APIError {
+    const headers = new Headers();
+    if (retryAfterSec !== undefined) {
+      headers.set("retry-after", String(retryAfterSec));
+    }
+    return new Anthropic.APIError(429, { error: "rate_limit_error" }, "Too many requests", headers);
+  }
+
+  it("yields rate_limited on HTTP 429 when retryAfter > threshold", async () => {
+    const err = make429Error(120);
+    const mockClient = {
+      messages: {
+        stream: vi.fn().mockImplementation(() => {
+          // Return an async iterable that throws immediately
+          return {
+            async *[Symbol.asyncIterator]() {
+              throw err;
+            },
+          };
+        }),
+      },
+    };
+
+    const provider = new AnthropicProvider(makeConfig({ rate_limit_backoff_threshold: 60 }), mockClient as never);
+    const events: object[] = [];
+    for await (const event of provider.chatStream([{ role: "user", content: "hi" }], [])) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "rate_limited", retryAfter: 120 });
+    expect(sleepSpy).not.toHaveBeenCalled();
+  });
+
+  it("auto-backoff: sleeps and retries when retryAfter <= threshold", async () => {
+    const err = make429Error(5);
+    const successEvents = [
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hi" } },
+      { type: "message_stop" },
+    ];
+    let callCount = 0;
+    const mockClient = {
+      messages: {
+        stream: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) {
+            return {
+              async *[Symbol.asyncIterator]() {
+                throw err;
+              },
+            };
+          }
+          return mockStream(successEvents);
+        }),
+      },
+    };
+
+    const provider = new AnthropicProvider(makeConfig({ rate_limit_backoff_threshold: 60 }), mockClient as never);
+    const events: object[] = [];
+    for await (const event of provider.chatStream([{ role: "user", content: "hi" }], [])) {
+      events.push(event);
+    }
+
+    expect(events.some((e) => (e as { type: string }).type === "rate_limited")).toBe(false);
+    expect(events).toContainEqual({ type: "text", content: "hi" });
+    expect(sleepSpy).toHaveBeenCalledOnce();
+    expect(sleepSpy).toHaveBeenCalledWith(5000);
+    expect(callCount).toBe(2);
+  });
+
+  it("auto-backoff: max retries exhausted → yields rate_limited", async () => {
+    // All calls throw 429 with retry-after: 5 (≤ threshold=60).
+    // After MAX_RATE_LIMIT_RETRIES attempts, provider yields rate_limited.
+    const { MAX_RATE_LIMIT_RETRIES } = await import("../../src/providers/openai.js");
+    const err = make429Error(5);
+    const mockClient = {
+      messages: {
+        stream: vi.fn().mockImplementation(() => ({
+          async *[Symbol.asyncIterator]() {
+            throw err;
+          },
+        })),
+      },
+    };
+
+    const provider = new AnthropicProvider(makeConfig({ rate_limit_backoff_threshold: 60 }), mockClient as never);
+    const events: object[] = [];
+    for await (const event of provider.chatStream([{ role: "user", content: "hi" }], [])) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "rate_limited", retryAfter: 5 });
+    expect(sleepSpy).toHaveBeenCalledTimes(MAX_RATE_LIMIT_RETRIES - 1);
+  });
+
+  it("auto-backoff: threshold=0 disables backoff → yields rate_limited immediately", async () => {
+    const err = make429Error(5);
+    const mockClient = {
+      messages: {
+        stream: vi.fn().mockImplementation(() => ({
+          async *[Symbol.asyncIterator]() {
+            throw err;
+          },
+        })),
+      },
+    };
+
+    const provider = new AnthropicProvider(makeConfig({ rate_limit_backoff_threshold: 0 }), mockClient as never);
+    const events: object[] = [];
+    for await (const event of provider.chatStream([{ role: "user", content: "hi" }], [])) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "rate_limited", retryAfter: 5 });
+    expect(sleepSpy).not.toHaveBeenCalled();
+  });
+
+  it("429 with no Retry-After header → yields rate_limited with retryAfter: undefined", async () => {
+    const err = make429Error(); // no retryAfterSec → no header
+    const mockClient = {
+      messages: {
+        stream: vi.fn().mockImplementation(() => ({
+          async *[Symbol.asyncIterator]() {
+            throw err;
+          },
+        })),
+      },
+    };
+
+    const provider = new AnthropicProvider(makeConfig({ rate_limit_backoff_threshold: 60 }), mockClient as never);
+    const events: object[] = [];
+    for await (const event of provider.chatStream([{ role: "user", content: "hi" }], [])) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "rate_limited", retryAfter: undefined });
   });
 });

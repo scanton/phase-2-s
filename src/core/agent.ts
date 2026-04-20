@@ -7,6 +7,7 @@ import { createDefaultRegistry, type ToolRegistry, type RegistryOptions } from "
 import { buildSystemPrompt } from "../utils/prompt.js";
 import { log } from "../utils/logger.js";
 import { buildRegistryForAgent, type AgentDef } from "./agent-loader.js";
+import { RateLimitError } from "./rate-limit-error.js";
 
 const execAsync = promisify(exec);
 
@@ -256,6 +257,10 @@ export class Agent {
           toolCalls.push(...event.calls);
         } else if (event.type === "error") {
           throw new Error(event.error);
+        } else if (event.type === "rate_limited") {
+          // Rate limit — not a failure. Throw typed error so REPL/goal can checkpoint.
+          // Must NOT be caught by the satori retry loop — propagates to CLI layer.
+          throw new RateLimitError(event.retryAfter, this._provider.name);
         } else if (event.type === "done") {
           break;
         }

@@ -1,5 +1,47 @@
 # Changelog
 
+## v1.32.0 — 2026-04-20
+
+Sprint 58 — Rate Limit Resilience. All providers now detect HTTP 429 and emit a typed `rate_limited` event. Configurable auto-backoff retries before checkpointing. `phase2s goal` exits 2 (paused) on rate limit so CI can distinguish "problem" from "paused." The REPL silently checkpoints and exits 0.
+
+### Added
+
+- **`RateLimitError`** (`src/core/rate-limit-error.ts`) — typed Error subclass carrying optional `retryAfter: number | undefined` (seconds until reset) and `providerName: string | undefined`. Thrown by all provider wrappers when a rate limit is detected. Caught in `agent.ts`, `goal.ts`, and `index.ts` for differentiated handling.
+
+- **`rate_limited` provider event** — new event type on the `ProviderEvent` union. All providers (OpenAI, Anthropic, Codex, Gemini, OpenRouter, Minimax) yield `{ type: "rate_limited", retryAfter?: number }` instead of throwing on 429 or process-level rate-limit detection.
+
+- **Auto-backoff in OpenAI and Anthropic providers** — when `Retry-After` is present and ≤ `rate_limit_backoff_threshold` (default 60 s), the provider sleeps and retries transparently. Budget: up to 3 total attempts per `chatStream()` call. Budget exhausted or delay too long → yields `rate_limited` immediately.
+
+- **`rate_limit_backoff_threshold` config field** — integer seconds (default 60). Set to `0` to disable auto-backoff entirely. Negative values rejected by schema.
+
+- **`parseRetryAfter()`** (`src/providers/openai.ts`, exported) — parses both integer-seconds (`"47"`) and HTTP-date (`"Wed, 21 Oct 2025 07:28:00 GMT"`) Retry-After header values. Returns `undefined` on parse failure. Capped at 3600 s to prevent `setTimeout` 32-bit overflow. Shared by OpenAI and Anthropic providers.
+
+- **`phase2s goal` exit 2 on rate limit** — `handleRateLimitExit()` in `goal.ts` prints a paused message with provider name, completed/total sub-task count, and `--resume` / `--provider` instructions, then calls `process.exit(2)`. Triggered from all three execution paths (sequential, parallel, orchestrator).
+
+- **In-flight sub-task checkpointed on rate limit** — when the sequential executor hits a rate limit mid-sub-task, the interrupted sub-task is now written to state as `"failed"` (with partial failure context) before throwing. Previously it was silently skipped, so `--resume` lacked failure context for the interrupted sub-task.
+
+- **REPL rate-limit handling** — `printRateLimitAndExit()` in `index.ts` saves the session, prints a paused message with `--resume` path, and exits 0. A rate limit in the REPL is treated as "pause, not failure."
+
+### Changed
+
+- **`codex.ts` `stderrBuffer` capped at 64 KB** — prevents unbounded memory growth when Codex emits excessive stderr (e.g., verbose debug output or error traces).
+
+### Fixed
+
+- **`parseRetryAfter` overflow guard** — integer Retry-After values larger than 3600 are clamped to 3600 s, preventing Node.js `setTimeout` 32-bit wrap-around with absurd server values.
+
+- **Anthropic abort + 429 race** — `_chatStreamOnce` sets `doneEmitted = true` before re-throwing a 429 error so the `finally` block doesn't emit a spurious `done` event before the outer `chatStream()` catch handler can apply backoff.
+
+- **`MAX_RATE_LIMIT_RETRIES` comment clarified** — the constant is an attempt ceiling (1 initial + 2 retries = 3 total), not a retry count. Comment now says so explicitly.
+
+### For contributors
+
+- **`sleep`, `parseRetryAfter`, `MAX_RATE_LIMIT_RETRIES` exported** from `src/providers/openai.ts` — shared by Anthropic provider and test suites; import from `openai.ts` until a dedicated `backoff.ts` utility is extracted (tracked in TODOS.md).
+
+- **`RateLimitError` exported** from `src/core/rate-limit-error.ts` — carry `retryAfter` and `providerName` through the call stack without string-parsing.
+
+---
+
 ## v1.31.0 — 2026-04-19
 
 Parallel dark factory gets smarter retries: a replan agent reads the actual eval failure output and rewrites only the failing sub-tasks before each retry attempt. Plus tech stack discovery in `/deep-specify` and a REPL output formatting fix.

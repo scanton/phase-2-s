@@ -17,6 +17,8 @@ import { Conversation } from "../../src/core/conversation.js";
 import { OpenAIProvider, type OpenAIClientLike } from "../../src/providers/openai.js";
 import { ToolRegistry } from "../../src/tools/index.js";
 import type { Config } from "../../src/core/config.js";
+import type { Provider, ProviderEvent } from "../../src/providers/types.js";
+import { RateLimitError } from "../../src/core/rate-limit-error.js";
 import { z } from "zod";
 
 // --- Helpers ---
@@ -1380,3 +1382,84 @@ describe("Agent.provider getter", () => {
     expect(typeof agent.provider.chatStream).toBe("function");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rate limit handling (Sprint 58)
+// ---------------------------------------------------------------------------
+
+describe("Agent rate limit handling", () => {
+  /** Build a mock Provider that yields a fixed sequence of events. */
+  function mockProvider(events: ProviderEvent[]): Provider {
+    return {
+      name: "mock-provider",
+      async *chatStream() {
+        for (const event of events) yield event;
+      },
+    };
+  }
+
+  it("throws RateLimitError when provider yields rate_limited event", async () => {
+    const provider = mockProvider([
+      { type: "text", content: "partial..." },
+      { type: "rate_limited", retryAfter: 47 },
+      { type: "done", stopReason: "stop" },
+    ]);
+    const agent = new Agent({
+      config: minimalConfig,
+      provider,
+    });
+
+    await expect(agent.run("hello")).rejects.toThrow(RateLimitError);
+    await expect(agent.run("hello")).rejects.toMatchObject({
+      retryAfter: 47,
+      providerName: "mock-provider",
+    });
+  });
+
+  it("RateLimitError includes providerName from the provider", async () => {
+    const provider: Provider = {
+      name: "test-openai",
+      async *chatStream() {
+        yield { type: "rate_limited" as const };
+        yield { type: "done" as const, stopReason: "stop" };
+      },
+    };
+    const agent = new Agent({ config: minimalConfig, provider });
+
+    await expect(agent.run("hi")).rejects.toMatchObject({
+      name: "RateLimitError",
+      providerName: "test-openai",
+    });
+  });
+
+  it("RateLimitError propagates past satori retry loop (not swallowed as a failed attempt)", async () => {
+    // The satori retry loop retries on generic errors. RateLimitError must propagate
+    // past it, not be retried. We confirm by checking it throws RateLimitError (not
+    // a generic error, and not exhausting retries silently).
+    const provider = mockProvider([
+      { type: "rate_limited", retryAfter: 10 },
+      { type: "done", stopReason: "stop" },
+    ]);
+    const agent = new Agent({ config: minimalConfig, provider });
+
+    const thrown = await agent.run("hi", { maxRetries: 3, verifyCommand: "echo pass" }).catch((e) => e);
+    expect(thrown).toBeInstanceOf(RateLimitError);
+  });
+
+  it("SIGINT (AbortError) is NOT treated as RateLimitError", async () => {
+    // Aborted signal results in done:stop, not rate_limited
+    const controller = new AbortController();
+    const client = makeStreamingFakeClient([
+      [{ choices: [{ delta: { content: "hello" }, finish_reason: null }] } as ChatCompletionChunk],
+    ]);
+    const openaiProvider = new OpenAIProvider({ ...minimalConfig }, client);
+    const agent = new Agent({ config: minimalConfig, provider: openaiProvider });
+
+    controller.abort();
+    // Should resolve (not throw RateLimitError) — aborted stream yields done:stop
+    const result = await agent.run("hi", { signal: controller.signal });
+    expect(result).toBeDefined(); // may be empty string on abort
+  });
+});
+
+// makeStreamingFakeClient is defined earlier in this file — no duplicate needed here.

@@ -6,6 +6,38 @@ import type { OpenAIFunctionDef } from "../tools/types.js";
 import { log } from "../utils/logger.js";
 
 /**
+ * Maximum number of auto-backoff *attempts* before yielding rate_limited.
+ * The loop condition `rateLimitAttempts < MAX_RATE_LIMIT_RETRIES` allows
+ * attempts 0, 1, 2 — so the first attempt + 2 retries = 3 total calls.
+ * Named "RETRIES" for historical reasons; it's really the attempt ceiling.
+ */
+export const MAX_RATE_LIMIT_RETRIES = 3;
+
+/** Sleep for the given number of milliseconds (used for rate-limit backoff). */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Parse the Retry-After header value into seconds.
+ * Handles both integer-seconds form ("47") and HTTP-date form.
+ * Returns undefined if parsing fails.
+ */
+export function parseRetryAfter(header: string | undefined): number | undefined {
+  if (!header) return undefined;
+  const seconds = parseInt(header, 10);
+  // Cap at 3600 s — huge values (e.g. 99999999) × 1000 overflow setTimeout's 32-bit max.
+  if (!isNaN(seconds) && seconds >= 0) return Math.min(seconds, 3600);
+  // HTTP-date form: "Wed, 21 Oct 2025 07:28:00 GMT"
+  const date = Date.parse(header);
+  if (!isNaN(date)) {
+    const diff = Math.ceil((date - Date.now()) / 1000);
+    return diff > 0 ? diff : 0;
+  }
+  return undefined;
+}
+
+/**
  * Structural interface for the OpenAI client's streaming chat.completions.create.
  * Exported so tests can inject a typed stub without importing the full OpenAI SDK class.
  * We only use the streaming overload (stream: true) — non-streaming is no longer needed.
@@ -35,6 +67,7 @@ export class OpenAIProvider implements Provider {
   name = "openai-api";
   private client: OpenAIClientLike;
   private model: string;
+  private rateLimitBackoffThreshold: number;
 
   constructor(config: Config, client?: OpenAIClientLike) {
     if (!client && !config.apiKey) {
@@ -46,9 +79,53 @@ export class OpenAIProvider implements Provider {
     // The real OpenAI class satisfies OpenAIClientLike structurally; one cast at construction.
     this.client = client ?? (new OpenAI({ apiKey: config.apiKey }) as unknown as OpenAIClientLike);
     this.model = config.model;
+    this.rateLimitBackoffThreshold = config.rate_limit_backoff_threshold ?? 60;
   }
 
   async *chatStream(
+    messages: Message[],
+    tools: OpenAIFunctionDef[],
+    options?: import("./types.js").ChatStreamOptions,
+  ): AsyncIterable<ProviderEvent> {
+    const threshold = this.rateLimitBackoffThreshold;
+    let rateLimitAttempts = 0;
+
+    while (true) {
+      try {
+        yield* this._chatStreamOnce(messages, tools, options);
+        return;
+      } catch (err) {
+        // OpenAI SDK throws APIStatusError subclass for HTTP 429
+        if (
+          err instanceof OpenAI.APIError &&
+          err.status === 429 &&
+          !(options?.signal?.aborted)
+        ) {
+          const retryAfter = parseRetryAfter(
+            (err.headers as Record<string, string> | undefined)?.["retry-after"],
+          );
+          rateLimitAttempts++;
+          if (
+            rateLimitAttempts < MAX_RATE_LIMIT_RETRIES &&
+            retryAfter !== undefined &&
+            retryAfter <= threshold &&
+            threshold > 0
+          ) {
+            log.dim(`Rate limited (openai-api). Retrying in ${retryAfter}s (attempt ${rateLimitAttempts}/${MAX_RATE_LIMIT_RETRIES})...`);
+            await sleep(retryAfter * 1000);
+            continue; // retry the stream from scratch
+          }
+          // Budget exhausted, delay too long, or threshold=0 — checkpoint immediately
+          yield { type: "rate_limited", retryAfter };
+          return;
+        }
+        throw err; // non-429 errors propagate normally
+      }
+    }
+  }
+
+  /** Single-pass stream (no retry logic). Called by chatStream. */
+  private async *_chatStreamOnce(
     messages: Message[],
     tools: OpenAIFunctionDef[],
     options?: import("./types.js").ChatStreamOptions,

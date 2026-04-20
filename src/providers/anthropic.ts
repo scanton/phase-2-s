@@ -3,6 +3,7 @@ import type { Config } from "../core/config.js";
 import type { Provider, Message, ToolCall, ProviderEvent, ChatStreamOptions } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
 import { log } from "../utils/logger.js";
+import { sleep, parseRetryAfter, MAX_RATE_LIMIT_RETRIES } from "./openai.js";
 
 /**
  * Anthropic message format used internally for the API call.
@@ -141,6 +142,7 @@ export class AnthropicProvider implements Provider {
   private client: Anthropic;
   private model: string;
   private maxTokens: number;
+  private rateLimitBackoffThreshold: number;
 
   constructor(config: Config, client?: Anthropic) {
     const apiKey = config.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
@@ -152,10 +154,56 @@ export class AnthropicProvider implements Provider {
     this.client = client ?? new Anthropic({ apiKey });
     this.model = config.model ?? "claude-3-5-sonnet-20241022";
     this.maxTokens = config.anthropicMaxTokens ?? 8192;
+    this.rateLimitBackoffThreshold = config.rate_limit_backoff_threshold ?? 60;
     log.info(`AnthropicProvider: model=${this.model} maxTokens=${this.maxTokens}`);
   }
 
   async *chatStream(
+    messages: Message[],
+    tools: OpenAIFunctionDef[],
+    options?: ChatStreamOptions,
+  ): AsyncIterable<ProviderEvent> {
+    const threshold = this.rateLimitBackoffThreshold;
+    let rateLimitAttempts = 0;
+
+    while (true) {
+      try {
+        yield* this._chatStreamOnce(messages, tools, options);
+        return;
+      } catch (err) {
+        if (
+          err instanceof Anthropic.APIError &&
+          err.status === 429 &&
+          !(options?.signal?.aborted)
+        ) {
+          // Anthropic SDK stores headers as a real Headers object (with .get()).
+          // Prefer .get() over plain-object property access.
+          const retryAfterHeader =
+            typeof err.headers?.get === "function"
+              ? err.headers.get("retry-after") ?? undefined
+              : (err.headers as Record<string, string> | undefined)?.["retry-after"];
+          const retryAfter = parseRetryAfter(retryAfterHeader);
+          rateLimitAttempts++;
+          if (
+            rateLimitAttempts < MAX_RATE_LIMIT_RETRIES &&
+            retryAfter !== undefined &&
+            retryAfter <= threshold &&
+            threshold > 0
+          ) {
+            log.dim(`Rate limited (anthropic). Retrying in ${retryAfter}s (attempt ${rateLimitAttempts}/${MAX_RATE_LIMIT_RETRIES})...`);
+            await sleep(retryAfter * 1000);
+            continue;
+          }
+          yield { type: "rate_limited", retryAfter };
+          return;
+        }
+        throw err;
+      }
+    }
+  }
+
+  /** Single-pass stream (no retry logic). Called by chatStream. */
+  private async *_chatStreamOnce(
     messages: Message[],
     tools: OpenAIFunctionDef[],
     options?: ChatStreamOptions,
@@ -230,6 +278,13 @@ export class AnthropicProvider implements Provider {
         yield { type: "done", stopReason: "stop" };
         doneEmitted = true;
         return;
+      }
+      // Re-throw rate limit errors so chatStream() can apply backoff / yield rate_limited.
+      // Set doneEmitted = true first so the finally block doesn't emit a spurious "done"
+      // event before the error propagates to the outer chatStream() catch handler.
+      if (err instanceof Anthropic.APIError && err.status === 429) {
+        doneEmitted = true;
+        throw err;
       }
       const errMsg = err instanceof Error ? err.message : String(err);
       log.error(`AnthropicProvider: stream error — ${errMsg}`);
