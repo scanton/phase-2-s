@@ -34,6 +34,7 @@ import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
 import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-graph.js";
 import { executeParallel, type ParallelResult } from "../goal/parallel-executor.js";
+import { replanFailingSubtasks } from "../goal/replan.js";
 import { cleanAllWorktrees, getHeadSha, getDiff } from "../goal/merge-strategy.js";
 import { judgeRun } from "../eval/judge.js";
 
@@ -360,7 +361,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   }
 
   // -------------------------------------------------------------------------
-  // PARALLEL execution path
+  // PARALLEL execution path (with replan retry loop — Sprint 57)
   // -------------------------------------------------------------------------
   if (useParallel && depResult) {
     console.log(chalk.cyan("\nStarting parallel execution..."));
@@ -370,92 +371,151 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     state.completedLevels = state.completedLevels ?? [];
     writeState(specDir, specHash, state);
 
-    try {
-      const parallelResult = await executeParallel(depResult, {
-        maxWorkers,
-        dashboard: !!options.dashboard,
-        spec,
-        specDir,
-        specHash,
-        state,
-        logger,
-        attempt: 1,
-        satoriRetries,
-        satoriModel,
-      });
+    // Sprint 57: retry loop — up to maxAttempts total (first run is attempt 1).
+    // On failure, the replan agent produces revised sub-task descriptions grounded
+    // in what actually failed. Only failing sub-tasks are re-executed on retry.
+    let parallelCriteriaResults: Record<string, boolean> = {};
+    let parallelFailing: string[] = [];
+    let lastParallelResult: ParallelResult | null = null;
+    let parallelSuccess = false;
+    let lastEvalOutput = "";
+    let lastAttempt = 1;
 
-      // After parallel execution, run eval command
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      lastAttempt = attempt;
+
+      // On retry attempts: build revisedSubtasks + subsetToRun from the replan agent
+      let revisedSubtasks: Record<string, string> | undefined;
+      let subsetToRun: Set<string> | undefined;
+
+      if (attempt > 1 && parallelFailing.length > 0) {
+        // Reset completedLevels so executeParallel doesn't skip all levels on retry
+        state.completedLevels = [];
+        writeState(specDir, specHash, state);
+
+        const evalOutputForReplan = lastEvalOutput;
+        const revised = await replanFailingSubtasks(
+          parallelFailing,
+          evalOutputForReplan,
+          spec.decomposition,
+          config,
+        );
+        if (revised.length > 0) {
+          revisedSubtasks = Object.fromEntries(revised.map((r) => [r.name, r.description]));
+          subsetToRun = new Set(revised.map((r) => r.name));
+        }
+        // If revised is empty (parse failure or no revisions), retry with
+        // original descriptions but still limit to failing sub-tasks by name.
+        if (!subsetToRun) {
+          subsetToRun = new Set(
+            spec.decomposition
+              .filter((s) => parallelFailing.some((f) => f.toLowerCase().includes(s.name.toLowerCase())))
+              .map((s) => s.name),
+          );
+          // If attribution is ambiguous, run all sub-tasks (subsetToRun stays undefined)
+          if (subsetToRun.size === 0) subsetToRun = undefined;
+        }
+      }
+
+      if (attempt > 1) {
+        console.log(chalk.cyan(`\nRetrying parallel execution (attempt ${attempt}/${maxAttempts})...`));
+      }
+
+      try {
+        lastParallelResult = await executeParallel(depResult, {
+          maxWorkers,
+          dashboard: !!options.dashboard,
+          spec,
+          specDir,
+          specHash,
+          state,
+          logger,
+          attempt,
+          satoriRetries,
+          satoriModel,
+          revisedSubtasks,
+          subsetToRun,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(chalk.red(`\nParallel execution error: ${message}`));
+        logger.log({ event: "goal_error", message });
+
+        const result: GoalResult = {
+          success: false,
+          attempts: attempt,
+          criteriaResults: {},
+          runLogPath: logger.close(),
+          summary: `Parallel execution failed: ${message}`,
+          durationMs: Date.now() - startMs,
+        };
+        await maybeNotify(options, config, result, basename(specPath));
+        return result;
+      }
+
+      // Run eval command after each parallel attempt
       console.log(chalk.cyan("\nRunning evaluation..."));
       logger.log({ event: "eval_started", command: spec.evalCommand });
       const evalOutput = await runCommand(spec.evalCommand);
+      lastEvalOutput = evalOutput;
       logger.log({ event: "eval_completed", output: evalOutput.slice(0, 4096) });
 
       // Check criteria
       const evalAgent = new Agent({ config, learnings: learningsStr });
-      const criteriaResults = await checkCriteria(spec.acceptanceCriteria, evalOutput, evalAgent);
-      const failing = Object.entries(criteriaResults).filter(([, v]) => !v).map(([k]) => k);
+      parallelCriteriaResults = await checkCriteria(spec.acceptanceCriteria, evalOutput, evalAgent);
+      parallelFailing = Object.entries(parallelCriteriaResults).filter(([, v]) => !v).map(([k]) => k);
 
-      logger.log({ event: "criteria_checked", results: criteriaResults, failing });
+      logger.log({ event: "criteria_checked", results: parallelCriteriaResults, failing: parallelFailing });
 
-      const success = failing.length === 0;
+      parallelSuccess = parallelFailing.length === 0;
 
-      logger.log({
-        event: "goal_completed",
-        success,
-        attempts: 1,
-        parallel: true,
-        wallClockMs: parallelResult.totalDurationMs,
-        sequentialEstimateMs: parallelResult.sequentialEstimateMs,
-      });
-
-      // Print summary
-      if (success) {
-        console.log(chalk.green("\nAll acceptance criteria passed."));
-      } else {
-        console.log(chalk.red(`\n${failing.length} acceptance criteria failed:`));
-        for (const f of failing) console.log(chalk.red(`  - ${f}`));
-      }
-
-      const savings = parallelResult.sequentialEstimateMs > 0
-        ? Math.round((1 - parallelResult.totalDurationMs / parallelResult.sequentialEstimateMs) * 100)
-        : 0;
-      console.log(chalk.cyan(`\nParallel execution: ${(parallelResult.totalDurationMs / 1000).toFixed(1)}s wall clock`));
-      if (savings > 0) {
-        console.log(chalk.cyan(`Sequential estimate: ${(parallelResult.sequentialEstimateMs / 1000).toFixed(1)}s (~${savings}% faster)`));
-      }
-
-      // Opt-in spec eval judge
-      await maybeJudge(options, specPath, baseRef, cwd, config, specHash, logger);
-
-      const result: GoalResult = {
-        success,
-        attempts: 1,
-        criteriaResults,
-        runLogPath: logger.close(),
-        summary: success
-          ? `All criteria passed (parallel, ${parallelResult.levels.length} levels, ${savings}% faster).`
-          : `${failing.length} criteria failed after parallel execution.`,
-        durationMs: Date.now() - startMs,
-      };
-
-      await maybeNotify(options, config, result, basename(specPath));
-      return result;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(chalk.red(`\nParallel execution error: ${message}`));
-      logger.log({ event: "goal_error", message });
-
-      const result: GoalResult = {
-        success: false,
-        attempts: 1,
-        criteriaResults: {},
-        runLogPath: logger.close(),
-        summary: `Parallel execution failed: ${message}`,
-        durationMs: Date.now() - startMs,
-      };
-      await maybeNotify(options, config, result, basename(specPath));
-      return result;
+      if (parallelSuccess) break; // All criteria passed — no more retries needed
     }
+
+    // Final result after all attempts
+    logger.log({
+      event: "goal_completed",
+      success: parallelSuccess,
+      attempts: lastAttempt,
+      parallel: true,
+      wallClockMs: lastParallelResult?.totalDurationMs ?? 0,
+      sequentialEstimateMs: lastParallelResult?.sequentialEstimateMs ?? 0,
+    });
+
+    if (parallelSuccess) {
+      console.log(chalk.green("\nAll acceptance criteria passed."));
+    } else {
+      console.log(chalk.red(`\n${parallelFailing.length} acceptance criteria failed:`));
+      for (const f of parallelFailing) console.log(chalk.red(`  - ${f}`));
+    }
+
+    const savings = (lastParallelResult?.sequentialEstimateMs ?? 0) > 0
+      ? Math.round((1 - (lastParallelResult!.totalDurationMs) / lastParallelResult!.sequentialEstimateMs) * 100)
+      : 0;
+    if (lastParallelResult) {
+      console.log(chalk.cyan(`\nParallel execution: ${(lastParallelResult.totalDurationMs / 1000).toFixed(1)}s wall clock`));
+      if (savings > 0) {
+        console.log(chalk.cyan(`Sequential estimate: ${(lastParallelResult.sequentialEstimateMs / 1000).toFixed(1)}s (~${savings}% faster)`));
+      }
+    }
+
+    // Opt-in spec eval judge
+    await maybeJudge(options, specPath, baseRef, cwd, config, specHash, logger);
+
+    const parallelLevels = lastParallelResult?.levels.length ?? 0;
+    const result: GoalResult = {
+      success: parallelSuccess,
+      attempts: lastAttempt,
+      criteriaResults: parallelCriteriaResults,
+      runLogPath: logger.close(),
+      summary: parallelSuccess
+        ? `All criteria passed (parallel, ${parallelLevels} levels, ${savings}% faster).`
+        : `${parallelFailing.length} criteria failed after ${lastAttempt} parallel attempt${lastAttempt > 1 ? "s" : ""}.`,
+      durationMs: Date.now() - startMs,
+    };
+
+    await maybeNotify(options, config, result, basename(specPath));
+    return result;
   }
 
   // -------------------------------------------------------------------------

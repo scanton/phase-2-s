@@ -72,6 +72,18 @@ export interface ParallelOptions {
   satoriRetries: number;
   /** Model override for satori workers. */
   satoriModel?: string;
+  /**
+   * Sprint 57: Revised sub-task descriptions from the replan agent.
+   * Key = sub-task name (exact match), value = revised description to use
+   * instead of the original spec description.
+   */
+  revisedSubtasks?: Record<string, string>;
+  /**
+   * Sprint 57: Subset of sub-task names to actually execute on this retry.
+   * Workers whose sub-task name is NOT in this set immediately return success
+   * without touching any files (no-op). When undefined, all sub-tasks run.
+   */
+  subsetToRun?: Set<string>;
 }
 
 export interface WorkerResult {
@@ -342,9 +354,23 @@ async function executeWorker(
   level: number,
   options: WorkerOptions,
 ): Promise<WorkerResult> {
-  const { cwd, spec, specDir, specHash, state, logger, attempt, levelContext, satoriRetries, satoriModel, dashboardState, workerIndexInBatch } = options;
+  const { cwd, spec, specDir, specHash, state, logger, attempt, levelContext, satoriRetries, satoriModel, dashboardState, workerIndexInBatch, subsetToRun, revisedSubtasks } = options;
   const start = Date.now();
   const slug = makeWorktreeSlug(specHash, index);
+
+  // Sprint 57: If subsetToRun is defined and this sub-task is not in it,
+  // skip execution and return an immediate no-op success. This lets the retry
+  // loop re-run only failing sub-tasks without wasting workers on passing ones.
+  if (subsetToRun !== undefined && !subsetToRun.has(subtask.name)) {
+    console.log(chalk.dim(`  [Worker ${index}] Skipping (already passed): ${subtask.name}`));
+    return {
+      index,
+      subtaskName: subtask.name,
+      status: "passed",
+      durationMs: Date.now() - start,
+      output: "(skipped — sub-task passed in prior attempt)",
+    };
+  }
 
   console.log(chalk.yellow(`  [Worker ${index}] Starting: ${subtask.name}`));
   if (dashboardState) updateWorkerPane(dashboardState, workerIndexInBatch, `[Worker ${index}] ${subtask.name}`);
@@ -412,8 +438,10 @@ async function executeWorker(
   // Symlink node_modules
   symlinkNodeModules(cwd, wt.worktreePath);
 
-  // Build satori prompt with level context
-  const prompt = buildWorkerPrompt(subtask, spec, levelContext);
+  // Build satori prompt with level context.
+  // Sprint 57: Use revised description from replan agent if available.
+  const revisedDescription = revisedSubtasks?.[subtask.name];
+  const prompt = buildWorkerPrompt(subtask, spec, levelContext, revisedDescription);
 
   // Create fresh Agent for this worker
   const config = await loadConfig();
@@ -536,7 +564,7 @@ export function resolveSubtaskModel(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function buildWorkerPrompt(subtask: SubTask, spec: Spec, levelContext: string): string {
+export function buildWorkerPrompt(subtask: SubTask, spec: Spec, levelContext: string, revisedDescription?: string): string {
   const parts: string[] = [];
 
   if (levelContext) {
@@ -545,10 +573,18 @@ function buildWorkerPrompt(subtask: SubTask, spec: Spec, levelContext: string): 
     parts.push("");
   }
 
-  parts.push(`TASK: ${subtask.name}`);
-  if (subtask.input) parts.push(`INPUT: ${subtask.input}`);
-  if (subtask.output) parts.push(`EXPECTED OUTPUT: ${subtask.output}`);
-  if (subtask.successCriteria) parts.push(`SUCCESS CRITERIA: ${subtask.successCriteria}`);
+  if (revisedDescription) {
+    // Sprint 57: replan agent provided a revised description grounded in what failed.
+    parts.push(`TASK: ${subtask.name}`);
+    parts.push(`REVISED INSTRUCTIONS (a prior attempt failed — follow these updated instructions):`);
+    parts.push(revisedDescription);
+    parts.push(`SUCCESS CRITERIA: ${subtask.successCriteria}`);
+  } else {
+    parts.push(`TASK: ${subtask.name}`);
+    if (subtask.input) parts.push(`INPUT: ${subtask.input}`);
+    if (subtask.output) parts.push(`EXPECTED OUTPUT: ${subtask.output}`);
+    if (subtask.successCriteria) parts.push(`SUCCESS CRITERIA: ${subtask.successCriteria}`);
+  }
 
   if (spec.constraints.mustDo.length > 0) {
     parts.push(`\nCONSTRAINTS (must do): ${spec.constraints.mustDo.join("; ")}`);
