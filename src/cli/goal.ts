@@ -47,10 +47,23 @@ const FAILURE_CONTEXT_MAX_BYTES = 4096;
  * exit 2 = "paused, not failure" — machine-readable for CI/orchestrators.
  * The caller already wrote state to disk before this is invoked.
  */
-function handleRateLimitExit(err: RateLimitError, specFile: string, completedCount: number, totalCount: number): never {
+function handleRateLimitExit(
+  err: RateLimitError,
+  specFile: string,
+  completedCount: number | undefined,
+  totalCount: number,
+  checkpointed = true,
+): never {
   console.log();
-  console.log(`⏸  Rate limited (${err.providerName ?? "provider"}) after completing ${completedCount}/${totalCount} sub-tasks.`);
-  console.log("   Progress checkpointed.");
+  const countMsg = completedCount !== undefined
+    ? ` after completing ${completedCount}/${totalCount} sub-tasks`
+    : "";
+  console.log(`⏸  Rate limited (${err.providerName ?? "provider"})${countMsg}.`);
+  if (checkpointed) {
+    console.log("   Progress checkpointed.");
+  } else {
+    console.log("   Note: orchestrator mode does not checkpoint on rate limit — re-run to restart.");
+  }
   if (err.retryAfter !== undefined) {
     console.log(`   Rate limit resets in ~${err.retryAfter}s.`);
   }
@@ -363,8 +376,9 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       return orchGoalResult;
     } catch (err: unknown) {
       if (err instanceof RateLimitError) {
-        const completedCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
-        handleRateLimitExit(err, basename(specPath), completedCount, spec.decomposition.length);
+        // Orchestrator doesn't write to state.subTaskResults and doesn't checkpoint on
+        // rate limit — pass checkpointed=false so the message is honest.
+        handleRateLimitExit(err, basename(specPath), undefined, spec.decomposition.length, false);
       }
       const message = err instanceof Error ? err.message : String(err);
       console.error(chalk.red(`\nOrchestrator error: ${message}`));

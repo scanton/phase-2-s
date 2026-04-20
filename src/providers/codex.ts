@@ -202,7 +202,7 @@ export class CodexProvider implements Provider {
     const STDERR_MAX_BYTES = 64 * 1024;
     let stderrBuffer = "";
     proc.stderr.on("data", (chunk: Buffer) => {
-      if (stderrBuffer.length < STDERR_MAX_BYTES) {
+      if (Buffer.byteLength(stderrBuffer) < STDERR_MAX_BYTES) {
         stderrBuffer += chunk.toString();
       }
     });

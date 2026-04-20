@@ -14,6 +14,8 @@
 
 - [ ] **Codex provider: partial text + silent 429 drop** — When `hasProducedText === true`, the stderr rate-limit check is skipped. If Codex emits partial output then exits non-zero with "429 rate limit" in stderr, the caller sees `done` (not `rate_limited`) and does not checkpoint. Fix: always check stderr for rate-limit signal on non-zero exit. **INVESTIGATE post-Sprint 58.**
 
+- [ ] **Orchestrator path does not checkpoint on rate limit** — When `chatOnce()` (used in the replan LLM call) hits a rate limit, `RateLimitError` propagates to `goal.ts` which exits 2. But the orchestrator doesn't write to `state.subTaskResults`, so there's nothing to resume. A `--resume` after an orchestrator rate limit would restart all sub-tasks from scratch. Fix: write partial orchestrator results to state before throwing, or add an `orchestrator_paused` state field. Currently the exit message is honest ("does not checkpoint on rate limit"), but resumability is missing. **Post-Sprint 58.**
+
 ---
 
 ## Backlog — Post-Sprint 58 /plan-eng-review findings (2026-04-20)

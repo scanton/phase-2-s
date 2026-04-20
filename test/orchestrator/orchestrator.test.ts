@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { runOrchestrator, computeSkippedIds, type OrchestratorOptions, type JobStatus } from '../../src/orchestrator/orchestrator.js';
 import type { SubtaskJob, OrchestratorLevelResult } from '../../src/orchestrator/types.js';
 import type { RunLogger } from '../../src/core/run-logger.js';
+import { RateLimitError } from '../../src/core/rate-limit-error.js';
 
 // ---------------------------------------------------------------------------
 // Mock RunLogger
@@ -585,5 +586,70 @@ describe('runOrchestrator — Sprint 39 integration', () => {
     const replanResult = (logger.events as Array<{ event: string; suspectCount?: number }>)
       .find(e => e.event === 'orchestrator_replan_result');
     expect(replanResult?.suspectCount).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rate limit propagation in chatOnce (Sprint 58)
+// ---------------------------------------------------------------------------
+
+describe('runOrchestrator — rate_limited event propagation', () => {
+  it('rate_limited event during replan LLM call: throws RateLimitError with retryAfter', async () => {
+    // Trigger the replan path: job fails → orchestrator calls chatOnce() for re-plan
+    const job = makeJob({ id: 'rl-job' });
+    const levels = [[job]];
+    const logger = makeMockLogger();
+
+    const rateLimitedProvider = {
+      name: 'mock-rate-limited',
+      async *chatStream() {
+        yield { type: 'rate_limited', retryAfter: 30 } as import('../../src/providers/types.js').ProviderEvent;
+      },
+    };
+
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) =>
+      js.map(j => makeFailResult(j.id, 'failed'))
+    );
+
+    await expect(
+      runOrchestrator(levels, [job], {
+        specHash: 'rl1',
+        logger,
+        executeLevelFn,
+        provider: rateLimitedProvider as import('../../src/providers/types.js').Provider,
+        config: { model: 'gpt-4o', smart_model: 'gpt-4o' } as import('../../src/core/config.js').Config,
+      })
+    ).rejects.toSatisfy(
+      (e: unknown) => e instanceof RateLimitError && e.retryAfter === 30,
+    );
+  });
+
+  it('rate_limited event during replan without retryAfter: throws RateLimitError with undefined retryAfter', async () => {
+    const job = makeJob({ id: 'rl-job-2' });
+    const levels = [[job]];
+    const logger = makeMockLogger();
+
+    const rateLimitedProvider = {
+      name: 'mock-rate-limited-noafter',
+      async *chatStream() {
+        yield { type: 'rate_limited' } as import('../../src/providers/types.js').ProviderEvent;
+      },
+    };
+
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) =>
+      js.map(j => makeFailResult(j.id, 'err'))
+    );
+
+    await expect(
+      runOrchestrator(levels, [job], {
+        specHash: 'rl2',
+        logger,
+        executeLevelFn,
+        provider: rateLimitedProvider as import('../../src/providers/types.js').Provider,
+        config: { model: 'gpt-4o', smart_model: 'gpt-4o' } as import('../../src/core/config.js').Config,
+      })
+    ).rejects.toSatisfy(
+      (e: unknown) => e instanceof RateLimitError && e.retryAfter === undefined,
+    );
   });
 });

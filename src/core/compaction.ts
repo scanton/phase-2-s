@@ -12,6 +12,7 @@
  */
 
 import type { Provider, Message } from "../providers/types.js";
+import { RateLimitError } from "./rate-limit-error.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -90,6 +91,8 @@ export function buildCompactedMessages(summary: string): Message[] {
  *
  * Throws if the provider raises an error — caller should catch, warn, and
  * continue without compacting.
+ * Throws RateLimitError if the provider signals a rate limit — caller should
+ * propagate (not swallow) so the session can checkpoint and pause cleanly.
  *
  * @param provider  The active session provider.
  * @param messages  Full conversation history to summarize.
@@ -127,6 +130,10 @@ export async function buildCompactionSummary(
         summary += event.content;
       } else if (event.type === "error") {
         throw new Error(event.error);
+      } else if (event.type === "rate_limited") {
+        // Surface rate limits during compaction so the REPL can checkpoint and pause.
+        // Swallowing this would return an empty summary and silently lose the session.
+        throw new RateLimitError(event.retryAfter);
       }
       // "done" and "tool_calls" events are ignored — compaction prompt never invokes tools.
     }

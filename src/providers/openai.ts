@@ -32,7 +32,8 @@ export function parseRetryAfter(header: string | undefined): number | undefined 
   const date = Date.parse(header);
   if (!isNaN(date)) {
     const diff = Math.ceil((date - Date.now()) / 1000);
-    return diff > 0 ? diff : 0;
+    // Cap at 3600 s — same reason as the integer path above.
+    return diff > 0 ? Math.min(diff, 3600) : 0;
   }
   return undefined;
 }

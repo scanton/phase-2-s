@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { buildCompactionSummary, COMPACT_SUMMARY_PROMPT } from "../../src/core/compaction.js";
 import type { Provider, ProviderEvent, Message } from "../../src/providers/types.js";
+import { RateLimitError } from "../../src/core/rate-limit-error.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -203,5 +204,34 @@ describe("buildCompactionSummary", () => {
     const result = await resultPromise;
 
     expect(result).toBe("Empty session");
+  });
+
+  it("rate_limited event with retryAfter: throws RateLimitError with correct retryAfter", async () => {
+    const provider = makeProvider([
+      { type: "rate_limited", retryAfter: 47 },
+    ]);
+
+    await expect(buildCompactionSummary(provider, SAMPLE_MESSAGES)).rejects.toSatisfy(
+      (e: unknown) => e instanceof RateLimitError && e.retryAfter === 47,
+    );
+  });
+
+  it("rate_limited event without retryAfter: throws RateLimitError with undefined retryAfter", async () => {
+    const provider = makeProvider([
+      { type: "rate_limited" },
+    ]);
+
+    await expect(buildCompactionSummary(provider, SAMPLE_MESSAGES)).rejects.toSatisfy(
+      (e: unknown) => e instanceof RateLimitError && e.retryAfter === undefined,
+    );
+  });
+
+  it("partial text before rate_limited: throws RateLimitError (summary not returned)", async () => {
+    const provider = makeProvider([
+      { type: "text", content: "Partial summary..." },
+      { type: "rate_limited", retryAfter: 30 },
+    ]);
+
+    await expect(buildCompactionSummary(provider, SAMPLE_MESSAGES)).rejects.toBeInstanceOf(RateLimitError);
   });
 });

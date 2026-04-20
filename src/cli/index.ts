@@ -1003,6 +1003,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       summary = await buildCompactionSummary(agent.provider, messages);
     } catch (err) {
       process.stdout.write("\n");
+      if (err instanceof RateLimitError) {
+        // Don't swallow rate limits — let the caller checkpoint and exit cleanly.
+        throw err;
+      }
       console.warn(chalk.yellow(`⚠  Compaction failed: ${err instanceof Error ? err.message : String(err)}`));
       return;
     }
@@ -1064,7 +1068,14 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
     const tokens = agent.getConversation().estimateTokens();
     if (shouldCompact(tokens, config.auto_compact_tokens)) {
-      await performCompaction();
+      try {
+        await performCompaction();
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          printRateLimitAndExit(err, activeSessionPath, config.provider);
+        }
+        throw err;
+      }
     }
   };
 
@@ -1207,7 +1218,14 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
 
     // :compact — immediately compact the conversation history
     if (trimmed === ":compact") {
-      await performCompaction();
+      try {
+        await performCompaction();
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          printRateLimitAndExit(err, activeSessionPath, config.provider);
+        }
+        log.error(err instanceof Error ? err.message : String(err));
+      }
       continue;
     }
 
