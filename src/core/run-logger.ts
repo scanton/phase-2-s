@@ -27,6 +27,7 @@ export type RunEvent =
   | { event: "criteria_checked"; results: Record<string, boolean>; failing: string[] }
   | { event: "goal_completed"; success: boolean; attempts: number; parallel?: boolean; wallClockMs?: number; sequentialEstimateMs?: number }
   | { event: "goal_error"; message: string }
+  | { event: "eval_infra_error"; output: string }
   // Parallel execution events
   | { event: "level_started"; level: number; subtaskCount: number; workerCount: number }
   | { event: "level_completed"; level: number; durationMs: number; mergedCount: number; failedCount: number }

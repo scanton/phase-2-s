@@ -1,5 +1,5 @@
 /**
- * Sprint 57: Tests for src/goal/replan.ts
+ * Tests for src/goal/replan.ts
  *
  * Coverage:
  * - Happy path: agent returns valid JSON with valid sub-task names
@@ -10,6 +10,7 @@
  * - Agent error/throw: returns []
  * - Missing "revised" key: returns []
  * - Mixed valid + invalid entries: only valid entries returned
+ * - Eval output tail slicing: only the tail 4096 chars are sent to the agent
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -20,19 +21,29 @@ import type { SubTask } from "../../src/core/spec-parser.js";
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Capture the last Agent constructor opts and control run() return value
+// Capture the last Agent constructor opts and run() calls
 let agentRunResult: string = "{}";
 let agentRunThrows: Error | null = null;
+let lastAgentPrompt: string = "";
+let lastAgentOpts: unknown = null;
 
 vi.mock("../../src/core/agent.js", () => {
   class MockAgent {
-    constructor(_opts: unknown) {}
-    async run(_prompt: string): Promise<string> {
+    constructor(opts: unknown) {
+      lastAgentOpts = opts;
+    }
+    async run(prompt: string): Promise<string> {
+      lastAgentPrompt = prompt;
       if (agentRunThrows) throw agentRunThrows;
       return agentRunResult;
     }
   }
   return { Agent: MockAgent };
+});
+
+vi.mock("../../src/tools/registry.js", () => {
+  class ToolRegistry {}
+  return { ToolRegistry };
 });
 
 // ---------------------------------------------------------------------------
@@ -95,6 +106,8 @@ describe("replanFailingSubtasks", () => {
   beforeEach(() => {
     agentRunResult = "{}";
     agentRunThrows = null;
+    lastAgentPrompt = "";
+    lastAgentOpts = null;
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
   });
 
@@ -269,5 +282,39 @@ describe("replanFailingSubtasks", () => {
 
     const stderrOutput = stderrSpy.mock.calls.map((args) => String(args[0])).join("");
     expect(stderrOutput).toContain("Analyzing failures");
+  });
+
+  it("sends the TAIL of long eval output to the agent (not the head)", async () => {
+    const { replanFailingSubtasks } = await import("../../src/goal/replan.js");
+    agentRunResult = JSON.stringify({ revised: [] });
+
+    // Build an output where the unique head marker appears only at position 0-24,
+    // followed by padding, then a unique tail marker.
+    // Total length must exceed EVAL_OUTPUT_MAX (4096) so truncation fires.
+    const uniqueHeadMarker = "UNIQUE_HEAD_ONLY_MARKER";       // 23 chars, only at position 0
+    const padding = "x".repeat(5000);                          // 5000 chars of filler
+    const uniqueTailMarker = "UNIQUE_TAIL_FAILURE_MARKER";    // only at the very end
+    const longEvalOutput = uniqueHeadMarker + padding + uniqueTailMarker;
+    // Total: ~5049 chars. Tail slice of 4096 starts at char 953 — past the head marker.
+
+    await replanFailingSubtasks(["criterion fails"], longEvalOutput, makeSubtasks(), makeConfig());
+
+    // Tail marker must appear in the prompt (it's within the last 4096 chars)
+    expect(lastAgentPrompt).toContain(uniqueTailMarker);
+    // Head marker must NOT appear in the prompt (it was sliced off)
+    expect(lastAgentPrompt).not.toContain(uniqueHeadMarker);
+  });
+
+  it("agent is constructed with an empty tool registry (no file-system access)", async () => {
+    const { replanFailingSubtasks } = await import("../../src/goal/replan.js");
+    agentRunResult = JSON.stringify({ revised: [] });
+
+    await replanFailingSubtasks(["criterion"], "output", makeSubtasks(), makeConfig());
+
+    // tools should be a ToolRegistry instance (the mocked one), not undefined
+    const opts = lastAgentOpts as Record<string, unknown>;
+    expect(opts.tools).toBeDefined();
+    // ToolRegistry is mocked as an empty class — just verifying it was passed
+    expect(typeof opts.tools).toBe("object");
   });
 });

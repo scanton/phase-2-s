@@ -1,5 +1,5 @@
 /**
- * Replan agent — Sprint 57.
+ * Replan agent.
  *
  * After a parallel goal run fails acceptance criteria, `replanFailingSubtasks`
  * calls a single-shot LLM agent to produce revised sub-task descriptions
@@ -8,9 +8,11 @@
  * `executeParallel` attempt.
  *
  * Design decisions:
- * - Uses `new Agent({ config })` with `maxTurns=1` — spec repair, not a
- *   general assistant. No learnings injected (project conventions are for
- *   developer agents, not judge agents).
+ * - Uses `new Agent({ config, tools: new ToolRegistry() })` with `maxTurns=1`
+ *   — spec repair, not a general assistant. Empty registry prevents
+ *   file-system access.
+ *   No learnings injected (project conventions are for developer agents, not
+ *   judge agents).
  * - Strips markdown code fences before JSON.parse — models frequently wrap
  *   JSON in ```json blocks.
  * - Validates returned sub-task names against the original list. Any name
@@ -21,6 +23,7 @@
 
 import chalk from "chalk";
 import { Agent } from "../core/agent.js";
+import { ToolRegistry } from "../tools/registry.js";
 import type { Config } from "../core/config.js";
 import type { SubTask } from "../core/spec-parser.js";
 
@@ -51,7 +54,9 @@ export async function replanFailingSubtasks(
   allSubtasks: SubTask[],
   config: Config,
 ): Promise<RevisedSubtask[]> {
-  const truncatedEval = evalOutput.slice(0, EVAL_OUTPUT_MAX);
+  // Capture the TAIL of eval output — test failures and assertion errors appear
+  // at the end, not the beginning. Slicing from the head captures setup boilerplate.
+  const truncatedEval = evalOutput.slice(-EVAL_OUTPUT_MAX);
   const subtaskCount = allSubtasks.length;
 
   process.stderr.write(
@@ -62,7 +67,8 @@ export async function replanFailingSubtasks(
 
   // Pass maxTurns: 1 via a modified config — spec repair agent never needs more
   // than one turn. AgentOptions does not expose maxTurns directly.
-  const agent = new Agent({ config: { ...config, maxTurns: 1 } });
+  // Empty ToolRegistry — prevents the judge agent from touching the file system.
+  const agent = new Agent({ config: { ...config, maxTurns: 1 }, tools: new ToolRegistry() });
 
   let raw: string;
   try {

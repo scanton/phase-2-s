@@ -361,7 +361,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   }
 
   // -------------------------------------------------------------------------
-  // PARALLEL execution path (with replan retry loop — Sprint 57)
+  // PARALLEL execution path (with replan retry loop)
   // -------------------------------------------------------------------------
   if (useParallel && depResult) {
     console.log(chalk.cyan("\nStarting parallel execution..."));
@@ -371,7 +371,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     state.completedLevels = state.completedLevels ?? [];
     writeState(specDir, specHash, state);
 
-    // Sprint 57: retry loop — up to maxAttempts total (first run is attempt 1).
+    // Retry loop — up to maxAttempts total (first run is attempt 1).
     // On failure, the replan agent produces revised sub-task descriptions grounded
     // in what actually failed. Only failing sub-tasks are re-executed on retry.
     let parallelCriteriaResults: Record<string, boolean> = {};
@@ -458,7 +458,15 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       logger.log({ event: "eval_started", command: spec.evalCommand });
       const evalOutput = await runCommand(spec.evalCommand);
       lastEvalOutput = evalOutput;
-      logger.log({ event: "eval_completed", output: evalOutput.slice(0, 4096) });
+      logger.log({ event: "eval_completed", output: evalOutput.slice(0, FAILURE_CONTEXT_MAX_BYTES) });
+
+      // Abort early on eval infrastructure errors — these are not fixable by replanning.
+      // "EVAL ERROR:" = subprocess spawn failure; "EVAL TIMEOUT" = command took too long.
+      if (evalOutput.startsWith("EVAL ERROR:") || evalOutput.startsWith("EVAL TIMEOUT")) {
+        console.error(chalk.red(`\nEval infrastructure error (not retrying): ${evalOutput.slice(0, 200)}`));
+        logger.log({ event: "eval_infra_error", output: evalOutput.slice(0, FAILURE_CONTEXT_MAX_BYTES) });
+        break;
+      }
 
       // Check criteria
       const evalAgent = new Agent({ config, learnings: learningsStr });
@@ -490,7 +498,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     }
 
     const savings = (lastParallelResult?.sequentialEstimateMs ?? 0) > 0
-      ? Math.round((1 - (lastParallelResult!.totalDurationMs) / lastParallelResult!.sequentialEstimateMs) * 100)
+      ? Math.round((1 - (lastParallelResult?.totalDurationMs ?? 0) / (lastParallelResult?.sequentialEstimateMs ?? 1)) * 100)
       : 0;
     if (lastParallelResult) {
       console.log(chalk.cyan(`\nParallel execution: ${(lastParallelResult.totalDurationMs / 1000).toFixed(1)}s wall clock`));

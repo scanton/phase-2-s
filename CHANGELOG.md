@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.31.0 — 2026-04-19
+
+Sprint 57 — replan agent, parallel retry loop, agent newline injection.
+
+### Added
+
+- **Replan agent** (`src/goal/replan.ts`) — after a parallel goal run fails acceptance criteria, a single-shot LLM agent diagnoses which sub-tasks caused the failures and produces revised descriptions grounded in actual eval output. The retry loop re-executes only the failing sub-tasks with the revised descriptions.
+
+- **Parallel goal retry loop** (`src/cli/goal.ts`) — the parallel execution path now retries up to `maxAttempts` times (matching sequential mode behavior). On each retry, `state.completedLevels` is reset so `executeParallel` re-runs all levels, `lastEvalOutput` carries the actual eval output forward for replan context, and `lastAttempt` tracks the real attempt count in `GoalResult`.
+
+- **deep-specify Phase 1.5 tech stack discovery** (`.phase2s/skills/deep-specify/SKILL.md`) — three targeted questions (language/runtime, framework, deployment target) asked before the main interview. Answers flow into the `Constraint Architecture` section as a `Tech Stack` field.
+
+### Fixed
+
+- **REPL newline injection** (`src/core/agent.ts`) — when the model produces text before a tool call, a `\n` is injected via `onDelta` between that turn and the next, preventing response paragraphs from being concatenated without a separator.
+
+- **buildWorkerPrompt exported** (`src/goal/parallel-executor.ts`) — pure function now exported for testability; accepts optional `revisedDescription` for retry paths.
+
 ## v1.30.0 — 2026-04-18
 
 Sprint 56 — AGENTS.md completion: one-shot and MCP injection.
