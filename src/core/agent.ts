@@ -306,6 +306,14 @@ export class Agent {
       if (hadToolError && reflectionEnabled) {
         this.conversation.addUser(TOOL_ERROR_REFLECTION_FRAGMENT);
       }
+
+      // Inject a newline between tool-call turns so streamed output reads as
+      // separate paragraphs rather than concatenated strings. Only fires when
+      // the current turn produced visible text — silent tool calls (no text)
+      // get no separator, avoiding spurious blank lines.
+      if (text.length > 0) {
+        onDelta?.("\n");
+      }
     }
 
     return "(Agent reached maximum turns without a final response)";

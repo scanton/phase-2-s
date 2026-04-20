@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.31.0 — 2026-04-19
+
+Parallel dark factory gets smarter retries: a replan agent reads the actual eval failure output and rewrites only the failing sub-tasks before each retry attempt. Plus tech stack discovery in `/deep-specify` and a REPL output formatting fix.
+
+### Added
+
+- **Replan agent** — when a parallel goal run fails acceptance criteria, a single-shot LLM agent reads what actually failed (the last 4096 chars of eval output, where test failures appear) and produces revised sub-task descriptions targeting the root cause. Only the implicated sub-tasks re-run on retry. If the agent can't produce actionable revisions, the retry proceeds with the original descriptions.
+
+- **Parallel goal retry loop** — the parallel execution path now retries up to `--max-attempts` times, matching sequential mode behavior. Each retry calls the replan agent, resets level state, and tracks the real attempt count.
+
+- **`/deep-specify` tech stack discovery** — three questions added before the main interview (language/runtime, framework, deployment target). Answers flow into the `Constraint Architecture` section as a `Tech Stack` field, so the generated spec already encodes what you're building on.
+
+### Fixed
+
+- **REPL newline injection** — when the model produces text before a tool call, a newline is now injected between that turn and the next. Previously, response paragraphs from back-to-back tool calls ran together without a separator.
+
+### For contributors
+
+- **`buildWorkerPrompt` exported** (`src/goal/parallel-executor.ts`) — pure function now exported for testability; accepts optional `revisedDescription` for retry paths.
+
 ## v1.30.0 — 2026-04-18
 
 Sprint 56 — AGENTS.md completion: one-shot and MCP injection.

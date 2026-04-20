@@ -424,6 +424,65 @@ describe("Agent integration", () => {
     expect(result).toBe("echo: hi");
   });
 
+  // Sprint 57 Fix 3: onDelta newline injection between tool-call turns
+  it("injects \\n via onDelta between text-bearing tool-call turn and the next turn", async () => {
+    // Turn 1: LLM streams "Let me check." then makes a tool call
+    // Turn 2: LLM streams "Found it!" — this should be preceded by a "\n"
+    const turnOneChunks: ChatCompletionChunk[] = [
+      {
+        id: "x", object: "chat.completion.chunk", created: 0, model: "gpt-4o",
+        choices: [{ index: 0, delta: { role: "assistant", content: "Let me check." }, finish_reason: null, logprobs: null }],
+      },
+      {
+        id: "x", object: "chat.completion.chunk", created: 0, model: "gpt-4o",
+        choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_1", type: "function" as const, function: { name: "echo", arguments: '{"text":"hi"}' } }] }, finish_reason: null, logprobs: null }],
+      },
+      {
+        id: "x", object: "chat.completion.chunk", created: 0, model: "gpt-4o",
+        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" as const, logprobs: null }],
+      },
+    ];
+    const fakeClient = makeStreamingFakeClient([turnOneChunks, makeTextChunks("Found it!")]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({ config: minimalConfig, provider, tools: makeStubRegistry() });
+
+    const deltas: string[] = [];
+    await agent.run("check something", { onDelta: (chunk) => deltas.push(chunk) });
+
+    // "Let me check." + "\n" (injected) + "Found it!" — in that order
+    expect(deltas).toContain("\n");
+    const newlineIdx = deltas.indexOf("\n");
+    const beforeNewline = deltas.slice(0, newlineIdx).join("");
+    const afterNewline = deltas.slice(newlineIdx + 1).join("");
+    expect(beforeNewline).toBe("Let me check.");
+    expect(afterNewline).toBe("Found it!");
+  });
+
+  it("does NOT inject \\n when tool-call turn has no preceding text (silent tool call)", async () => {
+    // Turn 1: LLM makes a tool call with NO text content
+    // Turn 2: LLM responds "Done." — no preceding newline should be injected
+    const silentToolCallChunks: ChatCompletionChunk[] = [
+      {
+        id: "x", object: "chat.completion.chunk", created: 0, model: "gpt-4o",
+        choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_2", type: "function" as const, function: { name: "echo", arguments: '{"text":"silent"}' } }] }, finish_reason: null, logprobs: null }],
+      },
+      {
+        id: "x", object: "chat.completion.chunk", created: 0, model: "gpt-4o",
+        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" as const, logprobs: null }],
+      },
+    ];
+    const fakeClient = makeStreamingFakeClient([silentToolCallChunks, makeTextChunks("Done.")]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({ config: minimalConfig, provider, tools: makeStubRegistry() });
+
+    const deltas: string[] = [];
+    await agent.run("silent call", { onDelta: (chunk) => deltas.push(chunk) });
+
+    // No "\n" should appear — the tool call was silent
+    expect(deltas).not.toContain("\n");
+    expect(deltas.join("")).toBe("Done.");
+  });
+
   it("OpenAIProvider chatStream() emits correct event sequence for text response", async () => {
     const fakeClient = makeStreamingFakeClient([makeTextChunks("test response")]);
     const provider = new OpenAIProvider(minimalConfig, fakeClient);

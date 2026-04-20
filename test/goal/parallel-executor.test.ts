@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { makeWorktreeSlug, resetWorktreeLocks, resolveSubtaskModel } from "../../src/goal/parallel-executor.js";
+import { makeWorktreeSlug, resetWorktreeLocks, resolveSubtaskModel, buildWorkerPrompt } from "../../src/goal/parallel-executor.js";
 import { stashIfDirty, unstash } from "../../src/goal/merge-strategy.js";
 import { makeTempRepo, commitFile, withTempRepo } from "./helpers.js";
 import { writeFileSync } from "node:fs";
@@ -372,5 +372,126 @@ describe("resolveSubtaskModel", () => {
 
   it("resolves 'Fast' with no fast_model in config returns fallback", () => {
     expect(resolveSubtaskModel("Fast", {}, "fallback-model")).toBe("fallback-model");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildWorkerPrompt — Sprint 57: revised description branch + default branch
+// ---------------------------------------------------------------------------
+
+function makeSubTask(overrides: Partial<{ name: string; input: string; output: string; successCriteria: string; files: string[] }> = {}) {
+  return {
+    name: "auth-flow",
+    input: "src/auth/",
+    output: "Working auth endpoints",
+    successCriteria: "Login and logout return 200",
+    files: [],
+    ...overrides,
+  };
+}
+
+function makeSpec(overrides: Partial<{ constraints: { mustDo: string[]; cannotDo: string[] } }> = {}) {
+  return {
+    title: "Test spec",
+    problemStatement: "A test spec",
+    acceptanceCriteria: [],
+    constraints: { mustDo: [], cannotDo: [], shouldPrefer: [], shouldEscalate: [] },
+    decomposition: [],
+    evalCommand: "npm test",
+    evalDesign: [],
+    ...overrides,
+  } as Parameters<typeof buildWorkerPrompt>[1];
+}
+
+describe("buildWorkerPrompt — default (no revised description)", () => {
+  it("includes TASK name", () => {
+    const prompt = buildWorkerPrompt(makeSubTask(), makeSpec(), "");
+    expect(prompt).toContain("TASK: auth-flow");
+  });
+
+  it("includes INPUT and EXPECTED OUTPUT when present", () => {
+    const prompt = buildWorkerPrompt(makeSubTask(), makeSpec(), "");
+    expect(prompt).toContain("INPUT: src/auth/");
+    expect(prompt).toContain("EXPECTED OUTPUT: Working auth endpoints");
+    expect(prompt).toContain("SUCCESS CRITERIA: Login and logout return 200");
+  });
+
+  it("does NOT include REVISED INSTRUCTIONS block when no revisedDescription", () => {
+    const prompt = buildWorkerPrompt(makeSubTask(), makeSpec(), "");
+    expect(prompt).not.toContain("REVISED INSTRUCTIONS");
+  });
+
+  it("includes CONTEXT FROM PRIOR EXECUTION LEVELS when levelContext is non-empty", () => {
+    const prompt = buildWorkerPrompt(makeSubTask(), makeSpec(), "Prior level modified: src/db/schema.ts");
+    expect(prompt).toContain("CONTEXT FROM PRIOR EXECUTION LEVELS:");
+    expect(prompt).toContain("Prior level modified: src/db/schema.ts");
+  });
+
+  it("omits CONTEXT block when levelContext is empty string", () => {
+    const prompt = buildWorkerPrompt(makeSubTask(), makeSpec(), "");
+    expect(prompt).not.toContain("CONTEXT FROM PRIOR EXECUTION LEVELS");
+  });
+
+  it("includes CONSTRAINTS must-do when spec has them", () => {
+    const spec = makeSpec({ constraints: { mustDo: ["use TypeScript", "add JSDoc"], cannotDo: [] } });
+    const prompt = buildWorkerPrompt(makeSubTask(), spec, "");
+    expect(prompt).toContain("use TypeScript");
+    expect(prompt).toContain("CONSTRAINTS (must do):");
+  });
+
+  it("includes CONSTRAINTS cannot-do when spec has them", () => {
+    const spec = makeSpec({ constraints: { mustDo: [], cannotDo: ["no jQuery", "no eval"] } });
+    const prompt = buildWorkerPrompt(makeSubTask(), spec, "");
+    expect(prompt).toContain("CONSTRAINTS (cannot do):");
+    expect(prompt).toContain("no jQuery");
+  });
+});
+
+describe("buildWorkerPrompt — Sprint 57: revisedDescription branch", () => {
+  it("shows REVISED INSTRUCTIONS block instead of INPUT/OUTPUT when revisedDescription is given", () => {
+    const prompt = buildWorkerPrompt(
+      makeSubTask(),
+      makeSpec(),
+      "",
+      "Fix the JWT validation — token was not being verified against the secret",
+    );
+    expect(prompt).toContain("REVISED INSTRUCTIONS (a prior attempt failed — follow these updated instructions):");
+    expect(prompt).toContain("Fix the JWT validation");
+    expect(prompt).toContain("token was not being verified");
+  });
+
+  it("still includes TASK name and SUCCESS CRITERIA with revised description", () => {
+    const prompt = buildWorkerPrompt(
+      makeSubTask({ name: "card-selection", successCriteria: "Cards persist across refresh" }),
+      makeSpec(),
+      "",
+      "Persist card state to localStorage instead of session memory",
+    );
+    expect(prompt).toContain("TASK: card-selection");
+    expect(prompt).toContain("SUCCESS CRITERIA: Cards persist across refresh");
+  });
+
+  it("does NOT include INPUT or EXPECTED OUTPUT when revisedDescription is given", () => {
+    const prompt = buildWorkerPrompt(
+      makeSubTask(),
+      makeSpec(),
+      "",
+      "The revised approach: use refresh tokens",
+    );
+    expect(prompt).not.toContain("INPUT:");
+    expect(prompt).not.toContain("EXPECTED OUTPUT:");
+  });
+
+  it("combines level context with revised description correctly", () => {
+    const prompt = buildWorkerPrompt(
+      makeSubTask(),
+      makeSpec(),
+      "Level 1 modified: src/db/schema.ts",
+      "Revised: add NOT NULL constraint to user_id",
+    );
+    expect(prompt).toContain("CONTEXT FROM PRIOR EXECUTION LEVELS:");
+    expect(prompt).toContain("Level 1 modified:");
+    expect(prompt).toContain("REVISED INSTRUCTIONS");
+    expect(prompt).toContain("Revised: add NOT NULL constraint");
   });
 });
