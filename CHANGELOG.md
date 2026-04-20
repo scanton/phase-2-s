@@ -2,21 +2,23 @@
 
 ## v1.31.0 — 2026-04-19
 
-Sprint 57 — replan agent, parallel retry loop, agent newline injection.
+Parallel dark factory gets smarter retries: a replan agent reads the actual eval failure output and rewrites only the failing sub-tasks before each retry attempt. Plus tech stack discovery in `/deep-specify` and a REPL output formatting fix.
 
 ### Added
 
-- **Replan agent** (`src/goal/replan.ts`) — after a parallel goal run fails acceptance criteria, a single-shot LLM agent diagnoses which sub-tasks caused the failures and produces revised descriptions grounded in actual eval output. The retry loop re-executes only the failing sub-tasks with the revised descriptions.
+- **Replan agent** — when a parallel goal run fails acceptance criteria, a single-shot LLM agent reads what actually failed (the last 4096 chars of eval output, where test failures appear) and produces revised sub-task descriptions targeting the root cause. Only the implicated sub-tasks re-run on retry. If the agent can't produce actionable revisions, the retry proceeds with the original descriptions.
 
-- **Parallel goal retry loop** (`src/cli/goal.ts`) — the parallel execution path now retries up to `maxAttempts` times (matching sequential mode behavior). On each retry, `state.completedLevels` is reset so `executeParallel` re-runs all levels, `lastEvalOutput` carries the actual eval output forward for replan context, and `lastAttempt` tracks the real attempt count in `GoalResult`.
+- **Parallel goal retry loop** — the parallel execution path now retries up to `--max-attempts` times, matching sequential mode behavior. Each retry calls the replan agent, resets level state, and tracks the real attempt count.
 
-- **deep-specify Phase 1.5 tech stack discovery** (`.phase2s/skills/deep-specify/SKILL.md`) — three targeted questions (language/runtime, framework, deployment target) asked before the main interview. Answers flow into the `Constraint Architecture` section as a `Tech Stack` field.
+- **`/deep-specify` tech stack discovery** — three questions added before the main interview (language/runtime, framework, deployment target). Answers flow into the `Constraint Architecture` section as a `Tech Stack` field, so the generated spec already encodes what you're building on.
 
 ### Fixed
 
-- **REPL newline injection** (`src/core/agent.ts`) — when the model produces text before a tool call, a `\n` is injected via `onDelta` between that turn and the next, preventing response paragraphs from being concatenated without a separator.
+- **REPL newline injection** — when the model produces text before a tool call, a newline is now injected between that turn and the next. Previously, response paragraphs from back-to-back tool calls ran together without a separator.
 
-- **buildWorkerPrompt exported** (`src/goal/parallel-executor.ts`) — pure function now exported for testability; accepts optional `revisedDescription` for retry paths.
+### For contributors
+
+- **`buildWorkerPrompt` exported** (`src/goal/parallel-executor.ts`) — pure function now exported for testability; accepts optional `revisedDescription` for retry paths.
 
 ## v1.30.0 — 2026-04-18
 

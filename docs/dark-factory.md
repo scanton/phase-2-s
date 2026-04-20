@@ -488,6 +488,8 @@ The executor has two retry loops:
 - **Inner loop (satori):** For each sub-task, `/satori` runs implement → verify → retry up to 3x internally. It stops when tests pass or gives up and moves on.
 - **Outer loop (goal executor):** After all sub-tasks run and eval is checked, if criteria fail, the outer loop runs again (up to `--max-attempts`, default 3).
 
+**In parallel mode**, the retry loop includes a replan step between attempts. Before re-running failing sub-tasks, a single-shot LLM agent reads the actual eval output (the last 4096 chars, where test failures appear) and the failing acceptance criteria, then produces revised sub-task descriptions that address what went wrong. Only the implicated sub-tasks re-run — passing sub-tasks are skipped. If the replan agent can't produce actionable revisions, the retry proceeds with the original descriptions.
+
 Worst case for a 3-sub-task spec with default settings: 3 outer attempts × 3 inner satori retries × 3 sub-tasks = 27 implementation passes. In practice it's much less. The executor warns you if the combination is large:
 
 ```

@@ -213,12 +213,12 @@ you > /slop-clean src/core/agent.ts
 
 ### `/deep-specify`
 
-Structured spec interview before any code is written. Identifies the 3-5 highest-risk ambiguities, asks Socratic questions one at a time, synthesizes answers into a spec with:
+Structured spec interview before any code is written. Starts with three tech stack questions (language/runtime, framework, deployment target) so the spec's constraint section is grounded in your actual environment. Then identifies the 3-5 highest-risk ambiguities and asks Socratic questions one at a time, synthesizing all answers into a spec with:
 
 - Intent
 - Boundaries
 - Non-goals
-- Constraints
+- Constraints (including `Tech Stack` from the discovery phase)
 - Success criteria
 
 Saves to `.phase2s/specs/`. Ends with a pointer to `/plan` or `/autoplan`.
