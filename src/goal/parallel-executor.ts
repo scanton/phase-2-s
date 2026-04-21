@@ -239,10 +239,13 @@ async function executeLevel(
   const levelContext = level.level > 0 ? buildLevelContext(cwd, baseCommit) : "";
 
   // Execute workers in batches of maxWorkers.
-  // Use Promise.allSettled so a single rate-limited worker does not cancel its
-  // siblings mid-flight. We collect all fulfilled results, merge them, then
-  // re-throw the first RateLimitError so goal.ts can checkpoint and exit 2.
-  // Non-RateLimitError rejections are treated as per-worker failures (the worker
+  // Use Promise.allSettled so a rate-limited worker does not cancel its siblings mid-flight.
+  // Fulfilled WorkerResults are collected and merged; the first RateLimitError is re-thrown
+  // after merge so goal.ts can checkpoint and exit 2.
+  //
+  // Note: executeWorker() only throws RateLimitError — all other failures are returned as
+  // WorkerResult { status: "failed" } in the fulfilled results. The rejected branch below
+  // is a safety net in case that contract changes.
   // result is omitted; any other callers handle the gap in workerResults).
   const workerResults: WorkerResult[] = [];
   let batchRateLimitErr: RateLimitError | undefined;
@@ -264,8 +267,9 @@ async function executeLevel(
         batchRateLimitErr = r.reason;
         // Continue collecting other settled results — do not break early.
       }
-      // Non-RateLimitError rejections: the worker already logged its failure;
-      // omitting it from workerResults is the correct per-worker-failure path.
+      // Note: executeWorker() only throws RateLimitError — all other failures are
+      // returned as WorkerResult { status: "failed" } and appear in fulfilled results.
+      // This branch is a safety net in case executeWorker's contract changes.
     }
     // Stop scheduling new batches if a rate limit was detected.
     if (batchRateLimitErr) break;

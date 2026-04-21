@@ -71,32 +71,24 @@ describe("A2 rate-limit session save", () => {
     }
   });
 
-  it("saveSession write failure does not throw (best-effort behavior)", async () => {
-    // Simulates the .catch(() => {}) guard at each call site.
+  it("saveSession creates intermediate directories — works even when session dir does not exist yet", async () => {
+    // saveSession() calls mkdir(dirname(path), { recursive: true }) before writing,
+    // so the session directory does not need to be pre-created by the caller.
+    // This matters for A2: the first-turn rate-limit case may save before the session
+    // directory has been established.
     const dir = makeTempDir();
     try {
-      const sessionPath = join(dir, "subdir-that-does-not-exist", "session.json");
+      const sessionPath = join(dir, "auto-created-subdir", "session.json");
       const conv = Conversation.fromMessages([{ role: "user", content: "msg" }]);
       const meta = makeSessionMeta();
 
-      // Without .catch, this would throw. With .catch(() => {}) it resolves.
-      await saveSession(dir, sessionPath, conv, meta).catch(() => {});
-      // If we reach here without throwing, the behavior is correct.
-      expect(true).toBe(true);
+      await saveSession(dir, sessionPath, conv, meta);
+
+      const raw = JSON.parse(readFileSync(sessionPath, "utf-8"));
+      expect(raw.messages).toHaveLength(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
-
-  it("RateLimitError is thrown before session save in naive code (showing the bug)", () => {
-    // This test documents the pre-fix failure mode:
-    // If we call process.exit() without saving first, the file doesn't exist.
-    // The fix adds saveSession() before printRateLimitAndExit at every call site.
-    // Here we simply verify RateLimitError is constructible and carries retryAfter.
-    const err = new RateLimitError(47, "openai-api");
-    expect(err.retryAfter).toBe(47);
-    expect(err.providerName).toBe("openai-api");
-    expect(err instanceof RateLimitError).toBe(true);
   });
 
   it("first-turn 429 — conversation with only the user message is saved correctly", async () => {

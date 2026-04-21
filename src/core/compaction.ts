@@ -188,10 +188,11 @@ export interface PerformCompactionDeps {
   onMetaUpdate: (newMeta: SessionMeta) => void;
   /** Called when compaction succeeds (lets the caller set a justCompacted guard flag). */
   onJustCompacted: () => void;
-  // --- Injectable IO (defaults to real implementations) ---
+  // --- Injectable IO (defaults to real implementations, required for saveSession) ---
   writeFileFn?: (path: string, data: string, opts: { encoding: "utf-8"; mode: number }) => Promise<void>;
   buildCompactionSummaryFn?: (provider: Provider, messages: Message[]) => Promise<string>;
-  saveSessionFn?: (cwd: string, path: string, conv: Conversation, meta: SessionMeta) => Promise<void>;
+  /** Required — compaction must persist the compacted conversation or the history is lost in memory only. */
+  saveSessionFn: (cwd: string, path: string, conv: Conversation, meta: SessionMeta) => Promise<void>;
 }
 
 /**
@@ -215,7 +216,7 @@ export async function performCompaction(deps: PerformCompactionDeps): Promise<vo
     makeConversation,
     onMetaUpdate,
     onJustCompacted,
-    writeFileFn = async (path, data, opts) => defaultWriteFile(path, data, opts),
+    writeFileFn = defaultWriteFile,
     buildCompactionSummaryFn = buildCompactionSummary,
     saveSessionFn,
   } = deps;
@@ -277,13 +278,11 @@ export async function performCompaction(deps: PerformCompactionDeps): Promise<vo
   process.stdout.write(" done.\n");
   onJustCompacted();
 
-  if (saveSessionFn) {
-    // Explicit error handling: if persistence fails after compaction, the user's
-    // history is gone in memory only — warn them so they know.
-    try {
-      await saveSessionFn(process.cwd(), activeSessionPath, compactedConv, newMeta);
-    } catch {
-      console.warn(chalk.yellow("⚠  Compact applied in memory, but session save failed — compaction will be lost on restart."));
-    }
+  // Explicit error handling: if persistence fails after compaction, the user's
+  // history is gone in memory only — warn them so they know.
+  try {
+    await saveSessionFn(process.cwd(), activeSessionPath, compactedConv, newMeta);
+  } catch {
+    console.warn(chalk.yellow("⚠  Compact applied in memory, but session save failed — compaction will be lost on restart."));
   }
 }

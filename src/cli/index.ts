@@ -42,14 +42,21 @@ const _require = createRequire(import.meta.url);
 function printRateLimitAndExit(err: RateLimitError, sessionPath: string, provider: string): never {
   const providerName = err.providerName ?? provider;
   console.log();
-  console.log(`⏸  Rate limited (${providerName}).`);
-  console.log(`   Session saved to ${sessionPath}.`);
-  if (err.retryAfter !== undefined) {
-    console.log(`   Rate limit resets in ~${err.retryAfter}s.`);
+  if (err.kind === "blocked") {
+    console.log(`⛔  Blocked by ${providerName} (non-transient refusal — content policy or account block).`);
+    console.log(`   Session saved to ${sessionPath}.`);
+    console.log();
+    console.log("   Switch provider:      phase2s --resume --provider anthropic");
+  } else {
+    console.log(`⏸  Rate limited (${providerName}).`);
+    console.log(`   Session saved to ${sessionPath}.`);
+    if (err.retryAfter !== undefined) {
+      console.log(`   Rate limit resets in ~${err.retryAfter}s.`);
+    }
+    console.log();
+    console.log("   Resume with:          phase2s --resume");
+    console.log("   Switch provider:      phase2s --resume --provider anthropic");
   }
-  console.log();
-  console.log("   Resume with:          phase2s --resume");
-  console.log("   Switch provider:      phase2s --resume --provider anthropic");
   process.exit(0);
 }
 
@@ -959,6 +966,15 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
   };
 
+  /**
+   * Save session (best-effort) then print the rate-limit exit message and exit.
+   * Extracted from 5 identical catch-block patterns so they share a single implementation.
+   */
+  const handleRateLimitExit = async (err: RateLimitError): Promise<never> => {
+    await saveSession();
+    return printRateLimitAndExit(err, activeSessionPath, config.provider);
+  };
+
   const writePrompt = () => process.stdout.write(chalk.green("you > "));
 
   /**
@@ -1008,8 +1024,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
         await performCompaction();
       } catch (err) {
         if (err instanceof RateLimitError) {
-          await saveSession();
-          printRateLimitAndExit(err, activeSessionPath, config.provider);
+          await handleRateLimitExit(err);
         }
         throw err;
       }
@@ -1159,8 +1174,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
         await performCompaction();
       } catch (err) {
         if (err instanceof RateLimitError) {
-          await saveSession();
-          printRateLimitAndExit(err, activeSessionPath, config.provider);
+          await handleRateLimitExit(err);
         }
         log.error(err instanceof Error ? err.message : String(err));
       }
@@ -1323,8 +1337,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
             await saveSession();
           } catch (err) {
             if (err instanceof RateLimitError) {
-              await saveSession();
-              printRateLimitAndExit(err, activeSessionPath, config.provider);
+              await handleRateLimitExit(err);
             }
             log.error(err instanceof Error ? err.message : String(err));
           }
@@ -1337,8 +1350,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
             await saveSession();
           } catch (err) {
             if (err instanceof RateLimitError) {
-              await saveSession();
-              printRateLimitAndExit(err, activeSessionPath, config.provider);
+              await handleRateLimitExit(err);
             }
             log.error(err instanceof Error ? err.message : String(err));
           }
@@ -1362,8 +1374,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     } catch (err) {
       process.stdout.write("\n");
       if (err instanceof RateLimitError) {
-        await saveSession();
-        printRateLimitAndExit(err, activeSessionPath, config.provider);
+        await handleRateLimitExit(err);
       }
       log.error(err instanceof Error ? err.message : String(err));
     }

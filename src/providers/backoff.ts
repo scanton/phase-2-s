@@ -15,6 +15,13 @@
  */
 export const MAX_RATE_LIMIT_RETRIES = 3;
 
+/**
+ * Maximum value (in seconds) for the Retry-After header cap.
+ * Very large values (e.g. 99999999) × 1000 overflow setTimeout's 32-bit signed int.
+ * 3600 s (1 hour) is the practical maximum any provider sets.
+ */
+export const MAX_RETRY_AFTER_SECONDS = 3600;
+
 /** Sleep for the given number of milliseconds (used for rate-limit backoff). */
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,14 +35,12 @@ export function sleep(ms: number): Promise<void> {
 export function parseRetryAfter(header: string | undefined): number | undefined {
   if (!header) return undefined;
   const seconds = parseInt(header, 10);
-  // Cap at 3600 s — huge values (e.g. 99999999) × 1000 overflow setTimeout's 32-bit max.
-  if (!isNaN(seconds) && seconds >= 0) return Math.min(seconds, 3600);
+  if (!isNaN(seconds) && seconds >= 0) return Math.min(seconds, MAX_RETRY_AFTER_SECONDS);
   // HTTP-date form: "Wed, 21 Oct 2025 07:28:00 GMT"
   const date = Date.parse(header);
   if (!isNaN(date)) {
     const diff = Math.ceil((date - Date.now()) / 1000);
-    // Cap at 3600 s — same reason as the integer path above.
-    return diff > 0 ? Math.min(diff, 3600) : 0;
+    return diff > 0 ? Math.min(diff, MAX_RETRY_AFTER_SECONDS) : 0;
   }
   return undefined;
 }
