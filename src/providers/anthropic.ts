@@ -3,7 +3,7 @@ import type { Config } from "../core/config.js";
 import type { Provider, Message, ToolCall, ProviderEvent, ChatStreamOptions } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
 import { log } from "../utils/logger.js";
-import { sleep, parseRetryAfter, MAX_RATE_LIMIT_RETRIES } from "./openai.js";
+import { sleep, parseRetryAfter, MAX_RATE_LIMIT_RETRIES } from "./backoff.js";
 
 /**
  * Anthropic message format used internally for the API call.

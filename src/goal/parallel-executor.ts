@@ -238,11 +238,17 @@ async function executeLevel(
   // Build level context (what prior levels changed)
   const levelContext = level.level > 0 ? buildLevelContext(cwd, baseCommit) : "";
 
-  // Execute workers in batches of maxWorkers
+  // Execute workers in batches of maxWorkers.
+  // Use Promise.allSettled so a single rate-limited worker does not cancel its
+  // siblings mid-flight. We collect all fulfilled results, merge them, then
+  // re-throw the first RateLimitError so goal.ts can checkpoint and exit 2.
+  // Non-RateLimitError rejections are treated as per-worker failures (the worker
+  // result is omitted; any other callers handle the gap in workerResults).
   const workerResults: WorkerResult[] = [];
+  let batchRateLimitErr: RateLimitError | undefined;
   for (let batch = 0; batch < subtasks.length; batch += maxWorkers) {
     const batchSubtasks = subtasks.slice(batch, batch + maxWorkers);
-    const batchResults = await Promise.all(
+    const settled = await Promise.allSettled(
       batchSubtasks.map(({ index, subtask }, batchIdx) =>
         executeWorker(index, subtask, level.level, {
           ...options,
@@ -251,7 +257,18 @@ async function executeLevel(
         }),
       ),
     );
-    workerResults.push(...batchResults);
+    for (const r of settled) {
+      if (r.status === "fulfilled") {
+        workerResults.push(r.value);
+      } else if (r.reason instanceof RateLimitError && !batchRateLimitErr) {
+        batchRateLimitErr = r.reason;
+        // Continue collecting other settled results — do not break early.
+      }
+      // Non-RateLimitError rejections: the worker already logged its failure;
+      // omitting it from workerResults is the correct per-worker-failure path.
+    }
+    // Stop scheduling new batches if a rate limit was detected.
+    if (batchRateLimitErr) break;
   }
 
   // Log worker results
@@ -331,6 +348,12 @@ async function executeLevel(
     mergedCount: mergeResult?.results.filter(r => r.status === "success").length ?? 0,
     failedCount: workerResults.filter(w => w.status !== "passed").length,
   });
+
+  // Re-throw after merge + cleanup so fulfilled workers' changes are preserved.
+  // goal.ts catches RateLimitError, checkpoints, and exits with code 2.
+  if (batchRateLimitErr) {
+    throw batchRateLimitErr;
+  }
 
   return {
     level: level.level,

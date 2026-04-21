@@ -6,25 +6,27 @@
 
 ---
 
-## Backlog — Post-Sprint 58 adversarial findings (2026-04-20)
+## Backlog — Post-Sprint 58 adversarial findings (resolved in Sprint 59)
 
-- [ ] **Parallel executor: `Promise.all` abandons in-progress workers on first 429** — When one worker throws `RateLimitError`, remaining workers continue but their results are never merged. Any completed work is silently lost. Fix: `Promise.allSettled` + collect succeeded results before re-throwing. **INVESTIGATE post-Sprint 58.**
+- [x] **Parallel executor: `Promise.all` abandons in-progress workers on first 429** — Fixed in Sprint 59 (v1.33.0): switched to `Promise.allSettled`, collect fulfilled results before re-throwing the first `RateLimitError`. Sibling workers' completed work is no longer lost.
 
-- [ ] **`activeSessionPath` empty at first-turn rate limit in REPL** — `activeSessionPath` is set after first successful `saveSession`. If the very first turn rate-limits, `printRateLimitAndExit` prints an empty resume path. Fix: initialize `activeSessionPath` from `sessionFilePath` at session-create time. **INVESTIGATE post-Sprint 58.**
+- [x] **`activeSessionPath` accuracy at rate-limit exit** — Fixed in Sprint 59 (v1.33.0): `await saveSession()` called at all 5 `printRateLimitAndExit` call sites before exit. Session now contains the latest user message regardless of which turn rate-limited.
 
-- [ ] **Codex provider: partial text + silent 429 drop** — When `hasProducedText === true`, the stderr rate-limit check is skipped. If Codex emits partial output then exits non-zero with "429 rate limit" in stderr, the caller sees `done` (not `rate_limited`) and does not checkpoint. Fix: always check stderr for rate-limit signal on non-zero exit. **INVESTIGATE post-Sprint 58.**
+- [x] **Codex provider: partial text + silent 429 drop** — Fixed in Sprint 59 (v1.33.0): removed `!hasProducedText &&` guard from stderr rate-limit check. Now fires on any non-zero exit regardless of whether text was produced.
 
-- [ ] **Orchestrator path does not checkpoint on rate limit** — When `chatOnce()` (used in the replan LLM call) hits a rate limit, `RateLimitError` propagates to `goal.ts` which exits 2. But the orchestrator doesn't write to `state.subTaskResults`, so there's nothing to resume. A `--resume` after an orchestrator rate limit would restart all sub-tasks from scratch. Fix: write partial orchestrator results to state before throwing, or add an `orchestrator_paused` state field. Currently the exit message is honest ("does not checkpoint on rate limit"), but resumability is missing. **Post-Sprint 58.**
+- [ ] **Orchestrator path does not checkpoint on rate limit** — When `chatOnce()` (used in the replan LLM call) hits a rate limit, `RateLimitError` propagates to `goal.ts` which exits 2. But `executeOrchestratorLevel` wraps all worker errors as `{status: "failed"}`, so `RateLimitError` never reaches the outer caller. Additionally, the orchestrator resume path doesn't consult `state.subTaskResults`, and completed worktrees are deleted after merge — there is nothing to resume to. Fix requires a new state schema (e.g. `orchestrator_paused` field, preserved worktrees, new resume path in `goal.ts`). **Deferred to post-Sprint 59 — needs its own design sprint.**
+
+- [ ] **A1 sibling cancellation (AbortController fast-pause)** — The `Promise.allSettled` fix preserves completed siblings' work, but they are not *cancelled* when one 429s — they run to completion (potentially doing work that exceeds the budget). Fix: thread an `AbortController` per level; fire `abort()` when the first `RateLimitError` is detected. All sibling workers' provider streams would terminate immediately, reducing wasted API calls. The `Promise.allSettled` fix is a prerequisite (otherwise early termination loses results). **Deferred to post-Sprint 59.**
 
 ---
 
-## Backlog — Post-Sprint 58 /plan-eng-review findings (2026-04-20)
+## Backlog — Post-Sprint 58 /plan-eng-review findings (resolved in Sprint 59)
 
-- [ ] **`ProviderPausedError` generalization** — `RateLimitError` (HTTP 429) and auth-blocked responses (401/403 with "account suspended" / "key revoked" messages) have the same correct behavior: checkpoint, exit, print recovery message. Consider a broader `ProviderPausedError` class with a `kind: "rate_limited" | "blocked"` field. Same exit path, different message copy ("account blocked, contact provider" vs "rate limit resets in ~Xs"). Blocked by: rate-limit sprint must ship first. **Post-Sprint 58.**
+- [x] **`ProviderPausedError` generalization** — Resolved in Sprint 59 (v1.33.0): added `kind: "rate_limited" | "blocked"` field directly to `RateLimitError`. No new class needed; existing catch sites work unchanged; blocked responses get a different message copy.
 
-- [ ] **Per-provider auto-backoff depth tests** — Only OpenAI has the full sleep+retry+budget-exhausted test suite. Anthropic, Gemini, OpenRouter, Minimax, Codex each have one basic 429 test. The auto-backoff logic is copy-paste across providers. Fix: either extract the backoff into a shared utility (see below) and test it once, or add retry depth tests per provider. Currently low risk since logic is identical. **Post-Sprint 58.**
+- [x] **Per-provider auto-backoff depth tests** — Resolved in Sprint 59 (v1.33.0): `backoff.ts` extracted. Anthropic backoff has full depth tests (4). Gemini/OpenRouter/Minimax have 1 smoke test each — their backoff is provided by `OpenAIProvider` composition with zero independent code, so deeper tests add no marginal coverage.
 
-- [ ] **Extract auto-backoff into `src/providers/backoff.ts`** — The 20-line backoff pattern (sleep + retry counter + configurable threshold check) will be duplicated in 5 providers in Sprint 58. A `withRateLimitBackoff(fn: () => Promise<T>, threshold: number): Promise<T | "rate_limited">` wrapper keeps providers lean and the logic testable once. Especially valuable now that `rate_limit_backoff_threshold` is configurable — one place to read the config instead of five. Depends on: Sprint 58 shipping. **Post-Sprint 58.**
+- [x] **Extract auto-backoff into `src/providers/backoff.ts`** — Completed in Sprint 59 (v1.33.0): `sleep`, `parseRetryAfter`, `MAX_RATE_LIMIT_RETRIES` extracted to `src/providers/backoff.ts`. `openai.ts` re-exports for one sprint. No `withRateLimitBackoff` wrapper — mid-stream 429s are inside `AsyncIterable` and cannot be cleanly wrapped as `() => Promise<T>`.
 
 ---
 
@@ -34,7 +36,7 @@
 
 - [ ] **Cascading auto-compaction** — `justCompacted` flag only skips one turn. If the LLM generates a verbose summary (>50% of original size), the next user turn can push context back over threshold and trigger compaction again. Each cascade degrades summary fidelity. Consider: (a) compact_count cap, (b) hard size limit on summary, or (c) exponential threshold growth post-compact. **INVESTIGATE post-Sprint 57.**
 
-- [ ] **Compaction error paths not tested** — `performCompaction()` has three failure branches (backup write fails, buildCompactionSummary returns empty, saveSessionV2 fails) but no automated tests cover them. Add targeted unit tests mocking each failure mode. **Add to next sprint test pass.**
+- [x] **Compaction error paths not tested** — Fixed in Sprint 59 (v1.33.0): `performCompaction` extracted from `index.ts` to `src/core/compaction.ts` with injectable deps (`writeFileFn`, `buildCompactionSummaryFn`, `saveSessionFn`). 5 new tests cover all error branches: backup fail, empty summary, saveSession fail, rate-limit propagation, and successful path. **Completed: v1.33.0 (2026-04-20)**
 
 ---
 

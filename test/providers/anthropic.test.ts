@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
 import { translateMessages, AnthropicProvider } from "../../src/providers/anthropic.js";
 import * as openaiModule from "../../src/providers/openai.js";
+import * as backoffModule from "../../src/providers/backoff.js";
 import type { Message } from "../../src/providers/types.js";
 import type { Config } from "../../src/core/config.js";
 
@@ -398,7 +399,10 @@ describe("AnthropicProvider rate limit handling", () => {
   let sleepSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    sleepSpy = vi.spyOn(openaiModule, "sleep").mockResolvedValue(undefined);
+    // AnthropicProvider now imports sleep from backoff.ts — spy on that module.
+    // Also keep the openaiModule spy alive so tests that import MAX_RATE_LIMIT_RETRIES
+    // from openai.ts still work (openai.ts re-exports from backoff.ts at runtime).
+    sleepSpy = vi.spyOn(backoffModule, "sleep").mockResolvedValue(undefined);
   });
   afterEach(() => {
     sleepSpy.mockRestore();

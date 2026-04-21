@@ -5,38 +5,10 @@ import type { Provider, Message, ToolCall, ProviderEvent } from "./types.js";
 import type { OpenAIFunctionDef } from "../tools/types.js";
 import { log } from "../utils/logger.js";
 
-/**
- * Maximum number of auto-backoff *attempts* before yielding rate_limited.
- * The loop condition `rateLimitAttempts < MAX_RATE_LIMIT_RETRIES` allows
- * attempts 0, 1, 2 — so the first attempt + 2 retries = 3 total calls.
- * Named "RETRIES" for historical reasons; it's really the attempt ceiling.
- */
-export const MAX_RATE_LIMIT_RETRIES = 3;
-
-/** Sleep for the given number of milliseconds (used for rate-limit backoff). */
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Parse the Retry-After header value into seconds.
- * Handles both integer-seconds form ("47") and HTTP-date form.
- * Returns undefined if parsing fails.
- */
-export function parseRetryAfter(header: string | undefined): number | undefined {
-  if (!header) return undefined;
-  const seconds = parseInt(header, 10);
-  // Cap at 3600 s — huge values (e.g. 99999999) × 1000 overflow setTimeout's 32-bit max.
-  if (!isNaN(seconds) && seconds >= 0) return Math.min(seconds, 3600);
-  // HTTP-date form: "Wed, 21 Oct 2025 07:28:00 GMT"
-  const date = Date.parse(header);
-  if (!isNaN(date)) {
-    const diff = Math.ceil((date - Date.now()) / 1000);
-    // Cap at 3600 s — same reason as the integer path above.
-    return diff > 0 ? Math.min(diff, 3600) : 0;
-  }
-  return undefined;
-}
+// Backoff utilities live in backoff.ts. Imported here for use in chatStream()
+// and re-exported so any code that imported them from openai.ts continues to compile.
+import { MAX_RATE_LIMIT_RETRIES, sleep, parseRetryAfter } from "./backoff.js";
+export { MAX_RATE_LIMIT_RETRIES, sleep, parseRetryAfter } from "./backoff.js";
 
 /**
  * Structural interface for the OpenAI client's streaming chat.completions.create.
