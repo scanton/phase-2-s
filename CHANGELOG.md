@@ -1,5 +1,43 @@
 # Changelog
 
+## v1.33.0 — 2026-04-20
+
+Sprint 59 — Rate Limit Hardening. When the provider returns a 429, your session is now saved before exiting — including the message you just sent — so `--resume` picks up with full context and nothing is lost. Parallel runs now preserve completed workers' results when one worker hits a rate limit; only the interrupted worker re-runs on resume. Blocked providers (content policy or account-level refusals) now show ⛔ with a "Switch provider" hint instead of the standard ⏸ pause message. Backoff utilities and compaction logic extracted to standalone modules for better testability.
+
+### Added
+
+- **`src/providers/backoff.ts`** — shared auto-backoff constants and utilities extracted from `openai.ts`. Exports `MAX_RATE_LIMIT_RETRIES`, `MAX_RETRY_AFTER_SECONDS`, `sleep()`, and `parseRetryAfter()`. `openai.ts` re-exports for compatibility.
+
+- **`src/core/compaction.ts`** — `performCompaction()` extracted from `index.ts` with injectable deps (`writeFileFn`, `buildCompactionSummaryFn`, `saveSessionFn`). Fully unit-tested with 5 error-path tests. `buildCompactionSummary()`, `buildCompactedMessages()`, `getCompactBackupPath()`, `shouldCompact()` also moved here.
+
+- **`RateLimitError.kind` field** — `"rate_limited"` (transient 429) vs `"blocked"` (non-transient policy refusal). `printRateLimitAndExit` now branches on `kind`: blocked exits show ⛔ and "Switch provider" hint; rate-limited exits show ⏸ with retry timing.
+
+- **`handleRateLimitExit()` helper** — consolidates 5 duplicated save-then-exit blocks in `index.ts` into a single `async (err) => { await saveSession(); return printRateLimitAndExit(...); }` closure.
+
+- **`test/cli/rate-limit-session.test.ts`** — 4 new tests verifying that `saveSession()` correctly persists conversations including the latest user message before a rate-limit exit. Covers first-turn 429, later-turn 429, and directory auto-creation.
+
+- **`test/core/rate-limit-error.test.ts`** — 10 tests for `RateLimitError` constructor covering `retryAfter`, `kind`, `providerName`, and message formatting for all constructor overload forms.
+
+- **`test/providers/backoff.test.ts`** — 19 tests for `parseRetryAfter` (integer form, HTTP-date form, edge cases, overflow cap) and `sleep`.
+
+- **`test/providers/codex.test.ts`** — 7 new tests for Codex rate-limit detection including the A3 fix: non-zero exit with partial text now correctly yields `rate_limited`.
+
+- **`test/goal/parallel-executor.test.ts`** — 8 new tests verifying `Promise.allSettled` behavior: all sibling results are preserved when one worker 429s (A1 fix).
+
+### Changed
+
+- **`performCompaction` injection: `saveSessionFn` now required** — was optional, creating a silent no-op if omitted. Made required so TypeScript catches callers that forget to pass it. Existing callers already supplied it.
+
+- **Parallel executor uses `Promise.allSettled`** — was `Promise.all`, which abandoned in-progress workers on the first rejection. Now collects all fulfilled results before re-throwing the first `RateLimitError`.
+
+### Fixed
+
+- **Session saved before every rate-limit exit** — 5 call sites in `index.ts` now `await saveSession()` before `printRateLimitAndExit()`. Previously the last user message was lost from the session file when a rate limit fired mid-turn. Now `--resume` always includes it.
+
+- **Codex rate-limit detection on partial text** — removed a guard that suppressed 429 detection when the model had already started streaming text. Non-zero exit with partial text now correctly yields `rate_limited` and checkpoints cleanly.
+
+---
+
 ## v1.32.0 — 2026-04-20
 
 Sprint 58 — Rate Limit Resilience. All providers now detect HTTP 429 and emit a typed `rate_limited` event. Configurable auto-backoff retries before checkpointing. `phase2s goal` exits 2 (paused) on rate limit so CI can distinguish "problem" from "paused." The REPL silently checkpoints and exits 0.

@@ -20,7 +20,7 @@ Resuming session (14 messages)
 you >
 ```
 
-Everything is there: every message you sent, every model response, every tool call result. Hit `Ctrl+C` mid-session and Phase2S saves before exiting so you don't lose the turn in progress.
+Everything is there: every message you sent, every model response, every tool call result. Hit `Ctrl+C` mid-session and Phase2S saves before exiting so you don't lose the turn in progress. Same for rate limits: if the provider returns a 429, Phase2S saves your session — including the message you just sent — before exiting. `--resume` picks up exactly where you stopped.
 
 **What gets saved:**
 

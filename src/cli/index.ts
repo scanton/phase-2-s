@@ -28,17 +28,9 @@ import { loadAgents, formatAgentsList, type AgentDef } from "../core/agent-loade
 import { runConversationsBrowser } from "./conversations.js";
 import { resolveReasoningModel, resolveAgentModel } from "./model-resolver.js";
 import { handleColonCommand } from "./colon-commands.js";
-import { buildCompactionSummary, buildCompactedMessages, getCompactBackupPath, shouldCompact } from "../core/compaction.js";
+import { performCompaction as runCompaction, shouldCompact } from "../core/compaction.js";
 import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
 import { RateLimitError } from "../core/rate-limit-error.js";
-
-/**
- * Hard cap on compaction summary size.
- * If a summary exceeds this, it is truncated before being stored.
- * Prevents cascading auto-compactions where a verbose summary itself
- * triggers another compaction on the very next turn.
- */
-const MAX_COMPACTION_SUMMARY_BYTES = 8192;
 
 const _require = createRequire(import.meta.url);
 
@@ -50,14 +42,21 @@ const _require = createRequire(import.meta.url);
 function printRateLimitAndExit(err: RateLimitError, sessionPath: string, provider: string): never {
   const providerName = err.providerName ?? provider;
   console.log();
-  console.log(`⏸  Rate limited (${providerName}).`);
-  console.log(`   Session saved to ${sessionPath}.`);
-  if (err.retryAfter !== undefined) {
-    console.log(`   Rate limit resets in ~${err.retryAfter}s.`);
+  if (err.kind === "blocked") {
+    console.log(`⛔  Blocked by ${providerName} (non-transient refusal — content policy or account block).`);
+    console.log(`   Session saved to ${sessionPath}.`);
+    console.log();
+    console.log("   Switch provider:      phase2s --resume --provider anthropic");
+  } else {
+    console.log(`⏸  Rate limited (${providerName}).`);
+    console.log(`   Session saved to ${sessionPath}.`);
+    if (err.retryAfter !== undefined) {
+      console.log(`   Rate limit resets in ~${err.retryAfter}s.`);
+    }
+    console.log();
+    console.log("   Resume with:          phase2s --resume");
+    console.log("   Switch provider:      phase2s --resume --provider anthropic");
   }
-  console.log();
-  console.log("   Resume with:          phase2s --resume");
-  console.log("   Switch provider:      phase2s --resume --provider anthropic");
   process.exit(0);
 }
 
@@ -967,6 +966,15 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
   };
 
+  /**
+   * Save session (best-effort) then print the rate-limit exit message and exit.
+   * Extracted from 5 identical catch-block patterns so they share a single implementation.
+   */
+  const handleRateLimitExit = async (err: RateLimitError): Promise<never> => {
+    await saveSession();
+    return printRateLimitAndExit(err, activeSessionPath, config.provider);
+  };
+
   const writePrompt = () => process.stdout.write(chalk.green("you > "));
 
   /**
@@ -976,76 +984,20 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
    * On success: prints a notice, updates sessionMeta.compact_count, saves session.
    * On failure: prints a warning, leaves session unchanged.
    */
+  // Thin wrapper: wires closure-captured state into the testable core function.
   const performCompaction = async (): Promise<void> => {
-    const messages = agent.getConversation().getMessages();
-    const tokenEstimate = agent.getConversation().estimateTokens();
-    process.stdout.write(chalk.cyan(`↻ Compacting session (${Math.round(tokenEstimate / 1000)}k tokens)...`));
-
-    // Write backup before any destructive operation.
-    // If the backup fails, abort — it is unsafe to destroy history without a recovery file.
-    // Stamp with the next compact_count so repeated compactions don't overwrite earlier backups.
-    const nextCompactCount = (sessionMeta.compact_count ?? 0) + 1;
-    const backupPath = getCompactBackupPath(activeSessionPath, nextCompactCount);
-    try {
-      await writeFile(
-        backupPath,
-        JSON.stringify({ schemaVersion: 2, meta: sessionMeta, messages }, null, 2),
-        { encoding: "utf-8", mode: 0o600 },
-      );
-    } catch (err) {
-      process.stdout.write("\n");
-      console.warn(chalk.yellow(`⚠  Compaction aborted — could not write backup: ${err instanceof Error ? err.message : String(err)}`));
-      return;
-    }
-
-    let summary: string;
-    try {
-      summary = await buildCompactionSummary(agent.provider, messages);
-    } catch (err) {
-      process.stdout.write("\n");
-      if (err instanceof RateLimitError) {
-        // Don't swallow rate limits — let the caller checkpoint and exit cleanly.
-        throw err;
-      }
-      console.warn(chalk.yellow(`⚠  Compaction failed: ${err instanceof Error ? err.message : String(err)}`));
-      return;
-    }
-
-    if (!summary.trim()) {
-      process.stdout.write("\n");
-      console.warn(chalk.yellow("⚠  Compaction returned empty summary — session not compacted."));
-      return;
-    }
-
-    // Hard cap: a summary larger than 8 KB can itself exceed the compaction threshold,
-    // triggering an infinite auto-compact loop on the next turn. Truncate with a marker
-    // so the guard in maybeAutoCompact() can skip the next turn safely.
-    if (Buffer.byteLength(summary) > MAX_COMPACTION_SUMMARY_BYTES) {
-      const truncated = Buffer.from(summary).slice(0, MAX_COMPACTION_SUMMARY_BYTES).toString("utf-8");
-      // Trim to the last valid UTF-8 char boundary (slice may split a multibyte char)
-      summary = truncated.replace(/\uFFFD*$/, "") + "\n[summary truncated to prevent cascade]";
-    }
-
-    agent.setConversation(Conversation.fromMessages(buildCompactedMessages(summary)));
-
-    // Increment compact_count in sessionMeta (persisted on next saveSession)
-    sessionMeta = {
-      ...sessionMeta,
-      compact_count: nextCompactCount,
-      updatedAt: new Date().toISOString(),
-    };
-
-    process.stdout.write(" done.\n");
-    justCompacted = true;
-
-    // Explicit error handling here (unlike the best-effort saveSession() used elsewhere):
-    // if persistence fails after compaction, the user's history is gone in memory only —
-    // warn them so they know the compact won't survive a restart.
-    try {
-      await saveSessionV2(process.cwd(), activeSessionPath, agent.getConversation(), sessionMeta);
-    } catch {
-      console.warn(chalk.yellow("⚠  Compact applied in memory, but session save failed — compaction will be lost on restart."));
-    }
+    await runCompaction({
+      provider: agent.provider,
+      messages: agent.getConversation().getMessages(),
+      tokenEstimate: agent.getConversation().estimateTokens(),
+      activeSessionPath,
+      sessionMeta,
+      setConversation: (conv) => agent.setConversation(conv),
+      makeConversation: (msgs) => Conversation.fromMessages(msgs),
+      onMetaUpdate: (newMeta) => { sessionMeta = newMeta; },
+      onJustCompacted: () => { justCompacted = true; },
+      saveSessionFn: saveSessionV2,
+    });
   };
 
   // Guards against an auto-compact loop: if the LLM produces a summary that
@@ -1072,7 +1024,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
         await performCompaction();
       } catch (err) {
         if (err instanceof RateLimitError) {
-          printRateLimitAndExit(err, activeSessionPath, config.provider);
+          await handleRateLimitExit(err);
         }
         throw err;
       }
@@ -1222,7 +1174,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
         await performCompaction();
       } catch (err) {
         if (err instanceof RateLimitError) {
-          printRateLimitAndExit(err, activeSessionPath, config.provider);
+          await handleRateLimitExit(err);
         }
         log.error(err instanceof Error ? err.message : String(err));
       }
@@ -1385,7 +1337,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
             await saveSession();
           } catch (err) {
             if (err instanceof RateLimitError) {
-              printRateLimitAndExit(err, activeSessionPath, config.provider);
+              await handleRateLimitExit(err);
             }
             log.error(err instanceof Error ? err.message : String(err));
           }
@@ -1398,7 +1350,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
             await saveSession();
           } catch (err) {
             if (err instanceof RateLimitError) {
-              printRateLimitAndExit(err, activeSessionPath, config.provider);
+              await handleRateLimitExit(err);
             }
             log.error(err instanceof Error ? err.message : String(err));
           }
@@ -1422,7 +1374,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     } catch (err) {
       process.stdout.write("\n");
       if (err instanceof RateLimitError) {
-        printRateLimitAndExit(err, activeSessionPath, config.provider);
+        await handleRateLimitExit(err);
       }
       log.error(err instanceof Error ? err.message : String(err));
     }

@@ -3,6 +3,8 @@
  *
  * Calls the current session's provider via chatStream() to generate a summary,
  * then returns the summary string. The caller is responsible for:
+ * (This file also exports performCompaction — the orchestration layer that drives the
+ * full backup → summarize → replace → persist flow.)
  *   1. Writing a backup of the session before replacing messages.
  *   2. Replacing agent conversation messages with a single [COMPACTED CONTEXT] message.
  *   3. Persisting the updated session via saveSession().
@@ -11,8 +13,23 @@
  * provider doesn't stall the REPL indefinitely.
  */
 
+import { writeFile as defaultWriteFile } from "node:fs/promises";
+import chalk from "chalk";
 import type { Provider, Message } from "../providers/types.js";
+import type { Conversation } from "./conversation.js";
+import type { SessionMeta } from "./session.js";
 import { RateLimitError } from "./rate-limit-error.js";
+
+// ---------------------------------------------------------------------------
+// Exported constants (moved here from src/cli/index.ts so tests can import them)
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum byte length of a compaction summary.
+ * Summaries larger than this are truncated to prevent a cascade where the
+ * summary itself exceeds the auto-compact threshold and triggers another compact.
+ */
+export const MAX_COMPACTION_SUMMARY_BYTES = 8192;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -142,4 +159,130 @@ export async function buildCompactionSummary(
   }
 
   return summary;
+}
+
+// ---------------------------------------------------------------------------
+// performCompaction
+// ---------------------------------------------------------------------------
+
+/**
+ * Injectable dependencies for performCompaction.
+ * All three IO deps can be replaced in tests to avoid filesystem or network calls.
+ */
+export interface PerformCompactionDeps {
+  /** Active provider (used to generate the compaction summary). */
+  provider: Provider;
+  /** Full conversation messages to compact. */
+  messages: Message[];
+  /** Estimated token count (logged in progress output). */
+  tokenEstimate: number;
+  /** Absolute path to the session file (used for backup path derivation and saving). */
+  activeSessionPath: string;
+  /** Current session metadata (compact_count, updatedAt, etc.). */
+  sessionMeta: SessionMeta;
+  /** Replace the agent's conversation with the compacted one. */
+  setConversation: (conv: Conversation) => void;
+  /** Build a new Conversation from the compacted messages. */
+  makeConversation: (messages: Message[]) => Conversation;
+  /** Called after metadata is updated (lets the caller keep its mutable sessionMeta in sync). */
+  onMetaUpdate: (newMeta: SessionMeta) => void;
+  /** Called when compaction succeeds (lets the caller set a justCompacted guard flag). */
+  onJustCompacted: () => void;
+  // --- Injectable IO (defaults to real implementations, required for saveSession) ---
+  writeFileFn?: (path: string, data: string, opts: { encoding: "utf-8"; mode: number }) => Promise<void>;
+  buildCompactionSummaryFn?: (provider: Provider, messages: Message[]) => Promise<string>;
+  /** Required — compaction must persist the compacted conversation or the history is lost in memory only. */
+  saveSessionFn: (cwd: string, path: string, conv: Conversation, meta: SessionMeta) => Promise<void>;
+}
+
+/**
+ * Drive the full compaction flow: backup → summarize → replace → persist.
+ *
+ * Extracted from src/cli/index.ts so it can be unit-tested with injected deps.
+ * The three IO operations (writeFile, buildCompactionSummary, saveSession) can be
+ * replaced in tests; all other deps are passed explicitly.
+ *
+ * Throws RateLimitError if the provider rate-limits during summary generation.
+ * All other errors are caught and surfaced as console warnings; they do NOT throw.
+ */
+export async function performCompaction(deps: PerformCompactionDeps): Promise<void> {
+  const {
+    provider,
+    messages,
+    tokenEstimate,
+    activeSessionPath,
+    sessionMeta,
+    setConversation,
+    makeConversation,
+    onMetaUpdate,
+    onJustCompacted,
+    writeFileFn = defaultWriteFile,
+    buildCompactionSummaryFn = buildCompactionSummary,
+    saveSessionFn,
+  } = deps;
+
+  process.stdout.write(chalk.cyan(`↻ Compacting session (${Math.round(tokenEstimate / 1000)}k tokens)...`));
+
+  // Write backup before any destructive operation.
+  // If the backup fails, abort — it is unsafe to destroy history without a recovery file.
+  const nextCompactCount = (sessionMeta.compact_count ?? 0) + 1;
+  const backupPath = getCompactBackupPath(activeSessionPath, nextCompactCount);
+  try {
+    await writeFileFn(
+      backupPath,
+      JSON.stringify({ schemaVersion: 2, meta: sessionMeta, messages }, null, 2),
+      { encoding: "utf-8", mode: 0o600 },
+    );
+  } catch (err) {
+    process.stdout.write("\n");
+    console.warn(chalk.yellow(`⚠  Compaction aborted — could not write backup: ${err instanceof Error ? err.message : String(err)}`));
+    return;
+  }
+
+  let summary: string;
+  try {
+    summary = await buildCompactionSummaryFn(provider, messages);
+  } catch (err) {
+    process.stdout.write("\n");
+    if (err instanceof RateLimitError) {
+      // Don't swallow rate limits — let the caller checkpoint and exit cleanly.
+      throw err;
+    }
+    console.warn(chalk.yellow(`⚠  Compaction failed: ${err instanceof Error ? err.message : String(err)}`));
+    return;
+  }
+
+  if (!summary.trim()) {
+    process.stdout.write("\n");
+    console.warn(chalk.yellow("⚠  Compaction returned empty summary — session not compacted."));
+    return;
+  }
+
+  // Hard cap: a summary larger than MAX_COMPACTION_SUMMARY_BYTES can itself exceed the
+  // compaction threshold, triggering an infinite auto-compact loop. Truncate with a marker.
+  if (Buffer.byteLength(summary) > MAX_COMPACTION_SUMMARY_BYTES) {
+    const truncated = Buffer.from(summary).slice(0, MAX_COMPACTION_SUMMARY_BYTES).toString("utf-8");
+    summary = truncated.replace(/\uFFFD*$/, "") + "\n[summary truncated to prevent cascade]";
+  }
+
+  const compactedConv = makeConversation(buildCompactedMessages(summary));
+  setConversation(compactedConv);
+
+  const newMeta: SessionMeta = {
+    ...sessionMeta,
+    compact_count: nextCompactCount,
+    updatedAt: new Date().toISOString(),
+  };
+  onMetaUpdate(newMeta);
+
+  process.stdout.write(" done.\n");
+  onJustCompacted();
+
+  // Explicit error handling: if persistence fails after compaction, the user's
+  // history is gone in memory only — warn them so they know.
+  try {
+    await saveSessionFn(process.cwd(), activeSessionPath, compactedConv, newMeta);
+  } catch {
+    console.warn(chalk.yellow("⚠  Compact applied in memory, but session save failed — compaction will be lost on restart."));
+  }
 }

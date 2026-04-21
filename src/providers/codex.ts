@@ -213,14 +213,19 @@ export class CodexProvider implements Provider {
       const remaining = lineBuffer.trim();
       if (remaining) processLine(remaining);
 
-      if (!hasProducedText && code !== 0) {
-        // Check stderr for rate limit signal before returning generic error.
+      if (code !== 0) {
+        // Always check stderr for a rate-limit signal, even if text was already produced.
+        // Codex can stream partial output and then hit a 429 mid-run; the stderr check
+        // must not be gated on !hasProducedText or those cases are silently swallowed.
         const stderrLower = stderrBuffer.toLowerCase();
         if (stderrLower.includes("429") && stderrLower.includes("rate limit")) {
           push({ type: "rate_limited" });
           finish();
-        } else {
+        } else if (!hasProducedText) {
           finish(new Error(`Codex exited with code ${code ?? "null"}`));
+        } else {
+          // Non-zero exit but text was produced — treat as done (best-effort output).
+          finish();
         }
       } else if (!hasProducedText) {
         finish(new Error("Codex produced no output"));

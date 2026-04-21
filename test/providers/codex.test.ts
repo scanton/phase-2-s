@@ -341,4 +341,66 @@ describe("CodexProvider rate limit detection", () => {
       for await (const _ of provider.chatStream(mockMessages, [])) { /* drain */ }
     }).rejects.toThrow("Codex exited with code 1");
   });
+
+  // A3 fix: rate-limit detection must fire even when text was produced before the 429.
+  it("yields rate_limited when text was produced before non-zero exit with 429 stderr", async () => {
+    // Build a proc that: emits one agent_message on stdout, then exits non-zero
+    // with "429 rate limit" in stderr. Before the A3 fix, !hasProducedText was true
+    // so the 429 check was skipped and the caller received done instead of rate_limited.
+    const stdout = new Readable({ read() {} });
+    const stderr = new Readable({ read() {} });
+    const proc = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable };
+    proc.stdout = stdout;
+    proc.stderr = stderr;
+
+    setImmediate(() => {
+      stdout.push('{"type":"item.completed","item":{"id":"0","type":"agent_message","text":"partial"}}\n');
+      stdout.push(null);
+      stderr.push("HTTP 429 Too Many Requests: rate limit exceeded.");
+      stderr.push(null);
+      proc.emit("close", 1);
+    });
+
+    vi.mocked(spawn).mockReturnValue(proc as ReturnType<typeof spawn>);
+
+    const provider = new CodexProvider(mockConfig);
+    const events: ProviderEvent[] = [];
+    for await (const event of provider.chatStream(mockMessages, [])) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "text", content: "partial" });
+    expect(events).toContainEqual({ type: "rate_limited" });
+    expect(events).toContainEqual({ type: "done", stopReason: "stop" });
+  });
+
+  it("treats non-zero exit with text produced + non-rate-limit stderr as done (best-effort)", async () => {
+    // Codex produced some text, then exited non-zero with an unrelated error.
+    // We should not throw and not emit rate_limited — just finish with done.
+    const stdout = new Readable({ read() {} });
+    const stderr = new Readable({ read() {} });
+    const proc = new EventEmitter() as EventEmitter & { stdout: Readable; stderr: Readable };
+    proc.stdout = stdout;
+    proc.stderr = stderr;
+
+    setImmediate(() => {
+      stdout.push('{"type":"item.completed","item":{"id":"0","type":"agent_message","text":"some output"}}\n');
+      stdout.push(null);
+      stderr.push("codex: internal error (not a 429)");
+      stderr.push(null);
+      proc.emit("close", 1);
+    });
+
+    vi.mocked(spawn).mockReturnValue(proc as ReturnType<typeof spawn>);
+
+    const provider = new CodexProvider(mockConfig);
+    const events: ProviderEvent[] = [];
+    for await (const event of provider.chatStream(mockMessages, [])) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "text", content: "some output" });
+    expect(events.find((e) => e.type === "rate_limited")).toBeUndefined();
+    expect(events).toContainEqual({ type: "done", stopReason: "stop" });
+  });
 });

@@ -590,3 +590,79 @@ describe("RateLimitError propagation contract — parallel-executor", () => {
     expect(err.providerName).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// A1 fix: Promise.allSettled — fulfilled workers collected even when one 429s
+// ---------------------------------------------------------------------------
+
+describe("A1 allSettled semantics — sibling worker results preserved on 429", () => {
+  /**
+   * Simulates the executeLevel batch loop after the A1 fix.
+   * Returns { results, rateLimitErr } — the same shape as the fixed code.
+   */
+  async function simulateBatch(
+    workers: Array<() => Promise<{ index: number; status: string }>>,
+  ): Promise<{
+    results: Array<{ index: number; status: string }>;
+    rateLimitErr: RateLimitError | undefined;
+  }> {
+    const settled = await Promise.allSettled(workers.map((w) => w()));
+    const results: Array<{ index: number; status: string }> = [];
+    let rateLimitErr: RateLimitError | undefined;
+    for (const r of settled) {
+      if (r.status === "fulfilled") {
+        results.push(r.value);
+      } else if (r.reason instanceof RateLimitError && !rateLimitErr) {
+        rateLimitErr = r.reason;
+      }
+    }
+    return { results, rateLimitErr };
+  }
+
+  it("first worker 429s — sibling results are still collected", async () => {
+    const rlErr = new RateLimitError(30, "openai-api");
+    const workers = [
+      async () => { throw rlErr; },
+      async () => ({ index: 1, status: "passed" }),
+      async () => ({ index: 2, status: "passed" }),
+    ];
+
+    const { results, rateLimitErr } = await simulateBatch(workers);
+
+    expect(rateLimitErr).toBe(rlErr);
+    expect(results).toHaveLength(2);
+    expect(results[0]).toEqual({ index: 1, status: "passed" });
+    expect(results[1]).toEqual({ index: 2, status: "passed" });
+  });
+
+  it("all workers 429 — first RateLimitError captured, others ignored", async () => {
+    const err1 = new RateLimitError(10, "openai-api");
+    const err2 = new RateLimitError(30, "openai-api");
+    const err3 = new RateLimitError(5, "openai-api");
+    const workers = [
+      async () => { throw err1; },
+      async () => { throw err2; },
+      async () => { throw err3; },
+    ];
+
+    const { results, rateLimitErr } = await simulateBatch(workers);
+
+    // First settled rejection wins; results empty since no fulfilled
+    expect(rateLimitErr).toBeDefined();
+    expect(results).toHaveLength(0);
+  });
+
+  it("no workers 429 — all results collected, no rateLimitErr", async () => {
+    const workers = [
+      async () => ({ index: 0, status: "passed" }),
+      async () => ({ index: 1, status: "passed" }),
+      async () => ({ index: 2, status: "failed" }),
+    ];
+
+    const { results, rateLimitErr } = await simulateBatch(workers);
+
+    expect(rateLimitErr).toBeUndefined();
+    expect(results).toHaveLength(3);
+    expect(results.map((r) => r.index)).toEqual([0, 1, 2]);
+  });
+});

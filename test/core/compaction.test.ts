@@ -7,9 +7,19 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { buildCompactionSummary, COMPACT_SUMMARY_PROMPT } from "../../src/core/compaction.js";
+import {
+  buildCompactionSummary,
+  performCompaction,
+  COMPACT_SUMMARY_PROMPT,
+  MAX_COMPACTION_SUMMARY_BYTES,
+  getCompactBackupPath,
+  buildCompactedMessages,
+} from "../../src/core/compaction.js";
+import type { PerformCompactionDeps } from "../../src/core/compaction.js";
 import type { Provider, ProviderEvent, Message } from "../../src/providers/types.js";
 import { RateLimitError } from "../../src/core/rate-limit-error.js";
+import { Conversation } from "../../src/core/conversation.js";
+import type { SessionMeta } from "../../src/core/session.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -233,5 +243,120 @@ describe("buildCompactionSummary", () => {
     ]);
 
     await expect(buildCompactionSummary(provider, SAMPLE_MESSAGES)).rejects.toBeInstanceOf(RateLimitError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C2: performCompaction — injectable deps, error branch coverage
+// ---------------------------------------------------------------------------
+
+describe("performCompaction error branches (C2)", () => {
+  const baseMeta: SessionMeta = {
+    id: "sess-1",
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    provider: "openai-api",
+    model: "gpt-4o",
+  } as SessionMeta;
+
+  function makeProviderMock(events: ProviderEvent[]): Provider {
+    return {
+      name: "mock",
+      chatStream: vi.fn().mockReturnValue(
+        (async function* () { for (const e of events) yield e; })(),
+      ),
+    };
+  }
+
+  function makeDeps(overrides: Partial<PerformCompactionDeps> = {}): PerformCompactionDeps {
+    const setConversation = vi.fn();
+    const makeConversation = (msgs: Message[]) => Conversation.fromMessages(msgs);
+    const onMetaUpdate = vi.fn();
+    const onJustCompacted = vi.fn();
+
+    return {
+      provider: makeProviderMock([
+        { type: "text", content: "Summary text" },
+        { type: "done", stopReason: "stop" },
+      ]),
+      messages: [{ role: "user", content: "hello" }],
+      tokenEstimate: 1000,
+      activeSessionPath: "/tmp/test-session.json",
+      sessionMeta: baseMeta,
+      setConversation,
+      makeConversation,
+      onMetaUpdate,
+      onJustCompacted,
+      writeFileFn: vi.fn().mockResolvedValue(undefined),
+      buildCompactionSummaryFn: vi.fn().mockResolvedValue("Summary text"),
+      saveSessionFn: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    };
+  }
+
+  it("backup write failure → returns early without compacting", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps({
+      writeFileFn: vi.fn().mockRejectedValue(new Error("EACCES: permission denied")),
+    });
+
+    await performCompaction(deps);
+
+    expect(deps.setConversation).not.toHaveBeenCalled();
+    expect(deps.onJustCompacted).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Compaction aborted"));
+    warnSpy.mockRestore();
+  });
+
+  it("empty summary → returns early without replacing conversation", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps({
+      buildCompactionSummaryFn: vi.fn().mockResolvedValue("   "), // whitespace-only
+    });
+
+    await performCompaction(deps);
+
+    expect(deps.setConversation).not.toHaveBeenCalled();
+    expect(deps.onJustCompacted).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("empty summary"));
+    warnSpy.mockRestore();
+  });
+
+  it("saveSessionFn throws → warns but does not rethrow (compaction completed in memory)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps({
+      saveSessionFn: vi.fn().mockRejectedValue(new Error("disk full")),
+    });
+
+    // Should resolve without throwing
+    await expect(performCompaction(deps)).resolves.toBeUndefined();
+
+    expect(deps.setConversation).toHaveBeenCalled(); // compaction happened
+    expect(deps.onJustCompacted).toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("session save failed"));
+    warnSpy.mockRestore();
+  });
+
+  it("RateLimitError from buildCompactionSummaryFn → propagates (not swallowed)", async () => {
+    const rlErr = new RateLimitError(47, "openai-api");
+    const deps = makeDeps({
+      buildCompactionSummaryFn: vi.fn().mockRejectedValue(rlErr),
+    });
+
+    await expect(performCompaction(deps)).rejects.toBeInstanceOf(RateLimitError);
+    expect(deps.setConversation).not.toHaveBeenCalled();
+  });
+
+  it("successful compaction → calls setConversation, onMetaUpdate, onJustCompacted", async () => {
+    const deps = makeDeps();
+
+    await performCompaction(deps);
+
+    expect(deps.setConversation).toHaveBeenCalledOnce();
+    expect(deps.onMetaUpdate).toHaveBeenCalledOnce();
+    expect(deps.onJustCompacted).toHaveBeenCalledOnce();
+    // compact_count should be incremented
+    const newMeta = (deps.onMetaUpdate as ReturnType<typeof vi.fn>).mock.calls[0][0] as SessionMeta;
+    expect(newMeta.compact_count).toBe(1);
   });
 });
