@@ -2,7 +2,7 @@
 
 ## v1.33.0 — 2026-04-20
 
-Sprint 59 — Rate Limit Hardening. Session is now saved before every rate-limit exit (A2). Parallel executor uses `Promise.allSettled` to preserve sibling work on 429 (A1). Codex rate-limit detection fires on any non-zero exit, not just pre-text exits (A3). Auto-backoff constants extracted to `src/providers/backoff.ts`. `performCompaction` extracted from `index.ts` to `src/core/compaction.ts` with injectable deps. `RateLimitError` gains `kind: "rate_limited" | "blocked"` field with differentiated exit message copy.
+Sprint 59 — Rate Limit Hardening. When the provider returns a 429, your session is now saved before exiting — including the message you just sent — so `--resume` picks up with full context and nothing is lost. Parallel runs now preserve completed workers' results when one worker hits a rate limit; only the interrupted worker re-runs on resume. Blocked providers (content policy or account-level refusals) now show ⛔ with a "Switch provider" hint instead of the standard ⏸ pause message. Backoff utilities and compaction logic extracted to standalone modules for better testability.
 
 ### Added
 
@@ -32,9 +32,9 @@ Sprint 59 — Rate Limit Hardening. Session is now saved before every rate-limit
 
 ### Fixed
 
-- **A2: Session saved before every rate-limit exit** — 5 call sites in `index.ts` now `await saveSession()` before `printRateLimitAndExit()`. Previously the last user message was lost from the session file when a rate limit fired mid-turn.
+- **Session saved before every rate-limit exit** — 5 call sites in `index.ts` now `await saveSession()` before `printRateLimitAndExit()`. Previously the last user message was lost from the session file when a rate limit fired mid-turn. Now `--resume` always includes it.
 
-- **A3: Codex rate-limit detection on partial text** — removed `!hasProducedText &&` guard from stderr rate-limit check. Non-zero exit with partial text now correctly yields `rate_limited` instead of silently dropping the event.
+- **Codex rate-limit detection on partial text** — removed a guard that suppressed 429 detection when the model had already started streaming text. Non-zero exit with partial text now correctly yields `rate_limited` and checkpoints cleanly.
 
 ---
 

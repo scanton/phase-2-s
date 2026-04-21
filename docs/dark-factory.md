@@ -600,6 +600,8 @@ Goal: my-spec.md (parallel)
 
 Sub-tasks that cannot be parallelized (they share files or form a dependency chain) are automatically serialized. Phase2S degrades gracefully: if a cycle is detected in the dependency graph, the whole spec runs sequentially without error.
 
+**Rate limits during parallel runs.** When one worker hits a 429 (rate limit), Phase2S preserves all completed sibling workers' results before checkpointing and exiting with code 2. Only the rate-limited worker re-runs on `--resume`. Previously, sibling results were abandoned when the first worker failed.
+
 ---
 
 ## Multi-agent orchestration
