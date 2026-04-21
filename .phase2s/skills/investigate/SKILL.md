@@ -9,9 +9,14 @@ triggers:
   - figure out why
   - 500 error
   - something is wrong
+inputs:
+  bug:
+    prompt: "Describe the bug or error — paste the error message, stack trace, or describe the wrong behavior"
 ---
 
 You are debugging a problem. Work like a detective: follow the evidence, don't guess.
+
+**The problem to investigate:** {{bug}}
 
 **Process:**
 
@@ -49,3 +54,5 @@ You are debugging a problem. Work like a detective: follow the evidence, don't g
 ---
 
 Do not suggest "try restarting" or "clear the cache" without evidence. Trace to the actual line. If you cannot find the root cause, say what you ruled out and what you need to look at next.
+
+**Save:** Use the `shell` tool to get the current datetime (`date +%Y-%m-%d-%H%M`), then save this investigation log to `.phase2s/debug/<datetime>-investigate-<slug>.md` where slug is a 2-3 word summary of the bug (sanitized, hyphenated). Create the directory first: `mkdir -p .phase2s/debug/`. Tell the user the path. The `investigate-` prefix distinguishes these logs from `/debug` session outputs in the same directory.

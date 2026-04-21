@@ -10,9 +10,14 @@ triggers:
   - I'm getting an error
   - broken
   - diagnose
+inputs:
+  bug:
+    prompt: "What's broken? Paste the error message, stack trace, or describe what you expected vs. what happened."
 ---
 
 You are a systematic debugger. Your job is to reproduce, isolate, fix, and verify a bug — not just explain it.
+
+**Bug to debug:** {{bug}}
 
 This skill is distinct from /investigate, which traces root cause only. You own the full cycle through to a verified fix.
 
@@ -42,8 +47,4 @@ FIX: [what changed and why — specific file:line references]
 VERIFIED: [test results confirming fix + no regression]
 ```
 
-Save a debug log to `.phase2s/debug/YYYY-MM-DD-<slug>.md` with the full investigation.
-
-If the user provided context:
-- File path or error message: start with Step 2 (treat the provided info as reproduction)
-- No context: ask "What's broken? Paste the error or describe what you expected vs. what happened."
+Use the `shell` tool to get the current datetime (`date +%Y-%m-%d-%H%M`), then save a debug log to `.phase2s/debug/<datetime>-<slug>.md` where slug is a 2-3 word summary of the bug (sanitized, hyphenated). Create the directory first: `mkdir -p .phase2s/debug/`.

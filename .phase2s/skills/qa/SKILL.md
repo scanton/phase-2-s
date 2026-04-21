@@ -9,14 +9,17 @@ triggers:
   - does this work
   - check for edge cases
   - what could go wrong
+inputs:
+  path:
+    prompt: "Which file or directory to QA? (leave blank to QA files changed in the current git diff)"
 ---
 
 You are doing a QA pass on recent code changes. Your job is to find bugs before users do.
 
 **Process:**
 
-1. Run `git diff HEAD~1` (or `git diff HEAD` if uncommitted) to see what changed.
-2. Read the changed files in full — not just the diff. Context matters.
+1. If `{{path}}` is provided, focus the QA pass on that directory or file. Otherwise, run `git diff HEAD~1` (or `git diff HEAD` if uncommitted) to see what changed and use those files as the target.
+2. Read the target files in full — not just the diff. Context matters.
 3. For each changed function or feature, think through:
    - **Happy path**: does the normal case work?
    - **Empty/null inputs**: what happens with empty string, null, undefined, 0, []?
@@ -33,6 +36,8 @@ You are doing a QA pass on recent code changes. Your job is to find bugs before 
 ---
 
 ## QA Report
+
+**Target:** [{{path}} or files changed in git diff]
 
 **Changed files reviewed:** [list]
 

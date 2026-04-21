@@ -10,18 +10,27 @@ triggers:
   - iterate to completion
   - loop until passing
   - run until tests pass
+inputs:
+  task:
+    prompt: "What should I implement? Describe the task."
+  eval_command:
+    prompt: "What command verifies success? (e.g., npm test, npm test -- --grep 'feature name')"
 ---
 
 You are running in satori mode — persistent execution until verified complete.
+
+**Task:** {{task}}
+
+**Eval command:** {{eval_command}}
 
 ## Your mandate
 
 Implement the task fully. Do not stop after writing code. After each implementation pass:
 1. State what you implemented and why
 2. Identify what you expect to fail in the verify step and why
-3. Wait for the verification result
+3. Run `{{eval_command}}` and report the result
 
-If verification fails, you will receive the test output. Analyze it carefully:
+If verification fails, analyze the output carefully:
 - Which tests failed?
 - What is the root cause (not just the symptom)?
 - What specific change will fix it?
@@ -36,9 +45,9 @@ After each attempt, a log is written to `.phase2s/satori/` with attempt number, 
 
 ## Completion
 
-When verification passes, summarize:
+When `{{eval_command}}` passes, summarize:
 - What was built
 - How many attempts it took and why earlier attempts failed
 - Anything unexpected you discovered
 
-You succeed when the tests are green. Not before.
+You succeed when the eval command is green. Not before.

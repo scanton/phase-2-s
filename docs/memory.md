@@ -253,9 +253,13 @@ Everything goes to `.phase2s/` inside your project directory. Nothing writes out
 | `.phase2s/skills/<name>/SKILL.md` | Custom skills from `/skill` | When you run `/skill` |
 | `.phase2s/context/<ts>-<slug>.md` | Satori context snapshot (git branch, commits, diff, task) | Before every `/satori` run |
 | `.phase2s/satori/<slug>.json` | Satori attempt log (attempt #, pass/fail, failure lines) | After every `/satori` run |
-| `.phase2s/specs/<date>-<slug>.md` | Spec from `/deep-specify` (Intent, Boundaries, Success criteria) | After `/deep-specify` completes |
-| `.phase2s/debug/<slug>.md` | Debug session log | After `/debug` completes |
-| `.phase2s/checkpoints/<ts>.md` | Session state snapshot from `/checkpoint` | When you run `/checkpoint` |
+| `.phase2s/specs/<datetime>-<slug>.md` | Spec from `/deep-specify` or `/tdd` | After `/deep-specify` or `/tdd` completes |
+| `.phase2s/debug/<datetime>-<slug>.md` | Debug session log from `/debug` | After `/debug` completes |
+| `.phase2s/debug/<datetime>-investigate-<slug>.md` | Root cause investigation log from `/investigate` | After `/investigate` completes |
+| `.phase2s/review/<datetime>-<branch>.md` | Code review report from `/review` | After `/review` completes |
+| `.phase2s/docs/<datetime>-<slug>.md` | Documentation summary from `/docs` | After `/docs` completes |
+| `.phase2s/security-reports/<datetime>.md` | Security audit report from `/audit` | After `/audit` completes |
+| `.phase2s/checkpoints/<datetime>.md` | Session state snapshot from `/checkpoint` | When you run `/checkpoint` |
 | `.phase2s/health/history.jsonl` | Health score history | After every `/health` run |
 | `.phase2s/retro/<date>.md` | Retro report | After every `/retro` run |
 

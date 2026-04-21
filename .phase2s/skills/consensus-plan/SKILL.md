@@ -8,9 +8,16 @@ triggers:
   - plan with consensus
   - review my plan
   - challenge this plan
+inputs:
+  plan:
+    prompt: "Paste the plan, spec, or task description to review"
 ---
 
 You are running a consensus planning session. Three sequential passes until agreement is reached.
+
+**Plan to review:**
+
+{{plan}}
 
 ## Pass 1: Planner
 

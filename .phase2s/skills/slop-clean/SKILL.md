@@ -11,11 +11,16 @@ triggers:
   - clean up
   - tidy
   - cleanup
+inputs:
+  path:
+    prompt: "Which directory or files to clean? (leave blank to clean files changed in the current git diff)"
 ---
 
 You are a code quality specialist running a targeted anti-slop refactor pass. Your job is to clean code systematically — one smell category at a time, never everything at once.
 
 This skill is ported from oh-my-codex's `$ai-slop-cleaner` pattern, adapted for Phase2S.
+
+**Target:** If `{{path}}` is provided, restrict all work to that directory or file. If blank, run on files changed in the current `git diff`. If the working tree is clean and no path is given, ask: "Which directory or files should I clean?"
 
 **Smell taxonomy (in priority order — safest first):**
 1. **Dead code** — unreachable branches, unused imports, zombie variables, commented-out code blocks that will never be restored.
@@ -28,7 +33,7 @@ This skill is ported from oh-my-codex's `$ai-slop-cleaner` pattern, adapted for 
 
 1. **Baseline first.** Run `npm test` (or the project's test command). Capture the result. If tests fail before you touch anything, stop and report the pre-existing failures. Do not proceed.
 
-2. **Identify smells.** Scan the target (specified path, or files changed in `git diff` if no argument). Catalog what you find per category. Be specific: file, line range, what the smell is.
+2. **Identify smells.** Scan the target. Catalog what you find per category. Be specific: file, line range, what the smell is.
 
 3. **Report before fixing.** Show the full smell inventory. Let the user see what you found before you start changing things.
 
@@ -56,7 +61,3 @@ PASSES MADE:
 
 RESULT: [N passing, M failing — same or better than baseline]
 ```
-
-If the user provides a path argument (e.g. `/clean src/tools/`), restrict all work to that directory.
-If no argument, run on files changed in the current `git diff`.
-If the working tree is clean and no argument is given, ask: "Which directory or files should I clean?"

@@ -1,5 +1,57 @@
 # Changelog
 
+## v1.34.0 — 2026-04-20
+
+Sprint 60 — Skills Quality Audit. Six D-rated built-in skills rewritten to B+ standard: `review`, `ship`, `docs`, `investigate`, `tdd`, and `skill`. All six now have structured verify steps and save artifacts to `.phase2s/` with datetime-stamped filenames. The `skill` meta-skill now generates structural `## Output`, `## Verify`, and `## Save` sections so every new skill starts at B-quality minimum. Separately, 14 parameterized skills gain typed `inputs:` frontmatter with named MCP parameters and `{{param}}` body substitution — `adversarial`, `audit`, `autoplan`, `checkpoint`, `consensus-plan`, `debug`, `deep-specify`, `explain`, `freeze`, `land-and-deploy`, `qa`, `remember`, `satori`, and `slop-clean`.
+
+### Changed
+
+- **`/review`** — unconditional `npm test` verify step (always runs, not just after inline fixes). Scoped by optional `{{scope}}` path. Saves report to `.phase2s/review/<datetime>-<branch>.md`.
+
+- **`/ship`** — reads `package.json` scripts to detect test command. Hard block on failure: "Tests failed — fix before shipping." Graceful skip if no test script: "No test script found — skipping test gate." Structured PRE-FLIGHT output block.
+
+- **`/docs`** — optional `{{path}}` input; falls back to `git diff` when blank. `tsc --noEmit` verify with tsconfig.json guard (skip if not TypeScript). Saves summary to `.phase2s/docs/<datetime>-<slug>.md`.
+
+- **`/investigate`** — `{{bug}}` input as problem statement. Saves log to `.phase2s/debug/<datetime>-investigate-<slug>.md` (`investigate-` prefix distinguishes from `/debug` outputs).
+
+- **`/tdd`** — `{{feature}}` input for behavioral contract. Red → Green → Refactor protocol. Saves spec to `.phase2s/specs/<datetime>-<slug>.md`.
+
+- **`/skill`** — four-question interview now asks whether the skill makes code changes or writes files; generated template includes structural `## Output` (always), `## Verify` (if code changes), and `## Save` (if file writes) sections. Documents `inputs:` block format for parameterized skills.
+
+- **`/adversarial`** — `{{plan}}` input replaces "plan is in the conversation above" implicit behavior. Works correctly when called via MCP without conversational context.
+
+- **`/audit`** — optional `{{scope}}` restricts scanning to a directory. Save path updated to `.phase2s/security-reports/<datetime>.md` with HHMM to avoid same-day collision.
+
+- **`/autoplan`** — optional `{{plan_file}}` input; falls back to `TODOS.md` and recent commits when blank.
+
+- **`/checkpoint`** — optional `{{note}}` for user-provided context; infers everything else from git state. Save path includes HHMM.
+
+- **`/consensus-plan`** — `{{plan}}` input as the plan text to review.
+
+- **`/debug`** — `{{bug}}` input replaces the "if no context: ask" conditional. Save path updated to `.phase2s/debug/<datetime>-<slug>.md` with HHMM.
+
+- **`/deep-specify`** — `{{feature}}` input for the feature description; skips the opener question when provided.
+
+- **`/explain`** — `{{target}}` already used in body; `inputs: target` frontmatter added to expose it as MCP parameter.
+
+- **`/freeze`** — `{{directory}}` input replaces interactive prompt; confirms freeze immediately.
+
+- **`/land-and-deploy`** — optional `{{description}}` used as PR title when provided.
+
+- **`/qa`** — optional `{{path}}` focuses QA on a specific directory or file; falls back to git diff.
+
+- **`/remember`** — `{{content}}` and `{{type}}` inputs (with enum) replace the two interactive questions; saves directly without prompting.
+
+- **`/satori`** — `{{task}}` and `{{eval_command}}` inputs; eval command referenced in the run loop.
+
+- **`/slop-clean`** — optional `{{path}}` replaces the argument-parsing prose at the bottom.
+
+### Docs
+
+- **`docs/memory.md`** — updated "What Phase2S writes to disk" table with new artifact paths: `.phase2s/review/`, `.phase2s/docs/`, `.phase2s/debug/<datetime>-investigate-*`, `.phase2s/security-reports/`. Updated date format notes (all paths now use YYYY-MM-DD-HHMM).
+
+---
+
 ## v1.33.0 — 2026-04-20
 
 Sprint 59 — Rate Limit Hardening. When the provider returns a 429, your session is now saved before exiting — including the message you just sent — so `--resume` picks up with full context and nothing is lost. Parallel runs now preserve completed workers' results when one worker hits a rate limit; only the interrupted worker re-runs on resume. Blocked providers (content policy or account-level refusals) now show ⛔ with a "Switch provider" hint instead of the standard ⏸ pause message. Backoff utilities and compaction logic extracted to standalone modules for better testability.

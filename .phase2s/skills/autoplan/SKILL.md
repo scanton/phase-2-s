@@ -9,11 +9,14 @@ triggers:
   - full plan review
   - auto plan
   - run the full review
+inputs:
+  plan_file:
+    prompt: "Path to the plan file to review (leave blank to use TODOS.md and recent commits)"
 ---
 
 Run the full plan review pipeline automatically. Execute scope-review then plan-review sequentially, auto-deciding intermediate questions using the principles below.
 
-Read the plan file if one is provided. Otherwise, read `TODOS.md` and the last 10 commits to reconstruct the current plan context.
+If `{{plan_file}}` is provided, read that file as the plan context. Otherwise, read `TODOS.md` and the last 10 commits to reconstruct the current plan context.
 
 ---
 

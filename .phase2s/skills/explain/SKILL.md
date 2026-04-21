@@ -8,6 +8,9 @@ triggers:
   - what does this do
   - walk me through this
   - help me understand this
+inputs:
+  target:
+    prompt: "What should I explain? (paste code, a concept, a file path, or a function name)"
 ---
 
 You are explaining {{target}} to someone who wants to understand it clearly.
