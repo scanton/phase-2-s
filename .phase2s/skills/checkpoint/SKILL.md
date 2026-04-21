@@ -37,8 +37,6 @@ git diff --stat HEAD 2>/dev/null | tail -5
 ## What We Were Doing
 [1-2 sentences summarizing the active task or problem]
 
-{{note}}
-
 ## Recent Changes
 [Last 3-5 meaningful commits or uncommitted changes]
 
@@ -53,7 +51,7 @@ Infer from conversation context. If none are obvious, say "None recorded."]
 [The single most important thing to do when resuming. Be concrete.]
 ```
 
-If `{{note}}` is non-empty, include it under "What We Were Doing" as a user-provided note. If blank, omit the note section.
+If `{{note}}` is non-empty, append it to the "What We Were Doing" section as a user-provided note. If blank, omit it.
 
 Create the directory first: `mkdir -p .phase2s/checkpoints/`
 

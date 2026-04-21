@@ -36,7 +36,7 @@ You are landing code to production. This picks up where `/ship` (commit) leaves 
    - Run `gh pr view --json number,url,state 2>/dev/null` to check if a PR already exists for this branch.
    - If a PR already exists and is open, use it. Show the PR URL.
    - If no PR exists, create one:
-     - If `{{description}}` is provided: `gh pr create --title "{{description}}" --fill`
+     - If `{{description}}` is provided: `gh pr create --title '{{description}}' --fill`
      - If `{{description}}` is blank: `gh pr create --fill`
    - Show the PR URL after creation.
 
