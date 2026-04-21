@@ -10,9 +10,12 @@ triggers:
   - what was I working on
   - save my place
   - create a checkpoint
+inputs:
+  note:
+    prompt: "Any additional context to include? (optional — leave blank to auto-infer from git state)"
 ---
 
-Create a structured checkpoint of the current session state. Do not ask the user questions — infer everything from git state and conversation context.
+Create a structured checkpoint of the current session state. Infer everything from git state and conversation context.
 
 **Gather state:**
 
@@ -23,7 +26,7 @@ git status --short
 git diff --stat HEAD 2>/dev/null | tail -5
 ```
 
-**Write checkpoint to `.phase2s/checkpoints/[YYYY-MM-DD-HH-MM].md`:**
+**Write checkpoint to `.phase2s/checkpoints/[YYYY-MM-DD-HHMM].md`:** (use `date +%Y-%m-%d-%H%M` for the timestamp)
 
 ```markdown
 # Checkpoint — [timestamp]
@@ -33,6 +36,8 @@ git diff --stat HEAD 2>/dev/null | tail -5
 
 ## What We Were Doing
 [1-2 sentences summarizing the active task or problem]
+
+{{note}}
 
 ## Recent Changes
 [Last 3-5 meaningful commits or uncommitted changes]
@@ -47,6 +52,10 @@ Infer from conversation context. If none are obvious, say "None recorded."]
 ## Next Step
 [The single most important thing to do when resuming. Be concrete.]
 ```
+
+If `{{note}}` is non-empty, include it under "What We Were Doing" as a user-provided note. If blank, omit the note section.
+
+Create the directory first: `mkdir -p .phase2s/checkpoints/`
 
 After saving, confirm: "Checkpoint saved to `.phase2s/checkpoints/[filename]`. Resume with `phase2s --resume` or read this file to pick up where you left off."
 

@@ -12,6 +12,9 @@ triggers:
   - land it
   - ship to production
   - push and open PR
+inputs:
+  description:
+    prompt: "PR title or description (optional — leave blank to use branch name and commit messages)"
 ---
 
 You are landing code to production. This picks up where `/ship` (commit) leaves off.
@@ -33,10 +36,8 @@ You are landing code to production. This picks up where `/ship` (commit) leaves 
    - Run `gh pr view --json number,url,state 2>/dev/null` to check if a PR already exists for this branch.
    - If a PR already exists and is open, use it. Show the PR URL.
    - If no PR exists, create one:
-     ```
-     gh pr create --fill
-     ```
-     `--fill` uses the branch name and commit messages to populate the title and body. If the user provided a task description as input to this skill, use it as the PR title with `--title "..."`.
+     - If `{{description}}` is provided: `gh pr create --title "{{description}}" --fill`
+     - If `{{description}}` is blank: `gh pr create --fill`
    - Show the PR URL after creation.
 
 4. **Wait for CI checks to pass.**

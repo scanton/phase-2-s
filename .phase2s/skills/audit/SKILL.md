@@ -11,9 +11,12 @@ triggers:
   - threat model
   - pentest review
   - check for vulnerabilities
+inputs:
+  scope:
+    prompt: "Which directory to audit? (leave blank to scan the entire project)"
 ---
 
-Run a multi-phase security audit. For each finding, report: severity (CRIT/HIGH/MED/LOW), confidence (VERIFIED/UNVERIFIED), and a concrete exploit scenario. Do not fix — report only.
+Run a multi-phase security audit. If `{{scope}}` is provided, restrict scanning to that directory. Otherwise, scan the entire project. For each finding, report: severity (CRIT/HIGH/MED/LOW), confidence (VERIFIED/UNVERIFIED), and a concrete exploit scenario. Do not fix — report only.
 
 ## Phase 1: Secrets in Code
 
@@ -80,4 +83,4 @@ End with overall risk verdict:
 - **MEDIUM RISK** — issues that should be addressed in next sprint
 - **HIGH RISK** — issues that should be fixed before next release
 
-Save the report to `.phase2s/security-reports/[YYYY-MM-DD].md`.
+Use the `shell` tool to get the current datetime (`date +%Y-%m-%d-%H%M`), then save the report to `.phase2s/security-reports/<datetime>.md`. Create the directory first: `mkdir -p .phase2s/security-reports/`.

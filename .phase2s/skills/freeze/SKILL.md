@@ -10,22 +10,19 @@ triggers:
   - freeze edits
   - limit edits to
   - only change files in
+inputs:
+  directory:
+    prompt: "Which directory should I limit edits to? (e.g., src/tools/, src/core/, or an absolute path)"
 ---
 
-Ask the user which directory to restrict file edits to for this session.
-
-Say: "Which directory should I limit edits to? (e.g., `src/tools/`, `src/core/`, or give an absolute path)"
-
-Wait for the user's answer.
-
-Once the user specifies a directory, confirm: "Edit freeze active. I will only create or modify files within `[directory]` for this session."
+Edit freeze active. I will only create or modify files within `{{directory}}` for this session.
 
 **Rules for the rest of this conversation:**
 
-Only use Edit or Write tools on files inside the specified directory.
+Only use Edit or Write tools on files inside `{{directory}}`.
 
 Before any edit, check: does this file path start with the frozen directory? If yes, proceed. If no, stop and say:
-"Edit blocked — `[file]` is outside the frozen directory `[frozen-dir]`. To edit it, either `/unfreeze` or confirm you want to override the restriction."
+"Edit blocked — `[file]` is outside the frozen directory `{{directory}}`. To edit it, either `/unfreeze` or confirm you want to override the restriction."
 
 **What is NOT restricted:**
 - Reading files anywhere (Read, Glob, Grep tools)
