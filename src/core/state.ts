@@ -28,6 +28,21 @@ export interface SubTaskResult {
   attempts?: number;
 }
 
+export interface OrchestratorCompletedJobCheckpoint {
+  job: import('../orchestrator/types.js').SubtaskJob;
+  stdout: string;
+}
+
+export interface OrchestratorCheckpoint {
+  completedJobs: OrchestratorCompletedJobCheckpoint[];
+  pendingJobs: import('../orchestrator/types.js').SubtaskJob[];
+  failedJobIds: string[];
+  skippedJobIds: string[];
+  suspectJobIds: string[];
+  /** levelIdx at time of checkpoint — display-only, not used during resume execution. */
+  currentLevel: number;
+}
+
 export interface GoalState {
   specFile: string;
   specHash: string;
@@ -48,6 +63,9 @@ export interface GoalState {
   currentLevel?: number;
   /** Per-level worker tracking for resume. */
   levelWorkers?: Record<string, LevelWorkerState[]>;
+
+  /** Orchestrator checkpoint written on 429 rate-limit; cleared on successful completion. */
+  orchestrator?: OrchestratorCheckpoint;
 }
 
 export interface LevelWorkerState {

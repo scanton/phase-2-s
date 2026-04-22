@@ -28,7 +28,7 @@ import { loadConfig } from "../core/config.js";
 import { RateLimitError } from "../core/rate-limit-error.js";
 import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { parseSpec, type Spec, type SubTask } from "../core/spec-parser.js";
-import { computeSpecHash, readState, writeState, clearState, type GoalState, type LevelWorkerState } from "../core/state.js";
+import { computeSpecHash, readState, writeState, clearState, type GoalState, type LevelWorkerState, type OrchestratorCheckpoint } from "../core/state.js";
 import { RunLogger } from "../core/run-logger.js";
 import { sendNotification, buildNotifyPayload, type NotifyOptions } from "../core/notify.js";
 import { loadAllSkills } from "../skills/index.js";
@@ -244,8 +244,12 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     console.log(chalk.cyan(`Mode: parallel (${depResult.levels.length} levels, max ${maxWorkers} workers)`));
   }
   if (resume) {
-    const doneCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
-    console.log(`Resuming: ${doneCount}/${spec.decomposition.length} sub-tasks already completed`);
+    if (state.orchestrator) {
+      console.log(`Resuming: ${state.orchestrator.completedJobs.length} orchestrator jobs already checkpointed`);
+    } else {
+      const doneCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
+      console.log(`Resuming: ${doneCount}/${spec.decomposition.length} sub-tasks already completed`);
+    }
   }
 
   if (spec.decomposition.length === 0 && spec.acceptanceCriteria.length === 0) {
@@ -344,21 +348,39 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     }
 
     try {
-      const { compile } = await import('../orchestrator/spec-compiler.js');
+      const { compile, buildLevels } = await import('../orchestrator/spec-compiler.js');
       const { runOrchestrator } = await import('../orchestrator/orchestrator.js');
       const { executeOrchestratorLevel } = await import('../goal/parallel-executor.js');
 
-      const { jobs, levels } = compile(spec.decomposition);
-
-      console.log(chalk.cyan(`\nStarting orchestrator execution (${jobs.length} jobs, ${levels.length} levels)...`));
+      // If resuming from an orchestrator checkpoint, use the pending jobs from checkpoint;
+      // otherwise compile fresh from the spec.
+      const orchCheckpoint: OrchestratorCheckpoint | undefined = state.orchestrator;
+      let jobs: ReturnType<typeof compile>['jobs'];
+      let levels: ReturnType<typeof compile>['levels'];
+      if (orchCheckpoint) {
+        jobs = orchCheckpoint.pendingJobs;
+        levels = buildLevels(orchCheckpoint.pendingJobs);
+        console.log(chalk.cyan(`\nResuming orchestrator (${orchCheckpoint.completedJobs.length} already completed, ${jobs.length} pending)...`));
+      } else {
+        ({ jobs, levels } = compile(spec.decomposition));
+        console.log(chalk.cyan(`\nStarting orchestrator execution (${jobs.length} jobs, ${levels.length} levels)...`));
+      }
 
       if (options.reasoningEffort && options.reasoningEffort !== "default") {
         console.log(chalk.dim(`  --reasoning-effort ${options.reasoningEffort} applied to orchestrator workers`));
       }
+
+      let checkpointed = false;
       const orchResult = await runOrchestrator(levels, jobs, {
         specHash,
         logger,
         executeLevelFn: (orchJobs) => executeOrchestratorLevel(orchJobs, effectiveSatoriModel),
+        checkpoint: orchCheckpoint,
+        persistCheckpoint: (cp: OrchestratorCheckpoint) => {
+          state!.orchestrator = cp;
+          writeState(specDir, specHash, state!);
+          checkpointed = true;
+        },
       });
 
       logger.log({
@@ -368,6 +390,12 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       });
 
       const orchSuccess = orchResult.totalFailed === 0 && orchResult.totalSkipped === 0;
+
+      // Clear orchestrator checkpoint on success so future --resume starts fresh
+      if (orchSuccess && state.orchestrator !== undefined) {
+        state.orchestrator = undefined;
+        writeState(specDir, specHash, state);
+      }
 
       if (orchSuccess) {
         console.log(chalk.green(`\nOrchestrator: all ${orchResult.totalCompleted} jobs completed.`));
@@ -390,9 +418,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       return orchGoalResult;
     } catch (err: unknown) {
       if (err instanceof RateLimitError) {
-        // Orchestrator doesn't write to state.subTaskResults and doesn't checkpoint on
-        // rate limit — pass checkpointed=false so the message is honest.
-        handleRateLimitExit(err, basename(specPath), undefined, spec.decomposition.length, false);
+        handleRateLimitExit(err, basename(specPath), undefined, spec.decomposition.length, state.orchestrator !== undefined);
       }
       const message = err instanceof Error ? err.message : String(err);
       console.error(chalk.red(`\nOrchestrator error: ${message}`));

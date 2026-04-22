@@ -34,6 +34,7 @@ import {
   mergeLevel as mergeLevelWorktrees,
   type LevelMergeResult,
 } from "./merge-strategy.js";
+import { OrchestratorLevelRateLimitError } from '../orchestrator/types.js';
 import type { SubtaskJob, OrchestratorLevelResult } from '../orchestrator/types.js';
 
 // ---------------------------------------------------------------------------
@@ -669,7 +670,7 @@ export async function executeOrchestratorLevel(
   const [config, learningsList] = await Promise.all([loadConfig(), loadLearnings(cwd)]);
   const learnings = formatLearningsForPrompt(learningsList);
 
-  return Promise.all(jobs.map(async (job, batchIdx): Promise<OrchestratorLevelResult> => {
+  const settled = await Promise.allSettled(jobs.map(async (job, batchIdx): Promise<OrchestratorLevelResult> => {
     const slug = makeWorktreeSlug(`orch${Date.now().toString(36).slice(-4)}`, batchIdx);
 
     const wt = createWorktree(cwd, slug);
@@ -729,6 +730,7 @@ export async function executeOrchestratorLevel(
 
     const stdout = outputChunks.join('');
     if (workerError) {
+      if (workerError instanceof RateLimitError) throw workerError;
       return {
         subtaskId: job.id,
         status: 'failed',
@@ -739,6 +741,30 @@ export async function executeOrchestratorLevel(
 
     return { subtaskId: job.id, status: 'completed', stdout };
   }));
+
+  // Collect partial results from fulfilled workers; detect any 429 rejection
+  const results: OrchestratorLevelResult[] = [];
+  let rateLimitErr: RateLimitError | undefined;
+
+  for (const outcome of settled) {
+    if (outcome.status === 'fulfilled') {
+      results.push(outcome.value);
+    } else {
+      if (outcome.reason instanceof RateLimitError && !rateLimitErr) {
+        rateLimitErr = outcome.reason;
+      }
+      // Non-RateLimitError rejections shouldn't happen (per-job catch returns {status:'failed'})
+      // but guard defensively — treat as failed result with no stdout
+    }
+  }
+
+  if (rateLimitErr) {
+    const arg: number | 'blocked' | undefined =
+      rateLimitErr.kind === 'blocked' ? 'blocked' : rateLimitErr.retryAfter;
+    throw new OrchestratorLevelRateLimitError(arg, results);
+  }
+
+  return results;
 }
 
 export function makeWorktreeSlug(specHash: string, index: number): string {

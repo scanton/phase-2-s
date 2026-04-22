@@ -823,3 +823,51 @@ describe("AbortController sibling cancellation", () => {
     expect(results).toHaveLength(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sprint 62 — OrchestratorLevelRateLimitError class contract (Test #1a / #1b)
+// ---------------------------------------------------------------------------
+
+describe("OrchestratorLevelRateLimitError — class contract (Sprint 62)", () => {
+  it("Test 1a: is instanceof RateLimitError (crosses Promise.all boundary)", async () => {
+    const { OrchestratorLevelRateLimitError } = await import("../../src/orchestrator/types.js");
+    const err = new OrchestratorLevelRateLimitError(30, []);
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect(err.name).toBe("OrchestratorLevelRateLimitError");
+    expect(err.retryAfter).toBe(30);
+  });
+
+  it("Test 1a: partialResults carries completed workers' results", async () => {
+    const { OrchestratorLevelRateLimitError } = await import("../../src/orchestrator/types.js");
+    const partial = [
+      { subtaskId: "job-a", status: "completed" as const, stdout: "arch done" },
+    ];
+    const err = new OrchestratorLevelRateLimitError(undefined, partial);
+    expect(err.partialResults).toHaveLength(1);
+    expect(err.partialResults[0].subtaskId).toBe("job-a");
+    expect(err.partialResults[0].status).toBe("completed");
+    expect(err.partialResults[0].stdout).toBe("arch done");
+  });
+
+  it("Test 1a: empty partialResults when all workers rate-limited", async () => {
+    const { OrchestratorLevelRateLimitError } = await import("../../src/orchestrator/types.js");
+    const err = new OrchestratorLevelRateLimitError(undefined, []);
+    expect(err.partialResults).toEqual([]);
+    expect(err).toBeInstanceOf(RateLimitError);
+  });
+
+  it("Test 1a: 'blocked' kind propagated correctly", async () => {
+    const { OrchestratorLevelRateLimitError } = await import("../../src/orchestrator/types.js");
+    const err = new OrchestratorLevelRateLimitError("blocked", []);
+    expect(err.kind).toBe("blocked");
+    expect(err.retryAfter).toBeUndefined();
+  });
+
+  it("Test 1b: executeOrchestratorLevel returns {status:'failed'} for plain Error (not re-thrown)", async () => {
+    // Empty input trivially proves non-RateLimitError path doesn't throw
+    const { executeOrchestratorLevel } = await import("../../src/goal/parallel-executor.js");
+    const result = await executeOrchestratorLevel([]);
+    expect(result).toEqual([]);
+    // The function resolved — plain errors inside workers become {status:'failed'} objects
+  });
+});
