@@ -370,7 +370,6 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         console.log(chalk.dim(`  --reasoning-effort ${options.reasoningEffort} applied to orchestrator workers`));
       }
 
-      let checkpointed = false;
       const orchResult = await runOrchestrator(levels, jobs, {
         specHash,
         logger,
@@ -379,7 +378,6 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         persistCheckpoint: (cp: OrchestratorCheckpoint) => {
           state!.orchestrator = cp;
           writeState(specDir, specHash, state!);
-          checkpointed = true;
         },
       });
 

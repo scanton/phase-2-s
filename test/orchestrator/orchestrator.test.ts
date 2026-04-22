@@ -806,4 +806,90 @@ describe('runOrchestrator — checkpoint + resume (Sprint 62)', () => {
   });
 
   // Test #4: goal.ts --resume UX wiring (covered in test/cli/goal.test.ts — see below)
+
+  it('resume: failedJobIds and skippedJobIds from checkpoint are reflected in result counts', async () => {
+    const failedJob = makeJob({ id: 'failed-job', title: 'Failed' });
+    const skippedJob = makeJob({ id: 'skipped-job', title: 'Skipped', dependsOn: ['failed-job'] });
+    const pendingJob = makeJob({ id: 'pending-job', title: 'Pending', dependsOn: [] });
+
+    const checkpoint: import('../../src/core/state.js').OrchestratorCheckpoint = {
+      completedJobs: [],
+      pendingJobs: [pendingJob],
+      failedJobIds: [failedJob.id],
+      skippedJobIds: [skippedJob.id],
+      suspectJobIds: [],
+      currentLevel: 1,
+    };
+
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) =>
+      js.map(j => makeSuccessResult(j.id))
+    );
+
+    const result = await runOrchestrator([[pendingJob]], [failedJob, skippedJob, pendingJob], {
+      specHash: 'failed-skip-resume',
+      logger,
+      executeLevelFn,
+      checkpoint,
+      persistCheckpoint: vi.fn(),
+    });
+
+    expect(result.totalCompleted).toBe(1);  // pendingJob
+    expect(result.totalFailed).toBe(1);     // failedJob from checkpoint
+    expect(result.totalSkipped).toBe(1);    // skippedJob from checkpoint
+  });
+
+  it('resume: malicious job.id in checkpoint.completedJobs is silently skipped', async () => {
+    const maliciousJob = makeJob({ id: '../../../etc/passwd', role: 'architect', title: 'Evil' });
+    const pendingJob = makeJob({ id: 'pending-job', title: 'Pending', dependsOn: [] });
+
+    const checkpoint: import('../../src/core/state.js').OrchestratorCheckpoint = {
+      completedJobs: [{ job: maliciousJob, stdout: 'malicious stdout' }],
+      pendingJobs: [pendingJob],
+      failedJobIds: [],
+      skippedJobIds: [],
+      suspectJobIds: [],
+      currentLevel: 1,
+    };
+
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) =>
+      js.map(j => makeSuccessResult(j.id))
+    );
+
+    const result = await runOrchestrator([[pendingJob]], [pendingJob], {
+      specHash: 'malicious-id',
+      logger,
+      executeLevelFn,
+      checkpoint,
+      persistCheckpoint: vi.fn(),
+    });
+
+    // maliciousJob should NOT be counted as completed (guard skipped it)
+    expect(result.totalCompleted).toBe(1);  // only pendingJob
+    expect(result.totalFailed).toBe(0);
+  });
+
+  it('persistCheckpoint is called once per completed level', async () => {
+    const jobA = makeJob({ id: 'job-a', title: 'A', dependsOn: [] });
+    const jobB = makeJob({ id: 'job-b', title: 'B', dependsOn: ['job-a'] });
+
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) =>
+      js.map(j => makeSuccessResult(j.id))
+    );
+
+    const persistCheckpoint = vi.fn();
+
+    await runOrchestrator([[jobA], [jobB]], [jobA, jobB], {
+      specHash: 'persist-timing',
+      logger,
+      executeLevelFn,
+      persistCheckpoint,
+    });
+
+    // Two levels → persistCheckpoint called exactly twice
+    expect(persistCheckpoint).toHaveBeenCalledTimes(2);
+    // Each call receives an OrchestratorCheckpoint with currentLevel set
+    const calls = persistCheckpoint.mock.calls;
+    expect(calls[0][0].currentLevel).toBe(0);
+    expect(calls[1][0].currentLevel).toBe(1);
+  });
 });

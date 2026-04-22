@@ -320,6 +320,28 @@ export function computeSkippedIds(failedId: string, allJobs: SubtaskJob[]): stri
 }
 
 // ---------------------------------------------------------------------------
+// Architect context helper
+// ---------------------------------------------------------------------------
+
+/** Extract sentinel content from architect stdout and write to a temp file. Returns the path, or undefined on miss/error. */
+function writeArchitectContextFile(stdout: string, jobId: string, contextDir: string): string | undefined {
+  const sentinelIdx = stdout.indexOf(ARCHITECT_CONTEXT_JSON_SENTINEL);
+  if (sentinelIdx === -1) return undefined;
+  const contentStart = sentinelIdx + ARCHITECT_CONTEXT_JSON_SENTINEL.length;
+  const endIdx = stdout.indexOf('```', contentStart);
+  const raw = endIdx !== -1
+    ? stdout.slice(contentStart, endIdx).trim()
+    : stdout.slice(contentStart).trim();
+  const ctxPath = join(contextDir, `context-${jobId}.md`);
+  try {
+    writeFileSync(ctxPath, truncateToBytes(raw, CONTEXT_MAX_BYTES), 'utf8');
+    return ctxPath;
+  } catch {
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // runOrchestrator
 // ---------------------------------------------------------------------------
 
@@ -370,19 +392,8 @@ export async function runOrchestrator(
       if (job.role === 'architect' && stdout) {
         const ctx = parseArchitectContext(stdout);
         if (ctx) architectContexts.set(job.id, ctx);
-        const sentinelIdx = stdout.indexOf(ARCHITECT_CONTEXT_JSON_SENTINEL);
-        if (sentinelIdx !== -1) {
-          const contentStart = sentinelIdx + ARCHITECT_CONTEXT_JSON_SENTINEL.length;
-          const endIdx = stdout.indexOf('```', contentStart);
-          const raw = endIdx !== -1
-            ? stdout.slice(contentStart, endIdx).trim()
-            : stdout.slice(contentStart).trim();
-          const ctxPath = join(contextDir, `context-${job.id}.md`);
-          try {
-            writeFileSync(ctxPath, truncateToBytes(raw, CONTEXT_MAX_BYTES), 'utf8');
-            contextFiles.set(job.id, ctxPath);
-          } catch { /* best effort */ }
-        }
+        const ctxPath = writeArchitectContextFile(stdout, job.id, contextDir);
+        if (ctxPath) contextFiles.set(job.id, ctxPath);
       }
     }
     for (const id of cp.failedJobIds) jobStatus.set(id, 'failed');
@@ -500,19 +511,8 @@ export async function runOrchestrator(
                 if (job.role === 'architect' && r.stdout) {
                   const ctx = parseArchitectContext(r.stdout);
                   if (ctx) architectContexts.set(job.id, ctx);
-                  const sentinelIdx = r.stdout.indexOf(ARCHITECT_CONTEXT_JSON_SENTINEL);
-                  if (sentinelIdx !== -1) {
-                    const contentStart = sentinelIdx + ARCHITECT_CONTEXT_JSON_SENTINEL.length;
-                    const endIdx = r.stdout.indexOf('```', contentStart);
-                    const raw = endIdx !== -1
-                      ? r.stdout.slice(contentStart, endIdx).trim()
-                      : r.stdout.slice(contentStart).trim();
-                    const ctxPath = join(contextDir, `context-${job.id}.md`);
-                    try {
-                      writeFileSync(ctxPath, truncateToBytes(raw, CONTEXT_MAX_BYTES), 'utf8');
-                      contextFiles.set(job.id, ctxPath);
-                    } catch { /* best effort */ }
-                  }
+                  const ctxPath = writeArchitectContextFile(r.stdout, job.id, contextDir);
+                  if (ctxPath) contextFiles.set(job.id, ctxPath);
                 }
               }
             }
@@ -545,33 +545,14 @@ export async function runOrchestrator(
           if (job?.role === 'architect' && result.stdout) {
             // Parse typed ArchitectContext for re-plan use (Sprint 39)
             const ctx = parseArchitectContext(result.stdout);
-            if (ctx) {
-              architectContexts.set(result.subtaskId, ctx);
-            }
+            if (ctx) architectContexts.set(result.subtaskId, ctx);
 
-            // Also write context file for downstream worker injection (existing mechanism)
-            const sentinelIdx = result.stdout.indexOf(ARCHITECT_CONTEXT_JSON_SENTINEL);
-            if (sentinelIdx !== -1) {
-              const contentStart = sentinelIdx + ARCHITECT_CONTEXT_JSON_SENTINEL.length;
-              const endIdx = result.stdout.indexOf('```', contentStart);
-              const raw = endIdx !== -1
-                ? result.stdout.slice(contentStart, endIdx).trim()
-                : result.stdout.slice(contentStart).trim();
-
-              if (!SAFE_JOB_ID_RE.test(job.id)) continue;
-              const ctxPath = join(contextDir, `context-${job.id}.md`);
-              try {
-                writeFileSync(ctxPath, truncateToBytes(raw, CONTEXT_MAX_BYTES), 'utf8');
-                result.contextFile = ctxPath;
-                contextFiles.set(result.subtaskId, ctxPath);
-              } catch {
-                logger.log({
-                  event: 'orchestrator_context_missing',
-                  specHash,
-                  subtaskId: result.subtaskId,
-                  level: levelIdx,
-                });
-              }
+            if (!SAFE_JOB_ID_RE.test(job.id)) continue;
+            // Write context file for downstream worker injection
+            const ctxPath = writeArchitectContextFile(result.stdout, job.id, contextDir);
+            if (ctxPath) {
+              result.contextFile = ctxPath;
+              contextFiles.set(result.subtaskId, ctxPath);
             } else {
               logger.log({
                 event: 'orchestrator_context_missing',

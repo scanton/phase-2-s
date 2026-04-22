@@ -2,6 +2,8 @@
  * Types for the multi-agent orchestrator (Sprint 38).
  */
 
+import { RateLimitError } from '../core/rate-limit-error.js';
+
 // SubtaskJob: output of spec-compiler.ts, input to orchestrator.ts
 export interface SubtaskJob {
   id: string;               // slugified subtask title e.g. "design-database-schema"
@@ -27,8 +29,6 @@ export interface OrchestratorLevelResult {
 
 // OrchestratorLevelRateLimitError: thrown by executeOrchestratorLevel() when any worker
 // hits a 429. Carries partial results from workers that completed before the 429.
-import { RateLimitError } from '../core/rate-limit-error.js';
-
 export class OrchestratorLevelRateLimitError extends RateLimitError {
   readonly partialResults: OrchestratorLevelResult[];
   constructor(retryAfterOrKind: number | 'blocked' | undefined, partialResults: OrchestratorLevelResult[]) {
@@ -60,6 +60,6 @@ export function isDeltaResponse(x: unknown): x is DeltaResponse {
     ['architect', 'implementer', 'tester', 'reviewer'].includes((j as SubtaskJob).role) &&
     typeof (j as SubtaskJob).prompt === 'string' &&
     Array.isArray((j as SubtaskJob).dependsOn) &&
-    (j as SubtaskJob).dependsOn.every((dep: unknown) => typeof dep === 'string')
+    (j as SubtaskJob).dependsOn.every((dep: unknown) => typeof dep === 'string' && SAFE_JOB_ID_RE.test(dep))
   );
 }
