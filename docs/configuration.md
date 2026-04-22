@@ -104,6 +104,14 @@ maxTurns: 50
 # Unset disables auto-compaction (default). Must be a positive integer when set.
 # auto_compact_tokens: 80000
 
+# Maximum auto-compact cycles per session
+# Limits how many times auto-compaction can trigger in one session.
+# Prevents cascading compaction: if the summary itself pushes context back over the
+# threshold, the cycle would repeat indefinitely — degrading summary fidelity each pass.
+# Manual ':compact' in the REPL does not count toward this cap.
+# Default: unset (falls back to 3 in the auto-compaction logic). Must be >= 1 when set.
+# max_auto_compact_count: 3
+
 # Rate-limit auto-backoff threshold (openai-api and anthropic providers)
 # When a 429 response includes a Retry-After header, Phase2S sleeps and retries
 # automatically if the wait is at or below this threshold (in seconds). Retries
@@ -419,6 +427,7 @@ Commands:
     --dashboard            Show live tmux dashboard during parallel execution
     --clean                Remove stale worktrees before starting
     --judge                Run spec eval judge after completion; emits eval_judged to run log
+    --reasoning-effort <level>  Model tier for unlabeled subtasks: high (→ smart_model), low (→ fast_model), default (no override)
   judge <spec.md>          Score a spec's acceptance criteria against a git diff (0-10)
     --diff <file>          Path to a diff file (alternative: pipe diff via stdin)
   skills [query]           List available skills (optional search query)

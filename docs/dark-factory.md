@@ -543,7 +543,7 @@ This may take a while and consume significant ChatGPT usage.
 
 **Assign roles for multi-agent orchestration.** Add `**Role:** architect`, `**Role:** implementer`, `**Role:** tester`, or `**Role:** reviewer` to a sub-task body. Phase2S auto-detects role annotations and activates the multi-agent orchestrator, which routes each subtask to a role-appropriate worker with a tailored system prompt. Architect workers emit structured context that gets injected into downstream workers' prompts automatically. Use `--orchestrator` to force orchestrator mode on any spec even without annotations (all subtasks default to `implementer`).
 
-**Route subtasks to different models with `model:`.** Add `model: fast`, `model: smart`, or a literal model name (e.g., `model: gpt-4o`) to a sub-task body. `fast` and `smart` resolve to the configured tier models from `.phase2s.yaml`. Useful for parallel specs where some subtasks need deep reasoning (architecture, review) and others just need speed (boilerplate, docs). Falls back to the outer `--model` flag if no annotation is present.
+**Route subtasks to different models with `model:`.** Add `model: fast`, `model: smart`, or a literal model name (e.g., `model: gpt-4o`) to a sub-task body. `fast` and `smart` resolve to the configured tier models from `.phase2s.yaml`. Useful for parallel specs where some subtasks need deep reasoning (architecture, review) and others just need speed (boilerplate, docs). Falls back to the outer `--model` flag if no annotation is present. Use `--reasoning-effort high|low` on the CLI to set the default tier for all unlabeled subtasks without editing the spec.
 
 **Eval command should be deterministic.** `npm test` is good. A test that flakes randomly will cause false failures and unnecessary retries. Fix flaky tests before running `phase2s goal`.
 
@@ -572,6 +572,11 @@ phase2s goal my-spec.md --parallel --workers 5
 
 # Live tmux dashboard (requires tmux)
 phase2s goal my-spec.md --parallel --dashboard
+
+# Override model tier for all unlabeled subtasks
+phase2s goal my-spec.md --reasoning-effort high    # → smart_model
+phase2s goal my-spec.md --reasoning-effort low     # → fast_model
+phase2s goal my-spec.md --reasoning-effort default # no override
 ```
 
 How it works:
