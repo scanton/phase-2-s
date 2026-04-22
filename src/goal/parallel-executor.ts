@@ -670,7 +670,8 @@ export async function executeOrchestratorLevel(
   const [config, learningsList] = await Promise.all([loadConfig(), loadLearnings(cwd)]);
   const learnings = formatLearningsForPrompt(learningsList);
 
-  const settled = await Promise.allSettled(jobs.map(async (job, batchIdx): Promise<OrchestratorLevelResult> => {
+  const controller = new AbortController();
+  const jobPromises = jobs.map(async (job, batchIdx): Promise<OrchestratorLevelResult> => {
     const slug = makeWorktreeSlug(`orch${Date.now().toString(36).slice(-4)}`, batchIdx);
 
     const wt = createWorktree(cwd, slug);
@@ -703,7 +704,7 @@ export async function executeOrchestratorLevel(
       });
 
       await Promise.race([
-        agent.run(job.prompt, { modelOverride, onDelta: (chunk) => { outputChunks.push(chunk); } }),
+        agent.run(job.prompt, { modelOverride, onDelta: (chunk) => { outputChunks.push(chunk); }, signal: controller.signal }),
         timeoutPromise,
       ]);
     } catch (err) {
@@ -740,7 +741,13 @@ export async function executeOrchestratorLevel(
     }
 
     return { subtaskId: job.id, status: 'completed', stdout };
-  }));
+  });
+  const settled = await Promise.allSettled(
+    jobPromises.map(p => p.catch((err: unknown) => {
+      if (err instanceof RateLimitError) controller.abort();
+      throw err;
+    }))
+  );
 
   // Collect partial results from fulfilled workers; detect any 429 rejection
   const results: OrchestratorLevelResult[] = [];
