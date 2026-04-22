@@ -495,6 +495,51 @@ echo done
 });
 
 // ---------------------------------------------------------------------------
+// runGoal — reasoningEffort option (Sprint 61)
+// ---------------------------------------------------------------------------
+
+describe("runGoal — reasoningEffort option is accepted without error", () => {
+  let tmpDir: string;
+  let specPath: string;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `phase2s-goal-effort-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+    specPath = join(tmpDir, "spec.md");
+    writeFileSync(specPath, MINIMAL_SPEC_MD, "utf8");
+    mockAgentShouldReject.error = null;
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('"high" — dryRun returns success without throwing', async () => {
+    const result = await runGoal(specPath, { dryRun: true, reasoningEffort: "high" });
+    expect(result.dryRun).toBe(true);
+    expect(result.success).toBe(true);
+  });
+
+  it('"low" — dryRun returns success without throwing', async () => {
+    const result = await runGoal(specPath, { dryRun: true, reasoningEffort: "low" });
+    expect(result.dryRun).toBe(true);
+    expect(result.success).toBe(true);
+  });
+
+  it('"default" — dryRun returns success without throwing', async () => {
+    const result = await runGoal(specPath, { dryRun: true, reasoningEffort: "default" });
+    expect(result.dryRun).toBe(true);
+    expect(result.success).toBe(true);
+  });
+
+  it("undefined — dryRun returns success (no effort override)", async () => {
+    const result = await runGoal(specPath, { dryRun: true });
+    expect(result.dryRun).toBe(true);
+    expect(result.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // runGoal — RateLimitError → exit 2 (Sprint 58)
 // ---------------------------------------------------------------------------
 

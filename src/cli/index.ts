@@ -197,6 +197,11 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         }
         return;
       }
+      const validEfforts = ["high", "low", "default"] as const;
+      if (cmdOpts.reasoningEffort !== undefined && !(validEfforts as readonly string[]).includes(cmdOpts.reasoningEffort)) {
+        console.error(`Invalid --reasoning-effort value: "${cmdOpts.reasoningEffort}". Must be high, low, or default.`);
+        process.exit(1);
+      }
       await oneShotMode(config, prompt, cmdOpts.reasoningEffort as "high" | "low" | "default" | undefined);
     });
 
@@ -284,6 +289,11 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--reasoning-effort <level>", "Override reasoning effort for unlabeled subtasks (high | low | default)")
     .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean; parallel?: boolean; sequential?: boolean; orchestrator?: boolean; workers?: string; dashboard?: boolean; clean?: boolean; judge?: boolean; reasoningEffort?: string }) => {
       const { runGoal } = await import("./goal.js");
+      const validEfforts = ["high", "low", "default"] as const;
+      if (cmdOpts.reasoningEffort !== undefined && !(validEfforts as readonly string[]).includes(cmdOpts.reasoningEffort)) {
+        console.error(`Invalid --reasoning-effort value: "${cmdOpts.reasoningEffort}". Must be high, low, or default.`);
+        process.exit(1);
+      }
       try {
         const result = await runGoal(specFile, {
           maxAttempts: cmdOpts.maxAttempts,
@@ -988,7 +998,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
    * On failure: prints a warning, leaves session unchanged.
    */
   // Thin wrapper: wires closure-captured state into the testable core function.
-  const performCompaction = async (): Promise<void> => {
+  // Returns true when compaction actually ran (false = returned early due to backup
+  // failure or empty summary, without touching the conversation).
+  const performCompaction = async (): Promise<boolean> => {
+    let didCompact = false;
     await runCompaction({
       provider: agent.provider,
       messages: agent.getConversation().getMessages(),
@@ -998,9 +1011,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       setConversation: (conv) => agent.setConversation(conv),
       makeConversation: (msgs) => Conversation.fromMessages(msgs),
       onMetaUpdate: (newMeta) => { sessionMeta = newMeta; },
-      onJustCompacted: () => { justCompacted = true; },
+      onJustCompacted: () => { justCompacted = true; didCompact = true; },
       saveSessionFn: saveSessionV2,
     });
+    return didCompact;
   };
 
   // Guards against an auto-compact loop: if the LLM produces a summary that
@@ -1026,8 +1040,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     const maxAutoCompact = config.max_auto_compact_count ?? 3;
     if (shouldCompact(tokens, config.auto_compact_tokens, sessionMeta.auto_compact_count, maxAutoCompact)) {
       try {
-        await performCompaction();
-        sessionMeta.auto_compact_count = (sessionMeta.auto_compact_count ?? 0) + 1;
+        const didCompact = await performCompaction();
+        if (didCompact) {
+          sessionMeta.auto_compact_count = (sessionMeta.auto_compact_count ?? 0) + 1;
+        }
       } catch (err) {
         if (err instanceof RateLimitError) {
           await handleRateLimitExit(err);
