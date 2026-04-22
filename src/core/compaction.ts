@@ -58,11 +58,19 @@ Be thorough — this summary will replace the full conversation history.`;
  * Determine whether auto-compaction should fire given the current token count
  * and the configured threshold.
  *
- * @param tokens     Estimated token count (from Conversation.estimateTokens()).
- * @param threshold  auto_compact_tokens config value (0 / undefined = disabled).
+ * @param tokens               Estimated token count (from Conversation.estimateTokens()).
+ * @param threshold            auto_compact_tokens config value (0 / undefined = disabled).
+ * @param compactCount         Number of auto-compactions already performed this session.
+ * @param maxAutoCompactCount  Cap on auto-compactions (undefined or 0 = unlimited).
  */
-export function shouldCompact(tokens: number, threshold: number | undefined): boolean {
+export function shouldCompact(
+  tokens: number,
+  threshold: number | undefined,
+  compactCount?: number,
+  maxAutoCompactCount?: number,
+): boolean {
   if (!threshold) return false; // 0 and undefined both mean "disabled"
+  if (maxAutoCompactCount && (compactCount ?? 0) >= maxAutoCompactCount) return false;
   return tokens >= threshold;
 }
 

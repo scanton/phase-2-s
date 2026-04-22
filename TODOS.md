@@ -6,6 +6,12 @@
 
 ---
 
+## Backlog — Post-Sprint 61 /plan-eng-review findings (2026-04-21)
+
+- [ ] **AbortController for `executeOrchestratorLevel`** — Sprint 61 adds per-level AbortController to `executeLevel` (parallel executor path). `executeOrchestratorLevel` (role-annotated spec path) runs in-process Agent instances with no signal threading — sibling orchestrator jobs run to completion on 429. Fix: thread AbortController into `executeOrchestratorLevel`, same pattern as `executeLevel`. **Depends on:** Sprint 61 AbortController work + orchestrator rate-limit checkpoint fix (see below). Ship after orchestrator checkpoint is solved, not before.
+
+---
+
 ## Backlog — Post-Sprint 58 adversarial findings (resolved in Sprint 59)
 
 - [x] **Parallel executor: `Promise.all` abandons in-progress workers on first 429** — Fixed in Sprint 59 (v1.33.0): switched to `Promise.allSettled`, collect fulfilled results before re-throwing the first `RateLimitError`. Sibling workers' completed work is no longer lost.
@@ -16,7 +22,7 @@
 
 - [ ] **Orchestrator path does not checkpoint on rate limit** — When `chatOnce()` (used in the replan LLM call) hits a rate limit, `RateLimitError` propagates to `goal.ts` which exits 2. But `executeOrchestratorLevel` wraps all worker errors as `{status: "failed"}`, so `RateLimitError` never reaches the outer caller. Additionally, the orchestrator resume path doesn't consult `state.subTaskResults`, and completed worktrees are deleted after merge — there is nothing to resume to. Fix requires a new state schema (e.g. `orchestrator_paused` field, preserved worktrees, new resume path in `goal.ts`). **Deferred to post-Sprint 59 — needs its own design sprint.**
 
-- [ ] **A1 sibling cancellation (AbortController fast-pause)** — The `Promise.allSettled` fix preserves completed siblings' work, but they are not *cancelled* when one 429s — they run to completion (potentially doing work that exceeds the budget). Fix: thread an `AbortController` per level; fire `abort()` when the first `RateLimitError` is detected. All sibling workers' provider streams would terminate immediately, reducing wasted API calls. The `Promise.allSettled` fix is a prerequisite (otherwise early termination loses results). **Deferred to post-Sprint 59.**
+- [ ] **A1 sibling cancellation (AbortController fast-pause)** — The `Promise.allSettled` fix preserves completed siblings' work, but they are not *cancelled* when one 429s — they run to completion (potentially doing work that exceeds the budget). Fix: thread an `AbortController` per level; fire `abort()` when the first `RateLimitError` is detected. All sibling workers' provider streams would terminate immediately, reducing wasted API calls. The `Promise.allSettled` fix is a prerequisite (otherwise early termination loses results). **In progress: Sprint 61 (v1.35.0).** Note: abort is best-effort via `onRateLimitDetected` callback; agent.run() returns normally on abort (does not throw AbortError) — aborted sibling detection requires explicit `signal.aborted` check after agent run.
 
 ---
 
@@ -34,7 +40,7 @@
 
 - [x] **AGENTS.md memoization** — `loadAgentsMd(cwd)` performs two disk reads on every `Agent` construction. In MCP server mode (one Agent per request), this creates repeated I/O. Cache the result per `cwd` in a process-level Map so repeated calls in the same process are free. **Completed: v1.30.0 (2026-04-18)** — implemented as load-once at `runMCPServer()` startup (Approach A: startup variable, not module-level cache), which is zero reads per request in the long-lived MCP process. One-shot mode loads once per invocation (correct for a per-process call).
 
-- [ ] **Cascading auto-compaction** — `justCompacted` flag only skips one turn. If the LLM generates a verbose summary (>50% of original size), the next user turn can push context back over threshold and trigger compaction again. Each cascade degrades summary fidelity. Consider: (a) compact_count cap, (b) hard size limit on summary, or (c) exponential threshold growth post-compact. **INVESTIGATE post-Sprint 57.**
+- [ ] **Cascading auto-compaction** — `justCompacted` flag only skips one turn. If the LLM generates a verbose summary (>50% of original size), the next user turn can push context back over threshold and trigger compaction again. Each cascade degrades summary fidelity. **In progress: Sprint 61 (v1.35.0).** Fix: `auto_compact_count` in sessionMeta (auto-only counter, separate from `compact_count`), `max_auto_compact_count` config field (default fallback: 3), `shouldCompact()` cap. Hardcoded fallback of 3 in `maybeAutoCompact()` so existing installs are protected without config changes.
 
 - [x] **Compaction error paths not tested** — Fixed in Sprint 59 (v1.33.0): `performCompaction` extracted from `index.ts` to `src/core/compaction.ts` with injectable deps (`writeFileFn`, `buildCompactionSummaryFn`, `saveSessionFn`). 5 new tests cover all error branches: backup fail, empty summary, saveSession fail, rate-limit propagation, and successful path. **Completed: v1.33.0 (2026-04-20)**
 

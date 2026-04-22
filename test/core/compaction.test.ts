@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildCompactionSummary,
   performCompaction,
+  shouldCompact,
   COMPACT_SUMMARY_PROMPT,
   MAX_COMPACTION_SUMMARY_BYTES,
   getCompactBackupPath,
@@ -243,6 +244,60 @@ describe("buildCompactionSummary", () => {
     ]);
 
     await expect(buildCompactionSummary(provider, SAMPLE_MESSAGES)).rejects.toBeInstanceOf(RateLimitError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldCompact — threshold + cascade cap
+// ---------------------------------------------------------------------------
+
+describe("shouldCompact", () => {
+  it("threshold = 0 → false (disabled)", () => {
+    expect(shouldCompact(100_000, 0)).toBe(false);
+  });
+
+  it("threshold = undefined → false (disabled)", () => {
+    expect(shouldCompact(100_000, undefined)).toBe(false);
+  });
+
+  it("tokens below threshold → false", () => {
+    expect(shouldCompact(3000, 4000)).toBe(false);
+  });
+
+  it("tokens at threshold → true (no cap params)", () => {
+    expect(shouldCompact(4000, 4000)).toBe(true);
+  });
+
+  it("tokens above threshold → true (no cap params)", () => {
+    expect(shouldCompact(5000, 4000)).toBe(true);
+  });
+
+  it("cap active: compactCount >= maxAutoCompactCount → false", () => {
+    expect(shouldCompact(5000, 4000, 3, 3)).toBe(false);
+  });
+
+  it("cap active: compactCount > maxAutoCompactCount → false", () => {
+    expect(shouldCompact(5000, 4000, 5, 3)).toBe(false);
+  });
+
+  it("cap not yet reached: compactCount < maxAutoCompactCount → true", () => {
+    expect(shouldCompact(5000, 4000, 2, 3)).toBe(true);
+  });
+
+  it("maxAutoCompactCount = undefined → cap not applied → true", () => {
+    expect(shouldCompact(5000, 4000, 99, undefined)).toBe(true);
+  });
+
+  it("no cap params → backward-compat → true", () => {
+    expect(shouldCompact(5000, 4000)).toBe(true);
+  });
+
+  it("compactCount = 0, maxAutoCompactCount = 1 → true (0 < 1)", () => {
+    expect(shouldCompact(5000, 4000, 0, 1)).toBe(true);
+  });
+
+  it("compactCount = undefined treated as 0 → true when cap not reached", () => {
+    expect(shouldCompact(5000, 4000, undefined, 3)).toBe(true);
   });
 });
 

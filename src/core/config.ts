@@ -93,6 +93,15 @@ const configSchema = z.object({
   auto_compact_tokens: z.number().int().min(1).optional(),
 
   /**
+   * Maximum number of automatic context compactions per session.
+   * Prevents cascading auto-compaction when repeated LLM responses cause context
+   * to grow back over threshold after each compaction.
+   * undefined = unlimited (opt-in, no protection). Must be a positive integer (>= 1).
+   * Note: maybeAutoCompact() applies a hardcoded fallback of 3 when this is undefined.
+   */
+  max_auto_compact_count: z.number().int().min(1).optional(),
+
+  /**
    * Maximum Retry-After delay (in seconds) for automatic rate-limit backoff.
    * When a provider returns HTTP 429 with a Retry-After header:
    *   - If retryAfter <= this threshold AND fewer than MAX_RATE_LIMIT_RETRIES attempts: sleep and retry transparently.

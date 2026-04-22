@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.35.0 — 2026-04-21
+
+Sprint 61 — Resilience Closure. Three items deferred from Sprint 58-59 rate-limit hardening, all with prerequisites shipped: AbortController sibling cancellation, cascading auto-compaction cap, and `--reasoning-effort` flag for `phase2s goal` and `phase2s run`.
+
+### Added
+
+- **AbortController sibling cancellation** — When one parallel worker hits a 429, a per-batch `AbortController` fires immediately (via `onRateLimitDetected` callback inside `executeWorker`) to terminate sibling HTTP streams. Completed sibling results are preserved via `Promise.allSettled`. Aborted workers return `{ status: "failed" }`, not a `RateLimitError`, so the retry loop counts them correctly.
+
+- **Cascading auto-compaction cap** — New `auto_compact_count` field in `SessionMeta` tracks auto-compactions separately from manual `:compact` calls. New `max_auto_compact_count` config field (optional, `min: 1`); `maybeAutoCompact()` applies a hardcoded fallback of `3` when the field is absent, protecting existing installs. `shouldCompact()` signature updated to accept `compactCount` and `maxAutoCompactCount` parameters.
+
+- **`--reasoning-effort` flag** — `phase2s goal --reasoning-effort high|low|default <spec>` overrides the model for all unlabeled subtasks (`high` → `config.smart_model`, `low` → `config.fast_model`, `default` → no change). Threads through both parallel and orchestrator execution paths. `executeOrchestratorLevel` accepts an optional `modelOverride` parameter. Also available on `phase2s run --reasoning-effort <level>` as a fallback when skill routing doesn't provide a model override.
+
+### Changed
+
+- **`shouldCompact()`** — New optional `compactCount` and `maxAutoCompactCount` parameters. Backward-compatible: calling without them behaves identically to v1.34.0.
+- **`executeOrchestratorLevel`** — New optional `modelOverride` parameter threads `effectiveSatoriModel` into orchestrator workers.
+
 ## v1.34.0 — 2026-04-20
 
 Sprint 60 — Skills Quality Audit. Six D-rated built-in skills rewritten to B+ standard: `review`, `ship`, `docs`, `investigate`, `tdd`, and `skill`. All six now have structured verify steps and save artifacts to `.phase2s/` with datetime-stamped filenames. The `skill` meta-skill now generates structural `## Output`, `## Verify`, and `## Save` sections so every new skill starts at B-quality minimum. Separately, 14 parameterized skills gain typed `inputs:` frontmatter with named MCP parameters and `{{param}}` body substitution — `adversarial`, `audit`, `autoplan`, `checkpoint`, `consensus-plan`, `debug`, `deep-specify`, `explain`, `freeze`, `land-and-deploy`, `qa`, `remember`, `satori`, and `slop-clean`.

@@ -239,24 +239,27 @@ async function executeLevel(
   const levelContext = level.level > 0 ? buildLevelContext(cwd, baseCommit) : "";
 
   // Execute workers in batches of maxWorkers.
-  // Use Promise.allSettled so a rate-limited worker does not cancel its siblings mid-flight.
-  // Fulfilled WorkerResults are collected and merged; the first RateLimitError is re-thrown
-  // after merge so goal.ts can checkpoint and exit 2.
+  // AbortController per batch: when one worker hits a 429, onRateLimitDetected fires
+  // abort() immediately (while siblings are still in-flight), terminating their streams.
+  // Promise.allSettled collects all settled results so completed sibling work is preserved.
+  // The first RateLimitError is re-thrown after merge so goal.ts can checkpoint and exit 2.
   //
   // Note: executeWorker() only throws RateLimitError — all other failures are returned as
   // WorkerResult { status: "failed" } in the fulfilled results. The rejected branch below
   // is a safety net in case that contract changes.
-  // result is omitted; any other callers handle the gap in workerResults).
   const workerResults: WorkerResult[] = [];
   let batchRateLimitErr: RateLimitError | undefined;
   for (let batch = 0; batch < subtasks.length; batch += maxWorkers) {
     const batchSubtasks = subtasks.slice(batch, batch + maxWorkers);
+    const controller = new AbortController();
     const settled = await Promise.allSettled(
       batchSubtasks.map(({ index, subtask }, batchIdx) =>
         executeWorker(index, subtask, level.level, {
           ...options,
           levelContext,
           workerIndexInBatch: batch + batchIdx,
+          signal: controller.signal,
+          onRateLimitDetected: () => controller.abort(),
         }),
       ),
     );
@@ -374,6 +377,10 @@ async function executeLevel(
 interface WorkerOptions extends LevelOptions {
   levelContext: string;
   workerIndexInBatch: number;
+  /** AbortSignal from the per-batch AbortController. Set when a sibling hits a rate limit. */
+  signal?: AbortSignal;
+  /** Called inside executeWorker before throwing RateLimitError, while siblings are still in-flight. */
+  onRateLimitDetected?: () => void;
 }
 
 async function executeWorker(
@@ -498,6 +505,7 @@ async function executeWorker(
       modelOverride: workerModel,
       maxRetries: satoriRetries,
       verifyCommand: spec.evalCommand,
+      signal: options.signal,
       onDelta: (chunk) => {
         outputChunks.push(chunk);
       },
@@ -516,9 +524,9 @@ async function executeWorker(
 
   if (workerError) {
     // Rate limit errors must propagate — they are not per-worker failures.
-    // Re-throwing here causes Promise.all to reject, which executeLevel catches
-    // and re-throws to goal.ts for checkpointing and exit 2.
+    // Fire the abort callback first so siblings are cancelled while still in-flight.
     if (workerError instanceof RateLimitError) {
+      options.onRateLimitDetected?.();
       throw workerError;
     }
     console.log(chalk.red(`  [Worker ${index}] Failed (${durationStr}): ${subtask.name}`));
@@ -530,6 +538,18 @@ async function executeWorker(
       output: output + `\n\nError: ${workerError instanceof Error ? workerError.message : String(workerError)}`,
       worktreeBranch: wt.branchName,
       error: workerError instanceof Error ? workerError.message : String(workerError),
+    };
+  }
+
+  // agent.ts handles AbortSignal with a clean break (no throw). Check after the run
+  // so aborted workers are returned as failed, not as successful no-ops.
+  if (options.signal?.aborted) {
+    return {
+      index,
+      subtaskName: subtask.name,
+      status: "failed",
+      durationMs,
+      output: "(aborted — sibling hit rate limit)",
     };
   }
 
@@ -641,6 +661,7 @@ export function buildWorkerPrompt(subtask: SubTask, spec: Spec, levelContext: st
  */
 export async function executeOrchestratorLevel(
   jobs: SubtaskJob[],
+  modelOverride?: string,
 ): Promise<OrchestratorLevelResult[]> {
   const cwd = process.cwd();
 
@@ -681,7 +702,7 @@ export async function executeOrchestratorLevel(
       });
 
       await Promise.race([
-        agent.run(job.prompt, { onDelta: (chunk) => { outputChunks.push(chunk); } }),
+        agent.run(job.prompt, { modelOverride, onDelta: (chunk) => { outputChunks.push(chunk); } }),
         timeoutPromise,
       ]);
     } catch (err) {
