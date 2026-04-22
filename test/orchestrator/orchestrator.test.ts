@@ -893,3 +893,100 @@ describe('runOrchestrator — checkpoint + resume (Sprint 62)', () => {
     expect(calls[1][0].currentLevel).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// executeOrchestratorLevel AbortController sibling cancellation (Sprint 63)
+// Tests simulate the .catch() wrapper pattern directly, without spinning up
+// real worktrees or agents. Same isolation strategy as parallel-executor.test.ts.
+// ---------------------------------------------------------------------------
+
+describe("executeOrchestratorLevel — AbortController sibling cancellation", () => {
+  async function simulateOrchestratorLevel(
+    jobFns: Array<(signal: AbortSignal) => Promise<OrchestratorLevelResult>>
+  ): Promise<{
+    results: OrchestratorLevelResult[];
+    rateLimitErr: RateLimitError | undefined;
+  }> {
+    const controller = new AbortController();
+    const jobPromises = jobFns.map(fn => fn(controller.signal));
+    const settled = await Promise.allSettled(
+      jobPromises.map(p => p.catch((err: unknown) => {
+        if (err instanceof RateLimitError) controller.abort();
+        throw err;
+      }))
+    );
+    const results: OrchestratorLevelResult[] = [];
+    let rateLimitErr: RateLimitError | undefined;
+    for (const outcome of settled) {
+      if (outcome.status === 'fulfilled') {
+        results.push(outcome.value);
+      } else if (outcome.reason instanceof RateLimitError && !rateLimitErr) {
+        rateLimitErr = outcome.reason;
+      }
+    }
+    return { results, rateLimitErr };
+  }
+
+  it("abort fires when a job throws RateLimitError", async () => {
+    const controller = new AbortController();
+    const rlErr = new RateLimitError(30, "openai-api");
+    let abortFired = false;
+
+    const p = Promise.reject(rlErr);
+    const wrapped = p.catch((err: unknown) => {
+      if (err instanceof RateLimitError) {
+        controller.abort();
+        abortFired = true;
+      }
+      throw err;
+    });
+
+    await Promise.allSettled([wrapped]);
+    expect(abortFired).toBe(true);
+    expect(controller.signal.aborted).toBe(true);
+  });
+
+  it("sibling receives aborted signal after first 429", async () => {
+    const rlErr = new RateLimitError(30, "openai-api");
+    let siblingSignal: AbortSignal | undefined;
+
+    const { rateLimitErr } = await simulateOrchestratorLevel([
+      async (_signal) => { throw rlErr; },
+      async (signal) => {
+        siblingSignal = signal;
+        return { subtaskId: 'job-b', status: 'completed' as const, stdout: '' };
+      },
+    ]);
+
+    expect(siblingSignal?.aborted).toBe(true);
+    expect(rateLimitErr).toBe(rlErr);
+  });
+
+  it("completed job results are preserved when a sibling 429s", async () => {
+    const rlErr = new RateLimitError(30, "openai-api");
+
+    const { results, rateLimitErr } = await simulateOrchestratorLevel([
+      async (_signal) => ({ subtaskId: 'job-a', status: 'completed' as const, stdout: 'ok' }),
+      async (_signal) => { throw rlErr; },
+    ]);
+
+    expect(results).toHaveLength(1);
+    expect(results[0].subtaskId).toBe('job-a');
+    expect(results[0].status).toBe('completed');
+    expect(rateLimitErr).toBe(rlErr);
+  });
+
+  it("non-RateLimitError does not fire abort", async () => {
+    const controller = new AbortController();
+    const normalErr = new Error("something broke");
+
+    const p = Promise.reject(normalErr);
+    const wrapped = p.catch((err: unknown) => {
+      if (err instanceof RateLimitError) controller.abort();
+      throw err;
+    });
+
+    await Promise.allSettled([wrapped]);
+    expect(controller.signal.aborted).toBe(false);
+  });
+});
