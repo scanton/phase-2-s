@@ -11,7 +11,8 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { SubtaskJob, OrchestratorLevelResult } from './types.js';
-import { isDeltaResponse } from './types.js';
+import { isDeltaResponse, OrchestratorLevelRateLimitError, SAFE_JOB_ID_RE } from './types.js';
+import type { OrchestratorCheckpoint } from '../core/state.js';
 import { ROLE_PROMPTS, ARCHITECT_CONTEXT_JSON_SENTINEL } from './role-prompts.js';
 import { parseArchitectContext, type ArchitectContext } from './architect-context.js';
 import { buildLevels } from './spec-compiler.js';
@@ -51,6 +52,10 @@ export interface OrchestratorOptions {
   // unchanged, log orchestrator_replan_failed).
   provider?: Provider;
   config?: Config;
+  /** Checkpoint to resume from (present when goal --resume detects prior 429). */
+  checkpoint?: OrchestratorCheckpoint;
+  /** Called after every level and every replan splice so goal.ts can persist state. */
+  persistCheckpoint?: (checkpoint: OrchestratorCheckpoint) => void;
 }
 
 export interface OrchestratorResult {
@@ -315,6 +320,28 @@ export function computeSkippedIds(failedId: string, allJobs: SubtaskJob[]): stri
 }
 
 // ---------------------------------------------------------------------------
+// Architect context helper
+// ---------------------------------------------------------------------------
+
+/** Extract sentinel content from architect stdout and write to a temp file. Returns the path, or undefined on miss/error. */
+function writeArchitectContextFile(stdout: string, jobId: string, contextDir: string): string | undefined {
+  const sentinelIdx = stdout.indexOf(ARCHITECT_CONTEXT_JSON_SENTINEL);
+  if (sentinelIdx === -1) return undefined;
+  const contentStart = sentinelIdx + ARCHITECT_CONTEXT_JSON_SENTINEL.length;
+  const endIdx = stdout.indexOf('```', contentStart);
+  const raw = endIdx !== -1
+    ? stdout.slice(contentStart, endIdx).trim()
+    : stdout.slice(contentStart).trim();
+  const ctxPath = join(contextDir, `context-${jobId}.md`);
+  try {
+    writeFileSync(ctxPath, truncateToBytes(raw, CONTEXT_MAX_BYTES), 'utf8');
+    return ctxPath;
+  } catch {
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // runOrchestrator
 // ---------------------------------------------------------------------------
 
@@ -330,12 +357,19 @@ export async function runOrchestrator(
   const { specHash, logger, executeLevelFn } = options;
   const start = Date.now();
 
-  // Job state map
+  // Job state map — init from checkpoint if resuming, otherwise from allJobs
   const jobStatus = new Map<string, JobStatus>();
-  for (const job of allJobs) jobStatus.set(job.id, 'pending');
-
   // O(1) job lookup by ID
-  const jobById = new Map<string, SubtaskJob>(allJobs.map(j => [j.id, j]));
+  const jobById = new Map<string, SubtaskJob>();
+
+  // Suspect job IDs accumulated across all re-plan calls
+  const suspectJobIds = new Set<string>();
+
+  // Accumulator of completed SubtaskJobs (append-only, never mutated after add)
+  const completedJobs: SubtaskJob[] = [];
+
+  // stdout per completed job — needed to rehydrate context on resume
+  const completedStdout = new Map<string, string>();
 
   // Context files produced by completed architect jobs: id -> absolute path
   const contextFiles = new Map<string, string>();
@@ -343,16 +377,54 @@ export async function runOrchestrator(
   // Parsed ArchitectContext objects for re-plan use (separate from file-based injection)
   const architectContexts = new Map<string, ArchitectContext>();
 
-  // Accumulator of completed SubtaskJobs (append-only, never mutated after add)
-  const completedJobs: SubtaskJob[] = [];
-
-  // Suspect job IDs accumulated across all re-plan calls
-  const suspectJobIds = new Set<string>();
-
   const contextDir = mkdtempSync(join(tmpdir(), 'phase2s-context-'));
+
+  if (options.checkpoint) {
+    const cp = options.checkpoint;
+    // Restore completed jobs from checkpoint
+    for (const { job, stdout } of cp.completedJobs) {
+      if (!SAFE_JOB_ID_RE.test(job.id)) continue; // path traversal guard
+      jobStatus.set(job.id, 'completed');
+      jobById.set(job.id, job);
+      completedJobs.push(job);
+      completedStdout.set(job.id, stdout);
+      // Rehydrate context files for architect jobs (sentinel extraction, architect-only)
+      if (job.role === 'architect' && stdout) {
+        const ctx = parseArchitectContext(stdout);
+        if (ctx) architectContexts.set(job.id, ctx);
+        const ctxPath = writeArchitectContextFile(stdout, job.id, contextDir);
+        if (ctxPath) contextFiles.set(job.id, ctxPath);
+      }
+    }
+    for (const id of cp.failedJobIds) jobStatus.set(id, 'failed');
+    for (const id of cp.skippedJobIds) jobStatus.set(id, 'skipped');
+    for (const id of cp.suspectJobIds) suspectJobIds.add(id);
+    // Register pending jobs (from checkpoint.pendingJobs, which equals allJobs on resume)
+    for (const job of allJobs) {
+      jobById.set(job.id, job);
+      if (!jobStatus.has(job.id)) jobStatus.set(job.id, 'pending');
+    }
+  } else {
+    for (const job of allJobs) {
+      jobStatus.set(job.id, 'pending');
+      jobById.set(job.id, job);
+    }
+  }
 
   // Mutable levels copy for mid-loop splice after re-leveling
   const mutableLevels = [...levels];
+
+  /** Build a snapshot checkpoint from current in-memory state. */
+  function buildCheckpoint(currentLevel: number): OrchestratorCheckpoint {
+    return {
+      completedJobs: completedJobs.map(j => ({ job: j, stdout: completedStdout.get(j.id) ?? '' })),
+      pendingJobs: [...jobById.values()].filter(j => jobStatus.get(j.id) === 'pending'),
+      failedJobIds: [...jobStatus.entries()].filter(([, s]) => s === 'failed').map(([id]) => id),
+      skippedJobIds: [...jobStatus.entries()].filter(([, s]) => s === 'skipped').map(([id]) => id),
+      suspectJobIds: [...suspectJobIds],
+      currentLevel,
+    };
+  }
 
   logger.log({
     event: 'orchestrator_started',
@@ -422,8 +494,39 @@ export async function runOrchestrator(
         jobStatus.set(job.id, 'running');
       }
 
-      // Execute the level
-      const results = await executeLevelFn(activeJobs);
+      // Execute the level — catch 429 mid-level to checkpoint partial results
+      let results: OrchestratorLevelResult[];
+      try {
+        results = await executeLevelFn(activeJobs);
+      } catch (levelErr) {
+        if (levelErr instanceof OrchestratorLevelRateLimitError) {
+          // Process partial results from workers that completed before the 429
+          for (const r of levelErr.partialResults) {
+            if (r.status === 'completed') {
+              jobStatus.set(r.subtaskId, 'completed');
+              const job = jobById.get(r.subtaskId);
+              if (job && SAFE_JOB_ID_RE.test(job.id)) {
+                completedJobs.push(job);
+                completedStdout.set(job.id, r.stdout ?? '');
+                if (job.role === 'architect' && r.stdout) {
+                  const ctx = parseArchitectContext(r.stdout);
+                  if (ctx) architectContexts.set(job.id, ctx);
+                  const ctxPath = writeArchitectContextFile(r.stdout, job.id, contextDir);
+                  if (ctxPath) contextFiles.set(job.id, ctxPath);
+                }
+              }
+            }
+          }
+          // Set unexecuted active jobs back to pending so they appear in the checkpoint
+          const executedIds = new Set(levelErr.partialResults.map(r => r.subtaskId));
+          for (const j of activeJobs) {
+            if (!executedIds.has(j.id)) jobStatus.set(j.id, 'pending');
+          }
+          options.persistCheckpoint?.(buildCheckpoint(levelIdx));
+          throw levelErr;  // OrchestratorLevelRateLimitError extends RateLimitError
+        }
+        throw levelErr;
+      }
 
       // Post-level: process results
       for (const result of results) {
@@ -433,38 +536,23 @@ export async function runOrchestrator(
           const job = jobById.get(result.subtaskId);
 
           // Add to completedJobs accumulator (Sprint 39)
-          if (job) completedJobs.push(job);
+          if (job) {
+            completedJobs.push(job);
+            completedStdout.set(job.id, result.stdout ?? '');
+          }
 
           // Sentinel extraction (architect only)
           if (job?.role === 'architect' && result.stdout) {
             // Parse typed ArchitectContext for re-plan use (Sprint 39)
             const ctx = parseArchitectContext(result.stdout);
-            if (ctx) {
-              architectContexts.set(result.subtaskId, ctx);
-            }
+            if (ctx) architectContexts.set(result.subtaskId, ctx);
 
-            // Also write context file for downstream worker injection (existing mechanism)
-            const sentinelIdx = result.stdout.indexOf(ARCHITECT_CONTEXT_JSON_SENTINEL);
-            if (sentinelIdx !== -1) {
-              const contentStart = sentinelIdx + ARCHITECT_CONTEXT_JSON_SENTINEL.length;
-              const endIdx = result.stdout.indexOf('```', contentStart);
-              const raw = endIdx !== -1
-                ? result.stdout.slice(contentStart, endIdx).trim()
-                : result.stdout.slice(contentStart).trim();
-
-              const ctxPath = join(contextDir, `context-${job.id}.md`);
-              try {
-                writeFileSync(ctxPath, truncateToBytes(raw, CONTEXT_MAX_BYTES), 'utf8');
-                result.contextFile = ctxPath;
-                contextFiles.set(result.subtaskId, ctxPath);
-              } catch {
-                logger.log({
-                  event: 'orchestrator_context_missing',
-                  specHash,
-                  subtaskId: result.subtaskId,
-                  level: levelIdx,
-                });
-              }
+            if (!SAFE_JOB_ID_RE.test(job.id)) continue;
+            // Write context file for downstream worker injection
+            const ctxPath = writeArchitectContextFile(result.stdout, job.id, contextDir);
+            if (ctxPath) {
+              result.contextFile = ctxPath;
+              contextFiles.set(result.subtaskId, ctxPath);
             } else {
               logger.log({
                 event: 'orchestrator_context_missing',
@@ -554,8 +642,14 @@ export async function runOrchestrator(
               jobStatus.set(j.id, 'skipped');
             }
           }
+
+          // Persist checkpoint after replan splice so pendingJobs reflects post-replan graph
+          options.persistCheckpoint?.(buildCheckpoint(levelIdx));
         }
       }
+
+      // Persist checkpoint after each fully-processed level
+      options.persistCheckpoint?.(buildCheckpoint(levelIdx));
     }
   } finally {
     try {

@@ -653,3 +653,243 @@ describe('runOrchestrator — rate_limited event propagation', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sprint 62 — orchestrator checkpoint + resume
+// ---------------------------------------------------------------------------
+
+describe('runOrchestrator — checkpoint + resume (Sprint 62)', () => {
+  let logger: ReturnType<typeof makeMockLogger>;
+  beforeEach(() => { logger = makeMockLogger(); });
+
+  // Test #2: static DAG 429 → resume skips completed jobs + injects architect context
+  it('resume: skips checkpointed architect job and injects sentinel context for downstream', async () => {
+    const { OrchestratorLevelRateLimitError } = await import('../../src/orchestrator/types.js');
+
+    const architect = makeJob({ id: 'arch', role: 'architect', title: 'Arch', dependsOn: [] });
+    const impl = makeJob({ id: 'impl', role: 'implementer', title: 'Impl', dependsOn: ['arch'] });
+
+    const sentinelStdout = `Some output\n\`\`\`context-json\n{"decisions":[{"component":"A","decision":"use X","rationale":"r"}],"activeFiles":["src/a.ts"],"constraintsForDownstream":["do Y"]}\n\`\`\`\n`;
+
+    // Simulate: arch completed in a prior run; impl hit 429
+    const checkpoint: import('../../src/core/state.js').OrchestratorCheckpoint = {
+      completedJobs: [{ job: architect, stdout: sentinelStdout }],
+      pendingJobs: [impl],
+      failedJobIds: [],
+      skippedJobIds: [],
+      suspectJobIds: [],
+      currentLevel: 1,
+    };
+
+    const capturedPrefixes: string[] = [];
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) => {
+      for (const j of js) capturedPrefixes.push(j.systemPromptPrefix ?? '');
+      return js.map(j => makeSuccessResult(j.id, 'impl done'));
+    });
+
+    const checkpoints: import('../../src/core/state.js').OrchestratorCheckpoint[] = [];
+    const result = await runOrchestrator([[impl]], [architect, impl], {
+      specHash: 'resume1',
+      logger,
+      executeLevelFn,
+      checkpoint,
+      persistCheckpoint: (c) => { checkpoints.push(c); },
+    });
+
+    // arch was NOT re-executed
+    expect(executeLevelFn).toHaveBeenCalledTimes(1);
+    expect(executeLevelFn.mock.calls[0][0].map((j: SubtaskJob) => j.id)).toEqual(['impl']);
+
+    // impl's system prompt prefix contains the architect's context-json content
+    expect(capturedPrefixes[0]).toContain('use X');
+    expect(capturedPrefixes[0]).toContain('src/a.ts');
+
+    // result counts are correct
+    expect(result.totalCompleted).toBe(2);
+    expect(result.totalFailed).toBe(0);
+  });
+
+  // Test #2b: completed implementer job does NOT inject context file
+  it('resume: completed implementer job does NOT inject context into downstream', async () => {
+    const impl1 = makeJob({ id: 'impl1', role: 'implementer', title: 'Impl1', dependsOn: [] });
+    const impl2 = makeJob({ id: 'impl2', role: 'implementer', title: 'Impl2', dependsOn: ['impl1'] });
+
+    const checkpoint: import('../../src/core/state.js').OrchestratorCheckpoint = {
+      completedJobs: [{ job: impl1, stdout: 'lots of impl output with code changes' }],
+      pendingJobs: [impl2],
+      failedJobIds: [],
+      skippedJobIds: [],
+      suspectJobIds: [],
+      currentLevel: 1,
+    };
+
+    const capturedPrefixes: string[] = [];
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) => {
+      for (const j of js) capturedPrefixes.push(j.systemPromptPrefix ?? '');
+      return js.map(j => makeSuccessResult(j.id, 'done'));
+    });
+
+    await runOrchestrator([[impl2]], [impl1, impl2], {
+      specHash: 'impl-guard',
+      logger,
+      executeLevelFn,
+      checkpoint,
+      persistCheckpoint: vi.fn(),
+    });
+
+    // impl1's stdout should NOT appear in impl2's system prompt
+    expect(capturedPrefixes[0]).not.toContain('lots of impl output');
+  });
+
+  // Test #3: replan → 429 → checkpoint stores post-replan pendingJobs (STUB — fails until implemented)
+  it('replan + 429: checkpoint stores post-replan pendingJobs, not original spec jobs', async () => {
+    const { OrchestratorLevelRateLimitError } = await import('../../src/orchestrator/types.js');
+
+    // Original graph: A → B → C
+    const jobA = makeJob({ id: 'job-a', role: 'architect', title: 'A', dependsOn: [] });
+    const jobB = makeJob({ id: 'job-b', role: 'implementer', title: 'B', dependsOn: ['job-a'] });
+    const jobC = makeJob({ id: 'job-c', role: 'tester', title: 'C', dependsOn: ['job-b'] });
+
+    // D and E are replacement jobs produced by replan (replacing C)
+    const jobD = makeJob({ id: 'job-d', role: 'tester', title: 'D', dependsOn: ['job-b'] });
+    const jobE = makeJob({ id: 'job-e', role: 'reviewer', title: 'E', dependsOn: ['job-d'] });
+
+    const checkpoints: import('../../src/core/state.js').OrchestratorCheckpoint[] = [];
+
+    // Level 0: A completes.
+    // Level 1: B fails → replan replaces C with [D, E].
+    //          After replan splice, persistCheckpoint fires with pendingJobs=[D,E].
+    //          Then level containing D hits 429 → checkpoint fired again with pendingJobs=[D,E].
+    let callCount = 0;
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) => {
+      callCount++;
+      if (callCount === 1) {
+        // Level 0: A completes
+        return js.map(j => makeSuccessResult(j.id, 'arch done'));
+      }
+      if (callCount === 2) {
+        // Level 1: B fails (triggers replan)
+        return js.map(j => makeFailResult(j.id, 'b failed'));
+      }
+      // Level with D: hits 429 — no partial completions
+      throw new OrchestratorLevelRateLimitError(undefined, []);
+    });
+
+    // The replan provider returns D and E as the revised plan
+    const replanProvider = {
+      chatStream: async function* () {
+        yield { type: 'text', content: '{"delta":[{"id":"job-d","title":"D","role":"tester","prompt":"test","files":[],"criteria":[],"dependsOn":["job-b"],"systemPromptPrefix":""},{"id":"job-e","title":"E","role":"reviewer","prompt":"review","files":[],"criteria":[],"dependsOn":["job-d"],"systemPromptPrefix":""}]}' };
+        yield { type: 'done', inputTokens: 0, outputTokens: 0, inputCost: 0, outputCost: 0 };
+      },
+    };
+
+    await expect(
+      runOrchestrator([[jobA], [jobB], [jobC]], [jobA, jobB, jobC], {
+        specHash: 'replan-429',
+        logger,
+        executeLevelFn,
+        checkpoint: undefined,
+        persistCheckpoint: (c) => { checkpoints.push(c); },
+        provider: replanProvider as import('../../src/providers/types.js').Provider,
+        config: { model: 'gpt-4o', smart_model: 'gpt-4o' } as import('../../src/core/config.js').Config,
+      })
+    ).rejects.toBeInstanceOf(RateLimitError);
+
+    // The final checkpoint must contain D and E as pendingJobs (post-replan graph)
+    // NOT C (the original graph)
+    const lastCheckpoint = checkpoints[checkpoints.length - 1];
+    expect(lastCheckpoint).toBeDefined();
+    const pendingIds = lastCheckpoint.pendingJobs.map((j: SubtaskJob) => j.id);
+    expect(pendingIds).not.toContain('job-c');
+    expect(pendingIds).toContain('job-d');
+    expect(pendingIds).toContain('job-e');
+  });
+
+  // Test #4: goal.ts --resume UX wiring (covered in test/cli/goal.test.ts — see below)
+
+  it('resume: failedJobIds and skippedJobIds from checkpoint are reflected in result counts', async () => {
+    const failedJob = makeJob({ id: 'failed-job', title: 'Failed' });
+    const skippedJob = makeJob({ id: 'skipped-job', title: 'Skipped', dependsOn: ['failed-job'] });
+    const pendingJob = makeJob({ id: 'pending-job', title: 'Pending', dependsOn: [] });
+
+    const checkpoint: import('../../src/core/state.js').OrchestratorCheckpoint = {
+      completedJobs: [],
+      pendingJobs: [pendingJob],
+      failedJobIds: [failedJob.id],
+      skippedJobIds: [skippedJob.id],
+      suspectJobIds: [],
+      currentLevel: 1,
+    };
+
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) =>
+      js.map(j => makeSuccessResult(j.id))
+    );
+
+    const result = await runOrchestrator([[pendingJob]], [failedJob, skippedJob, pendingJob], {
+      specHash: 'failed-skip-resume',
+      logger,
+      executeLevelFn,
+      checkpoint,
+      persistCheckpoint: vi.fn(),
+    });
+
+    expect(result.totalCompleted).toBe(1);  // pendingJob
+    expect(result.totalFailed).toBe(1);     // failedJob from checkpoint
+    expect(result.totalSkipped).toBe(1);    // skippedJob from checkpoint
+  });
+
+  it('resume: malicious job.id in checkpoint.completedJobs is silently skipped', async () => {
+    const maliciousJob = makeJob({ id: '../../../etc/passwd', role: 'architect', title: 'Evil' });
+    const pendingJob = makeJob({ id: 'pending-job', title: 'Pending', dependsOn: [] });
+
+    const checkpoint: import('../../src/core/state.js').OrchestratorCheckpoint = {
+      completedJobs: [{ job: maliciousJob, stdout: 'malicious stdout' }],
+      pendingJobs: [pendingJob],
+      failedJobIds: [],
+      skippedJobIds: [],
+      suspectJobIds: [],
+      currentLevel: 1,
+    };
+
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) =>
+      js.map(j => makeSuccessResult(j.id))
+    );
+
+    const result = await runOrchestrator([[pendingJob]], [pendingJob], {
+      specHash: 'malicious-id',
+      logger,
+      executeLevelFn,
+      checkpoint,
+      persistCheckpoint: vi.fn(),
+    });
+
+    // maliciousJob should NOT be counted as completed (guard skipped it)
+    expect(result.totalCompleted).toBe(1);  // only pendingJob
+    expect(result.totalFailed).toBe(0);
+  });
+
+  it('persistCheckpoint is called once per completed level', async () => {
+    const jobA = makeJob({ id: 'job-a', title: 'A', dependsOn: [] });
+    const jobB = makeJob({ id: 'job-b', title: 'B', dependsOn: ['job-a'] });
+
+    const executeLevelFn = vi.fn(async (js: SubtaskJob[]) =>
+      js.map(j => makeSuccessResult(j.id))
+    );
+
+    const persistCheckpoint = vi.fn();
+
+    await runOrchestrator([[jobA], [jobB]], [jobA, jobB], {
+      specHash: 'persist-timing',
+      logger,
+      executeLevelFn,
+      persistCheckpoint,
+    });
+
+    // Two levels → persistCheckpoint called exactly twice
+    expect(persistCheckpoint).toHaveBeenCalledTimes(2);
+    // Each call receives an OrchestratorCheckpoint with currentLevel set
+    const calls = persistCheckpoint.mock.calls;
+    expect(calls[0][0].currentLevel).toBe(0);
+    expect(calls[1][0].currentLevel).toBe(1);
+  });
+});

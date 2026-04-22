@@ -628,3 +628,106 @@ echo done
     expect(allOutput).toContain("120");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sprint 62 — orchestrator --resume UX (Test #4)
+// ---------------------------------------------------------------------------
+
+describe("runGoal — orchestrator --resume display (Sprint 62 Test #4)", () => {
+  let tmpDir: string;
+  let specPath: string;
+
+  // Minimal spec with role annotations to activate orchestrator mode
+  const ORCH_SPEC = `# Orchestrator Resume Test
+
+## Problem Statement
+Test orchestrator resume.
+
+## Task Decomposition
+### Sub-task 1: Design schema
+- role: architect
+- **Input:** requirements
+- **Output:** schema design
+- **Success criteria:** schema complete
+
+### Sub-task 2: Implement
+- role: implementer
+- **Input:** schema
+- **Output:** implementation
+- **Success criteria:** tests pass
+
+## Acceptance Criteria
+- Feature complete
+
+## Eval Command
+\`\`\`
+echo done
+\`\`\`
+`;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `phase2s-goal-orch-resume-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+    specPath = join(tmpDir, "spec.md");
+    writeFileSync(specPath, ORCH_SPEC, "utf8");
+    mockAgentShouldReject.error = null;
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    mockAgentShouldReject.error = null;
+    vi.restoreAllMocks();
+  });
+
+  it("Test 4: --resume with state.orchestrator shows checkpointed job count", async () => {
+    // Write a state file with an orchestrator checkpoint
+    const { computeSpecHash, writeState } = await import("../../src/core/state.js");
+    const { readFileSync } = await import("node:fs");
+    const specContent = readFileSync(specPath, "utf8");
+    const hash = computeSpecHash(specContent);
+    const archJob = { id: "design-schema", title: "Design schema", role: "architect" as const,
+      prompt: "design", files: [], criteria: [], dependsOn: [], systemPromptPrefix: "" };
+    writeState(tmpDir, hash, {
+      specFile: "spec.md",
+      specHash: hash,
+      startedAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString(),
+      maxAttempts: 3,
+      attempt: 1,
+      subTaskResults: {},
+      orchestrator: {
+        completedJobs: [{ job: archJob, stdout: "arch done" }],
+        pendingJobs: [],
+        failedJobIds: [],
+        skippedJobIds: [],
+        suspectJobIds: [],
+        currentLevel: 1,
+      },
+    });
+
+    const logMessages: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg: unknown) => logMessages.push(String(msg)));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // runGoal will try to run the orchestrator path — it may fail due to missing mocks
+    // but we only care that the resume display line appears before any error
+    await runGoal(specPath, { reviewBeforeRun: false, resume: true }).catch(() => {});
+
+    const allOutput = logMessages.join("\n");
+    // Resume message should mention the 1 checkpointed job, not sub-tasks count
+    expect(allOutput).toMatch(/1 orchestrator jobs? already checkpointed/i);
+  });
+
+  it("Test 4b: --resume without state.orchestrator falls back to sub-task count display", async () => {
+    // No state file — --resume starts fresh, no resume message printed
+    const logMessages: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg: unknown) => logMessages.push(String(msg)));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await runGoal(specPath, { reviewBeforeRun: false, resume: true }).catch(() => {});
+
+    const allOutput = logMessages.join("\n");
+    // Should show 0/N sub-tasks completed (no orchestrator checkpoint)
+    expect(allOutput).toMatch(/Resuming: 0\/\d+ sub-tasks already completed/);
+  });
+});

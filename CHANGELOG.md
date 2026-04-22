@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.36.0 — 2026-04-22
+
+Sprint 62 — Orchestrator Rate-Limit Checkpoint + Resume. When the multi-agent orchestrator hits a 429 mid-level, it now saves a checkpoint to `GoalState` and exits gracefully. Re-running with `--resume` picks up where it left off — completed jobs are rehydrated (including architect context files), suspect jobs re-run, and failed/skipped jobs are propagated forward. A path-traversal guard was also added: `job.id` from on-disk checkpoints is validated against `SAFE_JOB_ID_RE` before any context file path construction.
+
+### Added
+
+- **Orchestrator checkpoint on 429** — `executeOrchestratorLevel()` now throws `OrchestratorLevelRateLimitError` carrying `partialResults: OrchestratorLevelResult[]` from workers that completed before the rate limit hit. The orchestrator catches this, saves `state.orchestrator: OrchestratorCheckpoint` (completedJobs with stdout, pendingJobs, failedJobIds, skippedJobIds, suspectJobIds, currentLevel), and exits with the standard rate-limit exit code. Completed work is never re-executed on resume.
+
+- **Orchestrator resume path** — `goal.ts` detects `state.orchestrator` on `--resume` and passes it as `options.checkpoint` to the orchestrator. The orchestrator rehydrates `jobStatus`, `completedJobs`, `completedStdout`, and context files (re-extracting architect sentinel content from stored stdout). The resume display shows "Resuming (N completed, M remaining)" instead of sub-task counts for orchestrator checkpoints.
+
+- **`OrchestratorCheckpoint` type in `GoalState`** — New interfaces `OrchestratorCompletedJobCheckpoint` and `OrchestratorCheckpoint` added to `src/core/state.ts`. The optional `orchestrator?` field on `GoalState` holds the checkpoint; it is cleared to `undefined` on successful completion.
+
+### Fixed
+
+- **Path traversal in checkpoint context file writes** — `job.id` sourced from on-disk checkpoint data was used unvalidated in `join(contextDir, 'context-${job.id}.md')` at three sites in `orchestrator.ts`. A job ID of `../../etc/cron.d/evil` would have escaped the context tmpdir. All three construction sites now guard with `SAFE_JOB_ID_RE` (exported from `types.ts`). The regex `^[a-z0-9][a-z0-9-]*$` rejects any path-traversal character.
+
+### For contributors
+
+- **`SAFE_JOB_ID_RE` exported** — `const SAFE_JOB_ID_RE` in `orchestrator/types.ts` changed to `export const` for reuse in `orchestrator.ts` guard sites.
+- **`handleRateLimitExit` in `goal.ts`** — Now passes `checkpointed: state.orchestrator !== undefined` so the correct "checkpoint saved" vs. "progress lost" message appears after a 429 in orchestrator mode.
+
 ## v1.35.0 — 2026-04-21
 
 Three resilience improvements that required prior foundation work: parallel workers now cancel each other when one hits a rate limit, auto-compaction stops cascading after a configurable cap, and `--reasoning-effort` gives you model-tier control on dark factory runs.

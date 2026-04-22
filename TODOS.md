@@ -8,7 +8,7 @@
 
 ## Backlog — Post-Sprint 61 /plan-eng-review findings (2026-04-21)
 
-- [ ] **AbortController for `executeOrchestratorLevel`** — Sprint 61 adds per-level AbortController to `executeLevel` (parallel executor path). `executeOrchestratorLevel` (role-annotated spec path) runs in-process Agent instances with no signal threading — sibling orchestrator jobs run to completion on 429. Fix: thread AbortController into `executeOrchestratorLevel`, same pattern as `executeLevel`. **Depends on:** Sprint 61 AbortController work + orchestrator rate-limit checkpoint fix (see below). Ship after orchestrator checkpoint is solved, not before.
+- [ ] **AbortController for `executeOrchestratorLevel`** — Sprint 61 adds per-level AbortController to `executeLevel` (parallel executor path). `executeOrchestratorLevel` (role-annotated spec path) runs in-process Agent instances with no signal threading — sibling orchestrator jobs run to completion on 429. Fix: thread AbortController into `executeOrchestratorLevel`, same pattern as `executeLevel`. **Prerequisite met in v1.36.0 (checkpoint + resume).** Ready to ship.
 
 ---
 
@@ -20,7 +20,7 @@
 
 - [x] **Codex provider: partial text + silent 429 drop** — Fixed in Sprint 59 (v1.33.0): removed `!hasProducedText &&` guard from stderr rate-limit check. Now fires on any non-zero exit regardless of whether text was produced.
 
-- [ ] **Orchestrator path does not checkpoint on rate limit** — When `chatOnce()` (used in the replan LLM call) hits a rate limit, `RateLimitError` propagates to `goal.ts` which exits 2. But `executeOrchestratorLevel` wraps all worker errors as `{status: "failed"}`, so `RateLimitError` never reaches the outer caller. Additionally, the orchestrator resume path doesn't consult `state.subTaskResults`, and completed worktrees are deleted after merge — there is nothing to resume to. Fix requires a new state schema (e.g. `orchestrator_paused` field, preserved worktrees, new resume path in `goal.ts`). **Deferred to post-Sprint 59 — needs its own design sprint.**
+- [x] **Orchestrator path does not checkpoint on rate limit** — **Completed: v1.36.0 (2026-04-22).** `executeOrchestratorLevel` now throws `OrchestratorLevelRateLimitError` with `partialResults`. Orchestrator saves `state.orchestrator: OrchestratorCheckpoint` and exits. `--resume` rehydrates completed jobs, context files, and propagates failed/skipped status forward. Path traversal guard added: all `join(contextDir, 'context-${job.id}.md')` sites validated via `SAFE_JOB_ID_RE`.
 
 - [x] **A1 sibling cancellation (AbortController fast-pause)** — **Completed: v1.35.0 (2026-04-21).** Per-batch `AbortController`; `onRateLimitDetected` callback fires `abort()` inside `executeWorker` before throwing `RateLimitError`, while siblings are still in-flight. `Promise.allSettled` preserves completed siblings. Aborted workers detected via `signal.aborted` check after `agent.run()` returns and returned as `{ status: "failed" }`. 6 tests added.
 

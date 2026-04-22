@@ -2,6 +2,8 @@
  * Types for the multi-agent orchestrator (Sprint 38).
  */
 
+import { RateLimitError } from '../core/rate-limit-error.js';
+
 // SubtaskJob: output of spec-compiler.ts, input to orchestrator.ts
 export interface SubtaskJob {
   id: string;               // slugified subtask title e.g. "design-database-schema"
@@ -25,6 +27,17 @@ export interface OrchestratorLevelResult {
   contextFile?: string;     // set by orchestrator post-call after sentinel extraction; always undefined for non-architect roles
 }
 
+// OrchestratorLevelRateLimitError: thrown by executeOrchestratorLevel() when any worker
+// hits a 429. Carries partial results from workers that completed before the 429.
+export class OrchestratorLevelRateLimitError extends RateLimitError {
+  readonly partialResults: OrchestratorLevelResult[];
+  constructor(retryAfterOrKind: number | 'blocked' | undefined, partialResults: OrchestratorLevelResult[]) {
+    super(retryAfterOrKind);
+    this.name = 'OrchestratorLevelRateLimitError';
+    this.partialResults = partialResults;
+  }
+}
+
 // DeltaResponse: the typed output of the re-plan LLM call.
 // The model returns { delta: SubtaskJob[] } — a minimal list of revised/new jobs.
 // Jobs not in delta are unchanged. Completed jobs must never appear in delta.
@@ -33,7 +46,7 @@ export interface DeltaResponse {
 }
 
 /** Slug-safe pattern: lowercase alphanumeric with internal hyphens. Prevents path traversal. */
-const SAFE_JOB_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
+export const SAFE_JOB_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 export function isDeltaResponse(x: unknown): x is DeltaResponse {
   if (typeof x !== 'object' || x === null) return false;
@@ -47,6 +60,6 @@ export function isDeltaResponse(x: unknown): x is DeltaResponse {
     ['architect', 'implementer', 'tester', 'reviewer'].includes((j as SubtaskJob).role) &&
     typeof (j as SubtaskJob).prompt === 'string' &&
     Array.isArray((j as SubtaskJob).dependsOn) &&
-    (j as SubtaskJob).dependsOn.every((dep: unknown) => typeof dep === 'string')
+    (j as SubtaskJob).dependsOn.every((dep: unknown) => typeof dep === 'string' && SAFE_JOB_ID_RE.test(dep))
   );
 }

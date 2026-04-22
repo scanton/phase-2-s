@@ -656,6 +656,8 @@ phase2s goal my-spec.md --orchestrator
 
 If a subtask fails, the orchestrator skips all transitively dependent subtasks and calls the LLM to produce a revised plan (`orchestrator_replan_result` event). The delta is validated, merged, and re-leveled — execution continues with the revised plan. Independent subtasks continue unaffected. The `orchestrator_replan_result`, `orchestrator_replan_failed`, `job_routed`, `job_promoted`, and `orchestrator_context_missing` events appear in the run log.
 
+**Rate limits during orchestrator runs.** When any orchestrator worker hits a 429, Phase2S checkpoints all completed jobs (including architect context) and exits 2. `--resume` picks up exactly where it left off: completed jobs skip re-execution, architect context files are reconstructed from stored stdout and injected into downstream workers, and failed/skipped job statuses carry forward.
+
 ---
 
 ## The full workflow
