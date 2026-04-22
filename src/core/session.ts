@@ -46,6 +46,8 @@ export interface SessionMeta {
   updatedAt: string;
   /** Number of times this session has been compacted. Incremented on each :compact or auto-compact. */
   compact_count?: number;
+  /** Number of times this session has been auto-compacted. Does not include manual :compact. Used for cascade cap. */
+  auto_compact_count?: number;
 }
 
 export interface SessionV2 {

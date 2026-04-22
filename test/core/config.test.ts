@@ -274,4 +274,25 @@ describe("loadConfig — tools and deny (Sprint 13)", () => {
   it("rate_limit_backoff_threshold: negative value is rejected by schema", async () => {
     await expect(loadConfig({ rate_limit_backoff_threshold: -1 } as never)).rejects.toThrow();
   });
+
+  // --- max_auto_compact_count (Sprint 61) ---
+
+  it("max_auto_compact_count: positive integer is accepted", async () => {
+    const config = await loadConfig({ max_auto_compact_count: 5 });
+    expect(config.max_auto_compact_count).toBe(5);
+  });
+
+  it("max_auto_compact_count: 1 is accepted (minimum valid value)", async () => {
+    const config = await loadConfig({ max_auto_compact_count: 1 });
+    expect(config.max_auto_compact_count).toBe(1);
+  });
+
+  it("max_auto_compact_count: 0 is rejected (min is 1)", async () => {
+    await expect(loadConfig({ max_auto_compact_count: 0 } as never)).rejects.toThrow();
+  });
+
+  it("max_auto_compact_count: unset means undefined (no cap — falls back to hardcoded default 3 in maybeAutoCompact)", async () => {
+    const config = await loadConfig({});
+    expect(config.max_auto_compact_count).toBeUndefined();
+  });
 });

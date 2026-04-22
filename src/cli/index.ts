@@ -176,7 +176,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .command("run <prompt>")
     .description("Run a single prompt and exit")
     .option("--dry-run", "Show which skill and model would be used without executing")
-    .action(async (prompt: string, cmdOpts: { dryRun?: boolean }) => {
+    .option("--reasoning-effort <level>", "Override model reasoning effort (high | low | default)")
+    .action(async (prompt: string, cmdOpts: { dryRun?: boolean; reasoningEffort?: string }) => {
       const opts = program.opts();
       const config = await loadConfig({
         provider: opts.provider,
@@ -196,7 +197,12 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         }
         return;
       }
-      await oneShotMode(config, prompt);
+      const validEfforts = ["high", "low", "default"] as const;
+      if (cmdOpts.reasoningEffort !== undefined && !(validEfforts as readonly string[]).includes(cmdOpts.reasoningEffort)) {
+        console.error(`Invalid --reasoning-effort value: "${cmdOpts.reasoningEffort}". Must be high, low, or default.`);
+        process.exit(1);
+      }
+      await oneShotMode(config, prompt, cmdOpts.reasoningEffort as "high" | "low" | "default" | undefined);
     });
 
   // MCP server — exposes all Phase2S skills as Claude Code tools
@@ -280,8 +286,14 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--dashboard", "Show live tmux dashboard during parallel execution")
     .option("--clean", "Remove stale worktrees before starting")
     .option("--judge", "Run spec eval judge after completion and emit eval_judged to the log")
-    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean; parallel?: boolean; sequential?: boolean; orchestrator?: boolean; workers?: string; dashboard?: boolean; clean?: boolean; judge?: boolean }) => {
+    .option("--reasoning-effort <level>", "Override reasoning effort for unlabeled subtasks (high | low | default)")
+    .action(async (specFile: string, cmdOpts: { maxAttempts?: string; resume?: boolean; reviewBeforeRun?: boolean; notify?: boolean; dryRun?: boolean; parallel?: boolean; sequential?: boolean; orchestrator?: boolean; workers?: string; dashboard?: boolean; clean?: boolean; judge?: boolean; reasoningEffort?: string }) => {
       const { runGoal } = await import("./goal.js");
+      const validEfforts = ["high", "low", "default"] as const;
+      if (cmdOpts.reasoningEffort !== undefined && !(validEfforts as readonly string[]).includes(cmdOpts.reasoningEffort)) {
+        console.error(`Invalid --reasoning-effort value: "${cmdOpts.reasoningEffort}". Must be high, low, or default.`);
+        process.exit(1);
+      }
       try {
         const result = await runGoal(specFile, {
           maxAttempts: cmdOpts.maxAttempts,
@@ -296,6 +308,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           dashboard: cmdOpts.dashboard,
           clean: cmdOpts.clean,
           judge: cmdOpts.judge,
+          reasoningEffort: cmdOpts.reasoningEffort as "high" | "low" | "default" | undefined,
         });
         if (!result.dryRun && result.runLogPath) console.log(`Run log: ${result.runLogPath}`);
         process.exit(result.success ? 0 : 1);
@@ -985,7 +998,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
    * On failure: prints a warning, leaves session unchanged.
    */
   // Thin wrapper: wires closure-captured state into the testable core function.
-  const performCompaction = async (): Promise<void> => {
+  // Returns true when compaction actually ran (false = returned early due to backup
+  // failure or empty summary, without touching the conversation).
+  const performCompaction = async (): Promise<boolean> => {
+    let didCompact = false;
     await runCompaction({
       provider: agent.provider,
       messages: agent.getConversation().getMessages(),
@@ -995,9 +1011,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       setConversation: (conv) => agent.setConversation(conv),
       makeConversation: (msgs) => Conversation.fromMessages(msgs),
       onMetaUpdate: (newMeta) => { sessionMeta = newMeta; },
-      onJustCompacted: () => { justCompacted = true; },
+      onJustCompacted: () => { justCompacted = true; didCompact = true; },
       saveSessionFn: saveSessionV2,
     });
+    return didCompact;
   };
 
   // Guards against an auto-compact loop: if the LLM produces a summary that
@@ -1019,9 +1036,14 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       return;
     }
     const tokens = agent.getConversation().estimateTokens();
-    if (shouldCompact(tokens, config.auto_compact_tokens)) {
+    // Fallback of 3 ensures existing installs are protected even without config.
+    const maxAutoCompact = config.max_auto_compact_count ?? 3;
+    if (shouldCompact(tokens, config.auto_compact_tokens, sessionMeta.auto_compact_count, maxAutoCompact)) {
       try {
-        await performCompaction();
+        const didCompact = await performCompaction();
+        if (didCompact) {
+          sessionMeta.auto_compact_count = (sessionMeta.auto_compact_count ?? 0) + 1;
+        }
       } catch (err) {
         if (err instanceof RateLimitError) {
           await handleRateLimitExit(err);
@@ -1499,7 +1521,7 @@ export function resolveSkillRouting(
   return { effectivePrompt: prompt, modelOverride: undefined, routedSkillName: null, unknownSkillName: skillName };
 }
 
-export async function oneShotMode(config: Config, prompt: string): Promise<void> {
+export async function oneShotMode(config: Config, prompt: string, reasoningEffort?: "high" | "low" | "default"): Promise<void> {
   if (!(await checkCodexBinary(config))) process.exit(1);
   if (!checkOpenAIKey(config)) process.exit(1);
   if (!checkAnthropicKey(config)) process.exit(1);
@@ -1539,9 +1561,15 @@ export async function oneShotMode(config: Config, prompt: string): Promise<void>
     process.stderr.write(`No skill named '${unknownSkillName}'. Running as plain prompt. Use 'phase2s skills' to list available skills.\n`);
   }
 
+  // --reasoning-effort is a fallback when skill routing doesn't provide a model override.
+  const effortModel = reasoningEffort && reasoningEffort !== "default"
+    ? resolveReasoningModel(reasoningEffort, config)
+    : undefined;
+  const effectiveModel = modelOverride ?? effortModel;
+
   try {
     const result = await agent.run(effectivePrompt, {
-      modelOverride,
+      modelOverride: effectiveModel,
       onDelta: (chunk) => { process.stdout.write(chunk); hasOutput = true; },
     });
     if (!hasOutput) {

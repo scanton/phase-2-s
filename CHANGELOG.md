@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.35.0 — 2026-04-21
+
+Three resilience improvements that required prior foundation work: parallel workers now cancel each other when one hits a rate limit, auto-compaction stops cascading after a configurable cap, and `--reasoning-effort` gives you model-tier control on dark factory runs.
+
+### Added
+
+- **AbortController sibling cancellation** — When one parallel worker hits a rate limit, its siblings' HTTP streams are cancelled immediately instead of running to completion. Less wasted API budget when a batch has to pause. Completed work is preserved via `Promise.allSettled`; aborted workers return `{ status: "failed" }` so the retry loop handles them correctly.
+
+- **Cascading auto-compaction cap** — Auto-compaction now stops after a configurable number of cycles. Add `max_auto_compact_count: 3` to `.phase2s.yaml` (or leave it unset — the default cap is 3). Previously, a verbose compaction summary could push context back over the threshold and trigger another compaction, degrading summary fidelity with each pass. Manual `:compact` doesn't count toward the cap.
+
+- **`--reasoning-effort` flag** — `phase2s goal --reasoning-effort high|low|default <spec>` overrides the model tier for all unlabeled subtasks: `high` → `smart_model`, `low` → `fast_model`, `default` → no change. Applies to both parallel workers and orchestrator mode. Also available on `phase2s run --reasoning-effort <level>` as a per-invocation fallback when skill routing doesn't specify a model.
+
+### Changed
+
+- **`shouldCompact()`** — New optional `compactCount` and `maxAutoCompactCount` parameters. Backward-compatible: calling without them behaves identically to v1.34.0.
+- **`executeOrchestratorLevel`** — New optional `modelOverride` parameter threads `effectiveSatoriModel` into orchestrator workers.
+
+### Fixed
+
+- **Auto-compact cap now counts only real compactions** — `auto_compact_count` was incrementing even when `performCompaction()` returned early due to a backup write failure or an empty summary. The cap could be exhausted silently without any actual compaction occurring. The counter now only increments when `onJustCompacted` fires (compaction actually replaced the conversation).
+- **`--reasoning-effort` validates at parse time** — Invalid values like `--reasoning-effort medium` previously fell through the TypeScript cast and ran at default effort with no warning. Now they exit immediately with a clear error message.
+
 ## v1.34.0 — 2026-04-20
 
 Sprint 60 — Skills Quality Audit. Six D-rated built-in skills rewritten to B+ standard: `review`, `ship`, `docs`, `investigate`, `tdd`, and `skill`. All six now have structured verify steps and save artifacts to `.phase2s/` with datetime-stamped filenames. The `skill` meta-skill now generates structural `## Output`, `## Verify`, and `## Save` sections so every new skill starts at B-quality minimum. Separately, 14 parameterized skills gain typed `inputs:` frontmatter with named MCP parameters and `{{param}}` body substitution — `adversarial`, `audit`, `autoplan`, `checkpoint`, `consensus-plan`, `debug`, `deep-specify`, `explain`, `freeze`, `land-and-deploy`, `qa`, `remember`, `satori`, and `slop-clean`.

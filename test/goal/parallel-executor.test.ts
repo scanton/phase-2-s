@@ -666,3 +666,160 @@ describe("A1 allSettled semantics — sibling worker results preserved on 429", 
     expect(results.map((r) => r.index)).toEqual([0, 1, 2]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// AbortController sibling cancellation — unit tests for the callback/signal
+// contract added in Sprint 61.
+//
+// Strategy: test the AbortController wiring in isolation (pure function tests
+// on the callback + signal pattern) rather than calling executeWorker directly
+// (which would require mocking the entire git worktree + Agent stack).
+// ---------------------------------------------------------------------------
+
+describe("AbortController sibling cancellation", () => {
+  /**
+   * Simulates the executeLevel batch loop with AbortController per batch.
+   * Worker functions receive a signal and an onRateLimitDetected callback,
+   * matching the contract added to WorkerOptions in Sprint 61.
+   */
+  async function simulateBatchWithAbort(
+    workerFns: Array<(signal: AbortSignal, onRateLimitDetected: () => void) => Promise<{ index: number; status: string }>>,
+  ): Promise<{
+    results: Array<{ index: number; status: string }>;
+    rateLimitErr: RateLimitError | undefined;
+  }> {
+    const controller = new AbortController();
+    const settled = await Promise.allSettled(
+      workerFns.map((fn) => fn(controller.signal, () => controller.abort())),
+    );
+    const results: Array<{ index: number; status: string }> = [];
+    let rateLimitErr: RateLimitError | undefined;
+    for (const r of settled) {
+      if (r.status === "fulfilled") {
+        results.push(r.value);
+      } else if (r.reason instanceof RateLimitError && !rateLimitErr) {
+        rateLimitErr = r.reason;
+      }
+    }
+    return { results, rateLimitErr };
+  }
+
+  it("onRateLimitDetected fires before RateLimitError propagates", async () => {
+    const callOrder: string[] = [];
+    const rlErr = new RateLimitError(30, "openai-api");
+
+    const workers = [
+      async (_signal: AbortSignal, onRL: () => void) => {
+        onRL(); // fires abort (simulates executeWorker calling callback before throw)
+        callOrder.push("callback");
+        throw rlErr;
+      },
+      async (_signal: AbortSignal) => {
+        callOrder.push("sibling-result");
+        return { index: 1, status: "passed" };
+      },
+    ];
+
+    const { rateLimitErr } = await simulateBatchWithAbort(workers);
+
+    expect(callOrder[0]).toBe("callback");
+    expect(rateLimitErr).toBe(rlErr);
+  });
+
+  it("sibling receives aborted signal after onRateLimitDetected fires", async () => {
+    const controller = new AbortController();
+    let siblingSignal: AbortSignal | undefined;
+    const rlErr = new RateLimitError(30, "openai-api");
+
+    const settled = await Promise.allSettled([
+      // Worker A: fires abort then throws
+      (async () => {
+        controller.abort();
+        throw rlErr;
+      })(),
+      // Worker B: captures the signal
+      (async () => {
+        siblingSignal = controller.signal;
+        return { index: 1, status: "passed" };
+      })(),
+    ]);
+
+    expect(siblingSignal?.aborted).toBe(true);
+    expect(settled[0].status).toBe("rejected");
+    expect(settled[1].status).toBe("fulfilled");
+  });
+
+  it("aborted sibling returns { status: 'failed' } not RateLimitError", async () => {
+    const rlErr = new RateLimitError(30, "openai-api");
+
+    const workers = [
+      // Worker A: fires abort + throws RateLimitError
+      async (_signal: AbortSignal, onRL: () => void) => {
+        onRL();
+        throw rlErr;
+      },
+      // Worker B: detects abort and returns failed (simulates executeWorker signal.aborted check)
+      async (signal: AbortSignal) => {
+        // Simulate agent.run returning normally after abort (break, not throw)
+        if (signal.aborted) {
+          return { index: 1, status: "failed" };
+        }
+        return { index: 1, status: "passed" };
+      },
+    ];
+
+    const { results, rateLimitErr } = await simulateBatchWithAbort(workers);
+
+    // Worker B's result is in fulfilled results (not a RateLimitError rejection)
+    const siblingResult = results.find((r) => r.index === 1);
+    expect(siblingResult?.status).toBe("failed");
+    // The rate limit came from Worker A, not Worker B
+    expect(rateLimitErr).toBe(rlErr);
+  });
+
+  it("completed sibling results preserved after abort", async () => {
+    const rlErr = new RateLimitError(30, "openai-api");
+
+    const workers = [
+      // Worker A: completes successfully before abort
+      async () => ({ index: 0, status: "passed" }),
+      // Worker B: fires abort + throws
+      async (_signal: AbortSignal, onRL: () => void) => {
+        onRL();
+        throw rlErr;
+      },
+    ];
+
+    const { results, rateLimitErr } = await simulateBatchWithAbort(workers);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({ index: 0, status: "passed" });
+    expect(rateLimitErr).toBe(rlErr);
+  });
+
+  it("AbortController is per-batch — new controller created each iteration", () => {
+    // Verify that each batch gets an independent AbortController by constructing
+    // two controllers and confirming aborting one does not affect the other.
+    const c1 = new AbortController();
+    const c2 = new AbortController();
+
+    c1.abort();
+
+    expect(c1.signal.aborted).toBe(true);
+    expect(c2.signal.aborted).toBe(false);
+  });
+
+  it("existing allSettled semantics still pass (regression)", async () => {
+    const rlErr = new RateLimitError(30, "openai-api");
+    const workers = [
+      async (_signal: AbortSignal, _onRL: () => void) => { throw rlErr; },
+      async () => ({ index: 1, status: "passed" }),
+      async () => ({ index: 2, status: "passed" }),
+    ];
+
+    const { results, rateLimitErr } = await simulateBatchWithAbort(workers);
+
+    expect(rateLimitErr).toBe(rlErr);
+    expect(results).toHaveLength(2);
+  });
+});

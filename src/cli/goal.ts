@@ -38,6 +38,7 @@ import { executeParallel, type ParallelResult } from "../goal/parallel-executor.
 import { replanFailingSubtasks } from "../goal/replan.js";
 import { cleanAllWorktrees, getHeadSha, getDiff } from "../goal/merge-strategy.js";
 import { judgeRun } from "../eval/judge.js";
+import { resolveReasoningModel } from "./model-resolver.js";
 
 /** Cap on bytes stored for failureContext per sub-task. */
 const FAILURE_CONTEXT_MAX_BYTES = 4096;
@@ -100,6 +101,12 @@ export interface GoalOptions {
   clean?: boolean;
   /** Run spec eval judge after the run and emit eval_judged to the log. */
   judge?: boolean;
+  /**
+   * Override reasoning effort for all unlabeled subtasks.
+   * "high" → config.smart_model, "low" → config.fast_model, "default" → satoriModel (no change).
+   * Subtasks with an explicit model: annotation always take precedence.
+   */
+  reasoningEffort?: "high" | "low" | "default";
 }
 
 export interface GoalResult {
@@ -275,6 +282,10 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   const satoriRetries = satoriSkill?.retries ?? 3;
   const satoriModel = satoriSkill?.model;
   const adversarialModel = adversarialSkill?.model;
+  // Apply --reasoning-effort override for unlabeled subtasks. "default" = no change.
+  const effectiveSatoriModel = options.reasoningEffort && options.reasoningEffort !== "default"
+    ? resolveReasoningModel(options.reasoningEffort, config) ?? satoriModel
+    : satoriModel;
 
   // Build the satori base prompt from its template (same as what the REPL does)
   const satoriTemplate = satoriSkill
@@ -341,10 +352,13 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
       console.log(chalk.cyan(`\nStarting orchestrator execution (${jobs.length} jobs, ${levels.length} levels)...`));
 
+      if (options.reasoningEffort && options.reasoningEffort !== "default") {
+        console.log(chalk.dim(`  --reasoning-effort ${options.reasoningEffort} applied to orchestrator workers`));
+      }
       const orchResult = await runOrchestrator(levels, jobs, {
         specHash,
         logger,
-        executeLevelFn: executeOrchestratorLevel,
+        executeLevelFn: (orchJobs) => executeOrchestratorLevel(orchJobs, effectiveSatoriModel),
       });
 
       logger.log({
@@ -469,7 +483,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
           logger,
           attempt,
           satoriRetries,
-          satoriModel,
+          satoriModel: effectiveSatoriModel,
           revisedSubtasks,
           subsetToRun,
         });
