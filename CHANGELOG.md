@@ -16,10 +16,10 @@ Sprint 62 — Orchestrator Rate-Limit Checkpoint + Resume. When the multi-agent 
 
 - **Path traversal in checkpoint context file writes** — `job.id` sourced from on-disk checkpoint data was used unvalidated in `join(contextDir, 'context-${job.id}.md')` at three sites in `orchestrator.ts`. A job ID of `../../etc/cron.d/evil` would have escaped the context tmpdir. All three construction sites now guard with `SAFE_JOB_ID_RE` (exported from `types.ts`). The regex `^[a-z0-9][a-z0-9-]*$` rejects any path-traversal character.
 
-### Changed
+### For contributors
 
 - **`SAFE_JOB_ID_RE` exported** — `const SAFE_JOB_ID_RE` in `orchestrator/types.ts` changed to `export const` for reuse in `orchestrator.ts` guard sites.
-- **`handleRateLimitExit` in `goal.ts`** — Now passes `checkpointed: state.orchestrator !== undefined` so the user sees the correct "checkpoint saved" vs. "progress lost" message after a 429 in orchestrator mode.
+- **`handleRateLimitExit` in `goal.ts`** — Now passes `checkpointed: state.orchestrator !== undefined` so the correct "checkpoint saved" vs. "progress lost" message appears after a 429 in orchestrator mode.
 
 ## v1.35.0 — 2026-04-21
 
