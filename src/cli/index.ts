@@ -28,6 +28,7 @@ import { loadAgents, formatAgentsList, type AgentDef } from "../core/agent-loade
 import { runConversationsBrowser } from "./conversations.js";
 import { resolveReasoningModel, resolveAgentModel } from "./model-resolver.js";
 import { handleColonCommand } from "./colon-commands.js";
+import { makeCompleter, expandAttachments } from "./file-attachment.js";
 import { performCompaction as runCompaction, shouldCompact } from "../core/compaction.js";
 import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
 import { RateLimitError } from "../core/rate-limit-error.js";
@@ -903,6 +904,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     input: process.stdin,
     output: process.stdout,
     terminal: true,
+    completer: makeCompleter(() => process.cwd()),
   });
 
   // Manual async queue: lines go in via rl.on('line'), come out via nextLine()
@@ -1063,7 +1065,23 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    if (trimmed === "/quit" || trimmed === "/exit") {
+    // Expand @file tokens before any command dispatch.
+    // cleanLine is used for command detection; effectiveLine (with preamble) goes to agent.run().
+    const { cleanLine, preamble, attached } = await expandAttachments(trimmed, process.cwd());
+    if (attached.length > 0) {
+      for (const f of attached) {
+        const notice =
+          f.sizeWarning === "warned"
+            ? " — large file, inlined with notice"
+            : f.sizeWarning === "truncated"
+              ? " — truncated to 200 lines"
+              : "";
+        process.stdout.write(chalk.dim(`  [attached: ${f.path}${notice}]\n`));
+      }
+    }
+    const effectiveLine = preamble ? preamble + "\n" + cleanLine : cleanLine;
+
+    if (cleanLine === "/quit" || cleanLine === "/exit") {
       log.info("Goodbye!");
       rl.close();
       break;
@@ -1071,7 +1089,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       // (e.g. sandbox.ts try/finally) can run their cleanup before exit.
     }
 
-    if (trimmed === "/help") {
+    if (cleanLine === "/help") {
       printHelp(skills);
       continue;
     }
@@ -1079,7 +1097,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     // Dispatch stateless colon commands via pure handler (see src/cli/colon-commands.ts).
     // :clone and :commit are handled below — they require nextLine() from this scope.
     {
-      const action = handleColonCommand(trimmed, { agentDefs });
+      const action = handleColonCommand(cleanLine, { agentDefs });
       switch (action.type) {
         case "not_handled":
           break; // fall through to :clone/:commit/:skill/normal-turn handling
@@ -1148,8 +1166,8 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
 
     // :clone <uuid> — fork the specified session into a new one
-    if (trimmed.startsWith(":clone")) {
-      const sourceId = trimmed.slice(":clone".length).trim();
+    if (cleanLine.startsWith(":clone")) {
+      const sourceId = cleanLine.slice(":clone".length).trim();
       if (!sourceId) {
         console.log(chalk.yellow("Usage: :clone <session-uuid>"));
         console.log(chalk.dim("Get a UUID from: phase2s conversations"));
@@ -1191,7 +1209,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
 
     // :compact — immediately compact the conversation history
-    if (trimmed === ":compact") {
+    if (cleanLine === ":compact") {
       try {
         await performCompaction();
       } catch (err) {
@@ -1204,7 +1222,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
 
     // :commit — generate an AI commit message for staged changes from inside the REPL
-    if (trimmed === ":commit" || trimmed.startsWith(":commit ")) {
+    if (cleanLine === ":commit" || cleanLine.startsWith(":commit ")) {
       const { buildCommitMessage, runCommitFlow, runGitCommit, SecretWarningError } = await import("./commit.js");
       const { createRl: makeRl, ask: askUser } = await import("./prompt-util.js");
       let secretsSendAnyway = false;
@@ -1274,16 +1292,16 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     }
 
     // Skill invocation — batch mode (no streaming, keeps the "Running..." indicator)
-    if (trimmed.startsWith("/")) {
-      const skillName = trimmed.slice(1).split(" ")[0];
+    if (cleanLine.startsWith("/")) {
+      const skillName = cleanLine.slice(1).split(" ")[0];
       const skill = skills.find((s) => s.name === skillName);
       if (skill) {
-        const args = trimmed.slice(1 + skillName.length).trim();
+        const args = cleanLine.slice(1 + skillName.length).trim();
         const expanded = skill.promptTemplate + buildSkillContext(args);
 
         // Underspecification gate
         if (config.requireSpecification && !args.startsWith("force:")) {
-          const checkPrompt = args || trimmed;
+          const checkPrompt = args || cleanLine;
           if (isUnderspecified(checkPrompt)) {
             console.log(chalk.yellow("⚠  This prompt seems underspecified. Add more detail, or prefix with 'force:' to proceed."));
             continue;
@@ -1336,20 +1354,22 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
 
         process.stdout.write(chalk.dim(`Running /${skill.name}${safeArgs ? ` on: ${safeArgs}` : ""}...\n`));
 
+        const skillPrompt = preamble ? preamble + "\n" + finalExpanded : finalExpanded;
+
         // Satori mode: skill declares retries > 0
         if (skill.retries && skill.retries > 0) {
           await maybeAutoCompact();
-          const slug = makeSlug(finalExpanded.slice(0, 100));
+          const slug = makeSlug(cleanLine.slice(0, 100));
           const startedAt = new Date().toISOString();
           const attempts: import("../core/agent.js").SatoriResult[] = [];
 
           try {
-            const response = await agent.run(finalExpanded, {
+            const response = await agent.run(skillPrompt, {
               modelOverride: skill.model,
               maxRetries: skill.retries,
               verifyCommand: config.verifyCommand,
               signal: sigintController.signal,
-              preRun: () => writeContextSnapshot(finalExpanded, config),
+              preRun: () => writeContextSnapshot(cleanLine, config),
               postRun: async (result) => {
                 attempts.push(result);
                 await writeSatoriLog(slug, startedAt, result, config, attempts);
@@ -1367,7 +1387,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           // Normal skill run
           await maybeAutoCompact();
           try {
-            const response = await agent.run(finalExpanded, { modelOverride: skill.model, signal: sigintController.signal });
+            const response = await agent.run(skillPrompt, { modelOverride: skill.model, signal: sigintController.signal });
             console.log(chalk.bold("\nassistant > ") + response + "\n");
             await saveSession();
           } catch (err) {
@@ -1390,7 +1410,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     await maybeAutoCompact();
     process.stdout.write(chalk.bold("\nassistant > "));
     try {
-      await agent.run(trimmed, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel, signal: sigintController.signal });
+      await agent.run(effectiveLine, { onDelta: (chunk) => process.stdout.write(chunk), modelOverride: normalTurnModel, signal: sigintController.signal });
       process.stdout.write("\n\n");
       await saveSession();
     } catch (err) {
