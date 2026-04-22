@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.37.0 — 2026-04-22
+
+Sprint 63 — Orchestrator Sibling Cancellation. When any worker in a multi-agent orchestrator level hits a 429, its sibling jobs now receive an abort signal immediately instead of running to completion. This closes the last gap in rate-limit resilience: parallel workers got sibling cancellation in v1.35.0; orchestrator workers get it now.
+
+### Added
+
+- **AbortController sibling cancellation for orchestrator workers** — `executeOrchestratorLevel()` now creates a per-level `AbortController`. Each job promise is wrapped with a `.catch()` that fires `controller.abort()` on `RateLimitError`. The `signal` is threaded into every `agent.run()` call so siblings exit at their next turn boundary instead of burning API quota to completion. `Promise.allSettled` already preserves completed work (since v1.36.0); this sprint adds the early-exit signal to stop new work from starting. 4 tests added.
+
+### For contributors
+
+- **`.catch()` abort pattern** — `executeOrchestratorLevel` uses `jobPromises.map(p => p.catch(err => { if (err instanceof RateLimitError) controller.abort(); throw err; }))` rather than `onRateLimitDetected` callback (the pattern used in `executeLevel`). Both achieve the same result; the `.catch()` wrapper is simpler here because there is no separate `executeOrchestratorWorker` abstraction to thread a callback through.
+
 ## v1.36.0 — 2026-04-22
 
 Sprint 62 — Orchestrator Rate-Limit Checkpoint + Resume. When the multi-agent orchestrator hits a 429 mid-level, it now saves a checkpoint to `GoalState` and exits gracefully. Re-running with `--resume` picks up where it left off — completed jobs are rehydrated (including architect context files), suspect jobs re-run, and failed/skipped jobs are propagated forward. A path-traversal guard was also added: `job.id` from on-disk checkpoints is validated against `SAFE_JOB_ID_RE` before any context file path construction.
