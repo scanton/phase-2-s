@@ -12,6 +12,14 @@
 
 ---
 
+## Backlog — Post-Sprint 64 /plan-eng-review findings (2026-04-22)
+
+- [ ] **`@file` attachment for one-shot mode** — Sprint 64 ships `@file` for the interactive REPL only. `phase2s run "what does @src/foo.ts do?"` does not expand `@tokens`. Follow-on: call `expandAttachments(prompt, cwd)` in one-shot entry path (`runOneShot()` or equivalent) before passing to `agent.run()`. No completer needed — one-shot has no readline interface. **Depends on:** Sprint 64 (v1.38.0) shipping first.
+
+- [ ] **`@url` attachment** — Type `@https://...` to inline a URL's fetched content as context. Natural extension of the `@file` module pattern. Use the existing browser/fetch infrastructure. **Depends on:** Sprint 64 (v1.38.0) shipping first.
+
+---
+
 ## Backlog — Post-Sprint 58 adversarial findings (resolved in Sprint 59)
 
 - [x] **Parallel executor: `Promise.all` abandons in-progress workers on first 429** — Fixed in Sprint 59 (v1.33.0): switched to `Promise.allSettled`, collect fulfilled results before re-throwing the first `RateLimitError`. Sibling workers' completed work is no longer lost.
