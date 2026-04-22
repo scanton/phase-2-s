@@ -8,7 +8,7 @@
 
 ## Backlog — Post-Sprint 61 /plan-eng-review findings (2026-04-21)
 
-- [ ] **AbortController for `executeOrchestratorLevel`** — Sprint 61 adds per-level AbortController to `executeLevel` (parallel executor path). `executeOrchestratorLevel` (role-annotated spec path) runs in-process Agent instances with no signal threading — sibling orchestrator jobs run to completion on 429. Fix: thread AbortController into `executeOrchestratorLevel`, same pattern as `executeLevel`. **Prerequisite met in v1.36.0 (checkpoint + resume).** Ready to ship.
+- [x] **AbortController for `executeOrchestratorLevel`** — **Completed: v1.37.0 (2026-04-22).** Added `AbortController` per level in `executeOrchestratorLevel`. Each job promise is wrapped with a `.catch()` that fires `controller.abort()` on `RateLimitError`; `signal` is threaded into every `agent.run()` call. Sibling orchestrator jobs now exit at their next signal check instead of running to completion. 4 tests added.
 
 ---
 
