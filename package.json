@@ -1,6 +1,6 @@
 {
   "name": "@scanton/phase2s",
-  "version": "1.38.0",
+  "version": "1.39.0",
   "description": "AI coding assistant with 29 built-in skills, ChatGPT subscription support, and autonomous spec execution",
   "author": "Scott Canton",
   "homepage": "https://github.com/scanton/phase-2-s",
@@ -58,10 +58,12 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
     "@iarna/toml": "^2.2.5",
+    "@mozilla/readability": "^0.6.0",
     "@types/iarna__toml": "^2.0.5",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "glob": "^13.0.0",
+    "linkedom": "^0.18.12",
     "openai": "^4.73.0",
     "yaml": "^2.6.0",
     "zod": "^3.23.0"

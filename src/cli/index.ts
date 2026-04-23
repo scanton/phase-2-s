@@ -1581,6 +1581,10 @@ export async function oneShotMode(config: Config, prompt: string, reasoningEffor
     process.stderr.write(`No skill named '${unknownSkillName}'. Running as plain prompt. Use 'phase2s skills' to list available skills.\n`);
   }
 
+  // Expand @file and @url attachment tokens before sending to the model.
+  const { cleanLine: expandedLine, preamble: attachPreamble } = await expandAttachments(effectivePrompt, process.cwd());
+  const expandedPrompt = attachPreamble ? attachPreamble + expandedLine : expandedLine;
+
   // --reasoning-effort is a fallback when skill routing doesn't provide a model override.
   const effortModel = reasoningEffort && reasoningEffort !== "default"
     ? resolveReasoningModel(reasoningEffort, config)
@@ -1588,7 +1592,7 @@ export async function oneShotMode(config: Config, prompt: string, reasoningEffor
   const effectiveModel = modelOverride ?? effortModel;
 
   try {
-    const result = await agent.run(effectivePrompt, {
+    const result = await agent.run(expandedPrompt, {
       modelOverride: effectiveModel,
       onDelta: (chunk) => { process.stdout.write(chunk); hasOutput = true; },
     });

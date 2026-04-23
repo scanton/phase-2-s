@@ -13,11 +13,17 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { assertInSandbox } from "../tools/sandbox.js";
+import { getUrlBlockReason } from "../tools/browser.js";
 
 // Regex: negative lookbehind ensures @ is NOT preceded by a word char.
 // Blocks email false positives (user@domain.com) while matching:
 //   @src/core/agent.ts  @Makefile  @Dockerfile  @.env
-const ATTACH_TOKEN_RE = /(?<!\w)@([\w./\-_]+)/g;
+const ATTACH_TOKEN_RE = /(?<!\w)@(?!https?:\/\/)([\w./\-_]+)/g;
+
+// URL regex: matches @https://... and @http://... tokens.
+// Stops at whitespace and common HTML delimiter chars. Trailing punctuation
+// (period, comma, closing paren, etc.) is stripped after matching.
+const ATTACH_URL_RE = /(?<!\w)@(https?:\/\/[^\s<>"'{}|\\^`[\]]+)/g;
 
 // 20KB hard limit regardless of line count (blocks minified/binary files)
 const MAX_BYTES = 20 * 1024;
@@ -48,6 +54,11 @@ export function parseAttachTokens(line: string): string[] {
   ATTACH_TOKEN_RE.lastIndex = 0;
   while ((match = ATTACH_TOKEN_RE.exec(line)) !== null) {
     tokens.push(match[1]);
+  }
+  ATTACH_URL_RE.lastIndex = 0;
+  while ((match = ATTACH_URL_RE.exec(line)) !== null) {
+    const trimmed = match[1].replace(/[.,;:!?)\]]+$/, "");
+    if (trimmed) tokens.push(trimmed);
   }
   return tokens;
 }
@@ -116,6 +127,95 @@ export async function readWithSizeGuard(
     lineCount,
     sizeWarning,
   };
+}
+
+// ---------------------------------------------------------------------------
+// fetchUrlWithSizeGuard
+
+/**
+ * Fetch a URL and extract clean text. Uses Mozilla Readability for HTML pages
+ * to strip navigation/ads and return article-quality content. Falls back to
+ * raw text stripping for non-HTML responses.
+ *
+ * SSRF protection: delegates to getUrlBlockReason() from browser.ts.
+ */
+export async function fetchUrlWithSizeGuard(
+  token: string,
+  maxLines = 200,
+): Promise<AttachedFile | { error: string }> {
+  const blockReason = getUrlBlockReason(token);
+  if (blockReason) {
+    return { error: `URL blocked — ${blockReason}: ${token}` };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(token, { signal: AbortSignal.timeout(10_000) });
+  } catch (err) {
+    return { error: `Could not fetch URL: ${token} (${(err as Error).message})` };
+  }
+
+  if (!response.ok) {
+    return { error: `HTTP ${response.status} fetching URL: ${token}` };
+  }
+
+  let rawText: string;
+  try {
+    const bodyText = await response.text();
+
+    // Reject absurdly large responses before parsing
+    if (bodyText.length > 5 * 1024 * 1024) {
+      return { error: `URL response too large to process (>5MB): ${token}` };
+    }
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("text/html")) {
+      if (bodyText.length > 512 * 1024) {
+        return { error: `URL HTML too large to parse (>512KB): ${token}` };
+      }
+      const { parseHTML } = await import("linkedom");
+      const { Readability } = await import("@mozilla/readability");
+      const { document } = parseHTML(bodyText);
+      const article = new Readability(document as unknown as Document).parse();
+      rawText = article?.textContent?.trim() ?? stripHtmlTags(bodyText);
+    } else {
+      rawText = bodyText;
+    }
+  } catch {
+    return { error: `Could not parse content from URL: ${token}` };
+  }
+
+  if (Buffer.byteLength(rawText, "utf8") > MAX_BYTES) {
+    return { error: `URL content too large to attach (>${Math.round(MAX_BYTES / 1024)}KB): ${token}` };
+  }
+
+  const lines = rawText.split("\n");
+  const lineCount = lines.length;
+
+  let sizeWarning: SizeWarning;
+  let content: string;
+
+  if (lineCount > 500) {
+    sizeWarning = "truncated";
+    content = lines.slice(0, maxLines).join("\n") + "\n[truncated]";
+  } else if (lineCount > 200) {
+    sizeWarning = "warned";
+    content = rawText;
+  } else {
+    sizeWarning = "none";
+    content = rawText;
+  }
+
+  return { path: token, resolvedPath: token, content, lineCount, sizeWarning };
+}
+
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +312,8 @@ export async function expandAttachments(
   let cleanLine = line;
 
   for (const token of [...new Set(tokens)]) {
-    const result = await readWithSizeGuard(token, cwd);
+    const isUrl = token.startsWith("http://") || token.startsWith("https://");
+    const result = isUrl ? await fetchUrlWithSizeGuard(token) : await readWithSizeGuard(token, cwd);
     if ("error" in result) {
       process.stderr.write(`[phase2s] Could not attach ${token}: ${result.error}\n`);
       // Preserve the @token in cleanLine — don't silently remove it
