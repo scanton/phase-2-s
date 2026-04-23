@@ -450,6 +450,85 @@ describe("fetchUrlWithSizeGuard", () => {
       expect(result.error).toContain("too large to parse");
     }
   });
+
+  it("returns error for response body exceeding 5MB pre-buffer guard", async () => {
+    const bigBody = "x".repeat(5 * 1024 * 1024 + 1);
+    vi.mocked(fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => "text/plain" },
+      text: async () => bigBody,
+    });
+    const result = await fetchUrlWithSizeGuard("https://example.com/huge");
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error).toContain("too large to process");
+    }
+  });
+
+  it("returns error when plain text content exceeds 20KB post-parse limit", async () => {
+    const bigText = "x".repeat(21 * 1024);
+    vi.mocked(fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => "text/plain" },
+      text: async () => bigText,
+    });
+    const result = await fetchUrlWithSizeGuard("https://example.com/big");
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error).toContain("too large to attach");
+    }
+  });
+
+  it("sets sizeWarning:truncated and caps content for >500-line responses", async () => {
+    const manyLines = Array.from({ length: 600 }, (_, i) => `line ${i}`).join("\n");
+    vi.mocked(fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => "text/plain" },
+      text: async () => manyLines,
+    });
+    const result = await fetchUrlWithSizeGuard("https://example.com/long", 200);
+    expect("error" in result).toBe(false);
+    if (!("error" in result)) {
+      expect(result.sizeWarning).toBe("truncated");
+      expect(result.content).toContain("[truncated]");
+      expect(result.lineCount).toBe(600);
+    }
+  });
+
+  it("sets sizeWarning:warned for 200-500 line responses without truncating", async () => {
+    const mediumLines = Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n");
+    vi.mocked(fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => "text/plain" },
+      text: async () => mediumLines,
+    });
+    const result = await fetchUrlWithSizeGuard("https://example.com/medium");
+    expect("error" in result).toBe(false);
+    if (!("error" in result)) {
+      expect(result.sizeWarning).toBe("warned");
+      expect(result.content).not.toContain("[truncated]");
+      expect(result.lineCount).toBe(300);
+    }
+  });
+
+  it("blocks redirect to private IP via response.url SSRF re-check", async () => {
+    vi.mocked(fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      url: "http://10.0.0.1/secrets",
+      headers: { get: () => "text/plain" },
+      text: async () => "sensitive",
+    });
+    const result = await fetchUrlWithSizeGuard("https://attacker.com/redirect");
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error).toContain("redirect blocked");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -488,5 +567,20 @@ describe("expandAttachments — URL tokens", () => {
     expect(attached).toHaveLength(0);
     expect(cleanLine).toContain("@https://broken.example.com/");
     expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  it("removes @url with trailing punctuation from cleanLine after successful fetch", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => "text/plain" },
+      text: async () => "content\n",
+    }));
+    const { cleanLine, attached } = await expandAttachments(
+      "See @https://example.com/page.",
+      "/tmp",
+    );
+    expect(attached).toHaveLength(1);
+    expect(cleanLine).not.toContain("@https");
   });
 });

@@ -103,30 +103,30 @@ export async function readWithSizeGuard(
     return { error: `Could not read file: ${token}` };
   }
 
-  const lines = raw.split("\n");
+  const { content, lineCount, sizeWarning } = applyLineLimits(raw, maxLines);
+  return { path: token, resolvedPath, content, lineCount, sizeWarning };
+}
+
+// ---------------------------------------------------------------------------
+// applyLineLimits
+
+function applyLineLimits(
+  text: string,
+  maxLines: number,
+): { content: string; lineCount: number; sizeWarning: SizeWarning } {
+  const lines = text.split("\n");
   const lineCount = lines.length;
-
-  let sizeWarning: SizeWarning;
-  let content: string;
-
   if (lineCount > 500) {
-    sizeWarning = "truncated";
-    content = lines.slice(0, maxLines).join("\n") + "\n[truncated]";
-  } else if (lineCount > 200) {
-    sizeWarning = "warned";
-    content = raw;
-  } else {
-    sizeWarning = "none";
-    content = raw;
+    return {
+      content: lines.slice(0, maxLines).join("\n") + "\n[truncated]",
+      lineCount,
+      sizeWarning: "truncated",
+    };
   }
-
-  return {
-    path: token,
-    resolvedPath,
-    content,
-    lineCount,
-    sizeWarning,
-  };
+  if (lineCount > 200) {
+    return { content: text, lineCount, sizeWarning: "warned" };
+  }
+  return { content: text, lineCount, sizeWarning: "none" };
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +153,14 @@ export async function fetchUrlWithSizeGuard(
     response = await fetch(token, { signal: AbortSignal.timeout(10_000) });
   } catch (err) {
     return { error: `Could not fetch URL: ${token} (${(err as Error).message})` };
+  }
+
+  // Re-check SSRF guard on the final URL after any redirects.
+  if (response.url && response.url !== token) {
+    const redirectBlockReason = getUrlBlockReason(response.url);
+    if (redirectBlockReason) {
+      return { error: `URL redirect blocked — ${redirectBlockReason}: ${token} → ${response.url}` };
+    }
   }
 
   if (!response.ok) {
@@ -189,23 +197,7 @@ export async function fetchUrlWithSizeGuard(
     return { error: `URL content too large to attach (>${Math.round(MAX_BYTES / 1024)}KB): ${token}` };
   }
 
-  const lines = rawText.split("\n");
-  const lineCount = lines.length;
-
-  let sizeWarning: SizeWarning;
-  let content: string;
-
-  if (lineCount > 500) {
-    sizeWarning = "truncated";
-    content = lines.slice(0, maxLines).join("\n") + "\n[truncated]";
-  } else if (lineCount > 200) {
-    sizeWarning = "warned";
-    content = rawText;
-  } else {
-    sizeWarning = "none";
-    content = rawText;
-  }
-
+  const { content, lineCount, sizeWarning } = applyLineLimits(rawText, maxLines);
   return { path: token, resolvedPath: token, content, lineCount, sizeWarning };
 }
 
@@ -231,7 +223,7 @@ export function formatAttachmentBlock(files: AttachedFile[]): string {
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return (
     files
-      .map((f) => `<file path="${f.path}">\n${escapeXml(f.content)}\n</file>`)
+      .map((f) => `<file path="${escapeXml(f.path)}">\n${escapeXml(f.content)}\n</file>`)
       .join("\n") + "\n"
   );
 }
@@ -319,12 +311,13 @@ export async function expandAttachments(
       // Preserve the @token in cleanLine — don't silently remove it
     } else {
       attached.push(result);
-      // Remove @token but only when not followed by more path chars (avoids corrupting longer tokens)
-      const tokenRe = new RegExp(
-        "(?<!\\w)@" + token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w./\\-_])",
-        "g",
-      );
-      cleanLine = cleanLine.replace(tokenRe, "").replace(/\s{2,}/g, " ").trim();
+      const escapedToken = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      // For URL tokens, the stored token has trailing punctuation stripped but the
+      // line may still have it. Consume it so @url. doesn't linger in cleanLine.
+      const tokenRe = isUrl
+        ? new RegExp("(?<!\\w)@" + escapedToken + "[.,;:!?)\\]]*(?![\\w./\\-_])", "g")
+        : new RegExp("(?<!\\w)@" + escapedToken + "(?![\\w./\\-_])", "g");
+      cleanLine = cleanLine.replace(tokenRe, "").replace(/ {2,}/g, " ").trim();
     }
   }
 
