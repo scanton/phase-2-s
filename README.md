@@ -245,9 +245,11 @@ Active agent is saved on `--resume` — pick up where you left off with the same
 
 ---
 
-## @file attachment in the REPL
+## @file and @url attachment
 
-Type `@path/to/file.ts` anywhere in a REPL prompt to inline that file as context before your message is sent to the model:
+Type `@path/to/file.ts` or `@https://...` anywhere in a REPL prompt — or in a `phase2s run "..."` one-shot command — to inline content as context before your message is sent to the model.
+
+**File attachment:**
 
 ```
 you > @src/core/auth.ts why does this throw when session is null?
@@ -255,16 +257,24 @@ you > @src/core/auth.ts why does this throw when session is null?
 
 Phase2S reads the file, wraps it in a `<file path="...">` block, and prepends it to your message. The model sees the full source without you having to copy-paste.
 
-**Tab completion** — press Tab while typing an `@fragment` and Phase2S completes it against filenames in your project. Directories get a trailing `/` so you can keep drilling down.
-
-**Size limits** — files over 20 KB are rejected with an error. Files 201–500 lines are inlined with a size warning. Files over 500 lines are truncated to 200 lines and marked `[truncated]`.
-
-**Safety** — path traversal is rejected. Paths that resolve outside the project sandbox are blocked and the `@token` is left in your prompt so you can see what failed.
-
-You can attach multiple files in one prompt:
+**URL attachment:**
 
 ```
-you > @src/core/agent.ts @src/providers/openai.ts what's different about how these handle errors?
+you > @https://docs.example.com/api summarize the authentication section
+```
+
+Phase2S fetches the URL and extracts clean article text using Mozilla Readability (the same engine Firefox Reader View uses). HTML navigation, ads, and boilerplate are stripped. Non-HTML responses (JSON, plain text) are inlined as-is. Requests time out after 10 seconds.
+
+**Tab completion** — press Tab while typing an `@fragment` and Phase2S completes it against filenames in your project. Directories get a trailing `/` so you can keep drilling down.
+
+**Size limits** — files and URL responses over 20 KB are rejected with an error. Files 201–500 lines are inlined with a size warning. Files over 500 lines are truncated to 200 lines and marked `[truncated]`.
+
+**Safety** — file path traversal is rejected; paths that resolve outside the project sandbox are blocked and the `@token` is left in your prompt so you can see what failed. URL requests block private IP ranges (RFC 1918, loopback, link-local, AWS metadata endpoint) before any network call, and re-check redirect destinations to prevent redirect-to-private-IP attacks.
+
+You can mix files and URLs in one prompt:
+
+```
+you > @src/core/agent.ts @https://platform.openai.com/docs/api-reference does our implementation match the spec?
 ```
 
 ---
@@ -496,7 +506,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 1492 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, AI-generated commit messages, session index/locking/DAG integrity, session lock hardening (PID-suffixed tmp files, SIGKILL recovery, symlink escape guard), replan agent (hallucination guard, tail-slice eval, empty tool registry), parallel goal retry loop, onDelta newline injection, rate-limit resilience (typed RateLimitError, rate_limited ProviderEvent, auto-backoff across all 7 providers), compaction rate-limit propagation, and orchestrator rate-limit propagation
+- [x] 1,612 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, AI-generated commit messages, session index/locking/DAG integrity, session lock hardening (PID-suffixed tmp files, SIGKILL recovery, symlink escape guard), replan agent (hallucination guard, tail-slice eval, empty tool registry), parallel goal retry loop, onDelta newline injection, rate-limit resilience (typed RateLimitError, rate_limited ProviderEvent, auto-backoff across all 7 providers), compaction rate-limit propagation, orchestrator rate-limit propagation, orchestrator sibling cancellation, @file attachment (REPL + one-shot), and @url attachment with SSRF protection
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -584,6 +594,9 @@ browser: true  # requires playwright installed
 - [x] Skills quality audit (v1.34.0) — six D-rated built-in skills rewritten to B+ standard with unconditional verify steps and datetime-stamped artifact saves to `.phase2s/`: `/review`, `/ship`, `/docs`, `/investigate`, `/tdd`, and `/skill`. The `skill` meta-skill now generates structural `## Output`, `## Verify`, and `## Save` sections so every new skill starts at B-quality minimum. 14 skills gain typed `inputs:` frontmatter exposing named MCP parameters and `{{param}}` body substitution.
 - [x] Resilience closure (v1.35.0) — parallel workers cancel sibling HTTP streams immediately when one hits a rate limit (per-batch `AbortController`; completed work preserved via `Promise.allSettled`). Auto-compaction stops cascading after a configurable cap (`max_auto_compact_count`, default 3; manual `:compact` doesn't count). `phase2s goal --reasoning-effort high|low|default` overrides the model tier for all unlabeled subtasks. Fixed: auto-compact counter now increments only when compaction actually replaces the conversation. Fixed: `--reasoning-effort` validates at parse time. 1,548 tests.
 - [x] Orchestrator checkpoint + resume (v1.36.0) — when the multi-agent orchestrator hits a 429 mid-level, Phase2S checkpoints completed jobs (including architect context files) and exits 2. `--resume` rehydrates the checkpoint: completed jobs skip re-execution, architect context is reconstructed from stored stdout and injected into downstream workers, and failed/skipped job states propagate forward. Path traversal guard added: `job.id` from on-disk checkpoints is validated before any context file path construction. 1,561 tests.
+- [x] Orchestrator sibling cancellation (v1.37.0) — `executeOrchestratorLevel()` creates a per-level `AbortController`. When any job hits a 429, it fires `controller.abort()` so siblings exit at their next turn boundary instead of running to completion. Closes the final gap in rate-limit resilience for orchestrator-mode runs. `Promise.allSettled` preserves completed work. 1,565 tests.
+- [x] `@file` attachment for the REPL (v1.38.0) — `@path/to/file.ts` in any REPL prompt inlines the file as a `<file path="...">` preamble block before the message reaches the model. Tab-completes against project filenames. 20 KB / 500-line limits; path traversal blocked via `assertInSandbox`. Multiple tokens per prompt, deduplication, error token preservation. 1,594 tests.
+- [x] `@url` attachment + `@file` one-shot (v1.39.0) — `@https://...` tokens fetch and inline URL content using Mozilla Readability for clean HTML extraction. SSRF protection (RFC 1918, loopback, link-local, redirect re-check). `@file` tokens now work in `phase2s run "..."` one-shot mode. 512 KB HTML pre-parse limit, 20 KB post-parse limit. 18 new tests; 5 security and correctness fixes from `/review`. 1,612 tests.
 
 ---
 

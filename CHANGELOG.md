@@ -20,7 +20,19 @@ Sprint 65 — `@file` one-shot + `@url` attachment. Completes the `@token` story
 
 - **Trailing punctuation stripped from URL tokens** — `@https://example.com/page.` no longer captures the trailing period; common sentence-ending characters (`. , ; : ! ? ) ]`) are trimmed after the URL regex match.
 
-- **12 new tests** — `parseAttachTokens` URL extraction and trailing-punctuation stripping, `fetchUrlWithSizeGuard` (SSRF block, 404, network error, plain text, HTML fallback, 512KB pre-parse limit), `expandAttachments` URL inline and error-preserving paths.
+- **18 new tests** — `parseAttachTokens` URL extraction and trailing-punctuation stripping, `fetchUrlWithSizeGuard` (SSRF block, 404, network error, plain text, HTML fallback, 512KB pre-parse limit, 5MB body limit, 20KB post-parse, truncation, warned, redirect SSRF re-check), `expandAttachments` URL inline, error-preserving, and trailing-punctuation cleanup paths.
+
+### Fixed
+
+- **Path XML attribute injection** — `formatAttachmentBlock` now calls `escapeXml(f.path)` on the path attribute. A URL containing `"` would have broken the `<file path="...">` wrapper and could inject prompt content.
+
+- **Redirect SSRF bypass** — `fetchUrlWithSizeGuard` re-checks `getUrlBlockReason(response.url)` after fetch completes. A server at a public IP could redirect to a private IP (e.g. `192.168.x.x`) and bypass the pre-fetch SSRF guard. The redirect destination is now validated the same way as the original URL.
+
+- **Trailing punctuation lingers in `cleanLine`** — the URL token cleanup regex in `expandAttachments` now uses a `[.,;:!?)\]]*` suffix to consume trailing punctuation that was stripped from the token during `parseAttachTokens`. Previously, `@url.` left a trailing `.` in `cleanLine`.
+
+- **Whitespace normalization collapses newlines** — changed `/ \s{2,}/g` to `/ {2,}/g` in `expandAttachments`. Replacing all runs of whitespace collapsed newlines in multi-line one-shot prompts.
+
+- **DRY extraction of `applyLineLimits`** — identical `sizeWarning` / truncation blocks in `readWithSizeGuard` and `fetchUrlWithSizeGuard` extracted into a shared `applyLineLimits(text, maxLines)` helper.
 
 ## v1.38.0 — 2026-04-22
 
