@@ -245,6 +245,30 @@ Active agent is saved on `--resume` — pick up where you left off with the same
 
 ---
 
+## @file attachment in the REPL
+
+Type `@path/to/file.ts` anywhere in a REPL prompt to inline that file as context before your message is sent to the model:
+
+```
+you > @src/core/auth.ts why does this throw when session is null?
+```
+
+Phase2S reads the file, wraps it in a `<file path="...">` block, and prepends it to your message. The model sees the full source without you having to copy-paste.
+
+**Tab completion** — press Tab while typing an `@fragment` and Phase2S completes it against filenames in your project. Directories get a trailing `/` so you can keep drilling down.
+
+**Size limits** — files over 20 KB are rejected with an error. Files 201–500 lines are inlined with a size warning. Files over 500 lines are truncated to 200 lines and marked `[truncated]`.
+
+**Safety** — path traversal is rejected. Paths that resolve outside the project sandbox are blocked and the `@token` is left in your prompt so you can see what failed.
+
+You can attach multiple files in one prompt:
+
+```
+you > @src/core/agent.ts @src/providers/openai.ts what's different about how these handle errors?
+```
+
+---
+
 ## All 29 skills
 
 ```

@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.38.0 — 2026-04-22
+
+Sprint 64 — `@file` Fuzzy Attachment for the REPL. Type `@src/core/agent.ts` in any REPL prompt and the file is inlined as context before your message. Tab-completes like a shell path. Path traversal is rejected via `assertInSandbox`. Files over 20KB or 500 lines are capped or truncated with a visible notice.
+
+### Added
+
+- **`@path` token attachment** — any `@token` in a REPL prompt (not a bare email address) is resolved against `cwd`, sandboxed via `assertInSandbox`, and injected as a `<file path="...">` preamble block before the user's message is sent to `agent.run()`. Supports dotfiles, extensionless files (`@Makefile`), and multi-token prompts. 14 tests added.
+
+- **Tab completion for `@` fragments** — `createInterface` is now wired with `makeCompleter(() => process.cwd())`. Pressing Tab while typing `@src/core/ag` completes to matching filenames. Directories get a trailing `/` so you can keep typing. The active `@fragment` at the cursor end is the only thing replaced on Tab — mid-sentence tokens are not disturbed.
+
+- **Size limits** — files over 20KB return a hard error (not inlined). Files 201–500 lines are inlined with a `sizeWarning: "warned"` flag; files over 500 lines are truncated to 200 lines with `[truncated]` appended.
+
+- **Error token preservation** — if a `@token` fails to read (not found, is a directory, path traversal rejected), the error is written to stderr and the `@token` is left in the prompt so the user sees what failed.
+
+- **Dispatch safety** — `cleanLine` (tokens stripped) drives all command dispatch (`:clone`, `:compact`, `:commit`, `/skills`, `/quit`, `/help`, `handleColonCommand`). `effectiveLine` (preamble + cleanLine) is passed only to `agent.run()`. Satori snapshot slugs use `cleanLine` for readability.
+
+- **`src/cli/file-attachment.ts`** — new module exporting `parseAttachTokens`, `readWithSizeGuard`, `formatAttachmentBlock`, `makeCompleter`, `expandAttachments`.
+
+### Fixed
+
+- **XML escaping in `formatAttachmentBlock`** — file content containing `<`, `>`, or `&` is now HTML-entity-escaped before injection into the `<file>...</file>` preamble block. Prevents a malicious file from breaking out of the XML wrapper and injecting prompt content.
+
+- **FIFO/socket/device file hang** — `readWithSizeGuard` now calls `stat.isDirectory()` and `stat.isFile()` before reading. Named pipes and device files have `size === 0` (bypassing the 20 KB guard) and would cause `readFileSync` to block forever. Both checks return an error immediately without touching the file descriptor.
+
+- **Token-as-substring corruption** — `expandAttachments` used `replaceAll("@src", "")` to strip resolved tokens. This would corrupt `@src/core/agent.ts` when `@src` also appeared in the prompt. Fixed with a regex that uses a negative lookahead `(?![\w./\-_])` to only match complete tokens.
+
+- **Duplicate token deduplication** — repeated `@token` references in a single prompt (e.g. `@foo.ts explain @foo.ts`) read and attached the same file twice. Fixed with `[...new Set(tokens)]` before the read loop.
+
+- **Tab completer O(n) `statSync`** — `makeCompleter` called `statSync` on every entry in the directory to determine if it was a directory. Fixed by passing `{ withFileTypes: true }` to `readdirSync` so `entry.isDirectory()` is available without a second syscall.
+
 ## v1.37.0 — 2026-04-22
 
 Sprint 63 — Orchestrator Sibling Cancellation. When any worker in a multi-agent orchestrator level hits a 429, its sibling jobs now receive an abort signal immediately instead of running to completion. This closes the last gap in rate-limit resilience: parallel workers got sibling cancellation in v1.35.0; orchestrator workers get it now.
