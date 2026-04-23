@@ -11,7 +11,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, dirname, basename, sep } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { assertInSandbox } from "../tools/sandbox.js";
 
 // Regex: negative lookbehind ensures @ is NOT preceded by a word char.
@@ -75,6 +75,12 @@ export async function readWithSizeGuard(
   try {
     // Check byte size before reading full content
     const stat = statSync(resolvedPath);
+    if (stat.isDirectory()) {
+      return { error: `Path is a directory: ${token}` };
+    }
+    if (!stat.isFile()) {
+      return { error: `Not a regular file: ${token}` };
+    }
     if (stat.size > MAX_BYTES) {
       return { error: `File too large to attach (>${Math.round(MAX_BYTES / 1024)}KB): ${token}` };
     }
@@ -121,9 +127,11 @@ export async function readWithSizeGuard(
  */
 export function formatAttachmentBlock(files: AttachedFile[]): string {
   if (files.length === 0) return "";
+  const escapeXml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return (
     files
-      .map((f) => `<file path="${f.path}">\n${f.content}\n</file>`)
+      .map((f) => `<file path="${f.path}">\n${escapeXml(f.content)}\n</file>`)
       .join("\n") + "\n"
   );
 }
@@ -159,26 +167,19 @@ export function makeCompleter(
 
     const searchDir = dirPart ? join(cwd, dirPart) : cwd;
 
-    let entries: string[];
+    let entries: import("node:fs").Dirent[];
     try {
-      entries = readdirSync(searchDir);
+      entries = readdirSync(searchDir, { withFileTypes: true });
     } catch {
       callback(null, [[], activeToken]);
       return;
     }
 
     const completions = entries
-      .filter((entry) => entry.startsWith(filePart))
+      .filter((entry) => entry.name.startsWith(filePart))
       .map((entry) => {
-        const fullPath = join(searchDir, entry);
-        let isDir = false;
-        try {
-          isDir = statSync(fullPath).isDirectory();
-        } catch {
-          // ignore
-        }
-        const relPath = dirPart ? dirPart + sep + entry : entry;
-        return "@" + relPath + (isDir ? "/" : "");
+        const relPath = dirPart ? dirPart + "/" + entry.name : entry.name;
+        return "@" + relPath + (entry.isDirectory() ? "/" : "");
       });
 
     callback(null, [completions, activeToken]);
@@ -210,15 +211,19 @@ export async function expandAttachments(
   const attached: AttachedFile[] = [];
   let cleanLine = line;
 
-  for (const token of tokens) {
+  for (const token of [...new Set(tokens)]) {
     const result = await readWithSizeGuard(token, cwd);
     if ("error" in result) {
       process.stderr.write(`[phase2s] Could not attach ${token}: ${result.error}\n`);
       // Preserve the @token in cleanLine — don't silently remove it
     } else {
       attached.push(result);
-      // Remove the @token from cleanLine (replace first occurrence)
-      cleanLine = cleanLine.replaceAll("@" + token, "").replace(/\s{2,}/g, " ").trim();
+      // Remove @token but only when not followed by more path chars (avoids corrupting longer tokens)
+      const tokenRe = new RegExp(
+        "(?<!\\w)@" + token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w./\\-_])",
+        "g",
+      );
+      cleanLine = cleanLine.replace(tokenRe, "").replace(/\s{2,}/g, " ").trim();
     }
   }
 

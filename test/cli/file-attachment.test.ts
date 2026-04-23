@@ -178,6 +178,59 @@ describe("formatAttachmentBlock", () => {
 });
 
 // ---------------------------------------------------------------------------
+// makeCompleter
+// ---------------------------------------------------------------------------
+
+describe("makeCompleter", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function invoke(getCwd: () => string, line: string): Promise<[string[], string]> {
+    return new Promise((resolve, reject) => {
+      makeCompleter(getCwd)(line, (err, result) => (err ? reject(err) : resolve(result)));
+    });
+  }
+
+  it("returns no completions when line has no @fragment at end", async () => {
+    const [completions, hit] = await invoke(() => tmpDir, "just text");
+    expect(completions).toEqual([]);
+    expect(hit).toBe("");
+  });
+
+  it("completes a file without trailing slash", async () => {
+    writeFileSync(join(tmpDir, "agent.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@ag");
+    expect(completions).toContain("@agent.ts");
+  });
+
+  it("appends trailing slash for directory completions", async () => {
+    mkdirSync(join(tmpDir, "core"));
+    const [completions] = await invoke(() => tmpDir, "@cor");
+    expect(completions).toContain("@core/");
+  });
+
+  it("falls back to [[], activeToken] when readdir fails", async () => {
+    const [completions, hit] = await invoke(() => tmpDir, "@nonexistent/ag");
+    expect(completions).toEqual([]);
+    expect(hit).toBe("@nonexistent/ag");
+  });
+
+  it("handles nested fragment — splits dirPart and filePart correctly", async () => {
+    mkdirSync(join(tmpDir, "src"));
+    writeFileSync(join(tmpDir, "src", "agent.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@src/ag");
+    expect(completions).toContain("@src/agent.ts");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // expandAttachments
 // ---------------------------------------------------------------------------
 
@@ -221,5 +274,45 @@ describe("expandAttachments", () => {
     const { cleanLine, preamble } = await expandAttachments("email user@domain.com here", tmpDir);
     expect(cleanLine).toBe("email user@domain.com here");
     expect(preamble).toBe("");
+  });
+
+  it("removes all occurrences when a token is repeated in the prompt", async () => {
+    writeFileSync(join(tmpDir, "foo.ts"), "const x = 1;\n");
+    const { cleanLine, preamble, attached } = await expandAttachments("@foo.ts explain @foo.ts", tmpDir);
+    expect(cleanLine).toBe("explain");
+    expect(attached).toHaveLength(1);
+    expect((preamble.match(/<file /g) ?? []).length).toBe(1);
+  });
+
+  it("does not corrupt a longer token when a shorter prefix token also appears", async () => {
+    writeFileSync(join(tmpDir, "foo.ts"), "const x = 1;\n");
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    // @foo.ts/bar doesn't exist so it stays in cleanLine; @foo.ts is inlined and removed
+    const { cleanLine, attached } = await expandAttachments("@foo.ts @foo.ts/bar question", tmpDir);
+    expect(attached).toHaveLength(1);
+    // @foo.ts should be removed; @foo.ts/bar should remain intact (not corrupted to /bar)
+    expect(cleanLine).toContain("@foo.ts/bar");
+    expect(cleanLine).not.toContain("@foo.ts ");
+    stderrSpy.mockRestore();
+  });
+
+  it("inlines two files and removes both @tokens from cleanLine", async () => {
+    writeFileSync(join(tmpDir, "a.ts"), "const a = 1;\n");
+    writeFileSync(join(tmpDir, "b.ts"), "const b = 2;\n");
+    const { cleanLine, preamble, attached } = await expandAttachments("@a.ts @b.ts compare these", tmpDir);
+    expect(attached).toHaveLength(2);
+    expect(preamble).toContain('<file path="a.ts">');
+    expect(preamble).toContain('<file path="b.ts">');
+    expect(cleanLine).toBe("compare these");
+  });
+
+  it("propagates sizeWarning:warned through to attached metadata", async () => {
+    const lines = Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n");
+    writeFileSync(join(tmpDir, "medium.ts"), lines);
+    const { attached, preamble } = await expandAttachments("@medium.ts question", tmpDir);
+    expect(attached).toHaveLength(1);
+    expect(attached[0].sizeWarning).toBe("warned");
+    expect(preamble).toContain('<file path="medium.ts">');
+    expect(preamble).not.toContain("[truncated]");
   });
 });
