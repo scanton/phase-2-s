@@ -26,14 +26,16 @@ let agentRunResult: string = "{}";
 let agentRunThrows: Error | null = null;
 let lastAgentPrompt: string = "";
 let lastAgentOpts: unknown = null;
+let lastAgentRunOpts: unknown = null;
 
 vi.mock("../../src/core/agent.js", () => {
   class MockAgent {
     constructor(opts: unknown) {
       lastAgentOpts = opts;
     }
-    async run(prompt: string): Promise<string> {
+    async run(prompt: string, runOpts?: unknown): Promise<string> {
       lastAgentPrompt = prompt;
+      lastAgentRunOpts = runOpts;
       if (agentRunThrows) throw agentRunThrows;
       return agentRunResult;
     }
@@ -316,5 +318,31 @@ describe("replanFailingSubtasks", () => {
     expect(opts.tools).toBeDefined();
     // ToolRegistry is mocked as an empty class — just verifying it was passed
     expect(typeof opts.tools).toBe("object");
+  });
+
+  it("passes modelOverride to agent.run when provided (Sprint 66)", async () => {
+    const { replanFailingSubtasks } = await import("../../src/goal/replan.js");
+    agentRunResult = JSON.stringify({ revised: [] });
+
+    await replanFailingSubtasks(
+      ["criterion"],
+      "output",
+      makeSubtasks(),
+      makeConfig(),
+      "claude-opus-4-5",
+    );
+
+    const runOpts = lastAgentRunOpts as { modelOverride?: string } | undefined;
+    expect(runOpts?.modelOverride).toBe("claude-opus-4-5");
+  });
+
+  it("passes undefined modelOverride when not provided", async () => {
+    const { replanFailingSubtasks } = await import("../../src/goal/replan.js");
+    agentRunResult = JSON.stringify({ revised: [] });
+
+    await replanFailingSubtasks(["criterion"], "output", makeSubtasks(), makeConfig());
+
+    const runOpts = lastAgentRunOpts as { modelOverride?: string } | undefined;
+    expect(runOpts?.modelOverride).toBeUndefined();
   });
 });

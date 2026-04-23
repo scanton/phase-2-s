@@ -32,6 +32,7 @@ import { makeCompleter, expandAttachments } from "./file-attachment.js";
 import { performCompaction as runCompaction, shouldCompact } from "../core/compaction.js";
 import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
 import { RateLimitError } from "../core/rate-limit-error.js";
+import { runGoal } from "./goal.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -895,6 +896,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
    * Never written to disk (session-scoped only).
    */
   let reasoningOverride: "high" | "low" | undefined;
+  let goalRunning = false;
 
   // Ensure stdin is open and stays open for the full session
   process.stdin.resume();
@@ -1153,6 +1155,41 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
         case "error":
           console.log(chalk.red(action.message));
           continue;
+
+        case "run_goal": {
+          if (goalRunning) {
+            console.log(chalk.yellow("⚠  A goal is already running. Wait for it to finish before starting another."));
+            continue;
+          }
+          goalRunning = true;
+          try {
+            const result = await runGoal(action.goalPath, {
+              throwOnRateLimit: true,
+              reasoningEffort: reasoningOverride,
+            });
+            if (result.challenged) {
+              console.log(chalk.yellow("\n⚠  Goal run challenged by adversarial review — not executed."));
+            } else if (result.dryRun) {
+              console.log(chalk.cyan("\n→ Dry run complete."));
+            } else if (result.success) {
+              console.log(chalk.green(`\n✓ Goal complete in ${(result.durationMs / 1000).toFixed(1)}s.`));
+            } else {
+              console.log(chalk.red(`\n✗ Goal failed after ${result.attempts} attempt(s).`));
+            }
+          } catch (err) {
+            if (err instanceof RateLimitError) {
+              const retryMsg = err.retryAfter !== undefined ? ` Rate limit resets in ~${err.retryAfter}s.` : "";
+              console.log(chalk.yellow(`\n⏸  Goal paused — rate limited by ${err.providerName ?? "provider"}.${retryMsg}`));
+              console.log(chalk.dim("   Re-run :goal to resume."));
+            } else {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.log(chalk.red(`\n✗ Goal error: ${msg}`));
+            }
+          } finally {
+            goalRunning = false;
+          }
+          continue;
+        }
 
         default: {
           // TypeScript exhaustiveness guard — if a new ColonAction variant is

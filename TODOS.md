@@ -6,6 +6,12 @@
 
 ---
 
+## Backlog — Post-Sprint 66 /plan-eng-review findings (2026-04-22)
+
+- [ ] **Reentrant `:goal` guard** — The REPL blocks a second `:goal` dispatch while one is running via a `goalRunning` boolean flag (`index.ts`). This is in-process only — a user who opens a second terminal and runs `phase2s goal` directly would not be blocked. No action needed for the REPL case (flag is correct), but worth noting: the guard does not cover CLI-level parallelism. Low priority.
+
+---
+
 ## Backlog — Post-Sprint 61 /plan-eng-review findings (2026-04-21)
 
 - [x] **AbortController for `executeOrchestratorLevel`** — **Completed: v1.37.0 (2026-04-22).** Added `AbortController` per level in `executeOrchestratorLevel`. Each job promise is wrapped with a `.catch()` that fires `controller.abort()` on `RateLimitError`; `signal` is threaded into every `agent.run()` call. Sibling orchestrator jobs now exit at their next signal check instead of running to completion. 4 tests added.
@@ -60,7 +66,7 @@
 
 - [x] **AGENTS.md injection for MCP tools** — MCP tool calls (via `runMCPServer`) spawn an Agent per request without loading AGENTS.md. Skills invoked via MCP skip project/user-global instruction files entirely. **Completed: v1.30.0 (2026-04-18)** — loaded once at server startup, passed through `handleRequest()` as `agentsMdBlock` on every tool call.
 
-- [ ] **Last user message drop in `buildCompactionSummary`** — When the last message is a user message, it is dropped before the summary prompt to avoid consecutive-user-role rejection. This is correct for providers that reject consecutive user messages, but it silently discards context. Consider preserving the last user message by converting it to an assistant message or wrapping it in a system message. **Low priority — INVESTIGATE.**
+- [x] **Last user message drop in `buildCompactionSummary`** — **Completed: v1.40.0 (2026-04-22).** Dropped user message content is now appended to the summary prompt wrapped in `<user_message>` XML tags. `<` and `>` in the dropped content are HTML-escaped before wrapping to prevent prompt injection. 3 tests added.
 
 - [ ] **Non-atomic backup write** — `performCompaction` writes the backup file in a single `writeFile` call with no tmp-then-rename dance. A crash mid-write could leave a corrupt backup. Risk is low (backups are only read on manual recovery) but could be hardened. **Low priority — INVESTIGATE.**
 
@@ -102,7 +108,7 @@
 
 - [x] **`--sandbox` flag for interactive REPL** — `phase2s --sandbox <name>` creates an isolated git worktree and starts the session inside it. Already have the worktree infrastructure from parallel goal execution. Useful for exploration without risking the main branch. **Completed: v1.26.0 (2026-04-13)**
 
-- [ ] **`:re` in goal executor context** — The `:re` switcher (v1.23.0) applies to REPL turns only. `phase2s goal` subtask model resolution (`resolveSubtaskModel` in `src/goal/parallel-executor.ts`) is unaffected. Future: thread `reasoningOverride` through `runGoal()`. **After Sprint 51:** import `resolveReasoningModel` from `src/cli/model-resolver.ts` instead of inlining the logic. **Deferred post-Sprint 50.**
+- [x] **`:re` in goal executor context** — **Completed: v1.40.0 (2026-04-22).** `:goal` REPL command threads `reasoningOverride` through `runGoal(reasoningEffort)`. Bug fixed: sequential execution path at `goal.ts:667` used `satoriModel` instead of `effectiveSatoriModel` (no-op for non-parallel runs). Fixed. `throwOnRateLimit` flag prevents `process.exit(2)` from killing the REPL. Smart model widened to all retry-loop LLM callers (replan, checkCriteria, analyzeFailures, identifyFailedSubtasks). 10 tests added.
 
 - [x] **Decompose `src/mcp/server.ts`** — 674-line file (13 churn touches vs 35 for index.ts — lower urgency). Extract `skillToTool`/`toolNameToSkillName` into `src/mcp/tools.ts`, `setupSkillsWatcher` into `src/mcp/watcher.ts`, `handleRequest` into `src/mcp/handler.ts`. **Completed: v1.26.0 (2026-04-13)**
 
@@ -180,7 +186,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [x] **`:reasoning-effort` per-session control** — Forge exposes `reasoning-effort` as a session-level override (`:re high`). Users can switch between fast/cheap and slow/deep reasoning without editing config. Phase2S has `fast_model`/`smart_model` tiers but no interactive switcher during a session. **Completed:** v1.23.0 (2026-04-10) — `:re [high|low|default]` REPL command in `src/cli/index.ts`; applies to normal turns only.
 
-- [ ] **`:re` in goal executor context** — The `:re` switcher (v1.23.0) applies to REPL turns only. `phase2s goal` subtask model resolution (`resolveSubtaskModel` in `src/goal/parallel-executor.ts`) is unaffected by `:re`. Future work: thread the REPL session reasoningOverride into the executor context, probably via a config override passed through `runGoal()`. **Deferred post-Sprint 49.**
+- [x] **`:re` in goal executor context** — **See v1.40.0 entry above. Completed: v1.40.0 (2026-04-22).**
 
 ### Tier 3 — Worth noting
 

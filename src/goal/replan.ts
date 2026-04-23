@@ -53,6 +53,7 @@ export async function replanFailingSubtasks(
   evalOutput: string,
   allSubtasks: SubTask[],
   config: Config,
+  modelOverride?: string,
 ): Promise<RevisedSubtask[]> {
   // Capture the TAIL of eval output — test failures and assertion errors appear
   // at the end, not the beginning. Slicing from the head captures setup boilerplate.
@@ -72,7 +73,7 @@ export async function replanFailingSubtasks(
 
   let raw: string;
   try {
-    raw = await agent.run(prompt);
+    raw = await agent.run(prompt, { modelOverride });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(chalk.dim(`  Replan agent error: ${msg} — retrying with original descriptions.\n`));

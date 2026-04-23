@@ -191,6 +191,20 @@ describe("checkCriteria", () => {
     // The prompt should contain the truncated output, not the full 10k string
     expect(prompt.length).toBeLessThan(10_000);
   });
+
+  it("passes modelOverride to agent.run when provided", async () => {
+    agent.run.mockResolvedValue("PASS: All tests pass");
+    await checkCriteria(["All tests pass"], "output", agent as unknown as Agent, "claude-opus-4-5");
+    const callOpts = agent.run.mock.calls[0][1] as { modelOverride?: string };
+    expect(callOpts?.modelOverride).toBe("claude-opus-4-5");
+  });
+
+  it("passes undefined modelOverride when not provided", async () => {
+    agent.run.mockResolvedValue("PASS: All tests pass");
+    await checkCriteria(["All tests pass"], "output", agent as unknown as Agent);
+    const callOpts = agent.run.mock.calls[0][1] as { modelOverride?: string };
+    expect(callOpts?.modelOverride).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -729,5 +743,76 @@ echo done
     const allOutput = logMessages.join("\n");
     // Should show 0/N sub-tasks completed (no orchestrator checkpoint)
     expect(allOutput).toMatch(/Resuming: 0\/\d+ sub-tasks already completed/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runGoal — throwOnRateLimit: true (Sprint 66)
+// ---------------------------------------------------------------------------
+
+describe("runGoal — throwOnRateLimit: true throws instead of process.exit(2)", () => {
+  let tmpDir: string;
+  let specPath: string;
+
+  const SPEC_SINGLE_TASK = `# ThrowOnRateLimit Test
+
+## Problem Statement
+Test throwOnRateLimit flag.
+
+## Decomposition
+### Sub-task 1: Build it
+- **Input:** nothing
+- **Output:** something
+- **Success criteria:** it works
+
+## Acceptance Criteria
+- It works
+
+## Eval Command
+\`\`\`
+echo done
+\`\`\`
+`;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `phase2s-goal-throwrl-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+    specPath = join(tmpDir, "spec.md");
+    writeFileSync(specPath, SPEC_SINGLE_TASK, "utf8");
+    mockAgentShouldReject.error = null;
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    mockAgentShouldReject.error = null;
+    vi.restoreAllMocks();
+  });
+
+  it("throws RateLimitError instead of calling process.exit when throwOnRateLimit: true", async () => {
+    const rateLimitErr = new RateLimitError(60, "openai");
+    mockAgentShouldReject.error = rateLimitErr;
+
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      runGoal(specPath, { reviewBeforeRun: false, throwOnRateLimit: true }),
+    ).rejects.toThrow(RateLimitError);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it("still calls process.exit(2) when throwOnRateLimit: false (default behavior)", async () => {
+    const rateLimitErr = new RateLimitError(60, "openai");
+    mockAgentShouldReject.error = rateLimitErr;
+
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await runGoal(specPath, { reviewBeforeRun: false, throwOnRateLimit: false }).catch(() => {});
+
+    expect(exitSpy).toHaveBeenCalledWith(2);
   });
 });
