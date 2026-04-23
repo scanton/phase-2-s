@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.39.0 — 2026-04-22
+
+Sprint 65 — `@file` one-shot + `@url` attachment. Completes the `@token` story end-to-end: file references now work in `phase2s run "..."` (one-shot mode), and any `@https://...` token fetches and inlines the URL content using Mozilla Readability for clean article extraction.
+
+### Added
+
+- **`@file` in one-shot mode** — `phase2s run "explain @src/core/agent.ts"` now works. `expandAttachments()` is called on the effective prompt in `oneShotMode()` before `agent.run()`. Same 20KB / 500-line limits as REPL mode.
+
+- **`@url` attachment** — `@https://...` and `@http://...` tokens in any prompt (REPL or one-shot) fetch the URL and inline the content as a `<file path="https://...">` preamble block. HTML pages are parsed with Mozilla Readability to strip navigation, ads, and boilerplate — the model gets article-quality text. Non-HTML responses (JSON, plain text, etc.) are inlined as-is. 10s timeout. Same size limits as `@file`.
+
+- **SSRF protection for `@url`** — delegates to `getUrlBlockReason()` from `browser.ts`. Private IP ranges (RFC 1918, link-local, loopback, AWS metadata endpoint) are rejected before any network request is made.
+
+- **New dependencies** — `linkedom` (lightweight DOM for Node.js) and `@mozilla/readability` (Mozilla's article extraction algorithm, used by Firefox Reader View) added to `dependencies`.
+
+- **URL regex** — `ATTACH_URL_RE = /(?<!\w)@(https?:\/\/[^\s<>"'{}|\\^`[\]]+)/g`. The existing file regex gains `(?!https?:\/\/)` negative lookahead so URL tokens are not also partially matched as file tokens.
+
+- **512KB HTML pre-parse limit** — HTML responses are rejected before linkedom DOM parsing when they exceed 512KB, preventing memory spikes from large HTML files that produce small article extracts.
+
+- **Trailing punctuation stripped from URL tokens** — `@https://example.com/page.` no longer captures the trailing period; common sentence-ending characters (`. , ; : ! ? ) ]`) are trimmed after the URL regex match.
+
+- **18 new tests** — `parseAttachTokens` URL extraction and trailing-punctuation stripping, `fetchUrlWithSizeGuard` (SSRF block, 404, network error, plain text, HTML fallback, 512KB pre-parse limit, 5MB body limit, 20KB post-parse, truncation, warned, redirect SSRF re-check), `expandAttachments` URL inline, error-preserving, and trailing-punctuation cleanup paths.
+
+### Fixed
+
+- **Path XML attribute injection** — `formatAttachmentBlock` now calls `escapeXml(f.path)` on the path attribute. A URL containing `"` would have broken the `<file path="...">` wrapper and could inject prompt content.
+
+- **Redirect SSRF bypass** — `fetchUrlWithSizeGuard` re-checks `getUrlBlockReason(response.url)` after fetch completes. A server at a public IP could redirect to a private IP (e.g. `192.168.x.x`) and bypass the pre-fetch SSRF guard. The redirect destination is now validated the same way as the original URL.
+
+- **Trailing punctuation lingers in `cleanLine`** — the URL token cleanup regex in `expandAttachments` now uses a `[.,;:!?)\]]*` suffix to consume trailing punctuation that was stripped from the token during `parseAttachTokens`. Previously, `@url.` left a trailing `.` in `cleanLine`.
+
+- **Whitespace normalization collapses newlines** — changed `/ \s{2,}/g` to `/ {2,}/g` in `expandAttachments`. Replacing all runs of whitespace collapsed newlines in multi-line one-shot prompts.
+
+- **DRY extraction of `applyLineLimits`** — identical `sizeWarning` / truncation blocks in `readWithSizeGuard` and `fetchUrlWithSizeGuard` extracted into a shared `applyLineLimits(text, maxLines)` helper.
+
 ## v1.38.0 — 2026-04-22
 
 Sprint 64 — `@file` Fuzzy Attachment for the REPL. Type `@src/core/agent.ts` in any REPL prompt and the file is inlined as context before your message. Tab-completes like a shell path. Path traversal is rejected via `assertInSandbox`. Files over 20KB or 500 lines are capped or truncated with a visible notice.

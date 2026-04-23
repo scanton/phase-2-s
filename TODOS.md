@@ -14,9 +14,9 @@
 
 ## Backlog — Post-Sprint 64 /plan-eng-review findings (2026-04-22)
 
-- [ ] **`@file` attachment for one-shot mode** — Sprint 64 ships `@file` for the interactive REPL only. `phase2s run "what does @src/foo.ts do?"` does not expand `@tokens`. Follow-on: call `expandAttachments(prompt, cwd)` in one-shot entry path (`runOneShot()` or equivalent) before passing to `agent.run()`. No completer needed — one-shot has no readline interface. **Depends on:** Sprint 64 (v1.38.0) shipping first.
+- [x] **`@file` attachment for one-shot mode** — **Completed: v1.39.0 (2026-04-22).** `expandAttachments(prompt, cwd)` called in `oneShotMode()` before `agent.run()`. Same 20KB / 500-line limits as REPL mode. No completer needed — one-shot has no readline interface.
 
-- [ ] **`@url` attachment** — Type `@https://...` to inline a URL's fetched content as context. Natural extension of the `@file` module pattern. Use the existing browser/fetch infrastructure. **Depends on:** Sprint 64 (v1.38.0) shipping first.
+- [x] **`@url` attachment** — **Completed: v1.39.0 (2026-04-22).** `@https://...` and `@http://...` tokens fetch and inline URL content. Mozilla Readability extracts article-quality text from HTML; non-HTML is inlined as-is. SSRF protection via `getUrlBlockReason()`. Redirect SSRF re-check on `response.url`. 10s timeout. Same 20KB size limits.
 
 ---
 
