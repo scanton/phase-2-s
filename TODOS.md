@@ -8,7 +8,7 @@
 
 ## Backlog — Post-Sprint 68 notes (2026-04-24)
 
-- [ ] **`:dump html` link sanitization hardening** — Sprint 68 neutralizes `javascript:` hrefs with a one-line regex. A future sprint could add a proper allowlist-based sanitizer (only `http`/`https`/`mailto`/`#` hrefs permitted) using a marked renderer override. Low priority — self-XSS from your own exported transcripts is very low risk.
+- [ ] **`:dump html` image external-request isolation** — Sprint 68 upgraded the href/src filter to a protocol allowlist (`https?:`, `mailto:`, `#`), blocking `javascript:`, `data:`, `vbscript:`, and `file://` attacks. Remaining gap: `<img src="https://tracker.com/px.gif">` in AI-response markdown still renders as a live browser request when the export auto-opens. Fix: strip or sandbox `<img>` tags using a marked renderer override. Low priority — requires a malicious AI response and the user to export/open.
 
 - [ ] **BFS traversal for `collectMatchingFiles`** — Current DFS-capped traversal (500 results, depth 4) means the best basename match may never be collected in very large trees, making the completer sort best-effort. Switching to BFS would surface files closer to `cwd` first, improving ranking in deep repos. `src/cli/file-attachment.ts`, `collectMatchingFiles`. Low priority.
 

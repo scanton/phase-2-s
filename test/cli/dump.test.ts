@@ -118,7 +118,7 @@ describe("renderSessionHtml — structure", () => {
 
   it("contains no CDN or external asset links", () => {
     const html = renderSessionHtml(toolConv());
-    expect(html).not.toMatch(/https?:\/\/(?!.*\bExported\b)/);
+    expect(html).not.toMatch(/https?:\/\//);
   });
 });
 

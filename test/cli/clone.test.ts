@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as sessionModule from "../../src/core/session.js";
 import { cloneSession, readReplState, type SessionMeta } from "../../src/core/session.js";
 
 function sessionsDir(cwd: string) {
@@ -38,15 +38,15 @@ describe(":clone command — cloneSession()", () => {
       { role: "user", content: "original question" },
       { role: "assistant", content: "original answer" },
     ]);
+    // Stub out the fire-and-forget index write so it never races with afterEach
+    // teardown. upsertSessionIndex is best-effort in production; tests don't
+    // need index consistency, just session file correctness.
+    vi.spyOn(sessionModule, "upsertSessionIndex").mockResolvedValue(undefined);
   });
 
-  afterEach(async () => {
-    // upsertSessionIndex is fire-and-forget in cloneSession — it writes lock
-    // files and index.json.tmp.<pid> inside tmpDir after cloneSession resolves.
-    // A brief settle lets those I/O ops finish before rm tears down the tree,
-    // preventing the ENOTEMPTY race that caused intermittent CI failures.
-    await new Promise<void>((r) => setTimeout(r, 50));
-    await rm(tmpDir, { recursive: true, force: true });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it("creates a new session file (UUID-named)", async () => {

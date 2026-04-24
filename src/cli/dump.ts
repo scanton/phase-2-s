@@ -9,6 +9,11 @@
 import { marked } from "marked";
 import type { Conversation } from "../core/conversation.js";
 
+// Strip images — conversation transcripts have no legitimate images, and
+// <img src="https://..."> in AI response markdown would make the browser issue
+// outbound requests when the export auto-opens. Render alt text instead.
+marked.use({ renderer: { image: ({ text }: { text: string }) => text } });
+
 // ---------------------------------------------------------------------------
 // renderSessionMarkdown
 
@@ -58,9 +63,10 @@ export function renderSessionHtml(conv: Conversation): string {
 
   let body = marked(safeMd, { async: false });
 
-  // Neutralize javascript: protocol in any href/src that marked may have
-  // generated from link/image syntax in message content.
-  body = body.replace(/(\s(?:href|src))="javascript:[^"]*"/gi, '$1="#"');
+  // Neutralize any href/src that isn't a safe protocol. Allowlist approach
+  // catches javascript:, vbscript:, data:text/html, file://, and future
+  // schemes without needing a per-protocol denylist.
+  body = body.replace(/(\s(?:href|src))="(?!https?:|mailto:|#)[^"]*"/gi, '$1="#"');
 
   return `<!DOCTYPE html>
 <html lang="en">
