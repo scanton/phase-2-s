@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.40.0 — 2026-04-22
+
+Sprint 66 — `:goal` REPL command. You can now run a goal spec from inside the REPL with `:goal specs/auth.md`. The goal runs in-process (no REPL exit, no `process.exit(2)` on rate limit) and reports success, failure, or rate-limit pause inline. Smart model widened to cover all retry-loop LLM callers. Compaction last-message preservation completed.
+
+### Added
+
+- **`:goal <path>` REPL command** — run a goal spec file from within the interactive REPL. `:goal specs/auth.md` kicks off `runGoal()` without leaving the session. Reentrant calls are blocked: a second `:goal` while one is running prints a warning and does nothing. Supports quoted paths for files with spaces.
+
+- **`throwOnRateLimit` flag in `GoalOptions`** — prevents `process.exit(2)` from killing the REPL when a goal hits a 429. All three rate-limit callsites in `goal.ts` respect this flag; when set, `RateLimitError` is re-thrown to the caller instead of exiting the process.
+
+- **Reasoning override threading** — `:goal` passes the current `:re` session override as `reasoningEffort` into `runGoal()`, so `smart_model` calls inside the goal respect your active reasoning tier.
+
+- **Smart model widened to all retry-loop callers** — `replan`, `checkCriteria`, `analyzeFailures`, and `identifyFailedSubtasks` now use `effectiveSatoriModel` (falls back to `smart_model`) instead of always defaulting to `fast_model`. Consistency with the main Satori loop.
+
+- **`handleRunGoalCase` exported for testability** — the `:goal` REPL handler extracted from the switch block into `handleRunGoalCase()` in `src/cli/index.ts`. 12 tests added covering reentrancy guard, all four success branches, `RateLimitError` with/without `retryAfter`, and generic error paths.
+
+### Fixed
+
+- **`satoriModel` vs `effectiveSatoriModel` bug** — sequential execution path in `goal.ts` used `satoriModel` (the raw config value) instead of `effectiveSatoriModel` (which falls back to `smart_model` if unset). No visible effect for users who set `satori_model` explicitly; fixes a silent no-op for everyone else.
+
+- **`RunLogger` fd leak on `throwOnRateLimit`** — all three `throwOnRateLimit` throw sites in `goal.ts` now call `logger.close()` before rethrowing `RateLimitError`. Previously the log file descriptor was leaked on every REPL-mode rate limit.
+
+- **Compaction XML prompt injection via `&`** — `buildCompactionSummary` escaped `<` and `>` in the dropped user message before escaping `&`. That meant an `&` in user content could become `&amp;` whose `&` was then re-escaped to `&amp;amp;`. Fixed: `&` is now escaped first to `&amp;` before `<` and `>` are escaped.
+
+- **`:goal` usage error duplication** — both the empty-path and empty-parse branches in `handleColonCommand` inlined the same usage string. Extracted to a `GOAL_USAGE` constant.
+
 ## v1.39.0 — 2026-04-22
 
 Sprint 65 — `@file` one-shot + `@url` attachment. Completes the `@token` story end-to-end: file references now work in `phase2s run "..."` (one-shot mode), and any `@https://...` token fetches and inlines the URL content using Mozilla Readability for clean article extraction.

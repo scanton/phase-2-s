@@ -235,3 +235,39 @@ describe("unknown colon commands", () => {
     expect(result.type).toBe("unknown_command");
   });
 });
+
+// ---------------------------------------------------------------------------
+// :goal — run a goal spec from within the REPL
+// ---------------------------------------------------------------------------
+
+describe(":goal — run spec from REPL", () => {
+  it(":goal <path> returns run_goal with goalPath", () => {
+    const result = handleColonCommand(":goal specs/auth.md", makeCtx());
+    expect(result.type).toBe("run_goal");
+    expect((result as { type: "run_goal"; goalPath: string; goalArgs: string[] }).goalPath).toBe("specs/auth.md");
+    expect((result as { type: "run_goal"; goalPath: string; goalArgs: string[] }).goalArgs).toEqual([]);
+  });
+
+  it(":goal with quoted path containing spaces", () => {
+    const result = handleColonCommand(":goal \"my specs/auth spec.md\"", makeCtx());
+    expect(result.type).toBe("run_goal");
+    expect((result as { type: "run_goal"; goalPath: string; goalArgs: string[] }).goalPath).toBe("my specs/auth spec.md");
+  });
+
+  it(":goal with single-quoted path", () => {
+    const result = handleColonCommand(":goal 'my spec.md'", makeCtx());
+    expect(result.type).toBe("run_goal");
+    expect((result as { type: "run_goal"; goalPath: string; goalArgs: string[] }).goalPath).toBe("my spec.md");
+  });
+
+  it(":goal with no path returns error", () => {
+    const result = handleColonCommand(":goal", makeCtx());
+    expect(result.type).toBe("error");
+    expect((result as { type: "error"; message: string }).message).toContain(":goal");
+  });
+
+  it(":goal with trailing spaces and no path returns error", () => {
+    const result = handleColonCommand(":goal   ", makeCtx());
+    expect(result.type).toBe("error");
+  });
+});

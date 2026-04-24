@@ -107,6 +107,12 @@ export interface GoalOptions {
    * Subtasks with an explicit model: annotation always take precedence.
    */
   reasoningEffort?: "high" | "low" | "default";
+  /**
+   * When true, throw RateLimitError instead of calling process.exit(2) on rate limits.
+   * Set by the REPL :goal handler so rate limits surface as catchable errors rather
+   * than killing the entire REPL process.
+   */
+  throwOnRateLimit?: boolean;
 }
 
 export interface GoalResult {
@@ -416,6 +422,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       return orchGoalResult;
     } catch (err: unknown) {
       if (err instanceof RateLimitError) {
+        if (options.throwOnRateLimit) { logger.close(); throw err; }
         handleRateLimitExit(err, basename(specPath), undefined, spec.decomposition.length, state.orchestrator !== undefined);
       }
       const message = err instanceof Error ? err.message : String(err);
@@ -474,6 +481,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
           evalOutputForReplan,
           spec.decomposition,
           config,
+          effectiveSatoriModel,
         );
         if (revised.length > 0) {
           revisedSubtasks = Object.fromEntries(revised.map((r) => [r.name, r.description]));
@@ -513,6 +521,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         });
       } catch (err: unknown) {
         if (err instanceof RateLimitError) {
+          if (options.throwOnRateLimit) { logger.close(); throw err; }
           const completedCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
           handleRateLimitExit(err, basename(specPath), completedCount, spec.decomposition.length);
         }
@@ -549,7 +558,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
       // Check criteria
       const evalAgent = new Agent({ config, learnings: learningsStr });
-      parallelCriteriaResults = await checkCriteria(spec.acceptanceCriteria, evalOutput, evalAgent);
+      parallelCriteriaResults = await checkCriteria(spec.acceptanceCriteria, evalOutput, evalAgent, effectiveSatoriModel);
       parallelFailing = Object.entries(parallelCriteriaResults).filter(([, v]) => !v).map(([k]) => k);
 
       logger.log({ event: "criteria_checked", results: parallelCriteriaResults, failing: parallelFailing });
@@ -664,7 +673,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       let satoriError: unknown = null;
       try {
         await agent.run(effectivePrompt, {
-          modelOverride: satoriModel,
+          modelOverride: effectiveSatoriModel,
           maxRetries: satoriRetries,
           verifyCommand: spec.evalCommand,
           onDelta: (chunk) => {
@@ -745,7 +754,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     }
 
     // Check acceptance criteria
-    criteriaResults = await checkCriteria(spec.acceptanceCriteria, evalOutput, agent);
+    criteriaResults = await checkCriteria(spec.acceptanceCriteria, evalOutput, agent, effectiveSatoriModel);
     printCriteriaTable(criteriaResults);
 
     const failing = Object.entries(criteriaResults).filter(([, pass]) => !pass).map(([c]) => c);
@@ -771,8 +780,8 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     }
 
     if (attempt < maxAttempts) {
-      previousFailureContext = await analyzeFailures(failing, evalOutput, spec, agent);
-      subtasksToRun = await identifyFailedSubtasks(failing, spec.decomposition, previousFailureContext, agent);
+      previousFailureContext = await analyzeFailures(failing, evalOutput, spec, agent, effectiveSatoriModel);
+      subtasksToRun = await identifyFailedSubtasks(failing, spec.decomposition, previousFailureContext, agent, effectiveSatoriModel);
       // Reset passed sub-tasks on the next attempt so they re-run in context of new failures.
       // We only keep the state for cross-run resumability, not within the same goal invocation.
       console.log(`\nRetrying ${subtasksToRun.length} sub-task(s): ${subtasksToRun.map((s) => s.name).join(", ")}`);
@@ -780,6 +789,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   }
   } catch (err) {
     if (err instanceof RateLimitError) {
+      if (options.throwOnRateLimit) { logger.close(); throw err; }
       const completedCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
       handleRateLimitExit(err, basename(specPath), completedCount, spec.decomposition.length);
     }
@@ -976,6 +986,7 @@ export async function checkCriteria(
   criteria: string[],
   evalOutput: string,
   agent: Agent,
+  modelOverride?: string,
 ): Promise<Record<string, boolean>> {
   const truncated = evalOutput.slice(0, 4000);
   const criteriaList = criteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
@@ -992,7 +1003,7 @@ Do not add any other text. One line per criterion, in order.
 Acceptance criteria:
 ${criteriaList}`;
 
-  const response = await agent.run(prompt);
+  const response = await agent.run(prompt, { modelOverride });
 
   const results: Record<string, boolean> = {};
   for (const criterion of criteria) {
@@ -1036,6 +1047,7 @@ export async function analyzeFailures(
   evalOutput: string,
   spec: Spec,
   agent: Agent,
+  modelOverride?: string,
 ): Promise<string> {
   const truncated = evalOutput.slice(0, 2000);
   const prompt = `These acceptance criteria failed:
@@ -1050,7 +1062,7 @@ Spec problem statement: ${spec.problemStatement.slice(0, 500)}
 
 In 2-3 sentences, what most likely went wrong and what should change on the next attempt?`;
 
-  return agent.run(prompt);
+  return agent.run(prompt, { modelOverride });
 }
 
 export async function identifyFailedSubtasks(
@@ -1058,6 +1070,7 @@ export async function identifyFailedSubtasks(
   decomposition: SubTask[],
   failureContext: string,
   agent: Agent,
+  modelOverride?: string,
 ): Promise<SubTask[]> {
   if (decomposition.length === 0) return [];
 
@@ -1076,7 +1089,7 @@ ${subtaskList}
 
 Which sub-tasks most likely caused these failures? List sub-task names only, one per line. Use exact names from the list above.`;
 
-  const response = await agent.run(prompt);
+  const response = await agent.run(prompt, { modelOverride });
 
   const responseLines = response.split("\n").map((l) => l.replace(/^[-*•]\s*/, "").trim());
   const matched = decomposition.filter((s) =>

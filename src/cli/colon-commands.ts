@@ -28,6 +28,8 @@ export type ColonAction =
   | { type: "switch_agent"; agentId: string; agentDef: AgentDef }
   /** :agent <id> with an unrecognized id */
   | { type: "unknown_agent"; requestedId: string }
+  /** :goal <path> — run a goal spec from within the REPL */
+  | { type: "run_goal"; goalPath: string; goalArgs: string[] }
   /** :xyz — unrecognized colon command (not :clone or :commit) */
   | { type: "unknown_command"; command: string }
   /** :re <invalid tier> */
@@ -77,6 +79,20 @@ export function handleColonCommand(trimmed: string, ctx: ColonCommandCtx): Colon
     return { type: "not_handled" };
   }
 
+  // :goal <path> [args] — run a spec file from within the REPL
+  if (trimmed === ":goal" || trimmed.startsWith(":goal ")) {
+    const rest = trimmed.slice(":goal".length).trim();
+    const GOAL_USAGE = "Usage: :goal <spec-file> [args]\nExample: :goal specs/auth.md";
+    if (!rest) {
+      return { type: "error", message: GOAL_USAGE };
+    }
+    const { goalPath, goalArgs } = parseGoalArgs(rest);
+    if (!goalPath) {
+      return { type: "error", message: GOAL_USAGE };
+    }
+    return { type: "run_goal", goalPath, goalArgs };
+  }
+
   // :re [high|low|default]
   if (trimmed === ":re" || trimmed.startsWith(":re ")) {
     const arg = trimmed.slice(":re".length).trim().toLowerCase();
@@ -121,4 +137,32 @@ export function handleColonCommand(trimmed: string, ctx: ColonCommandCtx): Colon
 
   // Unrecognized colon command
   return { type: "unknown_command", command: trimmed };
+}
+
+// ---------------------------------------------------------------------------
+// parseGoalArgs
+// ---------------------------------------------------------------------------
+
+/**
+ * Tokenize a :goal argument string with quote-aware parsing.
+ * Handles paths with spaces when quoted: :goal "my spec/file.md"
+ */
+function parseGoalArgs(input: string): { goalPath: string; goalArgs: string[] } {
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < input.length) {
+    if (input[i] === " ") { i++; continue; }
+    if (input[i] === '"' || input[i] === "'") {
+      const quote = input[i++];
+      let tok = "";
+      while (i < input.length && input[i] !== quote) tok += input[i++];
+      if (i < input.length) i++; // skip closing quote
+      tokens.push(tok);
+    } else {
+      let tok = "";
+      while (i < input.length && input[i] !== " ") tok += input[i++];
+      tokens.push(tok);
+    }
+  }
+  return { goalPath: tokens[0] ?? "", goalArgs: tokens.slice(1) };
 }
