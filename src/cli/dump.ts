@@ -2,11 +2,11 @@
  * Conversation export utilities for :dump REPL command.
  *
  * renderSessionMarkdown() — produces a plain-text markdown transcript.
- * renderSessionHtml()     — wraps the markdown in a self-contained HTML page.
- *   HTML encoding only (no markdown-to-HTML conversion); the markdown text is
- *   placed in a <pre> block. A future sprint can add `marked` for rendered code.
+ * renderSessionHtml()     — renders the markdown to a self-contained HTML page
+ *   using `marked` for proper headings, fenced code blocks, and readable structure.
  */
 
+import { marked } from "marked";
 import type { Conversation } from "../core/conversation.js";
 
 // ---------------------------------------------------------------------------
@@ -47,41 +47,47 @@ export function renderSessionMarkdown(conv: Conversation): string {
 
 export function renderSessionHtml(conv: Conversation): string {
   const md = renderSessionMarkdown(conv);
-  const escaped = md
+
+  // Escape raw HTML in the markdown source so inline tags from message content
+  // (e.g. <script>, <img>) don't execute in the exported file. marked passes
+  // through raw HTML by default; escaping at this layer keeps the export safe.
+  const safeMd = md
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+
+  let body = marked(safeMd, { async: false });
+
+  // Neutralize javascript: protocol in any href/src that marked may have
+  // generated from link/image syntax in message content.
+  body = body.replace(/(\s(?:href|src))="javascript:[^"]*"/gi, '$1="#"');
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Phase2S Session Export</title>
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 900px;
-      margin: 40px auto;
-      padding: 0 20px;
-      background: #fff;
-      color: #1a1a1a;
-    }
-    pre {
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-      font-size: 13px;
-      line-height: 1.6;
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           max-width: 900px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+    h1, h2 { margin-top: 1.5em; }
+    h2 { border-bottom: 1px solid #e0e0e0; padding-bottom: 0.3em; }
+    hr { border: none; border-top: 1px solid #e0e0e0; margin: 2em 0; }
+    pre { background: #f6f8fa; border-radius: 6px; padding: 16px;
+          overflow-x: auto; font-size: 13px; }
+    code { font-family: "SF Mono","Fira Code","Cascadia Code",monospace; }
+    p > code { background: #f0f0f0; padding: 2px 4px; border-radius: 3px; }
     @media (prefers-color-scheme: dark) {
       body { background: #1a1a1a; color: #e8e8e8; }
+      pre  { background: #2d2d2d; }
+      h2   { border-bottom-color: #444; }
+      hr   { border-top-color: #444; }
+      p > code { background: #333; }
     }
   </style>
 </head>
 <body>
-<pre>${escaped}</pre>
+${body}
 </body>
-</html>
-`;
+</html>`;
 }
