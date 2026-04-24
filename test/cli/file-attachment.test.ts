@@ -584,3 +584,125 @@ describe("expandAttachments — URL tokens", () => {
     expect(cleanLine).not.toContain("@https");
   });
 });
+
+// ---------------------------------------------------------------------------
+// collectMatchingFiles (fuzzy recursive walk)
+// ---------------------------------------------------------------------------
+
+import { collectMatchingFiles } from "../../src/cli/file-attachment.js";
+
+describe("collectMatchingFiles — recursive fuzzy walk", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-collect-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("finds a file by basename substring across directories", () => {
+    mkdirSync(join(tmpDir, "src", "core"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "core", "agent.ts"), "");
+    const results: string[] = [];
+    collectMatchingFiles(tmpDir, "agent", results, 0, tmpDir);
+    expect(results).toContain("@src/core/agent.ts");
+  });
+
+  it("matches case-insensitively", () => {
+    writeFileSync(join(tmpDir, "AGENT.TS"), "");
+    const results: string[] = [];
+    collectMatchingFiles(tmpDir, "agent", results, 0, tmpDir);
+    expect(results.some((r) => r.toLowerCase().includes("agent"))).toBe(true);
+  });
+
+  it("skips node_modules directory", () => {
+    mkdirSync(join(tmpDir, "node_modules", "foo"), { recursive: true });
+    writeFileSync(join(tmpDir, "node_modules", "foo", "agent.js"), "");
+    const results: string[] = [];
+    collectMatchingFiles(tmpDir, "agent", results, 0, tmpDir);
+    expect(results).toHaveLength(0);
+  });
+
+  it("skips dotfiles and dot-directories", () => {
+    writeFileSync(join(tmpDir, ".agentrc"), "");
+    const results: string[] = [];
+    collectMatchingFiles(tmpDir, "agent", results, 0, tmpDir);
+    expect(results).toHaveLength(0);
+  });
+
+  it("respects depth cap — does not descend beyond depth 4", () => {
+    // Create a path exactly at depth 5 (0-indexed from cwd)
+    const deep = join(tmpDir, "a", "b", "c", "d", "e");
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(join(deep, "agent.ts"), "");
+    const results: string[] = [];
+    collectMatchingFiles(tmpDir, "agent", results, 0, tmpDir);
+    // depth 5 exceeds MAX_COMPLETER_DEPTH=4, so agent.ts should not appear
+    expect(results.every((r) => !r.includes(join("a", "b", "c", "d", "e")))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// makeCompleter — fuzzy mode (no "/" in fragment)
+// ---------------------------------------------------------------------------
+
+describe("makeCompleter — fuzzy mode", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-fuzzy-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function invoke(getCwd: () => string, line: string): Promise<[string[], string]> {
+    return new Promise((resolve, reject) => {
+      makeCompleter(getCwd)(line, (err, result) => (err ? reject(err) : resolve(result)));
+    });
+  }
+
+  it("returns file found by basename substring in subdirectory", async () => {
+    mkdirSync(join(tmpDir, "src", "core"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "core", "agent.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@agent");
+    expect(completions).toContain("@src/core/agent.ts");
+  });
+
+  it("returns nothing for empty fragment (bare @)", async () => {
+    writeFileSync(join(tmpDir, "agent.ts"), "");
+    const [completions, hit] = await invoke(() => tmpDir, "@");
+    expect(completions).toHaveLength(0);
+    expect(hit).toBe("@");
+  });
+
+  it("path with / still uses prefix-match behavior (backward compat)", async () => {
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "agent.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@src/ag");
+    expect(completions).toContain("@src/agent.ts");
+  });
+});
+
+describe("collectMatchingFiles — dist skip", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-dist-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("skips dist directory", () => {
+    mkdirSync(join(tmpDir, "dist"), { recursive: true });
+    writeFileSync(join(tmpDir, "dist", "agent.js"), "");
+    const results: string[] = [];
+    collectMatchingFiles(tmpDir, "agent", results, 0, tmpDir);
+    expect(results).toHaveLength(0);
+  });
+});

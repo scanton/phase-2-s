@@ -271,3 +271,40 @@ describe(":goal — run spec from REPL", () => {
     expect(result.type).toBe("error");
   });
 });
+
+// ---------------------------------------------------------------------------
+// :dump — conversation export
+// ---------------------------------------------------------------------------
+
+describe(":dump — conversation export", () => {
+  it(":dump with no arg returns dump_conversation(markdown)", () => {
+    expect(handleColonCommand(":dump", makeCtx())).toEqual({
+      type: "dump_conversation",
+      format: "markdown",
+    });
+  });
+
+  it(":dump markdown returns dump_conversation(markdown)", () => {
+    expect(handleColonCommand(":dump markdown", makeCtx())).toEqual({
+      type: "dump_conversation",
+      format: "markdown",
+    });
+  });
+
+  it(":dump html returns dump_conversation(html)", () => {
+    expect(handleColonCommand(":dump html", makeCtx())).toEqual({
+      type: "dump_conversation",
+      format: "html",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// :help
+// ---------------------------------------------------------------------------
+
+describe(":help — command reference", () => {
+  it(":help returns show_help", () => {
+    expect(handleColonCommand(":help", makeCtx())).toEqual({ type: "show_help" });
+  });
+});

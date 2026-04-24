@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { access, constants } from "node:fs/promises";
 import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
 import chalk from "chalk";
 import { loadConfig, type Config } from "../core/config.js";
@@ -27,7 +27,8 @@ import {
 import { loadAgents, formatAgentsList, type AgentDef } from "../core/agent-loader.js";
 import { runConversationsBrowser } from "./conversations.js";
 import { resolveReasoningModel, resolveAgentModel } from "./model-resolver.js";
-import { handleColonCommand } from "./colon-commands.js";
+import { handleColonCommand, COMMAND_REGISTRY } from "./colon-commands.js";
+import { renderSessionMarkdown, renderSessionHtml } from "./dump.js";
 import { makeCompleter, expandAttachments } from "./file-attachment.js";
 import { performCompaction as runCompaction, shouldCompact } from "../core/compaction.js";
 import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
@@ -1214,6 +1215,37 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
 
         case "run_goal": {
           await handleRunGoalCase(action.goalPath, goalState, reasoningOverride, runGoal);
+          continue;
+        }
+
+        case "dump_conversation": {
+          const outDir = join(process.cwd(), ".phase2s", "exports");
+          const ts = new Date().toISOString().replace(/[:.]/g, "-");
+          const baseName = `session-${ts}`;
+          mkdirSync(outDir, { recursive: true });
+          const conv = agent.getConversation();
+          const md = renderSessionMarkdown(conv);
+          const mdPath = join(outDir, baseName + ".md");
+          writeFileSync(mdPath, md, "utf8");
+          console.log(chalk.green(`✓ Exported: ${mdPath}`));
+          if (action.format === "html") {
+            const html = renderSessionHtml(conv);
+            const htmlPath = join(outDir, baseName + ".html");
+            writeFileSync(htmlPath, html, "utf8");
+            const opener = process.platform === "win32" ? "start" : process.platform === "darwin" ? "open" : "xdg-open";
+            spawn(opener, [htmlPath], { detached: true, stdio: "ignore" }).unref();
+            console.log(chalk.green(`✓ Opened in browser: ${htmlPath}`));
+          }
+          continue;
+        }
+
+        case "show_help": {
+          const maxCmd = Math.max(...COMMAND_REGISTRY.map((r) => r.command.length));
+          console.log(chalk.bold("\nPhase2S REPL commands:"));
+          for (const { command, description } of COMMAND_REGISTRY) {
+            console.log(`  ${chalk.cyan(command.padEnd(maxCmd + 2))} ${description}`);
+          }
+          console.log();
           continue;
         }
 

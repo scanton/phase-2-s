@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.41.0 — 2026-04-23
+
+Sprint 67 — REPL UX polish. Three features that make the REPL feel finished: fuzzy `@file` Tab completion (type `@agent<Tab>` and get `src/core/agent.ts` without knowing the path), `:dump` conversation export (markdown or self-contained HTML opened in browser), and `:help` command reference (cheat-sheet for every colon command, always one keypress away).
+
+### Added
+
+- **Fuzzy `@file` Tab completion** — when a `@fragment` contains no `/`, the completer now does a recursive basename substring search (depth 4, 500 result cap) across the whole project tree. `@agent<Tab>` returns `src/core/agent.ts`. When the fragment contains `/`, existing directory-prefix behavior is preserved for backward compatibility. Empty `@<Tab>` returns nothing (no whole-tree dump). `node_modules`, `dist`, `.git`, and dotfiles are skipped automatically.
+
+- **`:dump` conversation export** — exports the current REPL session as a markdown file to `.phase2s/exports/session-{timestamp}.md`. `:dump html` additionally writes a self-contained `.html` file (dark/light mode, system font, `<pre>` wrap) and opens it in the default browser via `open`/`start`/`xdg-open`. No new dependencies — markdown is HTML-encoded and placed in a `<pre>` block.
+
+- **`:help` command reference** — prints a formatted cheat-sheet of all REPL colon commands with aligned descriptions. Driven by a static `COMMAND_REGISTRY` array in `colon-commands.ts`. Zero runtime overhead, always up to date.
+
+- **`COMMAND_REGISTRY` exported from `colon-commands.ts`** — static array of `{ command, description }` entries for all documented REPL commands. Consumed by both the `:help` handler and future tooling.
+
+- **28 new tests** — `test/cli/dump.test.ts` (render functions), `:dump`/`:help` routing in `colon-commands.test.ts`, and `collectMatchingFiles`/fuzzy completer in `file-attachment.test.ts`.
+
 ## v1.40.0 — 2026-04-22
 
 Sprint 66 — `:goal` REPL command. You can now run a goal spec from inside the REPL with `:goal specs/auth.md`. The goal runs in-process (no REPL exit, no `process.exit(2)` on rate limit) and reports success, failure, or rate-limit pause inline. Smart model widened to cover all retry-loop LLM callers. Compaction last-message preservation completed.

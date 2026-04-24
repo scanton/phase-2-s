@@ -11,7 +11,8 @@
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import type { Dirent } from "node:fs";
+import { join, dirname, basename, relative, resolve } from "node:path";
 import { assertInSandbox } from "../tools/sandbox.js";
 import { getUrlBlockReason } from "../tools/browser.js";
 
@@ -229,6 +230,46 @@ export function formatAttachmentBlock(files: AttachedFile[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// collectMatchingFiles
+
+const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
+const MAX_COMPLETER_RESULTS = 500;
+const MAX_COMPLETER_DEPTH = 4;
+
+/**
+ * Recursively collect files whose basename contains `fragment` (case-insensitive).
+ * Skips dotfiles, node_modules, dist, and .git. Caps at 500 results and depth 4.
+ */
+export function collectMatchingFiles(
+  dir: string,
+  fragment: string,
+  results: string[],
+  depth: number,
+  cwd: string,
+): void {
+  if (depth > MAX_COMPLETER_DEPTH || results.length >= MAX_COMPLETER_RESULTS) return;
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const lowerFragment = fragment.toLowerCase();
+  for (const entry of entries) {
+    if (results.length >= MAX_COMPLETER_RESULTS) break;
+    if (entry.name.startsWith(".")) continue;
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      collectMatchingFiles(fullPath, fragment, results, depth + 1, cwd);
+    } else if (entry.name.toLowerCase().includes(lowerFragment)) {
+      const rel = relative(cwd, fullPath);
+      if (!rel.startsWith("..")) results.push("@" + rel);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // makeCompleter
 
 /**
@@ -238,6 +279,11 @@ export function formatAttachmentBlock(files: AttachedFile[]): string {
  * @fragment at the end of the buffer (the active token) and returns matching
  * file paths as completions. The active fragment is returned as the substring
  * so readline replaces only that fragment on Tab — not the full line.
+ *
+ * Two modes:
+ *   - Fragment contains `/`: directory-prefix match (existing behavior, backward compat)
+ *   - Fragment has no `/` and is non-empty: recursive basename substring search
+ *   - Empty fragment: returns nothing (no whole-tree dump on bare @)
  */
 export function makeCompleter(
   getCwd: () => string,
@@ -253,28 +299,67 @@ export function makeCompleter(
     const activeToken = match[0]; // e.g. "@src/core/ag"
     const fragment = activeToken.slice(1); // strip leading @
 
-    const cwd = getCwd();
-    const dirPart = fragment.includes("/") ? dirname(fragment) : "";
-    const filePart = fragment.includes("/") ? basename(fragment) : fragment;
-
-    const searchDir = dirPart ? join(cwd, dirPart) : cwd;
-
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = readdirSync(searchDir, { withFileTypes: true });
-    } catch {
+    // Empty fragment (bare "@"): return nothing — prevent whole-tree dump
+    if (!fragment) {
       callback(null, [[], activeToken]);
       return;
     }
 
-    const completions = entries
-      .filter((entry) => entry.name.startsWith(filePart))
-      .map((entry) => {
-        const relPath = dirPart ? dirPart + "/" + entry.name : entry.name;
-        return "@" + relPath + (entry.isDirectory() ? "/" : "");
-      });
+    const cwd = getCwd();
 
-    callback(null, [completions, activeToken]);
+    // Fragment contains "/" → use directory-prefix match (backward compat)
+    if (fragment.includes("/")) {
+      const dirPart = dirname(fragment);
+      const filePart = basename(fragment);
+      const searchDir = join(cwd, dirPart);
+
+      // Sandbox: reject paths that escape cwd via '../'
+      if (!resolve(searchDir).startsWith(resolve(cwd))) {
+        callback(null, [[], activeToken]);
+        return;
+      }
+
+      let entries: Dirent[];
+      try {
+        entries = readdirSync(searchDir, { withFileTypes: true });
+      } catch {
+        callback(null, [[], activeToken]);
+        return;
+      }
+
+      const completions = entries
+        .filter((entry) => entry.name.startsWith(filePart))
+        .map((entry) => {
+          const relPath = dirPart + "/" + entry.name;
+          return "@" + relPath + (entry.isDirectory() ? "/" : "");
+        });
+
+      callback(null, [completions, activeToken]);
+      return;
+    }
+
+    // No "/" in fragment → recursive basename substring search
+    const results: string[] = [];
+    collectMatchingFiles(cwd, fragment, results, 0, cwd);
+
+    // Fallback: if recursive search finds nothing (e.g. empty directories or
+    // only directories match), try prefix-match in cwd — returns dir completions.
+    if (results.length === 0) {
+      let cwdEntries: Dirent[];
+      try {
+        cwdEntries = readdirSync(cwd, { withFileTypes: true });
+      } catch {
+        callback(null, [[], activeToken]);
+        return;
+      }
+      const fallback = cwdEntries
+        .filter((e) => !e.name.startsWith(".") && e.name.startsWith(fragment))
+        .map((e) => "@" + e.name + (e.isDirectory() ? "/" : ""));
+      callback(null, [fallback, activeToken]);
+      return;
+    }
+
+    callback(null, [results, activeToken]);
   };
 }
 
