@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cloneSession, readReplState, type SessionMeta } from "../../src/core/session.js";
@@ -39,8 +40,13 @@ describe(":clone command — cloneSession()", () => {
     ]);
   });
 
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
+  afterEach(async () => {
+    // upsertSessionIndex is fire-and-forget in cloneSession — it writes lock
+    // files and index.json.tmp.<pid> inside tmpDir after cloneSession resolves.
+    // A brief settle lets those I/O ops finish before rm tears down the tree,
+    // preventing the ENOTEMPTY race that caused intermittent CI failures.
+    await new Promise<void>((r) => setTimeout(r, 50));
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   it("creates a new session file (UUID-named)", async () => {
