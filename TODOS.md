@@ -184,7 +184,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [x] **Context compaction** — Forge has `:compact` (manual) and auto-compaction at configurable token thresholds (100k by default). Phase2S sessions can run long and hit context limits silently. Expose `phase2s compact` in the REPL and add auto-compaction config to `.phase2s.yaml`. Forge's `forge-partial-summary-frame.md` template suggests they have a structured compaction summary format — worth borrowing. **Completed: v1.29.0 (2026-04-13)**
 
-- [ ] **`@file` fuzzy attachment in REPL** — Type `@` in a prompt then Tab to fuzzy-search and attach files as `@[filename]`. Forge uses this to give the AI specific context without the user having to type full paths. Would integrate naturally with Phase2S's existing REPL.
+- [x] **`@file` fuzzy attachment in REPL** — Type `@` in a prompt then Tab to fuzzy-search and attach files as `@[filename]`. Forge uses this to give the AI specific context without the user having to type full paths. Would integrate naturally with Phase2S's existing REPL. **Completed: v1.38.0 (2026-04-22)** — `makeCompleter()` wired into readline interface; Tab expands `@fragment` via recursive basename substring search across project files. Sprint 67 (v1.41.0) added path traversal guard and dotfile exclusion.
 
 - [ ] **Semantic search / codebase indexing** — `:sync` indexes the codebase; subsequent prompts can search by meaning rather than exact text. Forge sends to `api.forgecode.dev` by default, self-hostable via `FORGE_WORKSPACE_SERVER_URL`. Phase2S has no semantic search. This is table stakes for large codebases. Could integrate with a local embeddings model (Ollama) for offline use.
 
@@ -200,7 +200,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [ ] **`forge provider login` — interactive credential manager** — `forge provider login` walks you through provider setup with an interactive picker. We have `phase2s init` which does this, but Forge's is more streamlined (separate `provider` subcommand, `login`/`logout`/`list`). Consider restructuring `phase2s init` or adding `phase2s provider` subcommand.
 
-- [ ] **`:dump html`** — export a conversation as formatted HTML (not just JSONL). Useful for sharing run histories with teammates. We have `phase2s report` for dark factory runs; a general conversation export would be a lower-effort complement.
+- [x] **`:dump html`** — export a conversation as formatted HTML (not just JSONL). Useful for sharing run histories with teammates. We have `phase2s report` for dark factory runs; a general conversation export would be a lower-effort complement. **Completed: v1.41.0 (2026-04-23)** — `:dump` exports markdown; `:dump html` wraps in self-contained HTML page with dark mode support. Exports to `.phase2s/exports/session-<ts>.{md,html}`.
 
 - [x] **`AGENTS.md` support** — Forge automatically reads `AGENTS.md` (project root or `~/forge/AGENTS.md`) at the start of every session — persistent project-level AI instructions for coding conventions, commit style, things to avoid. Phase2S reads `.phase2s.yaml` for config but nothing equivalent for freeform "developer handbook" instructions. An `AGENTS.md` equivalent (or a `instructions:` key in `.phase2s.yaml`) would make customization more discoverable. **Completed: v1.29.0 (2026-04-13)**
 
