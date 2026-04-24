@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as sessionModule from "../../src/core/session.js";
 import { cloneSession, readReplState, type SessionMeta } from "../../src/core/session.js";
 
 function sessionsDir(cwd: string) {
@@ -37,9 +38,14 @@ describe(":clone command — cloneSession()", () => {
       { role: "user", content: "original question" },
       { role: "assistant", content: "original answer" },
     ]);
+    // Stub out the fire-and-forget index write so it never races with afterEach
+    // teardown. upsertSessionIndex is best-effort in production; tests don't
+    // need index consistency, just session file correctness.
+    vi.spyOn(sessionModule, "upsertSessionIndex").mockResolvedValue(undefined);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     rmSync(tmpDir, { recursive: true, force: true });
   });
 

@@ -77,19 +77,57 @@ describe("renderSessionMarkdown", () => {
 });
 
 // ---------------------------------------------------------------------------
-// renderSessionHtml
+// renderSessionHtml — structure
 // ---------------------------------------------------------------------------
 
-describe("renderSessionHtml", () => {
-  it("wraps content in valid HTML shell with pre tag", () => {
+describe("renderSessionHtml — structure", () => {
+  it("returns valid HTML shell", () => {
     const html = renderSessionHtml(emptyConv());
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("<html");
     expect(html).toContain("</html>");
-    expect(html).toContain("<pre>");
   });
 
-  it("HTML-encodes angle brackets from markdown content", () => {
+  it("renders ## headings as <h2> tags (not <pre>)", () => {
+    const html = renderSessionHtml(basicConv());
+    expect(html).toContain("<h2>");
+    expect(html).not.toContain("<pre># Phase2S");
+  });
+
+  it("renders # heading as <h1>", () => {
+    const html = renderSessionHtml(emptyConv());
+    expect(html).toContain("<h1>");
+  });
+
+  it("renders --- separators as <hr>", () => {
+    const html = renderSessionHtml(basicConv());
+    expect(html).toContain("<hr");
+  });
+
+  it("renders fenced code blocks as <pre><code>", () => {
+    const html = renderSessionHtml(toolConv());
+    expect(html).toContain("<pre>");
+    // marked adds class attributes: <code class="language-json">
+    expect(html).toContain("<code");
+  });
+
+  it("includes dark mode media query", () => {
+    const html = renderSessionHtml(emptyConv());
+    expect(html).toContain("prefers-color-scheme: dark");
+  });
+
+  it("contains no CDN or external asset links", () => {
+    const html = renderSessionHtml(toolConv());
+    expect(html).not.toMatch(/https?:\/\//);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderSessionHtml — sanitization
+// ---------------------------------------------------------------------------
+
+describe("renderSessionHtml — sanitization", () => {
+  it("HTML-encodes angle brackets from message content", () => {
     const conv = new Conversation();
     conv.addUser("<script>alert(1)</script>");
     const html = renderSessionHtml(conv);
@@ -97,18 +135,56 @@ describe("renderSessionHtml", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
-  it("includes dark mode media query", () => {
-    const html = renderSessionHtml(emptyConv());
-    expect(html).toContain("prefers-color-scheme: dark");
-  });
-});
-
-describe("renderSessionHtml — additional encoding", () => {
-  it("HTML-encodes ampersands", () => {
+  it("HTML-encodes ampersands from message content", () => {
     const conv = new Conversation();
     conv.addUser("a & b");
     const html = renderSessionHtml(conv);
-    expect(html).not.toContain("a & b");
-    expect(html).toContain("a &amp; b");
+    expect(html).toContain("&amp;");
+    expect(html).not.toContain(" & b");
+  });
+
+  it("neutralizes javascript: hrefs in message content", () => {
+    const conv = new Conversation();
+    conv.addUser("[click me](javascript:alert(1))");
+    const html = renderSessionHtml(conv);
+    expect(html).not.toContain('href="javascript:');
+    expect(html).not.toContain("href=\"javascript:");
+  });
+
+  it("preserves normal https links unmodified", () => {
+    const conv = new Conversation();
+    conv.addAssistant("See https://example.com for details.");
+    const html = renderSessionHtml(conv);
+    // https URLs in plain text are rendered as text, not stripped
+    expect(html).toContain("example.com");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderSessionHtml — content rendering
+// ---------------------------------------------------------------------------
+
+describe("renderSessionHtml — content rendering", () => {
+  it("renders user message content inside h2 section", () => {
+    const html = renderSessionHtml(basicConv());
+    expect(html).toContain("Hello there");
+    expect(html).toContain("Hi! How can I help?");
+  });
+
+  it("renders tool call name in h2", () => {
+    const html = renderSessionHtml(toolConv());
+    expect(html).toContain("file_read");
+  });
+
+  it("renders tool result content inside pre/code block", () => {
+    const html = renderSessionHtml(toolConv());
+    // Tool result is in a fenced code block → becomes <pre><code>
+    expect(html).toContain("const x = 1;");
+  });
+
+  it("empty session produces valid HTML with h1", () => {
+    const html = renderSessionHtml(emptyConv());
+    expect(html).toContain("<h1>");
+    expect(html).toContain("Phase2S Session");
   });
 });

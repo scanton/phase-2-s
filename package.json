@@ -1,6 +1,6 @@
 {
   "name": "@scanton/phase2s",
-  "version": "1.41.0",
+  "version": "1.42.0",
   "description": "AI coding assistant with 29 built-in skills, ChatGPT subscription support, and autonomous spec execution",
   "author": "Scott Canton",
   "homepage": "https://github.com/scanton/phase-2-s",
@@ -64,6 +64,7 @@
     "commander": "^12.1.0",
     "glob": "^13.0.0",
     "linkedom": "^0.18.12",
+    "marked": "^18.0.2",
     "openai": "^4.73.0",
     "yaml": "^2.6.0",
     "zod": "^3.23.0"

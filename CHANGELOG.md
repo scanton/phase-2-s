@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.42.0 — 2026-04-24
+
+Sprint 68 — Polish and CI hardening. Three improvements that tighten up Sprint 67's work: `:dump html` now produces properly rendered HTML with `marked` (real headings, formatted code blocks, readable structure — not a `<pre>` dump of raw markdown), `@file` Tab completions are ranked so the most likely match surfaces first (exact prefix beats substring, shorter path beats longer), and the flaky `clone.test.ts` ENOTEMPTY teardown race is fixed for good.
+
+### Added
+
+- **`marked` v18 rendering for `:dump html`** — `renderSessionHtml()` now uses `marked` to convert the markdown transcript to proper HTML: `##` headings become `<h2>`, `---` becomes `<hr>`, fenced code blocks become `<pre><code>` with language classes. HTML content from message bodies is pre-escaped before rendering so `<script>` tags stay inert. `javascript:` hrefs are neutralized post-render. Self-contained output with no CDN dependencies.
+
+- **Ranked `@file` Tab completions** — `rankCompletions()` sorts completions in-place after collection: basename prefix match ranks above substring match (`agent.ts` before `my-agent.ts`), shorter path ranks above deeper path for the same prefix, alphabetical tiebreak. Applied in both the `/`-prefix directory branch and the recursive basename search branch of `makeCompleter()`.
+
+### Fixed
+
+- **`clone.test.ts` ENOTEMPTY flaky CI** — `cloneSession` calls `upsertSessionIndex` fire-and-forget (no await), which writes lock files and `index.json.tmp.<pid>` inside `tmpDir` after `cloneSession` resolves. The old `afterEach` called `rmSync` immediately, racing those writes. Fixed by stubbing `upsertSessionIndex` via `vi.spyOn` in `beforeEach` so the fire-and-forget index write never runs during tests — eliminating the race at its source rather than adding a timing settle.
+
 ## v1.41.0 — 2026-04-23
 
 Sprint 67 — REPL UX polish. Three features that make the REPL feel finished: fuzzy `@file` Tab completion (type `@agent<Tab>` and get `src/core/agent.ts` without knowing the path), `:dump` conversation export (markdown or self-contained HTML opened in browser), and `:help` command reference (cheat-sheet for every colon command, always one keypress away).

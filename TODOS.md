@@ -6,11 +6,11 @@
 
 ---
 
-## Backlog — Post-Sprint 67 notes (2026-04-23)
+## Backlog — Post-Sprint 68 notes (2026-04-24)
 
-- [ ] **`:dump` HTML rendering** — v1 uses `<pre>` with HTML-encoded markdown. A future sprint can add `marked` for rendered code blocks and proper heading styles. Zero deps, acceptable for v1 export.
+- [x] **`:dump html` image external-request isolation** — **Completed: v1.42.0 (2026-04-24).** Sprint 68 upgraded the href/src filter to a protocol allowlist (`https?:`, `mailto:`, `#`), blocking `javascript:`, `data:`, `vbscript:`, and `file://` attacks. `<img>` tags are stripped via `marked.use({ renderer: { image: ({ text }) => text } })` so alt text renders instead — AI-response images can no longer cause the exported HTML to make outbound browser requests on open.
 
-- [ ] **`@file` completer ranking** — recursive search is substring-only; `@agt` won't rank `agent.ts` above `agents.ts`. A future sprint can add lightweight scoring (exact prefix beats substring, shorter path beats longer). Low priority — substring is correct and fast.
+- [ ] **BFS traversal for `collectMatchingFiles`** — Current DFS-capped traversal (500 results, depth 4) means the best basename match may never be collected in very large trees, making the completer sort best-effort. Switching to BFS would surface files closer to `cwd` first, improving ranking in deep repos. `src/cli/file-attachment.ts`, `collectMatchingFiles`. Low priority.
 
 ---
 

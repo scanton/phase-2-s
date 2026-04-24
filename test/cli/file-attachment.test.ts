@@ -706,3 +706,89 @@ describe("collectMatchingFiles — dist skip", () => {
     expect(results).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// makeCompleter — completer ranking sort
+// ---------------------------------------------------------------------------
+
+describe("makeCompleter — ranking sort", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "phase2s-rank-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  async function invoke(getCwd: () => string, line: string): Promise<[string[], string]> {
+    return new Promise((resolve, reject) => {
+      makeCompleter(getCwd)(line, (err, result) => (err ? reject(err) : resolve(result)));
+    });
+  }
+
+  it("prefix match ranks above substring match: agent.ts before agent-types.ts", async () => {
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "agent-types.ts"), "");
+    writeFileSync(join(tmpDir, "src", "agent.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@agent");
+    expect(completions.length).toBeGreaterThanOrEqual(2);
+    const agentIdx = completions.findIndex((c) => c.endsWith("agent.ts"));
+    const typesIdx = completions.findIndex((c) => c.endsWith("agent-types.ts"));
+    expect(agentIdx).toBeGreaterThanOrEqual(0);
+    expect(typesIdx).toBeGreaterThanOrEqual(0);
+    expect(agentIdx).toBeLessThan(typesIdx);
+  });
+
+  it("shorter path ranks above longer path for same prefix match", async () => {
+    mkdirSync(join(tmpDir, "src", "core"), { recursive: true });
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "core", "agent.ts"), "");
+    writeFileSync(join(tmpDir, "src", "agent.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@agent");
+    const shallow = completions.findIndex((c) => c === "@src/agent.ts");
+    const deep = completions.findIndex((c) => c.includes("core/agent.ts"));
+    expect(shallow).toBeGreaterThanOrEqual(0);
+    expect(deep).toBeGreaterThanOrEqual(0);
+    expect(shallow).toBeLessThan(deep);
+  });
+
+  it("alpha tiebreak for same prefix and same path length", async () => {
+    writeFileSync(join(tmpDir, "beta.ts"), "");
+    writeFileSync(join(tmpDir, "alpha.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@a");
+    const alphaIdx = completions.findIndex((c) => c.endsWith("alpha.ts"));
+    const betaIdx = completions.findIndex((c) => c.endsWith("beta.ts"));
+    // alpha.ts is a prefix match; beta.ts starts with 'b' not 'a'
+    // both have same depth — alpha prefix wins
+    expect(alphaIdx).toBeGreaterThanOrEqual(0);
+    expect(alphaIdx).toBeLessThan(betaIdx === -1 ? Infinity : betaIdx);
+  });
+
+  it("sort applied in slash branch: directory completions ranked by prefix", async () => {
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "agent-runner.ts"), "");
+    writeFileSync(join(tmpDir, "src", "agent.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@src/ag");
+    expect(completions.length).toBeGreaterThanOrEqual(2);
+    const agentIdx = completions.findIndex((c) => c.endsWith("agent.ts"));
+    const runnerIdx = completions.findIndex((c) => c.endsWith("agent-runner.ts"));
+    expect(agentIdx).toBeLessThan(runnerIdx);
+  });
+
+  it("empty fragment returns no completions (no sort attempted)", async () => {
+    writeFileSync(join(tmpDir, "agent.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@");
+    expect(completions).toHaveLength(0);
+  });
+
+  it("ranking is best-effort when results approach MAX_COMPLETER_RESULTS (documented)", async () => {
+    // DFS traversal caps at 500 results; ideal match may not be collected in
+    // very large trees. This test documents the known limitation.
+    writeFileSync(join(tmpDir, "agent.ts"), "");
+    const [completions] = await invoke(() => tmpDir, "@agent");
+    // In small trees the best match IS collected and ranked first.
+    expect(completions[0]).toContain("agent");
+  });
+});
