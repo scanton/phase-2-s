@@ -2,7 +2,7 @@
 
 ## v1.42.0 — 2026-04-24
 
-Sprint 68 — Polish and CI hardening. Three improvements that tighten up Sprint 67's work: `:dump html` now produces properly rendered HTML with `marked` (real headings, code highlighting, readable structure — not a `<pre>` dump of raw markdown), `@file` Tab completions are ranked so the most likely match surfaces first (exact prefix beats substring, shorter path beats longer), and the flaky `clone.test.ts` ENOTEMPTY teardown race is fixed for good.
+Sprint 68 — Polish and CI hardening. Three improvements that tighten up Sprint 67's work: `:dump html` now produces properly rendered HTML with `marked` (real headings, formatted code blocks, readable structure — not a `<pre>` dump of raw markdown), `@file` Tab completions are ranked so the most likely match surfaces first (exact prefix beats substring, shorter path beats longer), and the flaky `clone.test.ts` ENOTEMPTY teardown race is fixed for good.
 
 ### Added
 
@@ -12,7 +12,7 @@ Sprint 68 — Polish and CI hardening. Three improvements that tighten up Sprint
 
 ### Fixed
 
-- **`clone.test.ts` ENOTEMPTY flaky CI** — `cloneSession` calls `upsertSessionIndex` fire-and-forget (no await), which writes lock files and `index.json.tmp.<pid>` inside `tmpDir` after `cloneSession` resolves. The old `afterEach` called `rmSync` immediately, racing those writes. Fixed by switching to async `rm` with a 50ms settle before teardown.
+- **`clone.test.ts` ENOTEMPTY flaky CI** — `cloneSession` calls `upsertSessionIndex` fire-and-forget (no await), which writes lock files and `index.json.tmp.<pid>` inside `tmpDir` after `cloneSession` resolves. The old `afterEach` called `rmSync` immediately, racing those writes. Fixed by stubbing `upsertSessionIndex` via `vi.spyOn` in `beforeEach` so the fire-and-forget index write never runs during tests — eliminating the race at its source rather than adding a timing settle.
 
 ## v1.41.0 — 2026-04-23
 
