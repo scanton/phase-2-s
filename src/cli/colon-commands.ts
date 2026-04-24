@@ -30,10 +30,30 @@ export type ColonAction =
   | { type: "unknown_agent"; requestedId: string }
   /** :goal <path> — run a goal spec from within the REPL */
   | { type: "run_goal"; goalPath: string; goalArgs: string[] }
+  /** :dump [html] — export conversation as markdown or HTML */
+  | { type: "dump_conversation"; format: "markdown" | "html" }
+  /** :help — show command reference */
+  | { type: "show_help" }
   /** :xyz — unrecognized colon command (not :clone or :commit) */
   | { type: "unknown_command"; command: string }
   /** :re <invalid tier> */
   | { type: "error"; message: string };
+
+// ---------------------------------------------------------------------------
+// COMMAND_REGISTRY — static list of documented REPL commands for :help
+// ---------------------------------------------------------------------------
+
+export const COMMAND_REGISTRY: Array<{ command: string; description: string }> = [
+  { command: ":re [high|low|default]", description: "Set or show reasoning effort tier" },
+  { command: ":agents",               description: "List available named agents" },
+  { command: ":agent <id>",           description: "Switch to a named agent (or use bare id)" },
+  { command: ":goal <path>",          description: "Run a goal spec file without leaving the REPL" },
+  { command: ":clone [branch]",       description: "Branch the current session into a new one" },
+  { command: ":commit [message]",     description: "AI-generated commit message and commit" },
+  { command: ":compact",              description: "Compact the current session context" },
+  { command: ":dump [html]",          description: "Export conversation as markdown (or HTML)" },
+  { command: ":help",                 description: "Show this command reference" },
+];
 
 // ---------------------------------------------------------------------------
 // Context passed in from the REPL loop
@@ -105,6 +125,16 @@ export function handleColonCommand(trimmed: string, ctx: ColonCommandCtx): Colon
 
   // :agents
   if (trimmed === ":agents") return { type: "list_agents" };
+
+  // :dump [html|markdown]
+  if (trimmed === ":dump" || trimmed.startsWith(":dump ")) {
+    const arg = trimmed.slice(":dump".length).trim().toLowerCase();
+    if (arg === "html") return { type: "dump_conversation", format: "html" };
+    return { type: "dump_conversation", format: "markdown" };
+  }
+
+  // :help
+  if (trimmed === ":help") return { type: "show_help" };
 
   // Agent switching — handles:
   //   bare ids:          "ares" (caught above, but :ares handled here via strip)
