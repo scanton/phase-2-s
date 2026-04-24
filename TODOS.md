@@ -6,11 +6,11 @@
 
 ---
 
-## Backlog — Post-Sprint 67 notes (2026-04-23)
+## Backlog — Post-Sprint 68 notes (2026-04-24)
 
-- [ ] **`:dump` HTML rendering** — v1 uses `<pre>` with HTML-encoded markdown. A future sprint can add `marked` for rendered code blocks and proper heading styles. Zero deps, acceptable for v1 export.
+- [ ] **`:dump html` link sanitization hardening** — Sprint 68 neutralizes `javascript:` hrefs with a one-line regex. A future sprint could add a proper allowlist-based sanitizer (only `http`/`https`/`mailto`/`#` hrefs permitted) using a marked renderer override. Low priority — self-XSS from your own exported transcripts is very low risk.
 
-- [ ] **`@file` completer ranking** — recursive search is substring-only; `@agt` won't rank `agent.ts` above `agents.ts`. A future sprint can add lightweight scoring (exact prefix beats substring, shorter path beats longer). Low priority — substring is correct and fast.
+- [ ] **BFS traversal for `collectMatchingFiles`** — Current DFS-capped traversal (500 results, depth 4) means the best basename match may never be collected in very large trees, making the completer sort best-effort. Switching to BFS would surface files closer to `cwd` first, improving ranking in deep repos. `src/cli/file-attachment.ts`, `collectMatchingFiles`. Low priority.
 
 ---
 
