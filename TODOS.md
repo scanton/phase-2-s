@@ -6,6 +6,14 @@
 
 ---
 
+## Backlog — Post-Sprint 67 notes (2026-04-23)
+
+- [ ] **`:dump` HTML rendering** — v1 uses `<pre>` with HTML-encoded markdown. A future sprint can add `marked` for rendered code blocks and proper heading styles. Zero deps, acceptable for v1 export.
+
+- [ ] **`@file` completer ranking** — recursive search is substring-only; `@agt` won't rank `agent.ts` above `agents.ts`. A future sprint can add lightweight scoring (exact prefix beats substring, shorter path beats longer). Low priority — substring is correct and fast.
+
+---
+
 ## Backlog — Post-Sprint 66 /plan-eng-review findings (2026-04-22)
 
 - [ ] **Reentrant `:goal` guard** — The REPL blocks a second `:goal` dispatch while one is running via a `goalState.running` ref (`index.ts`, `handleRunGoalCase`). This is in-process only — a user who opens a second terminal and runs `phase2s goal` directly would not be blocked. No action needed for the REPL case (flag is correct), but worth noting: the guard does not cover CLI-level parallelism. Low priority.
