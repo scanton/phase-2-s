@@ -21,21 +21,21 @@ export function renderSessionMarkdown(conv: Conversation): string {
     if (msg.role === "system") continue;
 
     if (msg.role === "user") {
-      md += `## User\n\n${msg.content}\n\n---\n\n`;
+      md += `## User\n\n${(msg.content ?? "").replace(/`/g, "\\`")}\n\n---\n\n`;
     } else if (msg.role === "assistant") {
       if (msg.toolCalls && msg.toolCalls.length > 0) {
         if (msg.content) {
-          md += `## Assistant\n\n${msg.content}\n\n`;
+          md += `## Assistant\n\n${msg.content.replace(/`/g, "\\`")}\n\n`;
         }
         for (const call of msg.toolCalls) {
-          md += `## Tool Call: ${call.name}\n\n\`\`\`json\n${call.arguments}\n\`\`\`\n\n`;
+          md += `## Tool Call: ${call.name}\n\n\`\`\`json\n${(call.arguments ?? "").replace(/`/g, "\\`")}\n\`\`\`\n\n`;
         }
         md += `---\n\n`;
       } else {
-        md += `## Assistant\n\n${msg.content}\n\n---\n\n`;
+        md += `## Assistant\n\n${(msg.content ?? "").replace(/`/g, "\\`")}\n\n---\n\n`;
       }
     } else if (msg.role === "tool") {
-      md += `## Tool Result\n\n\`\`\`text\n${msg.content}\n\`\`\`\n\n---\n\n`;
+      md += `## Tool Result\n\n\`\`\`text\n${(msg.content ?? "").replace(/`/g, "\\`")}\n\`\`\`\n\n---\n\n`;
     }
   }
 

@@ -1223,12 +1223,13 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           const ts = new Date().toISOString().replace(/[:.]/g, "-");
           const baseName = `session-${ts}`;
           mkdirSync(outDir, { recursive: true });
-          const md = renderSessionMarkdown(agent.getConversation());
+          const conv = agent.getConversation();
+          const md = renderSessionMarkdown(conv);
           const mdPath = join(outDir, baseName + ".md");
           writeFileSync(mdPath, md, "utf8");
           console.log(chalk.green(`✓ Exported: ${mdPath}`));
           if (action.format === "html") {
-            const html = renderSessionHtml(agent.getConversation());
+            const html = renderSessionHtml(conv);
             const htmlPath = join(outDir, baseName + ".html");
             writeFileSync(htmlPath, html, "utf8");
             const opener = process.platform === "win32" ? "start" : process.platform === "darwin" ? "open" : "xdg-open";

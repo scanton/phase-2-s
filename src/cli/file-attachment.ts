@@ -12,7 +12,7 @@
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import type { Dirent } from "node:fs";
-import { join, dirname, basename, relative } from "node:path";
+import { join, dirname, basename, relative, resolve } from "node:path";
 import { assertInSandbox } from "../tools/sandbox.js";
 import { getUrlBlockReason } from "../tools/browser.js";
 
@@ -263,7 +263,8 @@ export function collectMatchingFiles(
       if (SKIP_DIRS.has(entry.name)) continue;
       collectMatchingFiles(fullPath, fragment, results, depth + 1, cwd);
     } else if (entry.name.toLowerCase().includes(lowerFragment)) {
-      results.push("@" + relative(cwd, fullPath));
+      const rel = relative(cwd, fullPath);
+      if (!rel.startsWith("..")) results.push("@" + rel);
     }
   }
 }
@@ -312,6 +313,12 @@ export function makeCompleter(
       const filePart = basename(fragment);
       const searchDir = join(cwd, dirPart);
 
+      // Sandbox: reject paths that escape cwd via '../'
+      if (!resolve(searchDir).startsWith(resolve(cwd))) {
+        callback(null, [[], activeToken]);
+        return;
+      }
+
       let entries: Dirent[];
       try {
         entries = readdirSync(searchDir, { withFileTypes: true });
@@ -335,17 +342,18 @@ export function makeCompleter(
     const results: string[] = [];
     collectMatchingFiles(cwd, fragment, results, 0, cwd);
 
-    // Fallback: if recursive search finds nothing, try prefix in cwd
+    // Fallback: if recursive search finds nothing (e.g. empty directories or
+    // only directories match), try prefix-match in cwd — returns dir completions.
     if (results.length === 0) {
-      let entries: Dirent[];
+      let cwdEntries: Dirent[];
       try {
-        entries = readdirSync(cwd, { withFileTypes: true });
+        cwdEntries = readdirSync(cwd, { withFileTypes: true });
       } catch {
         callback(null, [[], activeToken]);
         return;
       }
-      const fallback = entries
-        .filter((e) => e.name.startsWith(fragment))
+      const fallback = cwdEntries
+        .filter((e) => !e.name.startsWith(".") && e.name.startsWith(fragment))
         .map((e) => "@" + e.name + (e.isDirectory() ? "/" : ""));
       callback(null, [fallback, activeToken]);
       return;
