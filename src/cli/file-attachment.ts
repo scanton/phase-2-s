@@ -270,6 +270,30 @@ export function collectMatchingFiles(
 }
 
 // ---------------------------------------------------------------------------
+// rankCompletions
+
+/**
+ * Sort completion results in-place: basename prefix match first, then shorter
+ * path, then alpha. All results already match via substring — this promotes
+ * the most likely intended match to the top of the list.
+ *
+ * Note: ranking is best-effort when result count approaches MAX_COMPLETER_RESULTS
+ * (500). DFS traversal may cap before collecting ideal matches in very large trees.
+ */
+function rankCompletions(results: string[], fragment: string): void {
+  const lf = fragment.toLowerCase();
+  results.sort((a, b) => {
+    const aBase = basename(a.slice(1)).toLowerCase(); // strip leading @
+    const bBase = basename(b.slice(1)).toLowerCase();
+    const aPrefix = aBase.startsWith(lf) ? 0 : 1;
+    const bPrefix = bBase.startsWith(lf) ? 0 : 1;
+    if (aPrefix !== bPrefix) return aPrefix - bPrefix;
+    if (a.length !== b.length) return a.length - b.length;
+    return a.localeCompare(b);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // makeCompleter
 
 /**
@@ -334,6 +358,7 @@ export function makeCompleter(
           return "@" + relPath + (entry.isDirectory() ? "/" : "");
         });
 
+      rankCompletions(completions, filePart);
       callback(null, [completions, activeToken]);
       return;
     }
@@ -341,6 +366,8 @@ export function makeCompleter(
     // No "/" in fragment → recursive basename substring search
     const results: string[] = [];
     collectMatchingFiles(cwd, fragment, results, 0, cwd);
+
+    rankCompletions(results, fragment);
 
     // Fallback: if recursive search finds nothing (e.g. empty directories or
     // only directories match), try prefix-match in cwd — returns dir completions.
