@@ -82,12 +82,13 @@ export function handleColonCommand(trimmed: string, ctx: ColonCommandCtx): Colon
   // :goal <path> [args] — run a spec file from within the REPL
   if (trimmed === ":goal" || trimmed.startsWith(":goal ")) {
     const rest = trimmed.slice(":goal".length).trim();
+    const GOAL_USAGE = "Usage: :goal <spec-file> [args]\nExample: :goal specs/auth.md";
     if (!rest) {
-      return { type: "error", message: "Usage: :goal <spec-file> [args]\nExample: :goal specs/auth.md" };
+      return { type: "error", message: GOAL_USAGE };
     }
     const { goalPath, goalArgs } = parseGoalArgs(rest);
     if (!goalPath) {
-      return { type: "error", message: "Usage: :goal <spec-file> [args]\nExample: :goal specs/auth.md" };
+      return { type: "error", message: GOAL_USAGE };
     }
     return { type: "run_goal", goalPath, goalArgs };
   }

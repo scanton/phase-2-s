@@ -32,7 +32,7 @@ import { makeCompleter, expandAttachments } from "./file-attachment.js";
 import { performCompaction as runCompaction, shouldCompact } from "../core/compaction.js";
 import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
 import { RateLimitError } from "../core/rate-limit-error.js";
-import { runGoal } from "./goal.js";
+import { runGoal, type GoalResult } from "./goal.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -60,6 +60,62 @@ function printRateLimitAndExit(err: RateLimitError, sessionPath: string, provide
     console.log("   Switch provider:      phase2s --resume --provider anthropic");
   }
   process.exit(0);
+}
+
+// ---------------------------------------------------------------------------
+// handleRunGoalCase — extracted for testability
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute a `:goal` action from the REPL loop.
+ *
+ * Extracted from the `case "run_goal"` switch branch so the reentrancy guard,
+ * rate-limit handling, and success/failure paths can be unit-tested without
+ * wiring up a full readline interface.
+ *
+ * @param goalPath        Path to the spec file (from the ColonAction).
+ * @param state           Shared mutable ref — `state.running` is set to true for the
+ *                        duration and reset to false in the finally block.
+ * @param reasoningOverride  Optional in-session reasoning tier override.
+ * @param runGoalFn       Injectable — defaults to the real `runGoal` in production.
+ */
+export async function handleRunGoalCase(
+  goalPath: string,
+  state: { running: boolean },
+  reasoningOverride: "high" | "low" | undefined,
+  runGoalFn: (path: string, opts: { throwOnRateLimit: boolean; reasoningEffort?: "high" | "low" }) => Promise<GoalResult>,
+): Promise<void> {
+  if (state.running) {
+    console.log(chalk.yellow("⚠  A goal is already running. Wait for it to finish before starting another."));
+    return;
+  }
+  state.running = true;
+  try {
+    const result = await runGoalFn(goalPath, {
+      throwOnRateLimit: true,
+      reasoningEffort: reasoningOverride,
+    });
+    if (result.challenged) {
+      console.log(chalk.yellow("\n⚠  Goal run challenged by adversarial review — not executed."));
+    } else if (result.dryRun) {
+      console.log(chalk.cyan("\n→ Dry run complete."));
+    } else if (result.success) {
+      console.log(chalk.green(`\n✓ Goal complete in ${(result.durationMs / 1000).toFixed(1)}s.`));
+    } else {
+      console.log(chalk.red(`\n✗ Goal failed after ${result.attempts} attempt(s).`));
+    }
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      const retryMsg = err.retryAfter !== undefined ? ` Rate limit resets in ~${err.retryAfter}s.` : "";
+      console.log(chalk.yellow(`\n⏸  Goal paused — rate limited by ${err.providerName ?? "provider"}.${retryMsg}`));
+      console.log(chalk.dim("   Re-run :goal to resume."));
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(chalk.red(`\n✗ Goal error: ${msg}`));
+    }
+  } finally {
+    state.running = false;
+  }
 }
 
 // Walk up from the current file to find the package.json that owns this source.
@@ -896,7 +952,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
    * Never written to disk (session-scoped only).
    */
   let reasoningOverride: "high" | "low" | undefined;
-  let goalRunning = false;
+  const goalState = { running: false };
 
   // Ensure stdin is open and stays open for the full session
   process.stdin.resume();
@@ -1157,37 +1213,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           continue;
 
         case "run_goal": {
-          if (goalRunning) {
-            console.log(chalk.yellow("⚠  A goal is already running. Wait for it to finish before starting another."));
-            continue;
-          }
-          goalRunning = true;
-          try {
-            const result = await runGoal(action.goalPath, {
-              throwOnRateLimit: true,
-              reasoningEffort: reasoningOverride,
-            });
-            if (result.challenged) {
-              console.log(chalk.yellow("\n⚠  Goal run challenged by adversarial review — not executed."));
-            } else if (result.dryRun) {
-              console.log(chalk.cyan("\n→ Dry run complete."));
-            } else if (result.success) {
-              console.log(chalk.green(`\n✓ Goal complete in ${(result.durationMs / 1000).toFixed(1)}s.`));
-            } else {
-              console.log(chalk.red(`\n✗ Goal failed after ${result.attempts} attempt(s).`));
-            }
-          } catch (err) {
-            if (err instanceof RateLimitError) {
-              const retryMsg = err.retryAfter !== undefined ? ` Rate limit resets in ~${err.retryAfter}s.` : "";
-              console.log(chalk.yellow(`\n⏸  Goal paused — rate limited by ${err.providerName ?? "provider"}.${retryMsg}`));
-              console.log(chalk.dim("   Re-run :goal to resume."));
-            } else {
-              const msg = err instanceof Error ? err.message : String(err);
-              console.log(chalk.red(`\n✗ Goal error: ${msg}`));
-            }
-          } finally {
-            goalRunning = false;
-          }
+          await handleRunGoalCase(action.goalPath, goalState, reasoningOverride, runGoal);
           continue;
         }
 

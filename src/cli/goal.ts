@@ -422,7 +422,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       return orchGoalResult;
     } catch (err: unknown) {
       if (err instanceof RateLimitError) {
-        if (options.throwOnRateLimit) throw err;
+        if (options.throwOnRateLimit) { logger.close(); throw err; }
         handleRateLimitExit(err, basename(specPath), undefined, spec.decomposition.length, state.orchestrator !== undefined);
       }
       const message = err instanceof Error ? err.message : String(err);
@@ -521,7 +521,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         });
       } catch (err: unknown) {
         if (err instanceof RateLimitError) {
-          if (options.throwOnRateLimit) throw err;
+          if (options.throwOnRateLimit) { logger.close(); throw err; }
           const completedCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
           handleRateLimitExit(err, basename(specPath), completedCount, spec.decomposition.length);
         }
@@ -789,7 +789,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   }
   } catch (err) {
     if (err instanceof RateLimitError) {
-      if (options.throwOnRateLimit) throw err;
+      if (options.throwOnRateLimit) { logger.close(); throw err; }
       const completedCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
       handleRateLimitExit(err, basename(specPath), completedCount, spec.decomposition.length);
     }
