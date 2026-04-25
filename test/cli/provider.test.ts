@@ -142,6 +142,93 @@ describe("runProviderLogin", () => {
     const out = writeSpy.mock.calls.map((c) => String(c[0])).join("");
     expect(out).toContain("✔");
   });
+
+  it("invalid YAML file → exits with error, does not overwrite", async () => {
+    const configPath = join(tmpDir, ".phase2s.yaml");
+    writeFileSync(configPath, "key: [unclosed\n");
+
+    await withCwd(tmpDir, async () => {
+      await expect(runProviderLogin("openai-api")).rejects.toThrow("process.exit called");
+    });
+
+    // File must not have been overwritten
+    expect(readFileSync(configPath, "utf-8")).toBe("key: [unclosed\n");
+    const errOutput = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(errOutput).toContain("invalid YAML");
+  });
+
+  it("list YAML file → exits with error, does not silently overwrite", async () => {
+    const configPath = join(tmpDir, ".phase2s.yaml");
+    const listContent = "- item1\n- item2\n";
+    writeFileSync(configPath, listContent);
+
+    await withCwd(tmpDir, async () => {
+      await expect(runProviderLogin("openai-api")).rejects.toThrow("process.exit called");
+    });
+
+    // File must not have been silently replaced with an empty object
+    expect(readFileSync(configPath, "utf-8")).toBe(listContent);
+    const errOutput = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(errOutput).toContain("invalid YAML");
+  });
+
+  it("empty API key → exits with error, does not write config", async () => {
+    mockAnswer = "";
+
+    await withCwd(tmpDir, async () => {
+      await expect(runProviderLogin("openai-api")).rejects.toThrow("process.exit called");
+    });
+
+    const { existsSync } = await import("node:fs");
+    expect(existsSync(join(tmpDir, ".phase2s.yaml"))).toBe(false);
+    const errOutput = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(errOutput).toContain("empty");
+  });
+
+  it("re-login same provider — model fields NOT cleared", async () => {
+    writeFileSync(
+      join(tmpDir, ".phase2s.yaml"),
+      "provider: openai-api\napiKey: old-key\nmodel: gpt-4o\nfast_model: gpt-4o-mini\n",
+    );
+    mockAnswer = "sk-new-key";
+
+    await withCwd(tmpDir, async () => {
+      await runProviderLogin("openai-api");
+    });
+
+    const written = yamlParse(readFileSync(join(tmpDir, ".phase2s.yaml"), "utf-8")) as Record<string, unknown>;
+    expect(written.provider).toBe("openai-api");
+    expect(written.apiKey).toBe("sk-new-key");
+    expect(written.model).toBe("gpt-4o"); // NOT cleared — same provider
+    expect(written.fast_model).toBe("gpt-4o-mini"); // NOT cleared
+  });
+
+  it("ollama (no keyField) — no key prompt, just writes provider", async () => {
+    await withCwd(tmpDir, async () => {
+      await runProviderLogin("ollama");
+    });
+
+    const written = yamlParse(readFileSync(join(tmpDir, ".phase2s.yaml"), "utf-8")) as Record<string, unknown>;
+    expect(written.provider).toBe("ollama");
+    // No key field should be written
+    expect(written.apiKey).toBeUndefined();
+    expect(written.ollamaApiKey).toBeUndefined();
+
+    const out = writeSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).toContain("✔");
+  });
+
+  it("config file written with 0o600 permissions", async () => {
+    mockAnswer = "sk-perm-test";
+
+    await withCwd(tmpDir, async () => {
+      await runProviderLogin("openai-api");
+    });
+
+    const configPath = join(tmpDir, ".phase2s.yaml");
+    const mode = statSync(configPath).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -207,5 +294,19 @@ describe("runProviderLogout", () => {
     });
     const errOutput = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
     expect(errOutput).toContain("No .phase2s.yaml");
+  });
+
+  it("key field absent from config — prints warning, does not write", async () => {
+    const configPath = join(tmpDir, ".phase2s.yaml");
+    writeFileSync(configPath, "provider: anthropic\n");
+    const originalMtime = statSync(configPath).mtimeMs;
+
+    await withCwd(tmpDir, () => runProviderLogout());
+
+    const newMtime = statSync(configPath).mtimeMs;
+    expect(newMtime).toBe(originalMtime); // file not modified
+
+    const output = writeSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(output).toContain("nothing to clear");
   });
 });
