@@ -1349,7 +1349,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     // :commit — generate an AI commit message for staged changes from inside the REPL
     if (cleanLine === ":commit" || cleanLine.startsWith(":commit ")) {
       const { buildCommitMessage, runCommitFlow, runGitCommit, SecretWarningError } = await import("./commit.js");
-      const { createRl: makeRl, ask: askUser } = await import("./prompt-util.js");
+      const { createRl: makeRl, ask: askUser, PromptInterrupt } = await import("./prompt-util.js");
       let secretsSendAnyway = false;
       let result: Awaited<ReturnType<typeof buildCommitMessage>> | undefined;
       // Loop to handle secret warnings interactively (same pattern as runCommitFlow)
@@ -1359,6 +1359,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           result = await buildCommitMessage(config, { secretsSendAnyway });
           break;
         } catch (err: unknown) {
+          if (err instanceof PromptInterrupt) {
+            console.log(chalk.dim("\nCommit cancelled."));
+            break;
+          }
           if (err instanceof SecretWarningError) {
             console.log(chalk.yellow(`\n⚠  ${err.message}`));
             const rl3 = makeRl();
@@ -1368,6 +1372,12 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
                 secretsSendAnyway = true;
                 continue;
               }
+            } catch (inner: unknown) {
+              if (inner instanceof PromptInterrupt) {
+                console.log(chalk.dim("\nCommit cancelled."));
+                break;
+              }
+              throw inner;
             } finally {
               rl3.close();
             }
@@ -1410,6 +1420,9 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
         } else {
           console.log(chalk.dim("Commit cancelled."));
         }
+      } catch (err: unknown) {
+        if (!(err instanceof PromptInterrupt)) throw err;
+        console.log(chalk.dim("\nCommit cancelled."));
       } finally {
         rl2.close();
       }
