@@ -479,6 +479,36 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       });
     });
 
+  // Provider management
+  const providerCmd = program
+    .command("provider")
+    .description("Inspect and switch the active provider");
+
+  providerCmd
+    .command("list")
+    .description("List all supported providers and show which one is active")
+    .action(async () => {
+      const { runProviderList } = await import("./provider.js");
+      runProviderList();
+    });
+
+  providerCmd
+    .command("login")
+    .description("Configure a provider and save credentials to .phase2s.yaml")
+    .option("--provider <name>", "Provider name (skips interactive prompt)")
+    .action(async (cmdOpts: { provider?: string }) => {
+      const { runProviderLogin } = await import("./provider.js");
+      await runProviderLogin(cmdOpts.provider);
+    });
+
+  providerCmd
+    .command("logout")
+    .description("Remove the active provider's API key from .phase2s.yaml")
+    .action(async () => {
+      const { runProviderLogout } = await import("./provider.js");
+      runProviderLogout();
+    });
+
   // Self-update command
   program
     .command("upgrade")

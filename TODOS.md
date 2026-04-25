@@ -6,10 +6,16 @@
 
 ---
 
+## Backlog — Post-Sprint 70 notes (2026-04-24)
+
+- [ ] **Consolidate provider enums into `provider-registry.ts`** — `src/cli/provider.ts` uses the new centralized registry exclusively, but the provider name lists and key field maps in `src/cli/init.ts`, `src/core/config.ts`, and `src/cli/doctor.ts` are still inline duplicates. Migrate them to `PROVIDERS` / `getProviderKeyField()` / `isValidProvider()` from `provider-registry.ts` to eliminate the drift risk (a new provider added to the registry must currently be added in four places). Low-risk refactor with no behavioral change.
+
+---
+
 ## Backlog — Post-Sprint 69 notes (2026-04-24)
 
 - All 7 hardening items from the Sprint 69 /plan-eng-review resolved: BFS traversal, atomic backup, sandbox shell injection, sandbox state (b) TOCTOU, sandbox name collision (state d MD5 suffix documented), plans/ symlink escape, plans/ TOCTOU (accepted). +7 net new tests; zero regression from 1256-pass baseline.
-- [ ] **`performCompaction` rm cleanup coverage** — The `rm` call inside the atomic backup error handler is not injectable via `PerformCompactionDeps`, so the `catch (rmErr)` diagnostic-log path has no test coverage. Future fix: add optional `rmFileFn?(path: string, opts?: {force?: boolean}): Promise<void>` to `PerformCompactionDeps` and use it in the catch block. Low priority; the path is defensive cleanup only.
+- [x] **`performCompaction` rm cleanup coverage** — `rmFileFn?(path: string, opts?: RmOptions): Promise<void>` added to `PerformCompactionDeps`. Two new tests verify the rm call site and the diagnostic warn path. **Completed: v1.44.0 (2026-04-24)**
 
 ---
 
@@ -205,7 +211,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 ### Tier 3 — Worth noting
 
-- [ ] **`forge provider login` — interactive credential manager** — `forge provider login` walks you through provider setup with an interactive picker. We have `phase2s init` which does this, but Forge's is more streamlined (separate `provider` subcommand, `login`/`logout`/`list`). Consider restructuring `phase2s init` or adding `phase2s provider` subcommand.
+- [x] **`phase2s provider` subcommand** — `phase2s provider list/login/logout` for streamlined provider management without re-running `init`. Centralized registry in `src/cli/provider-registry.ts`. Config round-trip via yaml.parse/patch/stringify preserves webhooks, systemPrompt, etc. **Completed: v1.44.0 (2026-04-24)**
 
 - [x] **`:dump html`** — export a conversation as formatted HTML (not just JSONL). Useful for sharing run histories with teammates. We have `phase2s report` for dark factory runs; a general conversation export would be a lower-effort complement. **Completed: v1.41.0 (2026-04-23)** — `:dump` exports markdown; `:dump html` wraps in self-contained HTML page with dark mode support. Exports to `.phase2s/exports/session-<ts>.{md,html}`.
 
