@@ -74,6 +74,16 @@ describe("runProviderList", () => {
     expect(output).not.toContain("(active)");
   });
 
+  it("malformed config — shows all providers without (active) marker", async () => {
+    writeFileSync(join(tmpDir, ".phase2s.yaml"), "key: [unclosed\n");
+    await withCwd(tmpDir, () => runProviderList());
+    const output = writeSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(output).not.toContain("(active)");
+    for (const p of ["codex-cli", "openai-api", "anthropic"]) {
+      expect(output).toContain(p);
+    }
+  });
+
   it("shows PHASE2S_PROVIDER env override warning", async () => {
     process.env.PHASE2S_PROVIDER = "gemini";
     try {
@@ -276,13 +286,13 @@ describe("runProviderLogout", () => {
   });
 
   it("codex-cli: prints informational message, no file write", async () => {
-    writeFileSync(join(tmpDir, ".phase2s.yaml"), "provider: codex-cli\n");
-    const originalMtime = statSync(join(tmpDir, ".phase2s.yaml")).mtimeMs;
+    const configPath = join(tmpDir, ".phase2s.yaml");
+    writeFileSync(configPath, "provider: codex-cli\n");
 
     await withCwd(tmpDir, () => runProviderLogout());
 
-    const newMtime = statSync(join(tmpDir, ".phase2s.yaml")).mtimeMs;
-    expect(newMtime).toBe(originalMtime); // file not modified
+    // Content check is more reliable than mtime (APFS has 1-second mtime granularity)
+    expect(readFileSync(configPath, "utf-8")).toBe("provider: codex-cli\n");
 
     const output = writeSpy.mock.calls.map((c) => String(c[0])).join("");
     expect(output).toContain("No credentials stored locally");
@@ -296,15 +306,27 @@ describe("runProviderLogout", () => {
     expect(errOutput).toContain("No .phase2s.yaml");
   });
 
+  it("malformed config — exits with error, does not overwrite", async () => {
+    const configPath = join(tmpDir, ".phase2s.yaml");
+    writeFileSync(configPath, "key: [unclosed\n");
+
+    await withCwd(tmpDir, () => {
+      expect(() => runProviderLogout()).toThrow("process.exit called");
+    });
+
+    expect(readFileSync(configPath, "utf-8")).toBe("key: [unclosed\n");
+    const errOutput = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(errOutput).toContain("invalid YAML");
+  });
+
   it("key field absent from config — prints warning, does not write", async () => {
     const configPath = join(tmpDir, ".phase2s.yaml");
     writeFileSync(configPath, "provider: anthropic\n");
-    const originalMtime = statSync(configPath).mtimeMs;
 
     await withCwd(tmpDir, () => runProviderLogout());
 
-    const newMtime = statSync(configPath).mtimeMs;
-    expect(newMtime).toBe(originalMtime); // file not modified
+    // Content check is more reliable than mtime (APFS has 1-second mtime granularity)
+    expect(readFileSync(configPath, "utf-8")).toBe("provider: anthropic\n");
 
     const output = writeSpy.mock.calls.map((c) => String(c[0])).join("");
     expect(output).toContain("nothing to clear");
