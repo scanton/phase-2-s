@@ -969,6 +969,14 @@ These were flagged but not fixed — they need deeper analysis before touching.
 
 ---
 
+## Sprint 72 follow-ons (from /plan-eng-review 2026-04-25)
+
+- [ ] **Heuristic sort fallback for non-Ollama providers** — When Ollama is not configured, `loadRelevantLearnings` falls back to `loadLearnings` which truncates-oldest. Improve this with a lightweight keyword/recency hybrid sort so non-Ollama users also get better-than-random injection. Could weight by keyword overlap with query text + recency decay. Sprint 73 candidate. **Priority:** P3
+
+- [ ] **REPL mid-conversation semantic context refresh** — REPL startup uses `loadLearnings` (no task text at startup). After the user's first message establishes a topic, refresh the injected learnings block using `loadRelevantLearnings(cwd, firstMessage, config)`. Requires baking learnings into the system prompt at turn-1 rather than session-start. Sprint 73+ candidate. **Priority:** P3
+
+---
+
 ## Icebox (maybe never, but worth tracking)
 
 - GUI / TUI mode — a terminal dashboard showing the agent loop in real-time
