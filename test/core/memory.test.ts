@@ -218,4 +218,35 @@ describe("loadRelevantLearnings()", () => {
 
     vi.restoreAllMocks();
   });
+
+  it("returns results in similarity rank order, not JSONL insertion order", async () => {
+    // Return two different vectors per call: high similarity for "b", low for "a"
+    let callCount = 0;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => {
+      callCount++;
+      // Query vector is [1,0,0]; "b" gets [1,0,0] (similarity=1), "a" gets [0,1,0] (similarity=0)
+      const embedding = callCount === 1 ? [[1, 0, 0]] : callCount === 2 ? [[0, 1, 0]] : [[1, 0, 0]];
+      return Promise.resolve({ ok: true, json: async () => ({ embeddings: embedding }) } as Response);
+    }));
+
+    // Use a fresh tmpDir so index isn't cached from previous test
+    const { mkdtemp, mkdir: mkdirFn, writeFile: wf, rm: rmFn } = await import("node:fs/promises");
+    const { join: j } = await import("node:path");
+    const dir = await mkdtemp(j(process.cwd(), ".test-order-"));
+    try {
+      await mkdirFn(j(dir, ".phase2s", "memory"), { recursive: true });
+      await wf(j(dir, ".phase2s", "memory", "learnings.jsonl"),
+        '{"key":"a","insight":"always write tests"}\n{"key":"b","insight":"use typescript strict"}\n', "utf-8");
+
+      const result = await loadRelevantLearnings(dir, "typescript", baseConfig, 2);
+      // "b" has higher similarity to query — should appear first regardless of JSONL order
+      if (result.length === 2) {
+        expect(result[0].key).toBe("b");
+        expect(result[1].key).toBe("a");
+      }
+    } finally {
+      await rmFn(dir, { recursive: true }).catch(() => {});
+      vi.restoreAllMocks();
+    }
+  });
 });

@@ -121,6 +121,9 @@ export async function loadRelevantLearnings(
   const topKeys = findTopK(queryVector, index, k);
   if (topKeys.length === 0) return learnings;
 
-  const keySet = new Set(topKeys);
-  return learnings.filter((l) => keySet.has(l.key));
+  const learningByKey = new Map(learnings.map((l) => [l.key, l]));
+  return topKeys.flatMap((k) => {
+    const l = learningByKey.get(k);
+    return l ? [l] : [];
+  });
 }
