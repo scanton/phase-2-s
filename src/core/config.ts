@@ -135,7 +135,7 @@ export function normalizeConfigError(err: unknown): string {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return "No .phase2s.yaml found. Run 'phase2s init' to create one.";
     if (code === "EACCES") return "Cannot read .phase2s.yaml — permission denied. Check file permissions.";
-    if (err.message.includes("must be a YAML")) return `Config file error: ${err.message}`;
+    if (err.message.includes("must be a YAML")) return `Config file error: ${err.message}\nRun 'phase2s init' to regenerate a valid config.`;
     if (err.name === "YAMLParseError" || err.message.toLowerCase().includes("yaml")) {
       return `YAML syntax error in .phase2s.yaml: ${err.message}\nRun 'phase2s init' to regenerate a valid config.`;
     }

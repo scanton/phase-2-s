@@ -188,7 +188,7 @@ describe("Conversation", () => {
     const msgs = c.getMessages();
     expect(msgs[0].role).toBe("system");
     expect(msgs[1].role).toBe("user");
-    expect(msgs[1].content).toContain("[PHASE2S_LEARNINGS]");
+    expect(msgs[1].content).toContain(Conversation.LEARNINGS_MARKER);
     expect(msgs[2].role).toBe("user");
     expect(msgs[2].content).toBe("user message");
   });
@@ -199,7 +199,7 @@ describe("Conversation", () => {
     c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nno system message");
 
     const msgs = c.getMessages();
-    expect(msgs[0].content).toContain("[PHASE2S_LEARNINGS]");
+    expect(msgs[0].content).toContain(Conversation.LEARNINGS_MARKER);
     expect(msgs[1].content).toBe("hello");
   });
 
@@ -211,11 +211,15 @@ describe("Conversation", () => {
 
     const msgs = c.getMessages();
     const learningsMessages = msgs.filter(
-      (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER),
     );
     expect(learningsMessages).toHaveLength(1);
     expect(learningsMessages[0].content).toContain("updated learnings");
     expect(learningsMessages[0].content).not.toContain("first learnings");
+    // Position: LEARNINGS must be immediately before the last user message
+    const learnIdx = msgs.findIndex((m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER));
+    const lastUserIdx = msgs.map((m) => m.role).lastIndexOf("user");
+    expect(learnIdx).toBe(lastUserIdx - 1);
   });
 
   it("does not affect trimToTokenBudget — learnings message is not a tool result and is not trimmed", () => {
@@ -228,7 +232,7 @@ describe("Conversation", () => {
 
     const msgs = c.getMessages();
     const learningsMsg = msgs.find(
-      (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER),
     );
     expect(learningsMsg).toBeDefined();
   });
@@ -248,7 +252,7 @@ describe("Conversation", () => {
     // LEARNINGS must appear immediately before "turn 2 question" (the last user turn),
     // NOT before "turn 1 question" (the first historical user turn).
     const learnIdx = msgs.findIndex(
-      (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER),
     );
     const lastUserIdx = msgs.map((m) => m.role).lastIndexOf("user");
     expect(learnIdx).toBe(lastUserIdx - 1);

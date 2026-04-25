@@ -426,7 +426,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         // Exit 1 if score < 7 (or 0 if score >= 7 or score is null)
         if (result.score !== null && result.score < 7) process.exit(1);
       } catch (err) {
-        console.error(normalizeConfigError(err));
+        console.error(chalk.red(normalizeConfigError(err)));
         process.exit(1);
       }
     });

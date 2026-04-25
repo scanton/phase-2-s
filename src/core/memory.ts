@@ -104,7 +104,7 @@ function recencyWeight(ts: string | undefined): number {
  */
 export function heuristicSort(learnings: Learning[], queryText: string): Learning[] {
   const queryTerms = queryText.toLowerCase().match(/\w+/g) ?? [];
-  if (queryTerms.length === 0) return learnings;
+  if (queryTerms.length === 0) return [...learnings];
 
   return [...learnings].sort((a, b) => {
     const scoreFor = (l: Learning): number => {
