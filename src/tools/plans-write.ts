@@ -57,11 +57,27 @@ export function createPlansWriteTool(cwd: string): ToolDefinition {
   async function assertInPlansSandbox(rawPath: string): Promise<string> {
     // Resolve cwd/plans via realpath so symlinked project roots work correctly.
     let realPlansDir: string;
+    let plansDirExists = false;
     try {
       realPlansDir = await realpath(plansDir);
+      plansDirExists = true;
     } catch {
       // plans/ doesn't exist yet — use lexical path.
       realPlansDir = plansDir;
+    }
+
+    // Guard: plans/ itself must not be a symlink pointing outside cwd.
+    // Without this check, if plans/ → /outside, realPlansDir = "/outside" and the
+    // startsWith check below would pass for any write to /outside/... (symlink escape).
+    // Only apply when plans/ exists: if it doesn't exist it can't yet be a symlink,
+    // and using realpath(cwd) here would produce a different-prefix path on macOS
+    // (where /var → /private/var) that would falsely block legitimate temp-dir writes.
+    if (plansDirExists) {
+      let realCwd: string;
+      try { realCwd = await realpath(cwd); } catch { realCwd = cwd; }
+      if (realPlansDir !== realCwd && !realPlansDir.startsWith(realCwd + sep)) {
+        throw new Error("plans/ directory resolves outside the project — symlink escape blocked");
+      }
     }
 
     const resolved = await resolvePlansPath(rawPath);
@@ -116,6 +132,11 @@ export function createPlansWriteTool(cwd: string): ToolDefinition {
       try {
         // Auto-create plans/ and any intermediate directories.
         await mkdir(dirname(fullPath), { recursive: true });
+        // NOTE: TOCTOU — assertInPlansSandbox ran above, mkdir ran here. A symlink
+        // swap between those two calls is theoretically possible but requires local
+        // filesystem access. The symlink-escape guard in assertInPlansSandbox already
+        // blocks the most dangerous case (plans/ itself being a symlink). Per-file
+        // O_NOFOLLOW is not cleanly exposed by Node.js writeFile; risk is accepted as low.
 
         let existed = false;
         try {
