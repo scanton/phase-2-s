@@ -31,6 +31,7 @@ Sprint 72 — Smart Learnings + Model Defaults.
 - `test/core/memory.test.ts` — 5 new tests: `skipCharCap` bypasses truncation, `loadRelevantLearnings` semantic path, fallback on empty queryText, fallback on absent `ollamaBaseUrl`, fallback when embed returns `[]`.
 - `test/cli/provider.test.ts` — 1 new test: provider switch clears `ollamaEmbedModel`.
 
+
 ## v1.45.1 — 2026-04-25
 
 Post-review patch. Propagates `PromptInterrupt` (Ctrl+C) handling through the remaining unguarded `ask()` call sites in `commit.ts` and `spec-template.ts`, adds `readConfigRaw()` error guards to `runProviderList` and `runProviderLogout`, removes a dead catch branch in the `:commit` REPL handler, and adds 6 regression tests to lock in the new behavior.
