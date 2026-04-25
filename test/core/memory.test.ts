@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { loadLearnings, loadRelevantLearnings, formatLearningsForPrompt, type Learning } from "../../src/core/memory.js";
+import { loadLearnings, loadRelevantLearnings, formatLearningsForPrompt, heuristicSort, type Learning } from "../../src/core/memory.js";
 import type { Config } from "../../src/core/config.js";
 
 /**
@@ -153,6 +153,71 @@ describe("formatLearningsForPrompt()", () => {
   });
 });
 
+describe("heuristicSort() — Sprint 73 (Item D)", () => {
+  const now = new Date().toISOString();
+  const old = new Date(Date.now() - 30 * 86_400_000).toISOString(); // 30 days ago
+
+  it("returns learnings as-is when queryText is empty", () => {
+    const learnings: Learning[] = [
+      { key: "a", insight: "alpha" },
+      { key: "b", insight: "beta" },
+    ];
+    const result = heuristicSort(learnings, "");
+    expect(result.map((l) => l.key)).toEqual(["a", "b"]);
+  });
+
+  it("ranks learnings with matching keywords above non-matching ones", () => {
+    const learnings: Learning[] = [
+      { key: "unrelated", insight: "nothing to do with the query" },
+      { key: "relevant", insight: "typescript strict mode is important" },
+    ];
+    const result = heuristicSort(learnings, "typescript strict");
+    expect(result[0].key).toBe("relevant");
+  });
+
+  it("treats absent ts as full weight (no recency penalty)", () => {
+    const learnings: Learning[] = [
+      { key: "no-ts", insight: "typescript" },
+      { key: "fresh", insight: "typescript", ts: now },
+      { key: "stale", insight: "typescript", ts: old },
+    ];
+    const result = heuristicSort(learnings, "typescript");
+    // no-ts (weight=1.0) and fresh (weight≈1.0) should both outrank stale (weight≈0.77)
+    const staleIdx = result.findIndex((l) => l.key === "stale");
+    const noTsIdx = result.findIndex((l) => l.key === "no-ts");
+    expect(noTsIdx).toBeLessThan(staleIdx);
+  });
+
+  it("fresh ts outranks stale ts for same keyword match", () => {
+    const learnings: Learning[] = [
+      { key: "stale", insight: "vitest testing", ts: old },
+      { key: "fresh", insight: "vitest testing", ts: now },
+    ];
+    const result = heuristicSort(learnings, "vitest testing");
+    expect(result[0].key).toBe("fresh");
+  });
+
+  it("does not exclude zero-overlap learnings — puts them last", () => {
+    const learnings: Learning[] = [
+      { key: "no-match", insight: "completely unrelated content here" },
+      { key: "match", insight: "vitest is the test runner" },
+    ];
+    const result = heuristicSort(learnings, "vitest");
+    expect(result).toHaveLength(2);
+    expect(result[0].key).toBe("match");
+    expect(result[1].key).toBe("no-match");
+  });
+
+  it("does not mutate the original array", () => {
+    const learnings: Learning[] = [
+      { key: "a", insight: "alpha" },
+      { key: "b", insight: "beta" },
+    ];
+    heuristicSort(learnings, "beta");
+    expect(learnings[0].key).toBe("a"); // original order preserved
+  });
+});
+
 describe("loadRelevantLearnings()", () => {
   let tmpDir: string;
 
@@ -189,18 +254,20 @@ describe("loadRelevantLearnings()", () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  it("falls back to loadLearnings() when ollamaBaseUrl is absent", async () => {
+  it("falls back to heuristicSort() when ollamaBaseUrl is absent", async () => {
     const noOllamaConfig = { ...baseConfig, ollamaBaseUrl: undefined } as unknown as Config;
     const result = await loadRelevantLearnings(tmpDir, "write tests", noOllamaConfig);
     expect(result.length).toBeGreaterThan(0);
+    // heuristicSort should bubble "always write tests" to top for "write tests" query
+    expect(result[0].key).toBe("a");
   });
 
-  it("falls back to loadLearnings() when Ollama embed returns []", async () => {
+  it("falls back to heuristicSort() when Ollama embed returns []", async () => {
     // Mock fetch to simulate Ollama being down
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
 
     const result = await loadRelevantLearnings(tmpDir, "write tests", baseConfig);
-    // Should fall back and still return learnings
+    // Should fall back and still return learnings (heuristicSort)
     expect(result.length).toBeGreaterThan(0);
 
     vi.restoreAllMocks();

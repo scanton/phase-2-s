@@ -31,6 +31,35 @@ export class Conversation {
     return [...this.messages];
   }
 
+  /**
+   * Prefix used to identify the per-turn learnings context message.
+   * Searched by content prefix so compaction (which rewrites the messages array)
+   * does not invalidate the lookup.
+   */
+  static readonly LEARNINGS_MARKER = "[PHASE2S_LEARNINGS]";
+
+  /**
+   * Insert or replace the [PHASE2S_LEARNINGS] context message.
+   *
+   * Scans for an existing user message whose content starts with LEARNINGS_MARKER
+   * and replaces it in-place. If none is found, inserts at index 1 (after the
+   * system message). If the conversation has no system message at index 0,
+   * inserts at index 0 instead.
+   */
+  upsertLearningsMessage(content: string): void {
+    const MARKER = Conversation.LEARNINGS_MARKER;
+    const idx = this.messages.findIndex(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(MARKER),
+    );
+    const msg: Message = { role: "user", content };
+    if (idx !== -1) {
+      this.messages[idx] = msg;
+    } else {
+      const insertAt = this.messages.length > 0 && this.messages[0].role === "system" ? 1 : 0;
+      this.messages.splice(insertAt, 0, msg);
+    }
+  }
+
   get length(): number {
     return this.messages.length;
   }

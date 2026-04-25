@@ -15,6 +15,7 @@ import chalk from "chalk";
 import { parse as parseYaml } from "yaml";
 import { bundledTemplatesDir } from "../skills/loader.js";
 import { readSessionIndex, rebuildSessionIndexStrict } from "../core/session.js";
+import { PROVIDERS, isValidProvider } from "./provider-registry.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -191,13 +192,12 @@ export function checkConfigFile(configPath: string): CheckResult {
     const raw = readFileSync(configPath, "utf8");
     const parsed = parseYaml(raw) as Record<string, unknown> | null;
     const provider = parsed?.provider as string | undefined;
-    const knownProviders = ["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini", "minimax"];
-    if (provider && !knownProviders.includes(provider)) {
+    if (provider && !isValidProvider(provider)) {
       return {
         name: ".phase2s.yaml",
         ok: false,
         detail: `unknown provider: ${provider}`,
-        fix: `Valid providers: ${knownProviders.join(", ")}`,
+        fix: `Valid providers: ${PROVIDERS.join(", ")}`,
       };
     }
     const providerStr = provider ? `provider: ${provider}` : "no provider set (using default)";

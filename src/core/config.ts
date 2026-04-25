@@ -3,9 +3,10 @@ import { readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { parse as parseToml } from "@iarna/toml";
+import { PROVIDERS } from "../cli/provider-registry.js";
 
 const configSchema = z.object({
-  provider: z.enum(["codex-cli", "openai-api", "anthropic", "ollama", "openrouter", "gemini", "minimax"]).default("codex-cli"),
+  provider: z.enum(PROVIDERS as unknown as [string, ...string[]]).default("codex-cli"),
   /**
    * Model to use. For codex-cli provider, defaults to whatever is in
    * ~/.codex/config.toml so the user's existing Codex setup is respected.
@@ -115,6 +116,33 @@ const configSchema = z.object({
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };
+
+/**
+ * Normalize a loadConfig() error into a human-readable, actionable message.
+ *
+ * Covers the most common failure modes:
+ *   - Zod schema violations (invalid field type or value)
+ *   - YAML parse errors (syntax error in .phase2s.yaml)
+ *   - File-not-found / permission errors (ENOENT, EACCES)
+ *   - Anything else (raw message as fallback)
+ */
+export function normalizeConfigError(err: unknown): string {
+  if (err instanceof z.ZodError) {
+    const lines = err.errors.map((e) => `  ${e.path.join(".")}: ${e.message}`);
+    return `Invalid .phase2s.yaml:\n${lines.join("\n")}\nRun 'phase2s init' to regenerate a valid config.`;
+  }
+  if (err instanceof Error) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return "No .phase2s.yaml found. Run 'phase2s init' to create one.";
+    if (code === "EACCES") return "Cannot read .phase2s.yaml — permission denied. Check file permissions.";
+    if (err.message.includes("must be a YAML")) return `Config file error: ${err.message}`;
+    if (err.name === "YAMLParseError" || err.message.toLowerCase().includes("yaml")) {
+      return `YAML syntax error in .phase2s.yaml: ${err.message}\nRun 'phase2s init' to regenerate a valid config.`;
+    }
+    return err.message;
+  }
+  return String(err);
+}
 
 export async function loadConfig(overrides?: Partial<z.infer<typeof configSchema>>): Promise<Config> {
   let fileConfig: Record<string, unknown> = {};

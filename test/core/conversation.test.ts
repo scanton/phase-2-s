@@ -177,4 +177,63 @@ describe("Conversation", () => {
     expect(c.getMessages()).toHaveLength(0);
     expect(c.length).toBe(0);
   });
+
+  // --- upsertLearningsMessage() — Sprint 73 (Item E) ---
+
+  it("inserts at index 1 (after system) on first call", () => {
+    const c = new Conversation("system prompt");
+    c.addUser("user message");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nsome learning");
+
+    const msgs = c.getMessages();
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[1].role).toBe("user");
+    expect(msgs[1].content).toContain("[PHASE2S_LEARNINGS]");
+    expect(msgs[2].role).toBe("user");
+    expect(msgs[2].content).toBe("user message");
+  });
+
+  it("inserts at index 0 when no system message is present", () => {
+    const c = new Conversation();
+    c.addUser("hello");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nno system message");
+
+    const msgs = c.getMessages();
+    expect(msgs[0].content).toContain("[PHASE2S_LEARNINGS]");
+    expect(msgs[1].content).toBe("hello");
+  });
+
+  it("replaces an existing learnings message in-place on second call", () => {
+    const c = new Conversation("system");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nfirst learnings");
+    c.addUser("user turn 1");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nupdated learnings");
+
+    const msgs = c.getMessages();
+    const learningsMessages = msgs.filter(
+      (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
+    );
+    expect(learningsMessages).toHaveLength(1);
+    expect(learningsMessages[0].content).toContain("updated learnings");
+    expect(learningsMessages[0].content).not.toContain("first learnings");
+  });
+
+  it("does not affect trimToTokenBudget — learnings message is not a tool result and is not trimmed", () => {
+    const c = new Conversation("system");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nsome learning");
+    c.addAssistant("", [{ id: "c1", name: "shell", arguments: '{"command":"ls"}' }]);
+    c.addToolResult("c1", "x".repeat(100_000));
+
+    c.trimToTokenBudget(1_000);
+
+    const msgs = c.getMessages();
+    const learningsMsg = msgs.find(
+      (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
+    );
+    expect(learningsMsg).toBeDefined();
+  });
+
+  it("LEARNINGS_MARKER is the expected sentinel string", () => {
+    expect(Conversation.LEARNINGS_MARKER).toBe("[PHASE2S_LEARNINGS]");
+  });
 });
