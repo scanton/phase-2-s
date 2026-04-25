@@ -24,14 +24,20 @@ function detectConfigPath(): string | null {
 
 function readConfigRaw(configPath: string): Record<string, unknown> {
   const raw = readFileSync(configPath, "utf-8");
-  const parsed = yamlParse(raw);
-  return (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-    ? (parsed as Record<string, unknown>)
-    : {};
+  try {
+    const parsed = yamlParse(raw);
+    return (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    process.stderr.write(chalk.yellow(`⚠  Could not parse ${configPath} as YAML — treating as empty.\n`));
+    return {};
+  }
 }
 
 function writeConfigRaw(configPath: string, data: Record<string, unknown>): void {
-  writeFileSync(configPath, yamlStringify(data), "utf-8");
+  // 0o600 = owner-read/write only — API keys must not be world-readable.
+  writeFileSync(configPath, yamlStringify(data), { encoding: "utf-8", mode: 0o600 });
 }
 
 // ---------------------------------------------------------------------------
@@ -77,11 +83,27 @@ async function promptProvider(): Promise<string> {
 
 async function promptApiKey(keyField: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  // Suppress keystroke echo — API keys must not appear in terminal scrollback.
+  // Uses readline's internal _writeToOutput hook (standard Node.js masking pattern;
+  // degrades gracefully if the hook is absent in future Node versions).
+  let muted = false;
+  const rawIface = rl as unknown as { _writeToOutput?: (s: string) => void };
+  const origWrite = rawIface._writeToOutput?.bind(rl) ?? (() => {});
+  if (rawIface._writeToOutput) {
+    rawIface._writeToOutput = (s: string) => {
+      if (muted && s && s !== "\r\n" && s !== "\n" && s !== "\r") return;
+      origWrite(s);
+    };
+  }
   return new Promise((resolve) => {
     rl.question(`${keyField}: `, (answer) => {
+      muted = false;
+      if (rawIface._writeToOutput) rawIface._writeToOutput = origWrite;
+      process.stdout.write("\n");
       rl.close();
       resolve(answer.trim());
     });
+    muted = true;
   });
 }
 
@@ -104,11 +126,13 @@ export async function runProviderLogin(providerArg: string | undefined): Promise
   const configPath = detectConfigPath() ?? ".phase2s.yaml";
   const config: Record<string, unknown> = existsSync(configPath) ? readConfigRaw(configPath) : {};
 
+  // Clear model only when switching providers — preserves user's model override on re-login.
+  if (config.provider !== provider) {
+    delete config.model;
+  }
+
   // Update provider field
   config.provider = provider;
-
-  // Clear model so loadConfig() re-resolves the correct default for the new provider
-  delete config.model;
 
   // Update key field
   if (keyField) {

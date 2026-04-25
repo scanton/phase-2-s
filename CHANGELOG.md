@@ -8,10 +8,10 @@ Sprint 70 — Provider subcommand and compaction testability. Users can now insp
 
 - **`phase2s provider` subcommand** — Three actions for provider management without touching `init`:
   - `phase2s provider list` — shows all 7 supported providers, marks the config-file active one, and warns if `PHASE2S_PROVIDER` env var overrides it.
-  - `phase2s provider login [--provider <name>]` — switches provider and saves credentials to `.phase2s.yaml`. Clears the `model` field so `loadConfig()` re-resolves the correct default. Preserves all other config fields (webhooks, `systemPrompt`, `tools`, `deny`, etc.) via YAML parse/patch/serialize. Creates `.phase2s.yaml` if neither `.yaml` nor `.yml` exists.
+  - `phase2s provider login [--provider <name>]` — switches provider and saves credentials to `.phase2s.yaml`. Clears the `model` field when switching providers so `loadConfig()` re-resolves the correct default for the new provider; preserves it on re-login to the same provider. Preserves all other config fields (webhooks, `systemPrompt`, `tools`, `deny`, etc.) via YAML parse/patch/serialize. Creates `.phase2s.yaml` if neither `.yaml` nor `.yml` exists.
   - `phase2s provider logout` — removes the active provider's API key from the config file. For providers with no file-stored credentials (codex-cli, ollama), prints an informational message with no file write.
 
-- **`src/cli/provider-registry.ts`** — Centralized registry for provider names, key field mappings, and validation. Eliminates duplicated provider enums across `init.ts`, `config.ts`, `doctor.ts`, and `index.ts`.
+- **`src/cli/provider-registry.ts`** — Centralized registry for provider names, key field mappings, and validation. New `provider.ts` code uses it exclusively; consolidating existing inline enums in `init.ts`, `config.ts`, and `doctor.ts` is a future follow-up.
 
 ### Fixed
 
