@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import chalk from "chalk";
 import { bundledTemplatesDir } from "../skills/loader.js";
-import { createRl, ask } from "./prompt-util.js";
+import { createRl, ask, PromptInterrupt } from "./prompt-util.js";
 import { runLint } from "./lint.js";
 
 // ---------------------------------------------------------------------------
@@ -169,6 +169,12 @@ export async function runTemplateUse(name: string, cwd: string): Promise<void> {
       }
       values[placeholder] = value;
     }
+  } catch (err: unknown) {
+    if (err instanceof PromptInterrupt) {
+      console.log(chalk.dim("\nTemplate wizard cancelled."));
+      return;
+    }
+    throw err;
   } finally {
     rl.close();
   }

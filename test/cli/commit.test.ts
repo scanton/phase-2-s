@@ -18,16 +18,21 @@ vi.mock("../../src/core/agent.js", () => ({
   Agent: vi.fn(),
 }));
 
-vi.mock("../../src/cli/prompt-util.js", () => ({
-  createRl: createRlMock,
-  ask: askMock,
-}));
+vi.mock("../../src/cli/prompt-util.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../src/cli/prompt-util.js")>();
+  return {
+    createRl: createRlMock,
+    ask: askMock,
+    PromptInterrupt: real.PromptInterrupt,
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Import the module under test AFTER mocks are declared
 // ---------------------------------------------------------------------------
 import { Agent } from "../../src/core/agent.js";
 import { buildCommitMessage, runCommitFlow, runGitCommit, SecretWarningError } from "../../src/cli/commit.js";
+import { PromptInterrupt } from "../../src/cli/prompt-util.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -520,6 +525,72 @@ describe("runCommitFlow() — openEditor() with $EDITOR set", () => {
       expect(commitCall).toBeUndefined();
     } finally {
       delete process.env.EDITOR;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runCommitFlow() — PromptInterrupt (Ctrl+C) handling
+// ---------------------------------------------------------------------------
+
+describe("runCommitFlow() — PromptInterrupt (Ctrl+C) handling", () => {
+  beforeEach(() => {
+    resetMocks();
+  });
+
+  // 31. Ctrl+C at main [a/e/c] prompt → commit cancelled, no git commit
+  it("Ctrl+C at main prompt cancels commit without error", async () => {
+    askMock.mockImplementationOnce(() => { throw new PromptInterrupt(); });
+    await runCommitFlow(makeConfig());
+    const commitCall = spawnSyncMock.mock.calls.find(
+      (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+    );
+    expect(commitCall).toBeUndefined();
+  });
+
+  // 32. Ctrl+C at secret [s]end-anyway prompt → commit cancelled
+  it("Ctrl+C at secret [s]end-anyway prompt cancels commit without error", async () => {
+    const diffWithSecret = makeStagedDiff() + "\n+const key = 'AKIAIOSFODNN7EXAMPLE';";
+    setupSpawnMocks({ diff: diffWithSecret });
+    askMock.mockImplementationOnce(() => { throw new PromptInterrupt(); });
+    await runCommitFlow(makeConfig());
+    const commitCall = spawnSyncMock.mock.calls.find(
+      (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+    );
+    expect(commitCall).toBeUndefined();
+  });
+
+  // 33. Ctrl+C at null-model manual-message prompt → commit cancelled
+  it("Ctrl+C at manual-message prompt (null model) cancels commit without error", async () => {
+    agentRunMock.mockResolvedValue(""); // model returns empty → result === null
+    askMock.mockImplementationOnce(() => { throw new PromptInterrupt(); });
+    await runCommitFlow(makeConfig());
+    const commitCall = spawnSyncMock.mock.calls.find(
+      (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+    );
+    expect(commitCall).toBeUndefined();
+  });
+
+  // 34. Ctrl+C in openEditor readline fallback → commit cancelled
+  it("Ctrl+C in openEditor readline fallback cancels commit without error", async () => {
+    const savedEditor = process.env.EDITOR;
+    const savedVisual = process.env.VISUAL;
+    delete process.env.EDITOR;
+    delete process.env.VISUAL;
+    try {
+      // First ask(): main prompt → "e" (edit)
+      // Second ask(): openEditor readline fallback → PromptInterrupt
+      askMock
+        .mockResolvedValueOnce("e")
+        .mockImplementationOnce(() => { throw new PromptInterrupt(); });
+      await runCommitFlow(makeConfig());
+      const commitCall = spawnSyncMock.mock.calls.find(
+        (c: string[]) => c[0] === "git" && c[1][0] === "commit",
+      );
+      expect(commitCall).toBeUndefined();
+    } finally {
+      if (savedEditor !== undefined) process.env.EDITOR = savedEditor;
+      if (savedVisual !== undefined) process.env.VISUAL = savedVisual;
     }
   });
 });

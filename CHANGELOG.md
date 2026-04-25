@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.45.1 — 2026-04-25
+
+Post-review patch. Propagates `PromptInterrupt` (Ctrl+C) handling through the remaining unguarded `ask()` call sites in `commit.ts` and `spec-template.ts`, adds `readConfigRaw()` error guards to `runProviderList` and `runProviderLogout`, removes a dead catch branch in the `:commit` REPL handler, and adds 6 regression tests to lock in the new behavior.
+
+### Fixed
+
+- **`runCommitFlow` — Ctrl+C no longer unhandled at all four `ask()` sites** — The PromptInterrupt propagation fix in Sprint 71 covered `:commit` (REPL path) and `init.ts` but missed the standalone `phase2s commit` path. `commit.ts` now catches `PromptInterrupt` in the secret-warning prompt, the main accept/edit/cancel prompt, the null-model manual-message fallback, and the `openEditor` inline readline fallback. All four paths print "Commit cancelled." and return cleanly.
+
+- **`runTemplateUse` — Ctrl+C during placeholder wizard now handled** — `spec-template.ts` was missing the same `PromptInterrupt` catch. The wizard now prints "Template wizard cancelled." and returns instead of propagating an unhandled rejection.
+
+- **`runProviderList` / `runProviderLogout` — malformed config no longer crashes** — Sprint 71 added a `readConfigRaw()` guard inside `runProviderLogin` but missed the other two provider commands. `runProviderList` now silently falls back to showing all providers without an active marker when the config is unreadable. `runProviderLogout` exits with an actionable error message.
+
+- **Dead `PromptInterrupt` catch removed from `:commit` REPL handler** — `buildCommitMessage()` makes no `ask()` calls and can never throw `PromptInterrupt`; the catch branch was dead code that obscured the actual control flow.
+
+### Tests
+
+- 4 new Ctrl+C regression tests in `test/cli/commit.test.ts` covering the main prompt, secret-warning prompt, null-model fallback, and `openEditor` readline fallback.
+- 2 new malformed-config tests in `test/cli/provider.test.ts` covering `runProviderList` (swallow + show all) and `runProviderLogout` (exit with error).
+- `vi.mock` factory in `commit.test.ts` fixed to export `PromptInterrupt` via `importOriginal` so the real class is available for test throws.
+- 2 brittle `mtime`-based assertions in `provider.test.ts` replaced with file-content comparison (APFS 1-second granularity made them flaky).
+
 ## v1.45.0 — 2026-04-25
 
 Sprint 71 — Quality and polish. No new features; four targeted fixes that make the tool safer and more communicative: a silent config-overwrite bug is closed, Ctrl+C inside `:commit` now saves the session instead of bypassing it, error messages on the top failure paths gain actionable "→ what to do next" hints, and provider test coverage jumps from 2 to 16 cases.

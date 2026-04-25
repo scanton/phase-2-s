@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import chalk from "chalk";
 import { Agent } from "../core/agent.js";
 import { scanForSecrets } from "../core/secrets.js";
-import { createRl, ask } from "./prompt-util.js";
+import { createRl, ask, PromptInterrupt } from "./prompt-util.js";
 import type { Config } from "../core/config.js";
 
 // ---------------------------------------------------------------------------
@@ -291,6 +291,12 @@ export async function runCommitFlow(
             console.log(chalk.dim("Commit cancelled."));
             return;
           }
+        } catch (inner: unknown) {
+          if (inner instanceof PromptInterrupt) {
+            console.log(chalk.dim("\nCommit cancelled."));
+            return;
+          }
+          throw inner;
         } finally {
           rl.close();
         }
@@ -319,6 +325,12 @@ export async function runCommitFlow(
       }
       await commitWithMessage(manual.trim());
       return;
+    } catch (err: unknown) {
+      if (err instanceof PromptInterrupt) {
+        console.log(chalk.dim("\nCommit cancelled."));
+        return;
+      }
+      throw err;
     } finally {
       rl.close();
     }
@@ -365,6 +377,12 @@ export async function runCommitFlow(
     } else {
       console.log(chalk.dim("Commit cancelled."));
     }
+  } catch (err: unknown) {
+    if (err instanceof PromptInterrupt) {
+      console.log(chalk.dim("\nCommit cancelled."));
+      return;
+    }
+    throw err;
   } finally {
     rl.close();
   }
@@ -388,6 +406,9 @@ async function openEditor(initialMessage: string): Promise<string | null> {
     try {
       const edited = await ask(rl, `Edit message (current: ${initialMessage}): `);
       return edited.trim() || null;
+    } catch (err: unknown) {
+      if (err instanceof PromptInterrupt) return null;
+      throw err;
     } finally {
       rl.close();
     }

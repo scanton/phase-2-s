@@ -53,8 +53,12 @@ export function runProviderList(): void {
   let activeProvider: string | undefined;
 
   if (configPath) {
-    const config = readConfigRaw(configPath);
-    activeProvider = typeof config.provider === "string" ? config.provider : undefined;
+    try {
+      const config = readConfigRaw(configPath);
+      activeProvider = typeof config.provider === "string" ? config.provider : undefined;
+    } catch {
+      // malformed config — show all providers without active marker
+    }
   }
 
   const envOverride = process.env.PHASE2S_PROVIDER;
@@ -175,7 +179,13 @@ export function runProviderLogout(): void {
     process.exit(1);
   }
 
-  const config = readConfigRaw(configPath);
+  let config: Record<string, unknown>;
+  try {
+    config = readConfigRaw(configPath);
+  } catch {
+    process.stderr.write(chalk.red(`✖  ${configPath} contains invalid YAML.\n  → Fix the file manually (it must be a key: value mapping), then re-run \`phase2s provider logout\`.\n`));
+    process.exit(1);
+  }
   const activeProvider = typeof config.provider === "string" ? config.provider : undefined;
 
   if (!activeProvider || !isValidProvider(activeProvider)) {
