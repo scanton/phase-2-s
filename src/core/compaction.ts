@@ -13,7 +13,8 @@
  * provider doesn't stall the REPL indefinitely.
  */
 
-import { writeFile as defaultWriteFile } from "node:fs/promises";
+import { writeFile as defaultWriteFile, rename as defaultRename, rm } from "node:fs/promises";
+import { basename } from "node:path";
 import chalk from "chalk";
 import type { Provider, Message } from "../providers/types.js";
 import type { Conversation } from "./conversation.js";
@@ -211,6 +212,8 @@ export interface PerformCompactionDeps {
   onJustCompacted: () => void;
   // --- Injectable IO (defaults to real implementations, required for saveSession) ---
   writeFileFn?: (path: string, data: string, opts: { encoding: "utf-8"; mode: number }) => Promise<void>;
+  /** Optional rename implementation for atomic backup (default: fs.promises.rename). */
+  renameFileFn?: (oldPath: string, newPath: string) => Promise<void>;
   buildCompactionSummaryFn?: (provider: Provider, messages: Message[]) => Promise<string>;
   /** Required — compaction must persist the compacted conversation or the history is lost in memory only. */
   saveSessionFn: (cwd: string, path: string, conv: Conversation, meta: SessionMeta) => Promise<void>;
@@ -238,23 +241,31 @@ export async function performCompaction(deps: PerformCompactionDeps): Promise<vo
     onMetaUpdate,
     onJustCompacted,
     writeFileFn = defaultWriteFile,
+    renameFileFn = defaultRename,
     buildCompactionSummaryFn = buildCompactionSummary,
     saveSessionFn,
   } = deps;
 
   process.stdout.write(chalk.cyan(`↻ Compacting session (${Math.round(tokenEstimate / 1000)}k tokens)...`));
 
-  // Write backup before any destructive operation.
+  // Write backup before any destructive operation — atomic tmp-then-rename so a crash
+  // mid-write leaves either a complete backup or nothing (never a corrupt half-written file).
   // If the backup fails, abort — it is unsafe to destroy history without a recovery file.
   const nextCompactCount = (sessionMeta.compact_count ?? 0) + 1;
   const backupPath = getCompactBackupPath(activeSessionPath, nextCompactCount);
+  const tmpBackupPath = `${backupPath}.tmp.${process.pid}`;
   try {
     await writeFileFn(
-      backupPath,
+      tmpBackupPath,
       JSON.stringify({ schemaVersion: 2, meta: sessionMeta, messages }, null, 2),
       { encoding: "utf-8", mode: 0o600 },
     );
+    await renameFileFn(tmpBackupPath, backupPath);
   } catch (err) {
+    // Clean up tmp file if rename (or write) failed
+    try { await rm(tmpBackupPath, { force: true }); } catch (rmErr) {
+      console.warn(chalk.yellow(`⚠  Could not clean up tmp backup file ${basename(tmpBackupPath)}: ${rmErr instanceof Error ? rmErr.message : String(rmErr)}`));
+    }
     process.stdout.write("\n");
     console.warn(chalk.yellow(`⚠  Compaction aborted — could not write backup: ${err instanceof Error ? err.message : String(err)}`));
     return;

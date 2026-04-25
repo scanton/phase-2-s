@@ -9,7 +9,7 @@
  * Worktree path: <projectCwd>/.worktrees/sandbox-<slugified-name>
  */
 
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -160,6 +160,12 @@ function currentBranch(cwd: string): string {
  * @param projectCwd      Project root (already resolved by -C preAction if present)
  * @param configOverrides CLI opts to forward to loadConfig (provider, model, systemPrompt)
  *
+ * State machine for existing sandbox detection:
+ *   (a) inGit + dirExists  → resume (intentional: same slug → same sandbox, not a collision)
+ *   (b) inGit + !dirExists → prune stale entry + re-check branch + recreate (TOCTOU-safe)
+ *   (c) !inGit + dirExists → remove orphaned dir + recreate
+ *   (d) !inGit + !dirExists → fresh create with -b (collision guard: MD5 suffix if needed)
+ *
  * Dirty working tree note: staged or unstaged changes in the main worktree do NOT
  * block `git worktree add` and do NOT propagate to the sandbox. The sandbox starts
  * from HEAD — your uncommitted changes stay in the main worktree, isolated from the
@@ -235,14 +241,27 @@ export async function startSandbox(
     console.log(`Resuming sandbox '${name}' at ${worktreePath}`);
   } else if (inGit && !dirExists) {
     // State (b): git knows about it but directory was deleted (e.g. manual rm)
-    // Prune stale git entry, then recreate using existing branch (no -b)
+    // Prune stale git entry, then recreate. TOCTOU guard: re-check whether the
+    // branch still exists after prune — a concurrent `git branch -D` between
+    // `git worktree prune` and `git worktree add` would cause an unrecoverable
+    // error without this check. If gone, fall through to fresh create (like state d).
     console.log(`Pruning stale worktree entry for sandbox '${name}'...`);
     execSync("git worktree prune", { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
+    const branchStillExists = (() => {
+      try {
+        return execFileSync("git", ["branch", "--list", branchName],
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" }).trim().length > 0;
+      } catch { return false; }
+    })();
     try {
-      execSync(
-        `git worktree add "${worktreePath}" "${branchName}"`,
-        { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
-      );
+      if (branchStillExists) {
+        execFileSync("git", ["worktree", "add", worktreePath, branchName],
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
+      } else {
+        // Branch was deleted externally — create fresh (same as state d)
+        execFileSync("git", ["worktree", "add", "-b", branchName, worktreePath, "HEAD"],
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
+      }
     } catch (err) {
       console.error(`Failed to create sandbox: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
@@ -256,10 +275,8 @@ export async function startSandbox(
     console.log(`Removing orphaned worktree directory for sandbox '${name}'...`);
     const branchAlreadyExists = (() => {
       try {
-        return execSync(
-          `git branch --list "${branchName}"`,
-          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
-        ).trim().length > 0;
+        return execFileSync("git", ["branch", "--list", branchName],
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" }).trim().length > 0;
       } catch {
         return false;
       }
@@ -267,15 +284,11 @@ export async function startSandbox(
     rmSync(worktreePath, { recursive: true });
     try {
       if (branchAlreadyExists) {
-        execSync(
-          `git worktree add "${worktreePath}" "${branchName}"`,
-          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
-        );
+        execFileSync("git", ["worktree", "add", worktreePath, branchName],
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
       } else {
-        execSync(
-          `git worktree add -b "${branchName}" "${worktreePath}" HEAD`,
-          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
-        );
+        execFileSync("git", ["worktree", "add", "-b", branchName, worktreePath, "HEAD"],
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
       }
     } catch (err) {
       console.error(`Failed to create sandbox: ${err instanceof Error ? err.message : String(err)}`);
@@ -288,10 +301,8 @@ export async function startSandbox(
     // from the project cwd — deterministic (same cwd → same suffix) but unlikely to collide.
     const branchCollision = (() => {
       try {
-        return execSync(
-          `git branch --list "${branchName}"`,
-          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
-        ).trim().length > 0;
+        return execFileSync("git", ["branch", "--list", branchName],
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" }).trim().length > 0;
       } catch {
         return false;
       }
@@ -304,10 +315,8 @@ export async function startSandbox(
       console.log(`Branch '${branchName}' already exists — using '${effectiveBranchName}' to avoid collision.`);
     }
     try {
-      execSync(
-        `git worktree add -b "${effectiveBranchName}" "${effectiveWorktreePath}" HEAD`,
-        { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
-      );
+      execFileSync("git", ["worktree", "add", "-b", effectiveBranchName, effectiveWorktreePath, "HEAD"],
+        { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
     } catch (err) {
       console.error(`Failed to create sandbox: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
@@ -392,7 +401,8 @@ async function promptMergeBack(
     try {
       // Explicitly checkout the original branch before merging — guards against the case
       // where the user checked out a different branch externally during the sandbox session.
-      execSync(`git checkout "${originalBranch}"`, { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
+      execFileSync("git", ["checkout", originalBranch],
+        { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
     } catch (checkoutErr) {
       console.log(`\nCould not return to branch '${originalBranch}'. It may have been deleted or renamed.`);
       console.log(`Error: ${checkoutErr instanceof Error ? checkoutErr.message : String(checkoutErr)}`);
@@ -401,16 +411,16 @@ async function promptMergeBack(
     }
 
     try {
-      execSync(
-        `git merge --no-ff "${branchName}" -m "sandbox: merge ${slugName}"`,
-        { cwd: projectCwd, encoding: "utf8", stdio: "pipe" },
-      );
+      execFileSync("git", ["merge", "--no-ff", branchName, "-m", `sandbox: merge ${slugName}`],
+        { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
       // Clean up: remove worktree + branch
       try {
-        execSync(`git worktree remove --force "${worktreePath}"`, { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
+        execFileSync("git", ["worktree", "remove", "--force", worktreePath],
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
       } catch { /* ignore — directory may be already gone */ }
       try {
-        execSync(`git branch -D "${branchName}"`, { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
+        execFileSync("git", ["branch", "-D", branchName],
+          { cwd: projectCwd, encoding: "utf8", stdio: "pipe" });
       } catch { /* ignore — branch deletion failure is non-fatal */ }
       console.log(`Sandbox '${name}' merged into '${originalBranch}' and cleaned up.`);
     } catch {

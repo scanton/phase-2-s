@@ -10,7 +10,7 @@
  * - Overwrites existing files with new content
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -159,6 +159,25 @@ describe("plans_write tool", () => {
     const result = await tool.execute({ path: "plans/existing.md", content: "   \n  " });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Refusing to truncate");
+  });
+
+  // --- Sprint 69: symlink escape guard ---
+
+  it("blocks write when plans/ is a symlink pointing outside the project root", async () => {
+    // Create an outside directory and make plans/ a symlink to it.
+    // The guard in assertInPlansSandbox checks realPlansDir vs realCwd + sep
+    // and must block this write attempt.
+    const outsideDir = join(tmpdir(), `plans-escape-test-${randomUUID()}`);
+    await mkdir(outsideDir, { recursive: true });
+    try {
+      await symlink(outsideDir, join(cwd, "plans"));
+      const tool = createPlansWriteTool(cwd);
+      const result = await tool.execute({ path: "plans/attack.md", content: "Escaped content." });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/symlink escape blocked|outside the project/i);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
   });
 
   // --- Tool metadata ---
