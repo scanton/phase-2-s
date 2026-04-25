@@ -1463,3 +1463,94 @@ describe("Agent rate limit handling", () => {
 });
 
 // makeStreamingFakeClient is defined earlier in this file — no duplicate needed here.
+
+// --- Sprint 73: refreshLearnings() + runOnce() learnings injection ---
+
+describe("Agent.refreshLearnings() — Sprint 73 (Item E)", () => {
+  it("refreshLearnings() updates the learnings string used by subsequent turns", async () => {
+    const fakeClient = makeStreamingFakeClient([makeTextChunks("ok")]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({ config: minimalConfig, provider, tools: makeStubRegistry() });
+
+    agent.refreshLearnings("use vitest not jest");
+    // The learnings field should be visible via the conversation after the next run
+    await agent.run("hi");
+
+    const msgs = agent.getConversation().getMessages();
+    const learningsMsg = msgs.find(
+      (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
+    );
+    expect(learningsMsg).toBeDefined();
+    expect(learningsMsg!.content).toContain("use vitest not jest");
+  });
+
+  it("runOnce() injects LEARNINGS_MARKER message into conversation when learnings are set", async () => {
+    const fakeClient = makeStreamingFakeClient([makeTextChunks("done")]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({
+      config: minimalConfig,
+      provider,
+      tools: makeStubRegistry(),
+      learnings: "codex binary lives at /opt/homebrew/bin/codex",
+    });
+
+    await agent.run("what do you know?");
+
+    const msgs = agent.getConversation().getMessages();
+    const marker = msgs.find(
+      (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
+    );
+    expect(marker).toBeDefined();
+    expect(marker!.content).toContain("codex binary lives at /opt/homebrew/bin/codex");
+  });
+
+  it("runOnce() does NOT inject LEARNINGS_MARKER when no learnings are set", async () => {
+    const fakeClient = makeStreamingFakeClient([makeTextChunks("nothing")]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({ config: minimalConfig, provider, tools: makeStubRegistry() });
+
+    await agent.run("hi");
+
+    const msgs = agent.getConversation().getMessages();
+    const marker = msgs.find(
+      (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
+    );
+    expect(marker).toBeUndefined();
+  });
+});
+
+describe("LEARNINGS_MARKER filter (saveSession / compaction) — Sprint 73 (Item E)", () => {
+  it("filter removes [PHASE2S_LEARNINGS] user messages before compaction or save", () => {
+    const MARKER = Conversation.LEARNINGS_MARKER;
+    const c = new Conversation("system prompt");
+    c.addUser("normal user message");
+    c.upsertLearningsMessage(`${MARKER}\nuse vitest`);
+    c.addAssistant("assistant reply");
+
+    const all = c.getMessages();
+    // 4 messages: system, user, [PHASE2S_LEARNINGS], assistant
+    expect(all).toHaveLength(4);
+
+    // Apply the same filter used in saveSession and performCompaction
+    const filtered = all.filter(
+      (m) => !(m.role === "user" && (m.content ?? "").startsWith(MARKER)),
+    );
+
+    expect(filtered).toHaveLength(3);
+    expect(filtered.every((m) => !(m.content ?? "").startsWith(MARKER))).toBe(true);
+  });
+
+  it("filter preserves all messages when no LEARNINGS_MARKER is present", () => {
+    const MARKER = Conversation.LEARNINGS_MARKER;
+    const c = new Conversation("system");
+    c.addUser("hello");
+    c.addAssistant("world");
+
+    const msgs = c.getMessages();
+    const filtered = msgs.filter(
+      (m) => !(m.role === "user" && (m.content ?? "").startsWith(MARKER)),
+    );
+
+    expect(filtered).toHaveLength(msgs.length);
+  });
+});
