@@ -1359,10 +1359,6 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           result = await buildCommitMessage(config, { secretsSendAnyway });
           break;
         } catch (err: unknown) {
-          if (err instanceof PromptInterrupt) {
-            console.log(chalk.dim("\nCommit cancelled."));
-            break;
-          }
           if (err instanceof SecretWarningError) {
             console.log(chalk.yellow(`\n⚠  ${err.message}`));
             const rl3 = makeRl();
