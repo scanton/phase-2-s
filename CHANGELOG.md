@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.47.0 — 2026-04-25
+
+Sprint 73 — Security & Resilience Hardening v2.
+
+### Added
+
+- **Per-turn `[PHASE2S_LEARNINGS]` context messages** (Item E) — Learnings are no longer baked into the system prompt at session start. Instead, `Conversation.upsertLearningsMessage()` injects a rolling `role: "user"` message containing the current learnings immediately before each LLM turn in the agent loop. This keeps the injected content up-to-date as learnings evolve within a session, and allows `agent.refreshLearnings()` to update the active learnings string mid-session (e.g., between REPL turns). Session save and compaction strip the marker message before persisting so the ephemeral injection does not bloat saved history.
+
+- **`normalizeConfigError()`** (Item B) — New exported helper in `config.ts` that converts raw `loadConfig()` errors (`ZodError`, YAML parse failures, ENOENT, EACCES) into human-readable CLI messages. Wired into all 5 `loadConfig()` call sites in `index.ts` and `mcp/server.ts`. Seven new tests covering all error branches.
+
+- **`heuristicSort()`** (Item D) — Keyword/recency hybrid sort exported from `memory.ts`. Used as the fallback ranking strategy in `loadRelevantLearnings()` for all Ollama failure paths (network error, empty embedding, no baseUrl configured). Score formula: `(matchedKeywords / totalKeywords) * recencyWeight(ts)`, where absent timestamps score 1.0.
+
+### Changed
+
+- **Provider enum consolidation** (Item C) — `PROVIDERS`, `isValidProvider()`, and `getProviderKeyField()` are now imported from `provider-registry.ts` in `config.ts`, `doctor.ts`, and `init.ts`. Inline provider arrays deleted; double-cast `as unknown as [string, ...string[]]` handles Zod's literal-tuple requirement without generating a widened union type.
+
+- **`buildSystemPrompt()` learnings param removed** — The `learnings` argument is gone; the system prompt no longer embeds learnings text. All callers updated. Existing tests updated to assert LEARNINGS content is absent from the system prompt.
+
+### Fixed
+
+- **Anthropic 400 from consecutive user messages** — `translateMessages()` now handles a Case 2 merge: when two consecutive plain-text `role: "user"` messages appear (e.g., the `[PHASE2S_LEARNINGS]` injection followed by the actual user turn), they are concatenated with `\n\n` instead of producing a rejected message sequence. Previously only `tool_result → plain` (Case 1) was handled.
+
+- **`upsertLearningsMessage()` wrong insertion position** — In multi-turn conversations, the LEARNINGS message was anchored to index 1 (after system), which placed it before a historical user message rather than the current pending turn. Anthropic's consecutive-message folding then merged LEARNINGS permanently into that historical message. Fixed: the method now removes the old LEARNINGS entry (splice, not replace-in-place) and re-inserts immediately before the last `role: "user"` message.
+
+### Tests
+
+- `test/core/conversation.test.ts` — 6 new tests: `upsertLearningsMessage()` insertion position, no-system-message case, multi-call replacement, token-budget preservation, multi-turn position regression (adversarial finding), `LEARNINGS_MARKER` sentinel value.
+- `test/core/agent.test.ts` — 5 new tests: `refreshLearnings()` updates injected string, `runOnce()` injects marker when learnings set, no injection when learnings absent, compaction/save filter removes marker messages, filter preserves messages without marker.
+- `test/providers/anthropic.test.ts` — 2 new tests: plain→plain consecutive user message merge, separator between merged parts.
+- `test/core/config.test.ts` — 7 new tests for `normalizeConfigError()` branches.
+- `test/core/memory.test.ts` — `heuristicSort()` keyword/recency scoring covered.
+- `test/utils/prompt.test.ts` — Updated to assert learnings are NOT in the system prompt (Sprint 73 behavior).
+
 ## v1.46.0 — 2026-04-25
 
 Sprint 72 — Smart Learnings + Model Defaults.
