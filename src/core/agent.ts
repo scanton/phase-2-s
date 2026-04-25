@@ -59,7 +59,7 @@ export interface AgentOptions {
   agentsMdBlock?: string;
   provider?: Provider;
   conversation?: Conversation;
-  /** Pre-formatted learnings string from formatLearningsForPrompt(). Injected into the system prompt. */
+  /** Pre-formatted learnings string from formatLearningsForPrompt(). Injected as a [PHASE2S_LEARNINGS] context message before each LLM turn via upsertLearningsMessage(). */
   learnings?: string;
   /** Working directory for tools that need it (e.g. browser tool screenshot path). Default: process.cwd(). */
   cwd?: string;
