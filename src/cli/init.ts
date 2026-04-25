@@ -659,7 +659,7 @@ function printNextSteps(provider: Provider): void {
     console.log("    2.  Start the REPL:                     phase2s");
     console.log("    3.  Or run a skill directly:            phase2s run \"/explain src/index.ts\"");
   } else if (provider === "ollama") {
-    console.log("    1.  Pull a model (if not done):  ollama pull llama3.1:8b");
+    console.log("    1.  Pull a model (if not done):  ollama pull gemma4:latest");
     console.log("    2.  Start the REPL:              phase2s");
     console.log("    3.  Or run a skill:              phase2s run \"/explain src/index.ts\"");
   } else if (provider === "openrouter") {

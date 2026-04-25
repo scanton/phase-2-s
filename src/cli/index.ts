@@ -12,7 +12,7 @@ import { loadConfig, type Config } from "../core/config.js";
 import { Agent } from "../core/agent.js";
 import { disposeBrowser } from "../tools/browser.js";
 import { Conversation } from "../core/conversation.js";
-import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
+import { loadLearnings, loadRelevantLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, getUnfilledInputKeys, extractAskTokens, substituteAskValues, stripAskTokens } from "../skills/template.js";
 import { log } from "../utils/logger.js";
@@ -1680,9 +1680,9 @@ export async function oneShotMode(config: Config, prompt: string, reasoningEffor
   if (!checkOpenAIKey(config)) process.exit(1);
   if (!checkAnthropicKey(config)) process.exit(1);
 
-  // Load persistent memory learnings from .phase2s/memory/learnings.jsonl
-  const learningsList = await loadLearnings(process.cwd());
-  const learningsStr = formatLearningsForPrompt(learningsList);
+  // Load persistent memory learnings — semantic lookup when Ollama configured, else recent-N
+  const learningsList = await loadRelevantLearnings(process.cwd(), prompt, config);
+  const learningsStr = formatLearningsForPrompt(learningsList, { skipCharCap: config.ollamaBaseUrl !== undefined });
   if (learningsList.length > 0) {
     log.dim(`Learnings: ${learningsList.length} ${learningsList.length === 1 ? "entry" : "entries"} from .phase2s/memory/`);
   }

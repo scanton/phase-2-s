@@ -40,6 +40,7 @@ vi.mock("../../src/core/agents-md.js", () => ({
 
 vi.mock("../../src/core/memory.js", () => ({
   loadLearnings: vi.fn().mockResolvedValue([]),
+  loadRelevantLearnings: vi.fn().mockResolvedValue([]),
   formatLearningsForPrompt: vi.fn().mockReturnValue(""),
 }));
 

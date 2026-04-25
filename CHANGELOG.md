@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.46.0 — 2026-04-25
+
+Sprint 72 — Smart Learnings + Model Defaults.
+
+### Added
+
+- **Semantic learnings injection** — Phase2S now injects the most *relevant* learnings into each agent session rather than the most *recent*. When Ollama is configured, `loadRelevantLearnings()` generates embeddings via the native `/api/embed` endpoint, builds an incremental vector index at `.phase2s/search-index.jsonl`, and returns the top-K most semantically similar learnings for the current task. Falls back to the existing truncate-oldest strategy when Ollama is unavailable or no query text is provided.
+
+- **`src/core/embeddings.ts`** — Ollama embedding client. Strips the `/v1` suffix from `ollamaBaseUrl` before calling the native `/api/embed` endpoint (which does not live under `/v1`). Returns `[]` on any error so callers always get a clean fallback.
+
+- **`src/core/search-index.ts`** — Incremental vector index with content-hash staleness detection. Re-embeds only changed learnings; GCs deleted learnings; writes atomically (temp file + rename) to prevent parallel executor workers from reading partial index files.
+
+- **`ollamaEmbedModel` config field** — Optional field to specify a dedicated embedding model separate from the main model. Defaults to the main model if absent. Cleared on provider switch alongside `model`, `fast_model`, and `smart_model`.
+
+- **`formatLearningsForPrompt` `skipCharCap` option** — Bypasses the 2000-char truncation when semantic retrieval is active (selection is already relevance-filtered).
+
+### Changed
+
+- **Codex-cli default model**: `gpt-4o` → `gpt-5.4` (matches the model Codex CLI uses by default in `~/.codex/config.toml`).
+
+- **Ollama default model**: `llama3.1:8b` → `gemma4:latest`. Updated in `config.ts`, `init.ts` wizard output, `docs/configuration.md`, and `docs/getting-started.md`.
+
+- **All 4 `loadLearnings` call sites** updated to `loadRelevantLearnings`: one-shot mode (uses prompt text as query), goal runner (uses spec title as query), parallel executor subtask workers (uses subtask name as query), parallel executor orchestrator level (uses combined job titles as query). REPL startup continues to use `loadLearnings` directly (no task text available at startup).
+
+### Tests
+
+- `test/core/embeddings.test.ts` — 4 tests: URL stripping, non-200 fallback, network error fallback, baseUrl without `/v1`.
+- `test/core/search-index.test.ts` — 8 tests: new learnings embedded, updated learnings re-embedded, unchanged learnings skipped, deleted learnings GC'd, atomic writes, empty index, top-K cosine ranking, empty query/index edge cases.
+- `test/core/memory.test.ts` — 5 new tests: `skipCharCap` bypasses truncation, `loadRelevantLearnings` semantic path, fallback on empty queryText, fallback on absent `ollamaBaseUrl`, fallback when embed returns `[]`.
+- `test/cli/provider.test.ts` — 1 new test: provider switch clears `ollamaEmbedModel`.
+
 ## v1.45.1 — 2026-04-25
 
 Post-review patch. Propagates `PromptInterrupt` (Ctrl+C) handling through the remaining unguarded `ask()` call sites in `commit.ts` and `spec-template.ts`, adds `readConfigRaw()` error guards to `runProviderList` and `runProviderLogout`, removes a dead catch branch in the `:commit` REPL handler, and adds 6 regression tests to lock in the new behavior.
