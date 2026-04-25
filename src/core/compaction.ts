@@ -14,6 +14,7 @@
  */
 
 import { writeFile as defaultWriteFile, rename as defaultRename, rm } from "node:fs/promises";
+import { basename } from "node:path";
 import chalk from "chalk";
 import type { Provider, Message } from "../providers/types.js";
 import type { Conversation } from "./conversation.js";
@@ -263,7 +264,7 @@ export async function performCompaction(deps: PerformCompactionDeps): Promise<vo
   } catch (err) {
     // Clean up tmp file if rename (or write) failed
     try { await rm(tmpBackupPath, { force: true }); } catch (rmErr) {
-      console.warn(chalk.yellow(`⚠  Could not clean up tmp backup file ${tmpBackupPath}: ${rmErr instanceof Error ? rmErr.message : String(rmErr)}`));
+      console.warn(chalk.yellow(`⚠  Could not clean up tmp backup file ${basename(tmpBackupPath)}: ${rmErr instanceof Error ? rmErr.message : String(rmErr)}`));
     }
     process.stdout.write("\n");
     console.warn(chalk.yellow(`⚠  Compaction aborted — could not write backup: ${err instanceof Error ? err.message : String(err)}`));

@@ -9,6 +9,7 @@
 ## Backlog — Post-Sprint 69 notes (2026-04-24)
 
 - All 7 hardening items from the Sprint 69 /plan-eng-review resolved: BFS traversal, atomic backup, sandbox shell injection, sandbox state (b) TOCTOU, plans/ symlink escape, plans/ TOCTOU (accepted). +7 net new tests; zero regression from 1256-pass baseline.
+- [ ] **`performCompaction` rm cleanup coverage** — The `rm` call inside the atomic backup error handler is not injectable via `PerformCompactionDeps`, so the `catch (rmErr)` diagnostic-log path has no test coverage. Future fix: add optional `rmFileFn?(path: string, opts?: {force?: boolean}): Promise<void>` to `PerformCompactionDeps` and use it in the catch block. Low priority; the path is defensive cleanup only.
 
 ---
 

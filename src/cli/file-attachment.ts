@@ -265,13 +265,13 @@ export function collectMatchingFiles(
   cwd: string,
 ): void {
   const lowerFragment = fragment.toLowerCase();
+  // NOTE: entries are never drained — the array grows up to MAX_COMPLETER_DIRS entries.
+  // At the cap that is at most ~1 MB of path strings; acceptable for a tab-completion call.
   const queue: string[] = [startDir];
   let head = 0;
-  let visited = 0;
 
-  while (head < queue.length && results.length < MAX_COMPLETER_RESULTS && visited < MAX_COMPLETER_DIRS) {
+  while (head < queue.length && results.length < MAX_COMPLETER_RESULTS && head < MAX_COMPLETER_DIRS) {
     const dir = queue[head++];
-    visited++;
     let entries: Dirent[];
     try {
       entries = readdirSync(dir, { withFileTypes: true });
