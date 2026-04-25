@@ -262,7 +262,9 @@ export async function performCompaction(deps: PerformCompactionDeps): Promise<vo
     await renameFileFn(tmpBackupPath, backupPath);
   } catch (err) {
     // Clean up tmp file if rename (or write) failed
-    try { await rm(tmpBackupPath, { force: true }); } catch { /* ignore */ }
+    try { await rm(tmpBackupPath, { force: true }); } catch (rmErr) {
+      console.warn(chalk.yellow(`⚠  Could not clean up tmp backup file ${tmpBackupPath}: ${rmErr instanceof Error ? rmErr.message : String(rmErr)}`));
+    }
     process.stdout.write("\n");
     console.warn(chalk.yellow(`⚠  Compaction aborted — could not write backup: ${err instanceof Error ? err.message : String(err)}`));
     return;

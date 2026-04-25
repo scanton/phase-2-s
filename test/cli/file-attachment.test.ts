@@ -661,7 +661,6 @@ describe("collectMatchingFiles — recursive fuzzy walk", () => {
   it("BFS: visited-cap (5000 dirs) terminates without hanging", () => {
     // Mock readdirSync to simulate a very deep/wide tree that would exceed the cap.
     // Each call returns one subdirectory so the queue grows; after 5000 pops it stops.
-    const { readdirSync: originalReaddir } = require("node:fs");
     let visitCount = 0;
     const readdirMock = vi.spyOn(
       require("node:fs"),

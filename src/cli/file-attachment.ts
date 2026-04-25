@@ -240,6 +240,8 @@ const MAX_COMPLETER_RESULTS = 500;
  * Kept exported for backward compatibility with callers that pass it as an argument.
  */
 export const MAX_COMPLETER_DEPTH = 4;
+/** Maximum number of directories visited during BFS traversal (safety cap). */
+const MAX_COMPLETER_DIRS = 5000;
 
 /**
  * Collect files whose basename contains `fragment` (case-insensitive) using
@@ -264,10 +266,11 @@ export function collectMatchingFiles(
 ): void {
   const lowerFragment = fragment.toLowerCase();
   const queue: string[] = [startDir];
+  let head = 0;
   let visited = 0;
 
-  while (queue.length > 0 && results.length < MAX_COMPLETER_RESULTS && visited < 5000) {
-    const dir = queue.shift()!;
+  while (head < queue.length && results.length < MAX_COMPLETER_RESULTS && visited < MAX_COMPLETER_DIRS) {
+    const dir = queue[head++];
     visited++;
     let entries: Dirent[];
     try {
