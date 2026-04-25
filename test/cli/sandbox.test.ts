@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { slugify, startSandbox, listSandboxes, listWorktreePaths } from "../../src/cli/sandbox.js";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 
@@ -17,6 +17,7 @@ import path from "node:path";
 
 vi.mock("node:child_process", () => ({
   execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
 vi.mock("node:fs", () => ({
@@ -49,6 +50,7 @@ vi.mock("node:readline", () => ({
 // ---------------------------------------------------------------------------
 
 const mockExecSync = execSync as unknown as ReturnType<typeof vi.fn>;
+const mockExecFileSync = execFileSync as unknown as ReturnType<typeof vi.fn>;
 const mockExistsSync = existsSync as unknown as ReturnType<typeof vi.fn>;
 const mockRmSync = rmSync as unknown as ReturnType<typeof vi.fn>;
 
@@ -108,12 +110,14 @@ describe("startSandbox() — state detection", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: git branch --show-current returns "main"
+    // Default: git branch --show-current returns "main" (execSync — safe, no vars)
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\nbranch refs/heads/main\n`;
       return "";
     });
+    // Default: execFileSync calls succeed (variable-path git commands)
+    mockExecFileSync.mockReturnValue("");
     mockExistsSync.mockReturnValue(false);
     vi.spyOn(process, "chdir").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
@@ -135,9 +139,9 @@ describe("startSandbox() — state detection", () => {
     const { interactiveMode } = await import("../../src/cli/index.js");
     await startSandbox("mytest", projectCwd, {});
 
-    // Should NOT call git worktree add
-    const addCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    // Should NOT call git worktree add via execFileSync
+    const addCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes("add"),
     );
     expect(addCalls).toHaveLength(0);
     expect(interactiveMode).toHaveBeenCalled();
@@ -149,7 +153,11 @@ describe("startSandbox() — state detection", () => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\nbranch refs/heads/main\n\nworktree ${worktreePath}\nHEAD abc\nbranch refs/heads/sandbox/mytest\n\n`;
       if (cmd.includes("worktree prune")) return "";
-      if (cmd.includes("worktree add")) return "";
+      return "";
+    });
+    // branch --list returns branch name (branch still exists after prune)
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (args[0] === "branch" && args[1] === "--list") return `${branch}\n`;
       return "";
     });
     mockExistsSync.mockReturnValue(false);
@@ -162,60 +170,61 @@ describe("startSandbox() — state detection", () => {
     expect(pruneCalls).toHaveLength(1);
 
     // The recreate command should NOT use -b (branch already exists)
-    const addCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    const addCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "add",
     );
     expect(addCalls).toHaveLength(1);
-    expect(addCalls[0][0]).not.toContain("-b");
-    expect(addCalls[0][0]).toContain(branch);
+    const addArgs = addCalls[0][1] as string[];
+    expect(addArgs).not.toContain("-b");
+    expect(addArgs).toContain(branch);
   });
 
   it("state (c): dir exists + not in git → rmSync + recreate with new branch (-b)", async () => {
-    // Worktree NOT in git list but dir DOES exist
+    // Worktree NOT in git list but dir DOES exist; branch does not exist
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
       return "";
     });
+    mockExecFileSync.mockReturnValue(""); // branch --list returns empty → no branch
     mockExistsSync.mockReturnValue(true);
 
     await startSandbox("mytest", projectCwd, {});
 
     expect(mockRmSync).toHaveBeenCalledWith(worktreePath, { recursive: true });
 
-    const addCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    const addCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "add",
     );
     expect(addCalls).toHaveLength(1);
-    expect(addCalls[0][0]).toContain("-b");
+    expect(addCalls[0][1] as string[]).toContain("-b");
   });
 
   it("state (c): branch already exists → rmSync + add without -b (no data loss)", async () => {
-    // Dir exists, not in git, but branch also already exists in git (crash after branch created)
+    // Dir exists, not in git, but branch also already exists in git
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("branch --list")) return "sandbox/mytest\n"; // branch exists
-      if (cmd.includes("worktree add")) return "";
+      return "";
+    });
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (args[0] === "branch" && args[1] === "--list") return "sandbox/mytest\n";
       return "";
     });
     mockExistsSync.mockReturnValue(true);
 
     await startSandbox("mytest", projectCwd, {});
 
-    // rmSync should have been called (directory cleanup)
     expect(mockRmSync).toHaveBeenCalledWith(
       expect.stringContaining("sandbox-mytest"),
       { recursive: true },
     );
 
-    // The add command should NOT use -b (branch already exists)
-    const addCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    const addCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "add",
     );
     expect(addCalls).toHaveLength(1);
-    expect(addCalls[0][0]).not.toContain("-b");
+    expect(addCalls[0][1] as string[]).not.toContain("-b");
   });
 
   it("state (d): neither → creates fresh with -b", async () => {
@@ -223,18 +232,18 @@ describe("startSandbox() — state detection", () => {
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
       return "";
     });
+    mockExecFileSync.mockReturnValue(""); // branch --list returns empty → no collision
     mockExistsSync.mockReturnValue(false);
 
     await startSandbox("mytest", projectCwd, {});
 
-    const addCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    const addCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "add",
     );
     expect(addCalls).toHaveLength(1);
-    expect(addCalls[0][0]).toContain("-b");
+    expect(addCalls[0][1] as string[]).toContain("-b");
   });
 
   it("state (d): branch collision → uses MD5-suffixed branch and worktree path", async () => {
@@ -242,8 +251,10 @@ describe("startSandbox() — state detection", () => {
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("branch --list")) return "sandbox/mytest\n"; // collision!
-      if (cmd.includes("worktree add")) return "";
+      return "";
+    });
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (args[0] === "branch" && args[1] === "--list") return "sandbox/mytest\n"; // collision!
       return "";
     });
     mockExistsSync.mockReturnValue(false);
@@ -252,19 +263,19 @@ describe("startSandbox() — state detection", () => {
 
     await startSandbox("mytest", projectCwd, {});
 
-    // The worktree add command should use a suffixed branch, not the original
-    const addCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    const addCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "add",
     );
     expect(addCalls).toHaveLength(1);
-    const addCmd = addCalls[0][0] as string;
+    const addArgs = addCalls[0][1] as string[];
 
     // Should NOT use the bare branch name (collision avoided)
-    expect(addCmd).not.toContain('"sandbox/mytest" ');
+    expect(addArgs).not.toContain("sandbox/mytest");
     // Should contain -b (fresh create)
-    expect(addCmd).toContain("-b");
+    expect(addArgs).toContain("-b");
     // The suffixed branch should match the pattern sandbox/mytest-XXXX
-    expect(addCmd).toMatch(/sandbox\/mytest-[0-9a-f]{4}/);
+    const suffixedBranch = addArgs.find((a) => /sandbox\/mytest-[0-9a-f]{4}/.test(a));
+    expect(suffixedBranch).toBeDefined();
 
     // A console.log should mention the collision
     const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
@@ -283,8 +294,10 @@ describe("startSandbox() — state detection", () => {
       mockExecSync.mockImplementation((cmd: string) => {
         if (cmd.includes("branch --show-current")) return "main\n";
         if (cmd.includes("worktree list")) return `worktree ${projectCwd}\nHEAD abc\n`;
-        if (cmd.includes("branch --list")) return "sandbox/mytest\n"; // collision
-        if (cmd.includes("worktree add")) return "";
+        return "";
+      });
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        if (args[0] === "branch" && args[1] === "--list") return "sandbox/mytest\n"; // collision
         return "";
       });
       mockExistsSync.mockReturnValue(false);
@@ -294,11 +307,12 @@ describe("startSandbox() — state detection", () => {
 
       await startSandbox("mytest", projectCwd, {});
 
-      const addCalls = mockExecSync.mock.calls.filter(
-        (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+      const addCalls = mockExecFileSync.mock.calls.filter(
+        (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "add",
       );
-      const addCmd = addCalls[0][0] as string;
-      const match = addCmd.match(/sandbox\/(mytest-[0-9a-f]{4})/);
+      const addArgs = addCalls[0][1] as string[];
+      const suffixedBranch = addArgs.find((a) => /sandbox\/mytest-[0-9a-f]{4}/.test(a));
+      const match = suffixedBranch?.match(/sandbox\/(mytest-[0-9a-f]{4})/);
       if (match) capturedBranches.push(match[1]);
 
       vi.restoreAllMocks();
@@ -306,6 +320,70 @@ describe("startSandbox() — state detection", () => {
 
     expect(capturedBranches).toHaveLength(2);
     expect(capturedBranches[0]).toBe(capturedBranches[1]);
+  });
+
+  // --- Sprint 69: state (b) TOCTOU + execFileSync smoke tests ---
+
+  it("state (b) TOCTOU: branch deleted between prune and add → falls through to fresh create (-b)", async () => {
+    // Worktree IS in git list but dir does NOT exist.
+    // After prune, branch --list returns empty (deleted externally).
+    // Should fall through to fresh create with -b instead of erroring.
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\nbranch refs/heads/main\n\nworktree ${worktreePath}\nHEAD abc\nbranch refs/heads/sandbox/mytest\n\n`;
+      if (cmd.includes("worktree prune")) return "";
+      return "";
+    });
+    // branch --list returns empty → branch was deleted between prune and add
+    mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "branch" && args[1] === "--list") return ""; // branch gone!
+      return "";
+    });
+    mockExistsSync.mockReturnValue(false);
+
+    await startSandbox("mytest", projectCwd, {});
+
+    const pruneCalls = mockExecSync.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree prune"),
+    );
+    expect(pruneCalls).toHaveLength(1);
+
+    // Should have used -b (fresh create) because branch no longer exists
+    const addCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "add",
+    );
+    expect(addCalls).toHaveLength(1);
+    expect(addCalls[0][1] as string[]).toContain("-b");
+  });
+
+  it("execFileSync is called (not execSync) for variable-path git commands", async () => {
+    // Smoke test: verify that worktree add uses execFileSync (no shell injection surface).
+    // state (d): fresh create
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      return "";
+    });
+    mockExecFileSync.mockReturnValue("");
+    mockExistsSync.mockReturnValue(false);
+
+    await startSandbox("mytest", projectCwd, {});
+
+    // execFileSync must have been called for worktree add (variable path)
+    const execFileCalls = mockExecFileSync.mock.calls;
+    expect(execFileCalls.length).toBeGreaterThan(0);
+    const addCall = execFileCalls.find(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "add",
+    );
+    expect(addCall).toBeDefined();
+    // First argument to execFileSync must be "git" (the executable, not a shell string)
+    expect(addCall![0]).toBe("git");
+
+    // execSync must NOT have been called for worktree add (no shell string with variables)
+    const execSyncAddCalls = mockExecSync.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    );
+    expect(execSyncAddCalls).toHaveLength(0);
   });
 });
 
@@ -316,6 +394,7 @@ describe("startSandbox() — state detection", () => {
 describe("startSandbox() — guards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExecFileSync.mockReturnValue("");
     vi.spyOn(process, "chdir").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
   });
@@ -372,9 +451,9 @@ describe("startSandbox() — REPL lifecycle", () => {
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
       return "";
     });
+    mockExecFileSync.mockReturnValue("");
     mockExistsSync.mockReturnValue(false);
     vi.spyOn(process, "chdir").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
@@ -438,9 +517,9 @@ describe("startSandbox() — merge-back", () => {
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
       return "";
     });
+    mockExecFileSync.mockReturnValue("");
     mockExistsSync.mockReturnValue(false);
     vi.spyOn(process, "chdir").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
@@ -461,20 +540,21 @@ describe("startSandbox() — merge-back", () => {
 
     await startSandbox("mytest", projectCwd, {});
 
-    const mergeCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("git merge"),
+    // merge is now execFileSync: ["git", ["merge", "--no-ff", branchName, "-m", ...]]
+    const mergeCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "merge",
     );
     expect(mergeCalls).toHaveLength(1);
-    expect(mergeCalls[0][0]).toContain("--no-ff");
-    expect(mergeCalls[0][0]).toContain("sandbox/mytest");
+    expect(mergeCalls[0][1] as string[]).toContain("--no-ff");
+    expect(mergeCalls[0][1] as string[]).toContain("sandbox/mytest");
 
-    const removeCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree remove"),
+    const removeCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "remove",
     );
     expect(removeCalls).toHaveLength(1);
 
-    const branchDeleteCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("branch -D"),
+    const branchDeleteCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "branch" && (c[1] as string[])[1] === "-D",
     );
     expect(branchDeleteCalls).toHaveLength(1);
 
@@ -494,11 +574,8 @@ describe("startSandbox() — merge-back", () => {
     } as ReturnType<typeof createInterface>);
 
     // Make git merge fail to simulate a conflict
-    mockExecSync.mockImplementation((cmd: string) => {
-      if (cmd.includes("branch --show-current")) return "main\n";
-      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
-      if (cmd.includes("git merge")) throw new Error("Merge conflict");
+    mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "merge") throw new Error("Merge conflict");
       return "";
     });
 
@@ -508,12 +585,11 @@ describe("startSandbox() — merge-back", () => {
 
     const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(allOutput).toContain("git merge --abort");
-    // Message was updated to point clearly to main repo (not sandbox worktree)
     expect(allOutput).toMatch(/Merge failed|Conflicts are in your main repo|worktree preserved/i);
 
     // worktree remove should NOT have been called (conflict path preserves it)
-    const removeCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree remove"),
+    const removeCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "remove",
     );
     expect(removeCalls).toHaveLength(0);
 
@@ -534,9 +610,9 @@ describe("startSandbox() — merge-back", () => {
     const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(allOutput).toContain("phase2s --sandbox mytest");
 
-    // No git merge should have been called
-    const mergeCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("git merge"),
+    // No git merge via execFileSync
+    const mergeCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "merge",
     );
     expect(mergeCalls).toHaveLength(0);
 
@@ -557,9 +633,9 @@ describe("startSandbox() — additional correctness checks", () => {
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
       return "";
     });
+    mockExecFileSync.mockReturnValue("");
     mockExistsSync.mockReturnValue(false);
     vi.spyOn(process, "chdir").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
@@ -592,40 +668,34 @@ describe("startSandbox() — additional correctness checks", () => {
 
     // chdir back to originalCwd should happen before cleanup git commands
     const chdirCalls = chdirSpy.mock.calls;
-    const mergeIndex = mockExecSync.mock.calls.findIndex(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("git merge"),
-    );
-    // chdir with originalCwd should appear after chdir to worktree
     const chdirToOrigIndex = chdirCalls.findIndex((c) => c[0] === projectCwd);
     expect(chdirToOrigIndex).toBeGreaterThanOrEqual(0);
-    // cleanup (merge) should happen after chdir back to originalCwd
-    // (merge index is in execSync calls, chdir is before it)
-    if (mergeIndex >= 0) {
-      // The chdir to originalCwd happened at some point — verify it happened before cleanup
-      // We can't easily compare cross-mock call indices, but we can verify chdir was called with originalCwd
-      expect(chdirCalls.some((c) => c[0] === projectCwd)).toBe(true);
-    }
+    expect(chdirCalls.some((c) => c[0] === projectCwd)).toBe(true);
   });
 
   it("state (b) git command uses no -b flag; state (d) uses -b flag", async () => {
-    // State (b): in git, dir missing
+    // State (b): in git, dir missing — branch still exists after prune
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\nbranch refs/heads/main\n\nworktree /fake/project/.worktrees/sandbox-mytest\nHEAD abc\nbranch refs/heads/sandbox/mytest\n\n`;
       if (cmd.includes("worktree prune")) return "";
-      if (cmd.includes("worktree add")) return "";
+      return "";
+    });
+    mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "branch" && args[1] === "--list") return "sandbox/mytest\n"; // branch still exists
       return "";
     });
     mockExistsSync.mockReturnValue(false); // dir missing
 
     await startSandbox("mytest", projectCwd, {});
 
-    const addCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("worktree add"),
+    const addCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "worktree" && (c[1] as string[])[1] === "add",
     );
     expect(addCalls).toHaveLength(1);
-    expect(addCalls[0][0]).not.toContain("-b");
-    expect(addCalls[0][0]).toContain("sandbox/mytest");
+    const addArgs = addCalls[0][1] as string[];
+    expect(addArgs).not.toContain("-b");
+    expect(addArgs).toContain("sandbox/mytest");
   });
 });
 
@@ -639,6 +709,12 @@ describe("startSandbox() — worktree add failure paths", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     await resetInteractiveModeMock();
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("branch --show-current")) return "main\n";
+      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
+      return "";
+    });
+    mockExecFileSync.mockReturnValue("");
     vi.spyOn(process, "chdir").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
   });
@@ -648,12 +724,16 @@ describe("startSandbox() — worktree add failure paths", () => {
   });
 
   it("state (b): worktree add throws → exits 1 with error message", async () => {
-    // In git but dir missing (state b), then add fails
+    // In git but dir missing (state b), branch still exists, then add fails
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\nbranch refs/heads/main\n\nworktree /fake/project/.worktrees/sandbox-mytest\nHEAD abc\nbranch refs/heads/sandbox/mytest\n\n`;
       if (cmd.includes("worktree prune")) return "";
-      if (cmd.includes("worktree add")) throw new Error("branch already exists");
+      return "";
+    });
+    mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "branch" && args[1] === "--list") return "sandbox/mytest\n";
+      if (args[0] === "worktree" && args[1] === "add") throw new Error("branch already exists");
       return "";
     });
     mockExistsSync.mockReturnValue(false);
@@ -669,7 +749,10 @@ describe("startSandbox() — worktree add failure paths", () => {
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) throw new Error("Permission denied");
+      return "";
+    });
+    mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "worktree" && args[1] === "add") throw new Error("Permission denied");
       return "";
     });
     mockExistsSync.mockReturnValue(true);
@@ -685,7 +768,10 @@ describe("startSandbox() — worktree add failure paths", () => {
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) throw new Error("disk full");
+      return "";
+    });
+    mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "worktree" && args[1] === "add") throw new Error("disk full");
       return "";
     });
     mockExistsSync.mockReturnValue(false);
@@ -710,10 +796,10 @@ describe("startSandbox() — uncommitted work warning on merge", () => {
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
       if (cmd.includes("status --porcelain")) return " M modified-file.ts\n"; // dirty worktree
       return "";
     });
+    mockExecFileSync.mockReturnValue("");
     mockExistsSync.mockReturnValue(false);
     vi.spyOn(process, "chdir").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
@@ -743,9 +829,9 @@ describe("startSandbox() — uncommitted work warning on merge", () => {
     const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(allOutput).toMatch(/uncommitted changes/i);
 
-    // Merge was still executed
-    const mergeCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("git merge"),
+    // Merge was still executed (via execFileSync)
+    const mergeCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "merge",
     );
     expect(mergeCalls).toHaveLength(1);
 
@@ -768,9 +854,9 @@ describe("startSandbox() — uncommitted work warning on merge", () => {
 
     await startSandbox("mytest", projectCwd, {});
 
-    // Merge was NOT executed
-    const mergeCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("git merge"),
+    // Merge was NOT executed (via execFileSync)
+    const mergeCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "merge",
     );
     expect(mergeCalls).toHaveLength(0);
 
@@ -786,7 +872,6 @@ describe("startSandbox() — uncommitted work warning on merge", () => {
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
       if (cmd.includes("status --porcelain")) return ""; // clean
       return "";
     });
@@ -824,10 +909,10 @@ describe("startSandbox() — review-pass: resume forwarding + checkout split", (
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.includes("branch --show-current")) return "main\n";
       if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
       if (cmd.includes("status --porcelain")) return ""; // clean
       return "";
     });
+    mockExecFileSync.mockReturnValue("");
     mockExistsSync.mockReturnValue(false);
     vi.spyOn(process, "chdir").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
@@ -866,12 +951,9 @@ describe("startSandbox() — review-pass: resume forwarding + checkout split", (
       close: vi.fn(),
     } as ReturnType<typeof createInterface>);
 
-    mockExecSync.mockImplementation((cmd: string) => {
-      if (cmd.includes("branch --show-current")) return "main\n";
-      if (cmd.includes("worktree list")) return `worktree /fake/project\nHEAD abc\n`;
-      if (cmd.includes("worktree add")) return "";
-      if (cmd.includes("status --porcelain")) return "";
-      if (cmd.includes("git checkout")) throw new Error("pathspec 'main' did not match");
+    // checkout is now execFileSync — throw on "checkout" args
+    mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "checkout") throw new Error("pathspec 'main' did not match");
       return "";
     });
 
@@ -883,8 +965,9 @@ describe("startSandbox() — review-pass: resume forwarding + checkout split", (
     expect(allOutput).toMatch(/Could not return to branch|deleted or renamed/i);
     expect(allOutput).not.toMatch(/Merge failed|merge --abort/);
 
-    const mergeCalls = mockExecSync.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("git merge"),
+    // No merge via execFileSync
+    const mergeCalls = mockExecFileSync.mock.calls.filter(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[])[0] === "merge",
     );
     expect(mergeCalls).toHaveLength(0);
 
@@ -1101,9 +1184,9 @@ describe("startSandbox() — non-git pre-flight", () => {
       if (cmd.includes("rev-parse --is-inside-work-tree")) return "true";
       if (cmd.includes("branch --show-current")) return "main";
       if (cmd.includes("worktree list")) return "worktree /fake/project\nHEAD abc1234\nbranch refs/heads/main\n";
-      if (cmd.includes("worktree add")) return "";
       return "";
     });
+    mockExecFileSync.mockReturnValue("");
     mockExistsSync.mockReturnValue(false);
 
     // Should NOT call process.exit(1) for the non-git reason
@@ -1158,13 +1241,13 @@ describe("startSandbox() — dirty working tree", () => {
     // main worktrees. Staged/unstaged changes stay in the main worktree and do NOT
     // propagate to the sandbox. No auto-stash is needed.
     mockExecSync.mockImplementation((cmd: string) => {
-      // All git commands succeed — including worktree add with staged changes present
+      // Safe (no vars) commands stay execSync
       if (cmd.includes("rev-parse --is-inside-work-tree")) return "true";
       if (cmd.includes("branch --show-current")) return "main";
       if (cmd.includes("worktree list")) return "worktree /fake/project\nHEAD abc1234\nbranch refs/heads/main\n";
-      if (cmd.includes("worktree add")) return ""; // succeeds despite dirty tree
       return "";
     });
+    mockExecFileSync.mockReturnValue(""); // worktree add succeeds despite dirty tree
     mockExistsSync.mockReturnValue(false);
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
