@@ -632,15 +632,58 @@ describe("collectMatchingFiles — recursive fuzzy walk", () => {
     expect(results).toHaveLength(0);
   });
 
-  it("respects depth cap — does not descend beyond depth 4", () => {
-    // Create a path exactly at depth 5 (0-indexed from cwd)
+  it("BFS: finds file at depth >4 (no depth cap with BFS traversal)", () => {
+    // BFS replaced the depth-limited DFS. Files at any depth are now collected
+    // as long as the 500-result and 5000-dir caps haven't been reached.
     const deep = join(tmpDir, "a", "b", "c", "d", "e");
     mkdirSync(deep, { recursive: true });
     writeFileSync(join(deep, "agent.ts"), "");
     const results: string[] = [];
     collectMatchingFiles(tmpDir, "agent", results, 0, tmpDir);
-    // depth 5 exceeds MAX_COMPLETER_DEPTH=4, so agent.ts should not appear
-    expect(results.every((r) => !r.includes(join("a", "b", "c", "d", "e")))).toBe(true);
+    // BFS visits all depths — agent.ts at depth 5 must appear
+    expect(results.some((r) => r.includes(join("a", "b", "c", "d", "e")))).toBe(true);
+  });
+
+  it("BFS: shallow match collected before deep match with same basename", () => {
+    // BFS ordering guarantees shallower files are collected first.
+    mkdirSync(join(tmpDir, "src", "core", "deep"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "agent.ts"), "");         // depth 2
+    writeFileSync(join(tmpDir, "src", "core", "deep", "agent.ts"), ""); // depth 4
+    const results: string[] = [];
+    collectMatchingFiles(tmpDir, "agent", results, 0, tmpDir);
+    const shallowIdx = results.findIndex((r) => r === "@src/agent.ts");
+    const deepIdx = results.findIndex((r) => r.includes(join("core", "deep", "agent.ts")));
+    expect(shallowIdx).toBeGreaterThanOrEqual(0);
+    expect(deepIdx).toBeGreaterThanOrEqual(0);
+    expect(shallowIdx).toBeLessThan(deepIdx);
+  });
+
+  it("BFS: visited-cap (5000 dirs) terminates without hanging", () => {
+    // Mock readdirSync to simulate a very deep/wide tree that would exceed the cap.
+    // Each call returns one subdirectory so the queue grows; after 5000 pops it stops.
+    const { readdirSync: originalReaddir } = require("node:fs");
+    let visitCount = 0;
+    const readdirMock = vi.spyOn(
+      require("node:fs"),
+      "readdirSync",
+    ).mockImplementation((_path: string, _opts: unknown) => {
+      visitCount++;
+      // Return a single subdirectory entry each time (infinite tree)
+      const { Dirent } = require("node:fs");
+      const entry = Object.create(Dirent.prototype);
+      entry.name = "sub";
+      entry.isDirectory = () => true;
+      entry.isFile = () => false;
+      return [entry];
+    });
+
+    const results: string[] = [];
+    // Should terminate — not hang — because visited < 5000 cap kicks in
+    collectMatchingFiles("/fake/root", "anything", results, 0, "/fake/root");
+
+    // visited cap was applied — function returned without hanging
+    expect(results).toHaveLength(0);
+    readdirMock.mockRestore();
   });
 });
 
@@ -784,11 +827,10 @@ describe("makeCompleter — ranking sort", () => {
   });
 
   it("ranking is best-effort when results approach MAX_COMPLETER_RESULTS (documented)", async () => {
-    // DFS traversal caps at 500 results; ideal match may not be collected in
-    // very large trees. This test documents the known limitation.
+    // BFS collects shallower files first; in small trees the best match is always
+    // collected and ranked first. The 500-result cap is a safety net for huge trees.
     writeFileSync(join(tmpDir, "agent.ts"), "");
     const [completions] = await invoke(() => tmpDir, "@agent");
-    // In small trees the best match IS collected and ranked first.
     expect(completions[0]).toContain("agent");
   });
 });

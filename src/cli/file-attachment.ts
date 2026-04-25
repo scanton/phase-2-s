@@ -234,37 +234,59 @@ export function formatAttachmentBlock(files: AttachedFile[]): string {
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const MAX_COMPLETER_RESULTS = 500;
-const MAX_COMPLETER_DEPTH = 4;
 
 /**
- * Recursively collect files whose basename contains `fragment` (case-insensitive).
- * Skips dotfiles, node_modules, dist, and .git. Caps at 500 results and depth 4.
+ * @deprecated No longer used in traversal — BFS replaced the depth-limited DFS.
+ * Kept exported for backward compatibility with callers that pass it as an argument.
+ */
+export const MAX_COMPLETER_DEPTH = 4;
+
+/**
+ * Collect files whose basename contains `fragment` (case-insensitive) using
+ * iterative BFS. BFS visits shallower directories first, guaranteeing the closest
+ * match is always surfaced even in deep trees — unlike the old DFS which could miss
+ * a perfect match at depth 5+ before hitting the 500-result cap.
+ *
+ * Skips dotfiles, node_modules, dist, and .git. Caps at 500 results.
+ *
+ * @param startDir  Directory to begin the search from.
+ * @param fragment  Basename substring to match (case-insensitive).
+ * @param results   Accumulator array — results are pushed here.
+ * @param _depth    Ignored (kept for signature compatibility with existing callers).
+ * @param cwd       Project root used to compute relative paths for results.
  */
 export function collectMatchingFiles(
-  dir: string,
+  startDir: string,
   fragment: string,
   results: string[],
-  depth: number,
+  _depth: number,
   cwd: string,
 ): void {
-  if (depth > MAX_COMPLETER_DEPTH || results.length >= MAX_COMPLETER_RESULTS) return;
-  let entries: Dirent[];
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
   const lowerFragment = fragment.toLowerCase();
-  for (const entry of entries) {
-    if (results.length >= MAX_COMPLETER_RESULTS) break;
-    if (entry.name.startsWith(".")) continue;
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      collectMatchingFiles(fullPath, fragment, results, depth + 1, cwd);
-    } else if (entry.name.toLowerCase().includes(lowerFragment)) {
-      const rel = relative(cwd, fullPath);
-      if (!rel.startsWith("..")) results.push("@" + rel);
+  const queue: string[] = [startDir];
+  let visited = 0;
+
+  while (queue.length > 0 && results.length < MAX_COMPLETER_RESULTS && visited < 5000) {
+    const dir = queue.shift()!;
+    visited++;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (results.length >= MAX_COMPLETER_RESULTS) return;
+      if (entry.name.startsWith(".")) continue;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
+        queue.push(fullPath);
+      } else if (entry.name.toLowerCase().includes(lowerFragment)) {
+        const rel = relative(cwd, fullPath);
+        if (!rel.startsWith("..")) results.push("@" + rel);
+      }
     }
   }
 }
@@ -278,7 +300,7 @@ export function collectMatchingFiles(
  * the most likely intended match to the top of the list.
  *
  * Note: ranking is best-effort when result count approaches MAX_COMPLETER_RESULTS
- * (500). DFS traversal may cap before collecting ideal matches in very large trees.
+ * (500). BFS collects shallower files first, so the nearest match is always included.
  */
 function rankCompletions(results: string[], fragment: string): void {
   const lf = fragment.toLowerCase();
