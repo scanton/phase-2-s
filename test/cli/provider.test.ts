@@ -136,7 +136,7 @@ describe("runProviderLogin", () => {
     expect(written.provider).toBe("openai-api");
     expect(written.apiKey).toBe("sk-openai-test");
     expect(written.model).toBeUndefined(); // cleared on provider switch
-    expect(written.fast_model).toBe("gpt-4o-mini"); // preserved
+    expect(written.fast_model).toBeUndefined(); // cleared on switch — provider-specific model slugs
     expect(written.slack_webhook).toBe("https://hooks.example.com"); // preserved
 
     const out = writeSpy.mock.calls.map((c) => String(c[0])).join("");

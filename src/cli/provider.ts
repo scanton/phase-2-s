@@ -6,7 +6,7 @@
  * that formatConfig() would silently drop.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import * as readline from "node:readline";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import chalk from "chalk";
@@ -17,27 +17,27 @@ import { PROVIDERS, getProviderKeyField, isValidProvider, type ProviderName } fr
 // ---------------------------------------------------------------------------
 
 function detectConfigPath(): string | null {
-  if (existsSync(".phase2s.yml")) return ".phase2s.yml";
+  // Match loadConfig() precedence: .yaml before .yml
   if (existsSync(".phase2s.yaml")) return ".phase2s.yaml";
+  if (existsSync(".phase2s.yml")) return ".phase2s.yml";
   return null;
 }
 
 function readConfigRaw(configPath: string): Record<string, unknown> {
   const raw = readFileSync(configPath, "utf-8");
-  try {
-    const parsed = yamlParse(raw);
-    return (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    process.stderr.write(chalk.yellow(`⚠  Could not parse ${configPath} as YAML — treating as empty.\n`));
-    return {};
-  }
+  // Let parse errors propagate — callers must not silently overwrite a corrupt config.
+  const parsed = yamlParse(raw);
+  return (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+    ? (parsed as Record<string, unknown>)
+    : {};
 }
 
 function writeConfigRaw(configPath: string, data: Record<string, unknown>): void {
   // 0o600 = owner-read/write only — API keys must not be world-readable.
+  // mode on writeFileSync only applies to newly created files; chmod covers pre-existing files
+  // (e.g. created by `phase2s init` with default 0o644 permissions).
   writeFileSync(configPath, yamlStringify(data), { encoding: "utf-8", mode: 0o600 });
+  try { chmodSync(configPath, 0o600); } catch { /* non-fatal — best effort */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,11 +124,22 @@ export async function runProviderLogin(providerArg: string | undefined): Promise
 
   // Determine config file path (detect existing, default to .phase2s.yaml)
   const configPath = detectConfigPath() ?? ".phase2s.yaml";
-  const config: Record<string, unknown> = existsSync(configPath) ? readConfigRaw(configPath) : {};
+  let config: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    try {
+      config = readConfigRaw(configPath);
+    } catch {
+      process.stderr.write(chalk.red(`✖  ${configPath} contains invalid YAML. Fix it manually before running provider login.\n`));
+      process.exit(1);
+    }
+  }
 
-  // Clear model only when switching providers — preserves user's model override on re-login.
+  // Clear provider-specific model fields when switching — model slugs are provider-scoped
+  // (e.g. "gpt-4o-mini" is invalid on Anthropic). Preserves overrides on re-login.
   if (config.provider !== provider) {
     delete config.model;
+    delete config.fast_model;
+    delete config.smart_model;
   }
 
   // Update provider field
