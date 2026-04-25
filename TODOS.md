@@ -8,7 +8,7 @@
 
 ## Backlog — Post-Sprint 69 notes (2026-04-24)
 
-- All 7 hardening items from the Sprint 69 /plan-eng-review resolved: BFS traversal, atomic backup, sandbox shell injection, sandbox state (b) TOCTOU, plans/ symlink escape, plans/ TOCTOU (accepted). +7 net new tests; zero regression from 1256-pass baseline.
+- All 7 hardening items from the Sprint 69 /plan-eng-review resolved: BFS traversal, atomic backup, sandbox shell injection, sandbox state (b) TOCTOU, sandbox name collision (state d MD5 suffix documented), plans/ symlink escape, plans/ TOCTOU (accepted). +7 net new tests; zero regression from 1256-pass baseline.
 - [ ] **`performCompaction` rm cleanup coverage** — The `rm` call inside the atomic backup error handler is not injectable via `PerformCompactionDeps`, so the `catch (rmErr)` diagnostic-log path has no test coverage. Future fix: add optional `rmFileFn?(path: string, opts?: {force?: boolean}): Promise<void>` to `PerformCompactionDeps` and use it in the catch block. Low priority; the path is defensive cleanup only.
 
 ---
@@ -17,7 +17,7 @@
 
 - [x] **`:dump html` image external-request isolation** — **Completed: v1.42.0 (2026-04-24).** Sprint 68 upgraded the href/src filter to a protocol allowlist (`https?:`, `mailto:`, `#`), blocking `javascript:`, `data:`, `vbscript:`, and `file://` attacks. `<img>` tags are stripped via `marked.use({ renderer: { image: ({ text }) => text } })` so alt text renders instead — AI-response images can no longer cause the exported HTML to make outbound browser requests on open.
 
-- [x] **BFS traversal for `collectMatchingFiles`** — **Completed: v1.43.0 (2026-04-24).** Replaced recursive DFS (depth 4 cap) with iterative BFS. Shallower directories visited first → nearest basename match always surfaced. Safety: `visited < 5000` dir cap. `_depth` param kept for API compatibility (marked `@deprecated`). `MAX_COMPLETER_DEPTH` kept as deprecated export. Old depth-cap test replaced with "BFS finds file at depth >4" + BFS order + visited-cap tests.
+- [x] **BFS traversal for `collectMatchingFiles`** — **Completed: v1.43.0 (2026-04-24).** Replaced recursive DFS (depth 4 cap) with iterative BFS. Shallower directories visited first → nearest basename match always surfaced. Safety: `head < MAX_COMPLETER_DIRS` (5000) dir cap. `_depth` param kept for API compatibility (marked `@deprecated`). `MAX_COMPLETER_DEPTH` kept as deprecated export. Old depth-cap test replaced with "BFS finds file at depth >4" + BFS order + visited-cap tests.
 
 ---
 
@@ -99,7 +99,7 @@
 
 - [x] **`--sandbox` uncommitted work warning** — Before merge cleanup, check `git status --porcelain` in the worktree. If dirty, warn and require explicit confirmation before `git worktree remove --force` discards uncommitted changes. **Completed: v1.26.0 (2026-04-13, Codex adversarial follow-up)**
 
-- [ ] **`--sandbox` name collision across slugs** — Two names that slugify to the same value (e.g. "my feature" and "my_feature") will silently share the same worktree. This is rarely a problem in practice but could surprise users. Fix: detect collision at startup and either warn or append a short random suffix (e.g. `-a3f`). **Post-Sprint 52.**
+- [x] **`--sandbox` name collision across slugs** — **Completed: v1.43.0 (2026-04-24).** State (d) (fresh create) already handles this: if the branch name is taken, a 4-char MD5 suffix derived from `projectCwd` is appended (`startSandbox():299-312`), making the collision deterministic (same cwd → same suffix) but effectively impossible. JSDoc on `startSandbox` now documents all 4 state-machine transitions including the "(a) same slug → same sandbox, not a collision" intentional behavior.
 
 - [x] **`--sandbox` shell injection via projectCwd** — **Completed: v1.43.0 (2026-04-24).** All variable-path git commands in `startSandbox()` migrated from `execSync(string)` to `execFileSync("git", [...args])` — no shell involved, shell metacharacters in paths are inert. Fixed: states (b) checkout/merge/remove/branch-D, state (c), state (d). Lexically-safe "constant string" calls kept as `execSync`. Smoke test verifies `execFileSync` is used for `worktree add`.
 
