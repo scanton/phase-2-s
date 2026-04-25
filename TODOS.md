@@ -6,6 +6,12 @@
 
 ---
 
+## Backlog — Post-Sprint 72 notes (v1.46.0, 2026-04-25)
+
+Sprint 72 shipped semantic learnings injection via Ollama embeddings. `loadRelevantLearnings()` replaces the truncate-oldest strategy with embedding-based retrieval when `ollamaBaseUrl` is configured — even when using `codex-cli` or another provider for chat. `src/core/embeddings.ts` calls the native Ollama `/api/embed` endpoint (strips `/v1` suffix automatically; returns `[]` on any error for clean fallback). `src/core/search-index.ts` builds an incremental vector index at `.phase2s/search-index.jsonl` with SHA-256 content-hash staleness detection, GC for deleted learnings, and atomic writes (temp+rename) to prevent partial reads by parallel executor workers. `ollamaEmbedModel` config field separates the embed model from the chat model. All 4 `loadLearnings` call sites updated to `loadRelevantLearnings`. `/review` fix: results now return in similarity rank order (highest-first) instead of JSONL insertion order. 17 new tests (4 embeddings, 8 search-index, 5 memory); 1730 passing. Two Sprint 73 candidates added below. Model defaults updated: codex-cli → `gpt-5.4`, Ollama → `gemma4:latest` (5 locations).
+
+---
+
 ## Backlog — Post-Sprint 71 patch v1.45.1 (2026-04-25)
 
 Patch closed the PromptInterrupt coverage gaps missed in Sprint 71: `commit.ts` now catches `PromptInterrupt` at all four `ask()` sites (secret-warning prompt, main accept/edit/cancel, null-model fallback, `openEditor` readline fallback), `spec-template.ts` catches it in the placeholder wizard, and `runProviderList`/`runProviderLogout` now guard `readConfigRaw()` errors. Dead `PromptInterrupt` catch removed from `:commit` REPL handler. 6 regression tests added; 1710 passing. Neither Sprint 71 open item below is closed by this patch.
@@ -966,6 +972,14 @@ These were flagged but not fixed — they need deeper analysis before touching.
 - **`--full-auto` + poisoned session file threat model** — `phase2s --resume` injects arbitrary prior messages into the agent context. A crafted session file with plausible-looking assistant messages could influence the model to skip safety checks or run destructive commands under `--full-auto`. The role validation added in Sprint 5 blocks outright invalid roles, but a semantically poisoned (but structurally valid) session is not blocked. Threat model: only relevant if session files can be written by untrusted parties. Document the assumption that `.phase2s/sessions/` is user-private.
 - **Prompt size cap before codex spawn** — No limit on prompt length before spawning codex. A very long conversation history passed via `--resume` could exceed codex's context limit, resulting in a cryptic spawn error. Fix: add a `conversation.trimToTokenBudget()` call before constructing the first codex prompt, or warn when `conversation.estimateTokens()` exceeds a threshold.
 - ~~**Session files world-readable**~~ — Fixed in Sprint 10. `Conversation.save()` accepts `mode?: number`; CLI passes `0o600` on both async and sync write paths.
+
+---
+
+## Sprint 72 follow-ons (from /plan-eng-review 2026-04-25)
+
+- [ ] **Heuristic sort fallback for non-Ollama providers** — When Ollama is not configured, `loadRelevantLearnings` falls back to `loadLearnings` which truncates-oldest. Improve this with a lightweight keyword/recency hybrid sort so non-Ollama users also get better-than-random injection. Could weight by keyword overlap with query text + recency decay. Sprint 73 candidate. **Priority:** P3
+
+- [ ] **REPL mid-conversation semantic context refresh** — REPL startup uses `loadLearnings` (no task text at startup). After the user's first message establishes a topic, refresh the injected learnings block using `loadRelevantLearnings(cwd, firstMessage, config)`. Requires baking learnings into the system prompt at turn-1 rather than session-start. Sprint 73+ candidate. **Priority:** P3
 
 ---
 

@@ -42,11 +42,27 @@ export PHASE2S_PROVIDER=anthropic
 phase2s
 ```
 
+**If you want the best of both: ChatGPT subscription for coding + Ollama for semantic memory (recommended combo)**
+
+```bash
+npm install -g @openai/codex @scanton/phase2s
+codex auth
+ollama pull gemma4:latest
+```
+
+```yaml
+# .phase2s.yaml
+provider: codex-cli
+ollamaBaseUrl: http://localhost:11434/v1   # enables semantic learnings injection
+```
+
+With this setup, Phase2S uses your ChatGPT subscription for all coding work and uses a local Ollama model to find the most relevant learnings to inject into each session — no API billing, no data leaving your machine for the memory layer.
+
 **If you want to run everything locally (free, private, no internet)**
 
 ```bash
 npm install -g @scanton/phase2s
-ollama pull llama3.1:8b
+ollama pull gemma4:latest
 export PHASE2S_PROVIDER=ollama
 phase2s
 ```
@@ -331,10 +347,10 @@ phase2s skills --json # machine-readable for scripts
 
 | Provider | Auth | Default Model | Setup |
 |----------|------|---------------|-------|
-| ChatGPT subscription | Browser login | gpt-4o | `codex auth` (one time) |
+| ChatGPT subscription | Browser login | gpt-5.4 | `codex auth` (one time) |
 | OpenAI API | `OPENAI_API_KEY` | gpt-4o | `phase2s provider login` |
 | Anthropic | `ANTHROPIC_API_KEY` | claude-3-5-sonnet | `phase2s provider login` |
-| Ollama | Local (no auth) | llama3.1:8b | `ollama pull llama3.1:8b` |
+| Ollama | Local (no auth) | gemma4:latest | `ollama pull gemma4:latest` |
 | OpenRouter | `OPENROUTER_API_KEY` | openai/gpt-4o | `phase2s provider login` |
 | Google Gemini | `GEMINI_API_KEY` | gemini-2.0-flash | `phase2s provider login` |
 | MiniMax | `MINIMAX_API_KEY` | MiniMax-M2.5 | `phase2s provider login` |
@@ -419,6 +435,55 @@ phase2s__state_clear({ key: "deploy_status" })
 ```
 phase2s__report({ runLogPath: ".phase2s/runs/2026-04-05-goal-abc123.jsonl" })
 ```
+
+### Semantic learnings (Ollama)
+
+Phase2S injects your saved learnings into every session. Out of the box, it injects the most recent ones. With a local Ollama instance running, it finds the most *relevant* ones instead — using embedding similarity to match your learnings to the current task.
+
+When `ollamaBaseUrl` is set, Phase2S:
+1. Embeds your query text using the local Ollama `/api/embed` endpoint
+2. Scores every learning against that embedding (cosine similarity)
+3. Injects the top-K matches instead of the newest-K
+
+The index is built on first use and updated incrementally — only changed or new learnings are re-embedded. The index lives at `.phase2s/search-index.jsonl` inside your project.
+
+**Best setup: ChatGPT subscription + Ollama**
+
+Use your ChatGPT subscription for all implementation work. Run Ollama locally for the semantic memory layer. No API billing, no data leaving your machine.
+
+```bash
+# 1. Install + authenticate once
+npm install -g @openai/codex @scanton/phase2s
+codex auth
+
+# 2. Pull a local embed model
+ollama pull gemma4:latest
+
+# 3. Configure
+cat > .phase2s.yaml << 'EOF'
+provider: codex-cli
+ollamaBaseUrl: http://localhost:11434/v1
+EOF
+
+phase2s
+```
+
+With this config, `/satori`, `/consensus-plan`, and `phase2s goal` all get the learnings most relevant to the current task — not just the ones you saved most recently.
+
+To use a separate, lighter model just for embeddings:
+
+```yaml
+# .phase2s.yaml
+provider: codex-cli
+ollamaBaseUrl: http://localhost:11434/v1
+ollamaEmbedModel: nomic-embed-text  # dedicated embed model (faster, smaller)
+```
+
+When `ollamaEmbedModel` is set, the main model handles chat and the embed model handles indexing — you get the full `gemma4` quality for chat without the embedding overhead.
+
+**Fallback behavior** — if Ollama is down, the model is unreachable, or no query text is available (e.g., REPL startup before your first message), Phase2S falls back to the previous behavior: inject the most recent learnings up to the 2000-character limit.
+
+---
 
 ### AI Commit Messages
 
@@ -510,7 +575,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 1,694 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, AI-generated commit messages, session index/locking/DAG integrity, session lock hardening (PID-suffixed tmp files, SIGKILL recovery, symlink escape guard), replan agent (hallucination guard, tail-slice eval, empty tool registry), parallel goal retry loop, onDelta newline injection, rate-limit resilience (typed RateLimitError, rate_limited ProviderEvent, auto-backoff across all 7 providers), compaction rate-limit propagation, orchestrator rate-limit propagation, orchestrator sibling cancellation, @file attachment (REPL + one-shot), @url attachment with SSRF protection, `:goal` REPL command with reentrancy guard, `throwOnRateLimit`, and `handleRunGoalCase` extraction, `:dump`/`:dump html` conversation export, `:help` REPL command reference, `marked` v18 HTML rendering + ranked Tab completions, BFS `@file` Tab traversal, atomic compaction backup, sandbox execFileSync migration + TOCTOU guard, plans_write symlink escape guard, and `phase2s provider` subcommand with 9 tests
+- [x] 1,730 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, AI-generated commit messages, session index/locking/DAG integrity, session lock hardening (PID-suffixed tmp files, SIGKILL recovery, symlink escape guard), replan agent (hallucination guard, tail-slice eval, empty tool registry), parallel goal retry loop, onDelta newline injection, rate-limit resilience (typed RateLimitError, rate_limited ProviderEvent, auto-backoff across all 7 providers), compaction rate-limit propagation, orchestrator rate-limit propagation, orchestrator sibling cancellation, @file attachment (REPL + one-shot), @url attachment with SSRF protection, `:goal` REPL command with reentrancy guard, `throwOnRateLimit`, and `handleRunGoalCase` extraction, `:dump`/`:dump html` conversation export, `:help` REPL command reference, `marked` v18 HTML rendering + ranked Tab completions, BFS `@file` Tab traversal, atomic compaction backup, sandbox execFileSync migration + TOCTOU guard, plans_write symlink escape guard, `phase2s provider` subcommand with 9 tests, and semantic learnings injection via Ollama embeddings (embeddings, vector index, memory retrieval, ordering)
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -606,6 +671,8 @@ browser: true  # requires playwright installed
 - [x] `:dump html` rendered output (v1.42.0) — `renderSessionHtml()` now uses `marked` v18 to convert the markdown transcript to proper HTML: `##` headings become `<h2>`, `---` becomes `<hr>`, fenced code blocks become `<pre><code>` with language classes. HTML content from message bodies is pre-escaped so `<script>` tags stay inert. `javascript:` hrefs are neutralized post-render. `@file` Tab completions ranked: basename prefix match beats substring match, shorter path beats deeper path, alphabetical tiebreak. Flaky `clone.test.ts` ENOTEMPTY CI race fixed. 1,677 tests.
 - [x] Security and resilience hardening (v1.43.0) — four targeted fixes shipped in one sweep: `@file` Tab completion now uses iterative BFS so files in shallow directories are always returned first (depth-4 cap removed); compaction backup writes use a tmp-then-rename atomic pattern so a mid-write crash can never corrupt the recovery file; all variable-path `execSync` calls in `--sandbox` replaced with `execFileSync` array form to close shell injection; `plans_write` blocks writes when `plans/` is a symlink pointing outside the project root. 1,684 tests.
 - [x] `phase2s provider` subcommand (v1.44.0) — `list`, `login`, and `logout` actions for provider management without re-running `phase2s init`. `provider list` shows all 7 providers and marks the active one (warns if `PHASE2S_PROVIDER` env var overrides the config). `provider login` switches provider, saves credentials to `.phase2s.yaml`, clears provider-scoped model fields on switch, preserves all other config (webhooks, system prompt, tool lists) via YAML parse/patch/serialize. `provider logout` removes only the API key field; codex-cli and ollama print an informational note. API key input is masked (no terminal scrollback). Config file permissions set to `0o600`. 1,694 tests.
+- [x] Semantic learnings injection (v1.46.0) — `loadRelevantLearnings()` replaces truncate-oldest with embedding-based retrieval when Ollama is configured. `src/core/embeddings.ts` calls the native `/api/embed` endpoint (strips `/v1` suffix automatically). `src/core/search-index.ts` builds an incremental vector index at `.phase2s/search-index.jsonl` with SHA-256 content-hash staleness detection and atomic writes (temp+rename). `ollamaEmbedModel` config field separates the embed model from the chat model. `formatLearningsForPrompt` `skipCharCap` option bypasses the 2000-char truncation when semantic retrieval is active. All 4 `loadLearnings` call sites in the agent loop updated. Falls back to recency-based injection when Ollama is unavailable. 1,730 tests.
+- [x] Model defaults updated (v1.46.0) — codex-cli default updated to `gpt-5.4` (read from `~/.codex/config.toml` when present); Ollama default updated to `gemma4:latest` (5 locations: config, init wizard, getting-started doc, configuration doc, config test).
 
 ---
 

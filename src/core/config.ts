@@ -11,7 +11,7 @@ const configSchema = z.object({
    * ~/.codex/config.toml so the user's existing Codex setup is respected.
    * For openai-api, defaults to "gpt-4o".
    * For anthropic, defaults to "claude-3-5-sonnet-20241022".
-   * For ollama, defaults to "llama3.1:8b" (user must have it pulled).
+   * For ollama, defaults to "gemma4:latest" (user must have it pulled).
    * For openrouter, defaults to "openai/gpt-4o".
    * For gemini, defaults to "gemini-2.0-flash".
    */
@@ -24,6 +24,8 @@ const configSchema = z.object({
   anthropicMaxTokens: z.number().int().min(1).optional(),
   /** Ollama base URL (default http://localhost:11434/v1). */
   ollamaBaseUrl: z.string().optional(),
+  /** Ollama model used for generating embeddings (semantic learnings search). Defaults to the main model field. */
+  ollamaEmbedModel: z.string().optional(),
   /** OpenRouter API key. Falls back to OPENROUTER_API_KEY environment variable. */
   openrouterApiKey: z.string().optional(),
   /** OpenRouter base URL (default https://openrouter.ai/api/v1). Override for custom deployments. */
@@ -190,10 +192,10 @@ async function resolveDefaultModel(provider: string): Promise<string> {
     } catch {
       // No config file, use default
     }
-    return "gpt-4o"; // safe fallback for ChatGPT subscriptions
+    return "gpt-5.4"; // safe fallback for ChatGPT subscriptions
   }
   if (provider === "anthropic") return "claude-3-5-sonnet-20241022";
-  if (provider === "ollama") return "llama3.1:8b"; // user must have this model pulled
+  if (provider === "ollama") return "gemma4:latest"; // user must have this model pulled
   if (provider === "openrouter") return "openai/gpt-4o"; // most common OpenRouter model
   if (provider === "gemini") return "gemini-2.0-flash"; // fast default; gemini-2.5-pro for smart tier
   if (provider === "minimax") return "MiniMax-M2.5"; // default; MiniMax-M2.7 for smart tier

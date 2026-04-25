@@ -94,12 +94,12 @@ No API keys. Runs entirely on your machine after the initial model pull:
 
 ```bash
 npm install -g @scanton/phase2s
-ollama pull llama3.1:8b
+ollama pull gemma4:latest
 export PHASE2S_PROVIDER=ollama
 phase2s
 ```
 
-`ollama serve` must be running. `qwen2.5-coder:7b` is a good alternative if you want stronger tool-calling support on complex tasks.
+`ollama serve` must be running. `qwen2.5-coder:7b` is a good alternative if you need a smaller model.
 
 ### Option E — OpenRouter (50+ models, one API key)
 

@@ -18,7 +18,7 @@ import chalk from "chalk";
 import { Agent } from "../core/agent.js";
 import { RateLimitError } from "../core/rate-limit-error.js";
 import { loadConfig } from "../core/config.js";
-import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
+import { loadRelevantLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import type { SubTask, Spec } from "../core/spec-parser.js";
 import { RunLogger, type RunEvent } from "../core/run-logger.js";
 import { writeState, type GoalState, type LevelWorkerState } from "../core/state.js";
@@ -479,10 +479,10 @@ async function executeWorker(
   const revisedDescription = revisedSubtasks?.[subtask.name];
   const prompt = buildWorkerPrompt(subtask, spec, levelContext, revisedDescription);
 
-  // Create fresh Agent for this worker
+  // Create fresh Agent for this worker — semantic learnings lookup using subtask name
   const config = await loadConfig();
-  const learningsList = await loadLearnings(cwd);
-  const learnings = formatLearningsForPrompt(learningsList);
+  const learningsList = await loadRelevantLearnings(cwd, subtask.name, config);
+  const learnings = formatLearningsForPrompt(learningsList, { skipCharCap: config.ollamaBaseUrl !== undefined });
   const agent = new Agent({
     config,
     learnings,
@@ -666,9 +666,12 @@ export async function executeOrchestratorLevel(
 ): Promise<OrchestratorLevelResult[]> {
   const cwd = process.cwd();
 
-  // Hoist shared reads outside Promise.all to avoid N redundant file reads per level
-  const [config, learningsList] = await Promise.all([loadConfig(), loadLearnings(cwd)]);
-  const learnings = formatLearningsForPrompt(learningsList);
+  // Hoist shared reads outside Promise.all to avoid N redundant file reads per level.
+  // Use job titles concatenated as the semantic query — all workers at this level share learnings.
+  const config = await loadConfig();
+  const levelQuery = jobs.map((j) => j.title).join(" ");
+  const learningsList = await loadRelevantLearnings(cwd, levelQuery, config);
+  const learnings = formatLearningsForPrompt(learningsList, { skipCharCap: config.ollamaBaseUrl !== undefined });
 
   const controller = new AbortController();
   const jobPromises = jobs.map(async (job, batchIdx): Promise<OrchestratorLevelResult> => {

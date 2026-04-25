@@ -153,6 +153,23 @@ describe("runProviderLogin", () => {
     expect(out).toContain("✔");
   });
 
+  it("provider switch clears ollamaEmbedModel alongside model/fast_model", async () => {
+    writeFileSync(
+      join(tmpDir, ".phase2s.yaml"),
+      "provider: ollama\nmodel: gemma4:latest\nollamaEmbedModel: gemma4:latest\nollamaBaseUrl: http://localhost:11434/v1\n",
+    );
+    mockAnswer = "sk-openai-test";
+
+    await withCwd(tmpDir, async () => {
+      await runProviderLogin("openai-api");
+    });
+
+    const written = yamlParse(readFileSync(join(tmpDir, ".phase2s.yaml"), "utf-8")) as Record<string, unknown>;
+    expect(written.provider).toBe("openai-api");
+    expect(written.model).toBeUndefined();
+    expect(written.ollamaEmbedModel).toBeUndefined(); // cleared on provider switch
+  });
+
   it("invalid YAML file → exits with error, does not overwrite", async () => {
     const configPath = join(tmpDir, ".phase2s.yaml");
     writeFileSync(configPath, "key: [unclosed\n");

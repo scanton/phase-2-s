@@ -148,6 +148,7 @@ export async function runProviderLogin(providerArg: string | undefined): Promise
     delete config.model;
     delete config.fast_model;
     delete config.smart_model;
+    delete config.ollamaEmbedModel;
   }
 
   // Update provider field

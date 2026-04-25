@@ -55,10 +55,10 @@ describe("loadConfig", () => {
     expect(config.timeout).toBe(120_000);
   });
 
-  it("defaults to gpt-4o when no codex config exists (HOME=/tmp)", async () => {
+  it("defaults to gpt-5.4 when no codex config exists (HOME=/tmp)", async () => {
     // HOME is /tmp in beforeEach — no ~/.codex/config.toml there
     const config = await loadConfig({});
-    expect(config.model).toBe("gpt-4o");
+    expect(config.model).toBe("gpt-5.4");
   });
 
   // --- Env var overrides ---
@@ -231,7 +231,7 @@ describe("loadConfig — tools and deny (Sprint 13)", () => {
     });
     expect(config.provider).toBe("ollama");
     expect(config.ollamaBaseUrl).toBe("http://192.168.1.50:11434/v1");
-    expect(config.model).toBe("llama3.1:8b");
+    expect(config.model).toBe("gemma4:latest");
   });
 
   // --- auto_compact_tokens (Sprint 55) ---

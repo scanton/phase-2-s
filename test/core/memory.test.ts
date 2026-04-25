@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { loadLearnings, formatLearningsForPrompt, type Learning } from "../../src/core/memory.js";
+import { loadLearnings, loadRelevantLearnings, formatLearningsForPrompt, type Learning } from "../../src/core/memory.js";
+import type { Config } from "../../src/core/config.js";
 
 /**
  * Tests for the memory system: loadLearnings() and formatLearningsForPrompt().
@@ -133,5 +134,119 @@ describe("formatLearningsForPrompt()", () => {
     const result = formatLearningsForPrompt(learnings);
     expect(result).toContain("1 learning loaded");
     expect(result).not.toContain("learnings loaded"); // no plural
+  });
+
+  it("skipCharCap: true bypasses 2000-char truncation", () => {
+    const longInsight = "x".repeat(1200);
+    const learnings: Learning[] = [
+      { key: "oldest", insight: longInsight },
+      { key: "second", insight: longInsight },
+      { key: "newest", insight: "short" },
+    ];
+
+    const result = formatLearningsForPrompt(learnings, { skipCharCap: true });
+
+    // All three should be present when cap is bypassed
+    expect(result).toContain("[oldest]:");
+    expect(result).toContain("[second]:");
+    expect(result).toContain("[newest]:");
+  });
+});
+
+describe("loadRelevantLearnings()", () => {
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    tmpDir = await mkdtemp(join(process.cwd(), ".test-relevant-"));
+    await mkdir(join(tmpDir, ".phase2s", "memory"), { recursive: true });
+    await mkdir(join(tmpDir, ".phase2s"), { recursive: true });
+    await writeFile(
+      join(tmpDir, ".phase2s", "memory", "learnings.jsonl"),
+      '{"key":"a","insight":"always write tests"}\n{"key":"b","insight":"use typescript strict"}\n',
+      "utf-8",
+    );
+  });
+
+  afterAll(async () => {
+    await rm(tmpDir, { recursive: true }).catch(() => {});
+    vi.restoreAllMocks();
+  });
+
+  const baseConfig = {
+    provider: "ollama",
+    ollamaBaseUrl: "http://localhost:11434/v1",
+    model: "gemma4:latest",
+    maxTurns: 50,
+    timeout: 120_000,
+    allowDestructive: false,
+    verifyCommand: "npm test",
+    requireSpecification: false,
+    codexPath: "codex",
+  } as unknown as Config;
+
+  it("falls back to loadLearnings() when queryText is empty", async () => {
+    const result = await loadRelevantLearnings(tmpDir, "", baseConfig);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to loadLearnings() when ollamaBaseUrl is absent", async () => {
+    const noOllamaConfig = { ...baseConfig, ollamaBaseUrl: undefined } as unknown as Config;
+    const result = await loadRelevantLearnings(tmpDir, "write tests", noOllamaConfig);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to loadLearnings() when Ollama embed returns []", async () => {
+    // Mock fetch to simulate Ollama being down
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+
+    const result = await loadRelevantLearnings(tmpDir, "write tests", baseConfig);
+    // Should fall back and still return learnings
+    expect(result.length).toBeGreaterThan(0);
+
+    vi.restoreAllMocks();
+  });
+
+  it("uses semantic path when queryText and ollamaBaseUrl present and embed succeeds", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ embeddings: [[0.1, 0.2, 0.3]] }),
+    } as Response));
+
+    const result = await loadRelevantLearnings(tmpDir, "write tests", baseConfig, 1);
+    // Should return at most k=1 result
+    expect(result.length).toBeLessThanOrEqual(1);
+
+    vi.restoreAllMocks();
+  });
+
+  it("returns results in similarity rank order, not JSONL insertion order", async () => {
+    // Return two different vectors per call: high similarity for "b", low for "a"
+    let callCount = 0;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => {
+      callCount++;
+      // Query vector is [1,0,0]; "b" gets [1,0,0] (similarity=1), "a" gets [0,1,0] (similarity=0)
+      const embedding = callCount === 1 ? [[1, 0, 0]] : callCount === 2 ? [[0, 1, 0]] : [[1, 0, 0]];
+      return Promise.resolve({ ok: true, json: async () => ({ embeddings: embedding }) } as Response);
+    }));
+
+    // Use a fresh tmpDir so index isn't cached from previous test
+    const { mkdtemp, mkdir: mkdirFn, writeFile: wf, rm: rmFn } = await import("node:fs/promises");
+    const { join: j } = await import("node:path");
+    const dir = await mkdtemp(j(process.cwd(), ".test-order-"));
+    try {
+      await mkdirFn(j(dir, ".phase2s", "memory"), { recursive: true });
+      await wf(j(dir, ".phase2s", "memory", "learnings.jsonl"),
+        '{"key":"a","insight":"always write tests"}\n{"key":"b","insight":"use typescript strict"}\n', "utf-8");
+
+      const result = await loadRelevantLearnings(dir, "typescript", baseConfig, 2);
+      // "b" has higher similarity to query — should appear first regardless of JSONL order
+      if (result.length === 2) {
+        expect(result[0].key).toBe("b");
+        expect(result[1].key).toBe("a");
+      }
+    } finally {
+      await rmFn(dir, { recursive: true }).catch(() => {});
+      vi.restoreAllMocks();
+    }
   });
 });

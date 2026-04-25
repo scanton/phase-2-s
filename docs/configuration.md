@@ -27,7 +27,7 @@ Full reference with all fields:
 # codex-cli:   uses your ChatGPT subscription via Codex CLI (default, no API key needed)
 # openai-api:  direct OpenAI API access (requires OPENAI_API_KEY, per-token billing)
 # anthropic:   Anthropic API (requires ANTHROPIC_API_KEY, defaults to claude-3-5-sonnet-20241022)
-# ollama:      local Ollama server (no API key, defaults to llama3.1:8b, requires ollama serve)
+# ollama:      local Ollama server (no API key, defaults to gemma4:latest, requires ollama serve)
 # openrouter:  OpenRouter gateway (requires OPENROUTER_API_KEY, 50+ models via one key)
 # gemini:      Google Gemini (requires GEMINI_API_KEY, free tier available, defaults to gemini-2.0-flash)
 # minimax:     MiniMax API (requires MINIMAX_API_KEY, defaults to MiniMax-M2.5)
@@ -36,7 +36,7 @@ provider: codex-cli
 # Model to use
 # If not set: auto-detected from ~/.codex/config.toml (codex-cli provider)
 # or defaults to gpt-4o (openai-api), claude-3-5-sonnet-20241022 (anthropic),
-# llama3.1:8b (ollama), openai/gpt-4o (openrouter), gemini-2.0-flash (gemini),
+# gemma4:latest (ollama), openai/gpt-4o (openrouter), gemini-2.0-flash (gemini),
 # MiniMax-M2.5 (minimax)
 # model: gpt-4o
 # model: claude-3-5-sonnet-20241022
@@ -60,10 +60,18 @@ provider: codex-cli
 # Raise for models with higher ceilings (claude-3-opus supports up to 4096 output).
 # anthropicMaxTokens: 8192
 
-# Ollama base URL (ollama provider only, default http://localhost:11434/v1)
-# Change this if your Ollama server runs on a different host or port.
+# Ollama base URL (ollama provider only OR for semantic learnings injection)
+# Set this to enable semantic learnings retrieval even when using codex-cli or another provider.
+# Phase2S uses the local Ollama server to embed your learnings and find the most relevant ones
+# for each task — instead of just injecting the most recent ones.
 # Warning: remote URLs will send prompts and tool results to that host.
 # ollamaBaseUrl: http://localhost:11434/v1
+
+# Ollama embedding model (optional, requires ollamaBaseUrl to be set)
+# When set, Phase2S uses this model for embeddings and the main model for chat.
+# Useful for lighter, faster embed models (e.g., nomic-embed-text, mxbai-embed-large)
+# without changing your chat model. Defaults to the main model when absent.
+# ollamaEmbedModel: nomic-embed-text
 
 # OpenRouter API key (openrouter provider only)
 # Falls back to OPENROUTER_API_KEY environment variable.
@@ -300,7 +308,7 @@ All 29 skills work on Claude 3.5 Sonnet. Raise `anthropicMaxTokens` if you hit t
 ```yaml
 # .phase2s.yaml
 provider: ollama
-model: qwen2.5-coder:7b   # or llama3.1:8b
+model: gemma4:latest   # or qwen2.5-coder:7b
 ```
 
 ```bash
@@ -308,7 +316,7 @@ ollama pull qwen2.5-coder:7b
 phase2s
 ```
 
-No API keys. Everything runs on your machine after the initial model pull. `qwen2.5-coder:7b` and `llama3.1:8b` both support function calling. `llama3.2` (3B) may drop tool calls on complex prompts.
+No API keys. Everything runs on your machine after the initial model pull. `gemma4:latest` and `qwen2.5-coder:7b` both support function calling. `llama3.2` (3B) may drop tool calls on complex prompts.
 
 If your Ollama server is on a different host, set `ollamaBaseUrl`. Note: remote URLs will send prompts and tool results to that host.
 

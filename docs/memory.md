@@ -185,9 +185,27 @@ ripgrep (rg) is installed, prefer it over grep for codebase search
 
 Plain JSONL. One entry per line. Edit it manually if you need to remove or update a learning.
 
-### Context limit
+### Context limit and semantic retrieval
 
-Phase2S injects up to 2000 characters of learnings into the system prompt. If your learnings file exceeds that, Phase2S uses the most recent entries and trims oldest first.
+By default, Phase2S injects up to 2000 characters of learnings, using the most recent entries first.
+
+**With Ollama configured, you get semantic retrieval instead.** Set `ollamaBaseUrl` in `.phase2s.yaml` (even when using the `codex-cli` provider for chat) and Phase2S will:
+
+1. Embed the current task description using your local Ollama model
+2. Score every learning by cosine similarity against that embedding
+3. Inject the top matches — the ones most relevant to what you're working on — and skip the 2000-char truncation (since the selection is already filtered)
+
+The index is built on first use and updated incrementally at `.phase2s/search-index.jsonl`. Only changed or new learnings are re-embedded — existing unchanged entries are reused.
+
+**Fallback:** if Ollama is unavailable, the embed call fails, or no task text exists yet (e.g., fresh REPL session before your first message), Phase2S falls back to the recency-based 2000-char injection automatically. No configuration needed for the fallback — it's always there.
+
+To use a dedicated, lighter embedding model:
+
+```yaml
+# .phase2s.yaml
+ollamaBaseUrl: http://localhost:11434/v1
+ollamaEmbedModel: nomic-embed-text   # separate embed model from your chat model
+```
 
 ---
 
@@ -250,6 +268,7 @@ Everything goes to `.phase2s/` inside your project directory. Nothing writes out
 | `.phase2s/sessions/index.json` | O(1) session index (id, parentId, branchName, createdAt per entry) | Updated on every `saveSession`/`cloneSession`; rebuilt automatically if missing or corrupt |
 | `.phase2s/state.json` | Active session UUID pointer | On each session start |
 | `.phase2s/memory/learnings.jsonl` | Persistent learnings from `/remember` | When you run `/remember` |
+| `.phase2s/search-index.jsonl` | Vector index for semantic learnings retrieval (SHA-256 + embedding per entry) | On first session with Ollama configured; updated incrementally on changes |
 | `.phase2s/skills/<name>/SKILL.md` | Custom skills from `/skill` | When you run `/skill` |
 | `.phase2s/context/<ts>-<slug>.md` | Satori context snapshot (git branch, commits, diff, task) | Before every `/satori` run |
 | `.phase2s/satori/<slug>.json` | Satori attempt log (attempt #, pass/fail, failure lines) | After every `/satori` run |

@@ -26,7 +26,7 @@ import chalk from "chalk";
 import { Agent } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
 import { RateLimitError } from "../core/rate-limit-error.js";
-import { loadLearnings, formatLearningsForPrompt } from "../core/memory.js";
+import { loadRelevantLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { parseSpec, type Spec, type SubTask } from "../core/spec-parser.js";
 import { computeSpecHash, readState, writeState, clearState, type GoalState, type LevelWorkerState, type OrchestratorCheckpoint } from "../core/state.js";
 import { RunLogger } from "../core/run-logger.js";
@@ -281,9 +281,9 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     );
   }
 
-  // Set up agent
-  const learningsList = await loadLearnings(process.cwd());
-  const learningsStr = formatLearningsForPrompt(learningsList);
+  // Set up agent — semantic learnings lookup using goal title as query
+  const learningsList = await loadRelevantLearnings(process.cwd(), spec.title, config);
+  const learningsStr = formatLearningsForPrompt(learningsList, { skipCharCap: config.ollamaBaseUrl !== undefined });
 
   // Load skills to get satori + adversarial templates and settings
   const skills = await loadAllSkills();

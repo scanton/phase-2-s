@@ -9,3 +9,5 @@ dist/action/package.json
 .test-*/
 .gstack/
 .worktrees/
+.phase2s/search-index.jsonl
+.phase2s/search-index.jsonl.tmp
