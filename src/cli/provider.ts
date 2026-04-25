@@ -27,9 +27,13 @@ function readConfigRaw(configPath: string): Record<string, unknown> {
   const raw = readFileSync(configPath, "utf-8");
   // Let parse errors propagate — callers must not silently overwrite a corrupt config.
   const parsed = yamlParse(raw);
-  return (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-    ? (parsed as Record<string, unknown>)
-    : {};
+  if (parsed === null || parsed === undefined) return {};
+  if (typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(
+      `${configPath} must be a YAML mapping (key: value), not a ${Array.isArray(parsed) ? "list" : typeof parsed}`
+    );
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function writeConfigRaw(configPath: string, data: Record<string, unknown>): void {
@@ -115,7 +119,7 @@ export async function runProviderLogin(providerArg: string | undefined): Promise
   }
 
   if (!isValidProvider(providerName)) {
-    process.stderr.write(chalk.red(`✖  Unknown provider: "${providerName}". Supported: ${PROVIDERS.join(", ")}\n`));
+    process.stderr.write(chalk.red(`✖  Unknown provider: "${providerName}". Supported: ${PROVIDERS.join(", ")}\n  → Run \`phase2s provider login <provider>\` with one of the names above.\n`));
     process.exit(1);
   }
 
@@ -129,7 +133,7 @@ export async function runProviderLogin(providerArg: string | undefined): Promise
     try {
       config = readConfigRaw(configPath);
     } catch {
-      process.stderr.write(chalk.red(`✖  ${configPath} contains invalid YAML. Fix it manually before running provider login.\n`));
+      process.stderr.write(chalk.red(`✖  ${configPath} contains invalid YAML.\n  → Fix the file manually (it must be a key: value mapping), then re-run \`phase2s provider login\`.\n`));
       process.exit(1);
     }
   }
@@ -149,7 +153,7 @@ export async function runProviderLogin(providerArg: string | undefined): Promise
   if (keyField) {
     const apiKey = await promptApiKey(keyField);
     if (!apiKey) {
-      process.stderr.write(chalk.red(`✖  API key cannot be empty.\n`));
+      process.stderr.write(chalk.red(`✖  API key cannot be empty.\n  → Enter a non-empty key when prompted, or paste it directly.\n`));
       process.exit(1);
     }
     config[keyField] = apiKey;
@@ -167,7 +171,7 @@ export function runProviderLogout(): void {
   const configPath = detectConfigPath();
 
   if (!configPath) {
-    process.stderr.write(chalk.red("✖  No .phase2s.yaml or .phase2s.yml found in the current directory.\n"));
+    process.stderr.write(chalk.red("✖  No .phase2s.yaml found in the current directory.\n  → Run `phase2s init` to create a config file, then `phase2s provider login <provider>`.\n"));
     process.exit(1);
   }
 

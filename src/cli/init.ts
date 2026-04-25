@@ -8,7 +8,7 @@
  * The interactive prompt loop is in promptConfig (not exported).
  */
 
-import { createRl, ask as askRl } from "./prompt-util.js";
+import { createRl, ask as askRl, PromptInterrupt } from "./prompt-util.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -300,7 +300,14 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
     };
   } else {
     const existingConfig = readExistingConfig(configPath);
-    config = await promptConfig(existingConfig);
+    try {
+      config = await promptConfig(existingConfig);
+    } catch (err) {
+      if (err instanceof PromptInterrupt) {
+        process.exit(0);
+      }
+      throw err;
+    }
   }
 
   // Validate prerequisites

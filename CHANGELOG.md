@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.45.0 — 2026-04-25
+
+Sprint 71 — Quality and polish. No new features; four targeted fixes that make the tool safer and more communicative: a silent config-overwrite bug is closed, Ctrl+C inside `:commit` now saves the session instead of bypassing it, error messages on the top failure paths gain actionable "→ what to do next" hints, and provider test coverage jumps from 2 to 16 cases.
+
+### Fixed
+
+- **`readConfigRaw` silent overwrite bug closed** — If `.phase2s.yaml` contains valid but non-mapping YAML (e.g. a list like `- item`), `readConfigRaw` previously returned `{}` and provider commands would silently replace the file with an empty config. It now throws the same error that `loadConfig()` has always thrown, so provider login aborts instead of overwriting the file.
+
+- **Ctrl+C inside `:commit` no longer bypasses session save** — `prompt-util.ts` was calling `process.exit(0)` from a readline SIGINT listener, which killed the process before the REPL's own SIGINT handler could run its session-save-and-cleanup path. The fix moves SIGINT handling into the `ask()` promise as a rejection (`PromptInterrupt`), and the `:commit` flow in `index.ts` catches it and prints "Commit cancelled." The main REPL's SIGINT handler runs independently and saves the session as intended.
+
+- **Actionable error messages on top provider failure paths** — Errors in `phase2s provider login` and `logout` now include a `→ what to do next` hint:
+  - Unknown provider: `→ Run \`phase2s provider login <provider>\` with one of the names above.`
+  - Invalid YAML file: `→ Fix the file manually (it must be a key: value mapping), then re-run \`phase2s provider login\`.`
+  - Empty API key: `→ Enter a non-empty key when prompted, or paste it directly.`
+  - No config file: `→ Run \`phase2s init\` to create a config file, then \`phase2s provider login <provider>\`.`
+
+### Tests
+
+- **16 provider tests** (was 9) — Seven new cases cover all the gaps: invalid YAML parse failure, list-format YAML (silent-overwrite regression test), empty API key, re-login same provider (model fields NOT cleared), ollama login (no key prompt), logout with key field absent from config, and a permission assertion that `statSync(configPath).mode & 0o777 === 0o600`.
+
+- **3 prompt-util tests** — `ask()` resolves on normal input, rejects with `PromptInterrupt` on SIGINT without calling `process.exit`, and `PromptInterrupt` is a proper `Error` subclass.
+
 ## v1.44.0 — 2026-04-24
 
 Sprint 70 — Provider subcommand and compaction testability. Users can now inspect and switch providers without re-running `phase2s init`. The compaction rm cleanup path is now fully testable via an injectable `rmFileFn?` dependency.

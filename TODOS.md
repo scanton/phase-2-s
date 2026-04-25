@@ -6,6 +6,14 @@
 
 ---
 
+## Backlog — Post-Sprint 71 notes (2026-04-25)
+
+- [ ] **REPL readline conflict between main loop and :commit helper** — The main REPL creates one readline interface (`index.ts:992`). `:commit` opens a second readline instance on the same stdin/stdout (`index.ts:1394`, `prompt-util.ts:16`). This creates a structural stability risk: the two interfaces compete for input. Sprint 71 Ctrl+C fix addresses the most dangerous symptom (bypass of session save), but the root structural issue remains. Investigate whether the helper prompts can reuse the main REPL's readline rather than creating new ones. Tracking from Codex outside-voice finding #5 (Sprint 71 review).
+
+- [ ] **Error message standardization across `loadConfig()` callers** — `loadConfig()` is called from 4+ entrypoints in `index.ts` plus `mcp/server.ts` (which swallows errors entirely). Each callsite handles errors differently. A future sprint should add a `normalizeConfigError()` wrapper at each callsite so bad YAML, schema violations, and missing fields surface with actionable messages regardless of entrypoint. Tracking from Codex outside-voice finding #1 (Sprint 71 review).
+
+---
+
 ## Backlog — Post-Sprint 70 notes (2026-04-24)
 
 - [ ] **Consolidate provider enums into `provider-registry.ts`** — `src/cli/provider.ts` uses the new centralized registry exclusively, but the provider name lists and key field maps in `src/cli/init.ts`, `src/core/config.ts`, and `src/cli/doctor.ts` are still inline duplicates. Migrate them to `PROVIDERS` / `getProviderKeyField()` / `isValidProvider()` from `provider-registry.ts` to eliminate the drift risk (a new provider added to the registry must currently be added in four places). Low-risk refactor with no behavioral change.
