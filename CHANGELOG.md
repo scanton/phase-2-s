@@ -6,15 +6,15 @@ Sprint 73 — Security & Resilience Hardening v2.
 
 ### Added
 
-- **Per-turn `[PHASE2S_LEARNINGS]` context messages** (Item E) — Learnings are no longer baked into the system prompt at session start. Instead, `Conversation.upsertLearningsMessage()` injects a rolling `role: "user"` message containing the current learnings immediately before each LLM turn in the agent loop. This keeps the injected content up-to-date as learnings evolve within a session, and allows `agent.refreshLearnings()` to update the active learnings string mid-session (e.g., between REPL turns). Session save and compaction strip the marker message before persisting so the ephemeral injection does not bloat saved history.
+- **Per-turn `[PHASE2S_LEARNINGS]` context messages** — Learnings are no longer baked into the system prompt at session start. Instead, `Conversation.upsertLearningsMessage()` injects a rolling `role: "user"` message containing the current learnings immediately before each LLM turn in the agent loop. This keeps the injected content up-to-date as learnings evolve within a session, and allows `agent.refreshLearnings()` to update the active learnings string mid-session (e.g., between REPL turns). Session save and compaction strip the marker message before persisting so the ephemeral injection does not bloat saved history.
 
-- **`normalizeConfigError()`** (Item B) — New exported helper in `config.ts` that converts raw `loadConfig()` errors (`ZodError`, YAML parse failures, ENOENT, EACCES) into human-readable CLI messages. Wired into all 5 `loadConfig()` call sites in `index.ts` and `mcp/server.ts`. Seven new tests covering all error branches.
+- **`normalizeConfigError()`** — New exported helper in `config.ts` that converts raw `loadConfig()` errors (`ZodError`, YAML parse failures, ENOENT, EACCES) into human-readable CLI messages. Wired into all 5 `loadConfig()` call sites in `index.ts` and `mcp/server.ts`. Seven new tests covering all error branches.
 
-- **`heuristicSort()`** (Item D) — Keyword/recency hybrid sort exported from `memory.ts`. Used as the fallback ranking strategy in `loadRelevantLearnings()` for all Ollama failure paths (network error, empty embedding, no baseUrl configured). Score formula: `(matchedKeywords / totalKeywords) * recencyWeight(ts)`, where absent timestamps score 1.0.
+- **`heuristicSort()`** — Keyword/recency hybrid sort exported from `memory.ts`. Used as the fallback ranking strategy in `loadRelevantLearnings()` for all Ollama failure paths (network error, empty embedding, no baseUrl configured). Score formula: `(matchedKeywords / totalKeywords) * recencyWeight(ts)`, where absent timestamps score 1.0.
 
 ### Changed
 
-- **Provider enum consolidation** (Item C) — `PROVIDERS`, `isValidProvider()`, and `getProviderKeyField()` are now imported from `provider-registry.ts` in `config.ts`, `doctor.ts`, and `init.ts`. Inline provider arrays deleted; double-cast `as unknown as [string, ...string[]]` handles Zod's literal-tuple requirement without generating a widened union type.
+- **Provider enum consolidation** — `PROVIDERS`, `isValidProvider()`, and `getProviderKeyField()` are now imported from `provider-registry.ts` in `config.ts`, `doctor.ts`, and `init.ts`. Inline provider arrays deleted; double-cast `as unknown as [string, ...string[]]` handles Zod's literal-tuple requirement without generating a widened union type.
 
 - **`buildSystemPrompt()` learnings param removed** — The `learnings` argument is gone; the system prompt no longer embeds learnings text. All callers updated. Existing tests updated to assert LEARNINGS content is absent from the system prompt.
 
