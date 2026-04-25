@@ -6,6 +6,12 @@
 
 ---
 
+## Backlog — Post-Sprint 70 notes (2026-04-24)
+
+- [ ] **Consolidate provider enums into `provider-registry.ts`** — `src/cli/provider.ts` uses the new centralized registry exclusively, but the provider name lists and key field maps in `src/cli/init.ts`, `src/core/config.ts`, and `src/cli/doctor.ts` are still inline duplicates. Migrate them to `PROVIDERS` / `getProviderKeyField()` / `isValidProvider()` from `provider-registry.ts` to eliminate the drift risk (a new provider added to the registry must currently be added in four places). Low-risk refactor with no behavioral change.
+
+---
+
 ## Backlog — Post-Sprint 69 notes (2026-04-24)
 
 - All 7 hardening items from the Sprint 69 /plan-eng-review resolved: BFS traversal, atomic backup, sandbox shell injection, sandbox state (b) TOCTOU, sandbox name collision (state d MD5 suffix documented), plans/ symlink escape, plans/ TOCTOU (accepted). +7 net new tests; zero regression from 1256-pass baseline.
