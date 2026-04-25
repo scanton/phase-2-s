@@ -13,7 +13,8 @@
  * provider doesn't stall the REPL indefinitely.
  */
 
-import { writeFile as defaultWriteFile, rename as defaultRename, rm } from "node:fs/promises";
+import { writeFile as defaultWriteFile, rename as defaultRename, rm as defaultRm } from "node:fs/promises";
+import type { RmOptions } from "node:fs";
 import { basename } from "node:path";
 import chalk from "chalk";
 import type { Provider, Message } from "../providers/types.js";
@@ -214,6 +215,8 @@ export interface PerformCompactionDeps {
   writeFileFn?: (path: string, data: string, opts: { encoding: "utf-8"; mode: number }) => Promise<void>;
   /** Optional rename implementation for atomic backup (default: fs.promises.rename). */
   renameFileFn?: (oldPath: string, newPath: string) => Promise<void>;
+  /** Optional rm implementation for tmp-file cleanup (default: fs.promises.rm). */
+  rmFileFn?: (path: string, opts?: RmOptions) => Promise<void>;
   buildCompactionSummaryFn?: (provider: Provider, messages: Message[]) => Promise<string>;
   /** Required — compaction must persist the compacted conversation or the history is lost in memory only. */
   saveSessionFn: (cwd: string, path: string, conv: Conversation, meta: SessionMeta) => Promise<void>;
@@ -242,6 +245,7 @@ export async function performCompaction(deps: PerformCompactionDeps): Promise<vo
     onJustCompacted,
     writeFileFn = defaultWriteFile,
     renameFileFn = defaultRename,
+    rmFileFn = defaultRm,
     buildCompactionSummaryFn = buildCompactionSummary,
     saveSessionFn,
   } = deps;
@@ -263,7 +267,7 @@ export async function performCompaction(deps: PerformCompactionDeps): Promise<vo
     await renameFileFn(tmpBackupPath, backupPath);
   } catch (err) {
     // Clean up tmp file if rename (or write) failed
-    try { await rm(tmpBackupPath, { force: true }); } catch (rmErr) {
+    try { await rmFileFn(tmpBackupPath, { force: true }); } catch (rmErr) {
       console.warn(chalk.yellow(`⚠  Could not clean up tmp backup file ${basename(tmpBackupPath)}: ${rmErr instanceof Error ? rmErr.message : String(rmErr)}`));
     }
     process.stdout.write("\n");

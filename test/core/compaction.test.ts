@@ -422,18 +422,44 @@ describe("performCompaction error branches (C2)", () => {
     expect(renamedPairs[0][1]).not.toMatch(/\.tmp\./); // final path has no .tmp.
   });
 
-  it("atomic backup: tmp file cleaned up when renameFileFn throws", async () => {
+  it("rm cleanup: rmFileFn called with tmpBackupPath when renameFileFn throws", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const writtenPaths: string[] = [];
+    const rmPaths: string[] = [];
+    const deps = makeDeps({
+      writeFileFn: vi.fn().mockImplementation(async (path: string) => {
+        writtenPaths.push(path);
+      }),
+      renameFileFn: vi.fn().mockRejectedValue(new Error("disk full")),
+      rmFileFn: vi.fn().mockImplementation(async (path: string) => {
+        rmPaths.push(path);
+      }),
+    });
+
+    await performCompaction(deps);
+
+    // rm must be called with the same tmp path that writeFileFn received
+    expect(writtenPaths).toHaveLength(1);
+    expect(rmPaths).toHaveLength(1);
+    expect(rmPaths[0]).toBe(writtenPaths[0]);
+    expect(rmPaths[0]).toMatch(/\.tmp\.\d+$/);
+    // Compaction must have aborted
+    expect(deps.setConversation).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Compaction aborted"));
+    warnSpy.mockRestore();
+  });
+
+  it("rm cleanup: rmErr diagnostic warn fires when rmFileFn rejects", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const deps = makeDeps({
       writeFileFn: vi.fn().mockResolvedValue(undefined),
       renameFileFn: vi.fn().mockRejectedValue(new Error("disk full")),
+      rmFileFn: vi.fn().mockRejectedValue(new Error("rm failed")),
     });
-    // Inject a mock rm by patching the module — instead we just verify the
-    // compaction aborted and warns correctly (the rm is a best-effort cleanup).
+
     await performCompaction(deps);
 
-    // Compaction must have aborted — conversation not replaced
-    expect(deps.setConversation).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Could not clean up tmp backup file"));
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Compaction aborted"));
     warnSpy.mockRestore();
   });
