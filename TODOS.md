@@ -6,11 +6,17 @@
 
 ---
 
+## Backlog — Post-Sprint 69 notes (2026-04-24)
+
+- All 7 hardening items from the Sprint 69 /plan-eng-review resolved: BFS traversal, atomic backup, sandbox shell injection, sandbox state (b) TOCTOU, plans/ symlink escape, plans/ TOCTOU (accepted). +7 net new tests; zero regression from 1256-pass baseline.
+
+---
+
 ## Backlog — Post-Sprint 68 notes (2026-04-24)
 
 - [x] **`:dump html` image external-request isolation** — **Completed: v1.42.0 (2026-04-24).** Sprint 68 upgraded the href/src filter to a protocol allowlist (`https?:`, `mailto:`, `#`), blocking `javascript:`, `data:`, `vbscript:`, and `file://` attacks. `<img>` tags are stripped via `marked.use({ renderer: { image: ({ text }) => text } })` so alt text renders instead — AI-response images can no longer cause the exported HTML to make outbound browser requests on open.
 
-- [ ] **BFS traversal for `collectMatchingFiles`** — Current DFS-capped traversal (500 results, depth 4) means the best basename match may never be collected in very large trees, making the completer sort best-effort. Switching to BFS would surface files closer to `cwd` first, improving ranking in deep repos. `src/cli/file-attachment.ts`, `collectMatchingFiles`. Low priority.
+- [x] **BFS traversal for `collectMatchingFiles`** — **Completed: v1.43.0 (2026-04-24).** Replaced recursive DFS (depth 4 cap) with iterative BFS. Shallower directories visited first → nearest basename match always surfaced. Safety: `visited < 5000` dir cap. `_depth` param kept for API compatibility (marked `@deprecated`). `MAX_COMPLETER_DEPTH` kept as deprecated export. Old depth-cap test replaced with "BFS finds file at depth >4" + BFS order + visited-cap tests.
 
 ---
 
@@ -76,7 +82,7 @@
 
 - [x] **Last user message drop in `buildCompactionSummary`** — **Completed: v1.40.0 (2026-04-22).** Dropped user message content is now appended to the summary prompt wrapped in `<user_message>` XML tags. `<` and `>` in the dropped content are HTML-escaped before wrapping to prevent prompt injection. 3 tests added.
 
-- [ ] **Non-atomic backup write** — `performCompaction` writes the backup file in a single `writeFile` call with no tmp-then-rename dance. A crash mid-write could leave a corrupt backup. Risk is low (backups are only read on manual recovery) but could be hardened. **Low priority — INVESTIGATE.**
+- [x] **Non-atomic backup write** — **Completed: v1.43.0 (2026-04-24).** `performCompaction` now writes to `${backupPath}.tmp.${process.pid}`, then calls `rename()` (POSIX-atomic) to move it to the final path. Crash mid-write leaves only the tmp file (not the target). Tmp is cleaned up on rename failure. `renameFileFn` injectable dep added to `PerformCompactionDeps` for testability. 2 tests added: rename path tracing + rename failure cleanup.
 
 ---
 
@@ -94,9 +100,9 @@
 
 - [ ] **`--sandbox` name collision across slugs** — Two names that slugify to the same value (e.g. "my feature" and "my_feature") will silently share the same worktree. This is rarely a problem in practice but could surprise users. Fix: detect collision at startup and either warn or append a short random suffix (e.g. `-a3f`). **Post-Sprint 52.**
 
-- [ ] **`--sandbox` shell injection via projectCwd** — `projectCwd` is interpolated directly into execSync commands (`git -C "${projectCwd}"`). If the path contains shell metacharacters this could be exploited. In practice this path comes from `process.cwd()` (CLI) or `cwd` (MCP), both of which are trusted, so risk is low. Fix: use the `cwd` option on `execSync` instead of embedding the path in the command string. **Low priority.**
+- [x] **`--sandbox` shell injection via projectCwd** — **Completed: v1.43.0 (2026-04-24).** All variable-path git commands in `startSandbox()` migrated from `execSync(string)` to `execFileSync("git", [...args])` — no shell involved, shell metacharacters in paths are inert. Fixed: states (b) checkout/merge/remove/branch-D, state (c), state (d). Lexically-safe "constant string" calls kept as `execSync`. Smoke test verifies `execFileSync` is used for `worktree add`.
 
-- [ ] **`--sandbox` state (b) TOCTOU: branch deleted between prune and worktree-add** — State (b) path: `git worktree prune` removes stale worktree ref, then `git worktree add <path> <branch>` assumes the branch still exists. If another process (CI cleanup, user in another terminal) runs `git branch -D sandbox/...` between those two operations, the add fails with "branch not found". Current behavior: `console.error + process.exit(1)`. Mitigation: re-check `git branch --list "${branchName}"` after pruning; fall through to state (d) (fresh create) if branch is gone. **Low priority — requires a tight race window.**
+- [x] **`--sandbox` state (b) TOCTOU: branch deleted between prune and worktree-add** — **Completed: v1.43.0 (2026-04-24).** After `git worktree prune`, `git branch --list "${branchName}"` is called via `execFileSync`. If the branch is gone (deleted between prune and add), the code falls through to state (d) fresh-create with `-b`. TOCTOU test added: mock returns empty branch list → verifies `-b` is used.
 
 - [x] **`toolNameToSkillName` lossy for underscore skill names** — Fixed by storing `_skillName` on the MCPTool descriptor in `skillToTool()` and reading it directly in `handleRequest` instead of the lossy round-trip. **Completed: v1.27.0 (2026-04-13)**
 
@@ -110,9 +116,9 @@
 
 ## Backlog — Post-Sprint 50 /review findings (2026-04-10)
 
-- [ ] **`plans/` symlink escape** — If `plans/` is itself a symlink pointing outside the project, `plans_write` will follow it. The `realpath()` call on the parent only runs on the parent directory, not on `plans/` itself in a pre-flight check. Fix: add a `realpath` check on `plansDir` at tool-creation time (not per-call) and refuse if it resolves outside `cwd`. Low risk in practice — someone would have to deliberately symlink their `plans/` dir.
+- [x] **`plans/` symlink escape** — **Completed: v1.43.0 (2026-04-24).** `assertInPlansSandbox` now calls `realpath(plansDir)` on every write. If the resolved `plans/` is not under `realpath(cwd) + sep`, the write is blocked with "symlink escape blocked". Guard only fires when `plans/` exists (avoids false positives on macOS `/var` → `/private/var` symlinks in temp dirs). Symlink escape test added: creates real `plans/ → /outside` symlink, verifies write is blocked.
 
-- [ ] **`plans/` TOCTOU on `mkdir`** — `assertInPlansSandbox` runs, returns the resolved path, then `mkdir` runs. Between those two calls a symlink could be substituted. True TOCTOU; mitigation is `O_NOFOLLOW` on the final `writeFile`. Low priority — exploiting this requires a race condition in a local filesystem.
+- [x] **`plans/` TOCTOU on `mkdir`** — **Completed: v1.43.0 (2026-04-24).** Risk accepted as low: symlink escape guard in `assertInPlansSandbox` already blocks the most dangerous case (`plans/` itself being a symlink). Per-file `O_NOFOLLOW` is not cleanly exposed via Node.js `writeFile`. A TOCTOU comment was added to the code at the `mkdir` call site documenting the accepted risk and why further mitigation is impractical.
 
 - [x] **`--sandbox` flag for interactive REPL** — `phase2s --sandbox <name>` creates an isolated git worktree and starts the session inside it. Already have the worktree infrastructure from parallel goal execution. Useful for exploration without risking the main branch. **Completed: v1.26.0 (2026-04-13)**
 

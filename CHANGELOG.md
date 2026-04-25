@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.43.0 — 2026-04-24
+
+Sprint 69 — Security and resilience hardening. Seven low-priority backlog items resolved in one sweep, leaving the codebase clean for future feature work. The most visible change: `@file` Tab completion now finds files at any depth (not just depth ≤ 4) because BFS visits shallow directories first.
+
+### Changed
+
+- **`@file` Tab completion uses BFS traversal** — `collectMatchingFiles` is rewritten as iterative breadth-first search. Files in shallow directories are always surfaced before deeper matches with the same basename, so `@agent<Tab>` reliably returns `src/core/agent.ts` rather than a deeper `goal/agent-result-types.ts`. Safety caps: 500 results and 5,000 directories visited. The `depth` parameter is kept for API compatibility but is no longer used.
+
+- **`:compact` backup is now crash-safe** — The session backup written before compaction now uses a tmp-then-rename atomic pattern (`backup.json.tmp.<pid>` → `backup.json`). A crash or power loss mid-write leaves either a complete backup or nothing — never a corrupt half-written recovery file.
+
+### Fixed
+
+- **`--sandbox` shell injection surface closed** — All `execSync` calls that embed variable paths (`worktreePath`, `branchName`, `originalBranch`) in shell strings are replaced with `execFileSync` array form. No shell is involved; special characters in paths cannot be exploited.
+
+- **`--sandbox` state (b) TOCTOU** — After `git worktree prune`, the code now re-checks whether the branch still exists before calling `git worktree add`. If the branch was deleted externally between prune and add, it falls through to a clean fresh create rather than a failed-and-unrecoverable error.
+
+- **`plans_write` symlink escape blocked** — If `plans/` is a symlink pointing outside the project root, `plans_write` now detects this and blocks the write with "plans/ directory resolves outside the project — symlink escape blocked". The check is skipped when `plans/` doesn't yet exist (correct behavior on first write).
+
 ## v1.42.0 — 2026-04-24
 
 Sprint 68 — Polish and CI hardening. Three improvements that tighten up Sprint 67's work: `:dump html` now produces properly rendered HTML with `marked` (real headings, formatted code blocks, readable structure — not a `<pre>` dump of raw markdown), `@file` Tab completions are ranked so the most likely match surfaces first (exact prefix beats substring, shorter path beats longer), and the flaky `clone.test.ts` ENOTEMPTY teardown race is fixed for good.
