@@ -143,6 +143,35 @@ describe("translateMessages", () => {
     expect(blocks.some((b) => b.type === "tool_result")).toBe(true);
     expect(blocks.some((b) => b.type === "text")).toBe(true);
   });
+
+  it("merges two consecutive plain-text user messages (prevents Anthropic 400 from [PHASE2S_LEARNINGS] injection)", () => {
+    // Reproduces Sprint 73 Item E: upsertLearningsMessage() inserts a [PHASE2S_LEARNINGS]
+    // user message before the actual user turn. Without the plain→plain merge, Anthropic
+    // receives two consecutive user messages and rejects with a 400.
+    const msgs = [
+      { role: "user" as const, content: "[PHASE2S_LEARNINGS]\nuse vitest not jest" },
+      { role: "user" as const, content: "what test framework should I use?" },
+    ];
+    const result = translateMessages(msgs);
+    // Must produce exactly ONE user message, not two
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("user");
+    // Both contents must be present in the merged message
+    expect(result[0].content).toContain("[PHASE2S_LEARNINGS]");
+    expect(result[0].content).toContain("what test framework should I use?");
+  });
+
+  it("plain→plain merge inserts a separator between the two parts", () => {
+    const msgs = [
+      { role: "user" as const, content: "first message" },
+      { role: "user" as const, content: "second message" },
+    ];
+    const result = translateMessages(msgs);
+    expect(result).toHaveLength(1);
+    expect(typeof result[0].content).toBe("string");
+    // Separator between the two
+    expect((result[0].content as string).includes("\n\n")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

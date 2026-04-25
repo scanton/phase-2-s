@@ -22,7 +22,7 @@ import { loadSkillsFromDir } from "../skills/loader.js";
 import { join } from "node:path";
 import { Conversation } from "../core/conversation.js";
 import { handleRequest, type JSONRPCRequest } from "./handler.js";
-import { loadConfig } from "../core/config.js";
+import { loadConfig, normalizeConfigError } from "../core/config.js";
 import { loadAgentsMd, formatAgentsMdBlock } from "../core/agents-md.js";
 import { buildNotification, MCP_SERVER_VERSION } from "./tools.js";
 import { setupSkillsWatcher } from "./watcher.js";
@@ -62,8 +62,12 @@ export async function runMCPServer(cwd: string): Promise<void> {
   let skills = await loadSkillsFromDir(skillsDir);
 
   // Load config once at startup — avoids per-request disk reads in handleRequest.
-  // If config loading fails, fall back to undefined so handleRequest uses loadConfig().
-  const serverConfig = await loadConfig().catch(() => undefined);
+  // If config loading fails, log the normalized error and fall back to undefined
+  // so handleRequest can try loadConfig() per-request (e.g. after the user fixes the file).
+  const serverConfig = await loadConfig().catch((err: unknown) => {
+    process.stderr.write(`[phase2s] Config error: ${normalizeConfigError(err)}\n`);
+    return undefined;
+  });
 
   // Load AGENTS.md once at startup — avoids per-request disk reads in handleRequest.
   // Changes during a running MCP session require server restart (same as config changes).

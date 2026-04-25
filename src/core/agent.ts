@@ -59,7 +59,7 @@ export interface AgentOptions {
   agentsMdBlock?: string;
   provider?: Provider;
   conversation?: Conversation;
-  /** Pre-formatted learnings string from formatLearningsForPrompt(). Injected into the system prompt. */
+  /** Pre-formatted learnings string from formatLearningsForPrompt(). Injected as a [PHASE2S_LEARNINGS] context message before each LLM turn via upsertLearningsMessage(). */
   learnings?: string;
   /** Working directory for tools that need it (e.g. browser tool screenshot path). Default: process.cwd(). */
   cwd?: string;
@@ -101,10 +101,9 @@ export class Agent {
       [baseCustomPrompt, this.agentsMdBlock].filter(Boolean).join("\n\n") || undefined;
 
     // Always build the system prompt so it reflects the current tool list and config.
-    // When resuming (opts.conversation provided), merge via setConversation() which
-    // strips the stale system message from the loaded session and prepends this
-    // agent's fresh one — so AGENTS.md and current tools are always live.
-    const systemPrompt = buildSystemPrompt(this.tools.list(), customPrompt, opts.learnings);
+    // Learnings are NOT baked into the system prompt — they are injected as a rolling
+    // [PHASE2S_LEARNINGS] context message before each turn via upsertLearningsMessage().
+    const systemPrompt = buildSystemPrompt(this.tools.list(), customPrompt);
     this.conversation = new Conversation(systemPrompt);
     if (opts.conversation) {
       this.setConversation(opts.conversation);
@@ -120,6 +119,16 @@ export class Agent {
   /** Expose the active provider for compaction and other callers. */
   get provider(): Provider {
     return this._provider;
+  }
+
+  /**
+   * Update the stored learnings string.
+   * Called by the REPL before each agent.run() call so the [PHASE2S_LEARNINGS]
+   * context message stays topic-relevant. runOnce() picks up the new value on
+   * its next call to upsertLearningsMessage().
+   */
+  refreshLearnings(newStr: string): void {
+    this.learnings = newStr;
   }
 
 
@@ -171,7 +180,7 @@ export class Agent {
     // config.systemPrompt is intentionally NOT carried over — the new persona replaces it.
     const combinedCustomPrompt =
       [def.systemPrompt, this.agentsMdBlock].filter(Boolean).join("\n\n") || undefined;
-    const newSystemPrompt = buildSystemPrompt(this.tools.list(), combinedCustomPrompt, this.learnings);
+    const newSystemPrompt = buildSystemPrompt(this.tools.list(), combinedCustomPrompt);
     const msgs = this.conversation.getMessages();
     const nonSystemMessages = msgs.filter((m) => m.role !== "system");
     this.conversation = Conversation.fromMessages([
@@ -237,6 +246,16 @@ export class Agent {
 
     while (turns < this.maxTurns) {
       turns++;
+
+      // Inject (or refresh) the [PHASE2S_LEARNINGS] context message before trimming.
+      // This ensures the message is present for the current turn even after compaction
+      // rewrites the conversation. Placed before trimToTokenBudget so it is counted in
+      // the token estimate — but it won't be trimmed (trimToTokenBudget only removes tool turns).
+      if (this.learnings) {
+        this.conversation.upsertLearningsMessage(
+          `${Conversation.LEARNINGS_MARKER}\n${this.learnings}`,
+        );
+      }
 
       this.conversation.trimToTokenBudget();
 

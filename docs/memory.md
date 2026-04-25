@@ -31,7 +31,7 @@ Everything is there: every message you sent, every model response, every tool ca
 
 **What does not get saved:**
 
-- System prompt (regenerated fresh each session, with current learnings injected)
+- System prompt (regenerated fresh each session)
 - The model's internal reasoning (only the final response)
 
 **Session files are private.** Written with `mode: 0o600` (owner-read/write only). On shared machines, your conversation history is not world-readable.
@@ -110,14 +110,14 @@ Memory is explicit. You decide what gets saved. There's no auto-capture that fil
 
 1. You run `/remember` and tell Phase2S what to save
 2. Phase2S appends a JSON line to `.phase2s/memory/learnings.jsonl`
-3. Next session startup: Phase2S loads the file and injects learnings into the system prompt
+3. Before each LLM turn: Phase2S loads your learnings and injects them as a context message just before your prompt — keeping them current if you save new learnings mid-session
 
 ```
 Phase2S v1.0.0
 Learnings: 3 entries from .phase2s/memory/
 ```
 
-The model reads your learnings before your first message. It knows your project conventions without you re-explaining them.
+The model sees your learnings before every turn, not just the first one. If you run `/remember` during a session, the very next turn picks up the new learning automatically.
 
 ### Running `/remember`
 

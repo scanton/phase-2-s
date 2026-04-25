@@ -6,6 +6,18 @@
 
 ---
 
+## Backlog — Post-Sprint 73 notes (v1.47.0, 2026-04-25)
+
+Sprint 73 shipped five items: (C) provider enum consolidation — `PROVIDERS`/`isValidProvider()`/`getProviderKeyField()` from `provider-registry.ts` now imported by `config.ts`, `doctor.ts`, `init.ts` (inline lists deleted); (B) `normalizeConfigError()` — exported from `config.ts`, wired into all 5 `loadConfig()` callsites in `index.ts` plus `mcp/server.ts`; (D) `heuristicSort()` — keyword/recency hybrid sort exported from `memory.ts`, used as fallback for all Ollama failure paths in `loadRelevantLearnings()`; (E) per-turn learnings as `[PHASE2S_LEARNINGS]` rolling context messages — learnings removed from system prompt, `Conversation.upsertLearningsMessage()` injects/replaces before each LLM turn, `agent.refreshLearnings()` updates mid-session, session save and compaction filter the marker message, `buildSystemPrompt()` `learnings` param removed. 13 new tests (7 B/D/E, 6 updated prompt/memory). 1690 passing; 4 pre-existing failures (missing `marked` dep, unrelated). Item A below updated with investigation findings.
+
+- [ ] **REPL readline conflict between main loop and :commit helper** — `index.ts:1016` creates the main REPL readline on `process.stdin`. `:commit`'s secret-warning prompt (`index.ts:1398`) and accept/edit/cancel prompt (`index.ts:1434`) each call `makeRl()` → `createInterface({ input: process.stdin })`, creating two concurrent readline interfaces on the same fd. Node.js readline doesn't support this — the second instance races for input with the first. Fix path: accept the main `rl` as a parameter in `commit.ts`'s prompt helpers (or close/reopen the main rl around the `:commit` prompts). Low-priority: manifests only when a user accepts/edits a commit message from inside the REPL (uncommon flow); readline library handles the conflict gracefully in practice. Defer to a dedicated readline-refactor sprint.
+
+- [ ] **Ollama embedding cache TTL** — The search index at `.phase2s/search-index.jsonl` is invalidated per-learning by SHA-256 content hash, but there is no time-based cache TTL. If a learning's content is unchanged but its semantic meaning drifts (e.g., the embedding model is updated), the cached vector is never refreshed. Consider a `model@version` field in the index entry as a staleness signal.
+
+- [ ] **Per-turn learnings DX indicator** — Learnings are now injected as a rolling `[PHASE2S_LEARNINGS]` user message before each turn. The REPL gives no visual feedback when learnings are refreshed mid-session. Consider a `log.dim("↻ learnings refreshed (N entries)")` line after `agent.refreshLearnings()` calls, gated on a `--verbose` flag or a new `learnings` log level.
+
+---
+
 ## Backlog — Post-Sprint 72 notes (v1.46.0, 2026-04-25)
 
 Sprint 72 shipped semantic learnings injection via Ollama embeddings. `loadRelevantLearnings()` replaces the truncate-oldest strategy with embedding-based retrieval when `ollamaBaseUrl` is configured — even when using `codex-cli` or another provider for chat. `src/core/embeddings.ts` calls the native Ollama `/api/embed` endpoint (strips `/v1` suffix automatically; returns `[]` on any error for clean fallback). `src/core/search-index.ts` builds an incremental vector index at `.phase2s/search-index.jsonl` with SHA-256 content-hash staleness detection, GC for deleted learnings, and atomic writes (temp+rename) to prevent partial reads by parallel executor workers. `ollamaEmbedModel` config field separates the embed model from the chat model. All 4 `loadLearnings` call sites updated to `loadRelevantLearnings`. `/review` fix: results now return in similarity rank order (highest-first) instead of JSONL insertion order. 17 new tests (4 embeddings, 8 search-index, 5 memory); 1730 passing. Two Sprint 73 candidates added below. Model defaults updated: codex-cli → `gpt-5.4`, Ollama → `gemma4:latest` (5 locations).
@@ -22,13 +34,13 @@ Patch closed the PromptInterrupt coverage gaps missed in Sprint 71: `commit.ts` 
 
 - [ ] **REPL readline conflict between main loop and :commit helper** — The main REPL creates one readline interface (`index.ts:992`). `:commit` opens a second readline instance on the same stdin/stdout (`index.ts:1394`, `prompt-util.ts:16`). This creates a structural stability risk: the two interfaces compete for input. Sprint 71 Ctrl+C fix addresses the most dangerous symptom (bypass of session save), but the root structural issue remains. Investigate whether the helper prompts can reuse the main REPL's readline rather than creating new ones. Tracking from Codex outside-voice finding #5 (Sprint 71 review).
 
-- [ ] **Error message standardization across `loadConfig()` callers** — `loadConfig()` is called from 4+ entrypoints in `index.ts` plus `mcp/server.ts` (which swallows errors entirely). Each callsite handles errors differently. A future sprint should add a `normalizeConfigError()` wrapper at each callsite so bad YAML, schema violations, and missing fields surface with actionable messages regardless of entrypoint. Tracking from Codex outside-voice finding #1 (Sprint 71 review).
+- [x] **Error message standardization across `loadConfig()` callers** — `loadConfig()` is called from 4+ entrypoints in `index.ts` plus `mcp/server.ts` (which swallows errors entirely). Each callsite handles errors differently. A future sprint should add a `normalizeConfigError()` wrapper at each callsite so bad YAML, schema violations, and missing fields surface with actionable messages regardless of entrypoint. Tracking from Codex outside-voice finding #1 (Sprint 71 review). **Completed: v1.47.0 (2026-04-25)**
 
 ---
 
 ## Backlog — Post-Sprint 70 notes (2026-04-24)
 
-- [ ] **Consolidate provider enums into `provider-registry.ts`** — `src/cli/provider.ts` uses the new centralized registry exclusively, but the provider name lists and key field maps in `src/cli/init.ts`, `src/core/config.ts`, and `src/cli/doctor.ts` are still inline duplicates. Migrate them to `PROVIDERS` / `getProviderKeyField()` / `isValidProvider()` from `provider-registry.ts` to eliminate the drift risk (a new provider added to the registry must currently be added in four places). Low-risk refactor with no behavioral change.
+- [x] **Consolidate provider enums into `provider-registry.ts`** — `src/cli/provider.ts` uses the new centralized registry exclusively, but the provider name lists and key field maps in `src/cli/init.ts`, `src/core/config.ts`, and `src/cli/doctor.ts` are still inline duplicates. Migrate them to `PROVIDERS` / `getProviderKeyField()` / `isValidProvider()` from `provider-registry.ts` to eliminate the drift risk (a new provider added to the registry must currently be added in four places). Low-risk refactor with no behavioral change. **Completed: v1.47.0 (2026-04-25)**
 
 ---
 
@@ -137,7 +149,7 @@ Patch closed the PromptInterrupt coverage gaps missed in Sprint 71: `commit.ts` 
 
 - [x] **`listWorktreePaths` swallows errors → could misclassify healthy worktrees** — Now distinguishes ENOENT (cwd does not exist → return []) from all other errors (git lock, permission denied, non-zero exit → rethrow). Note: with string-form `execSync`, ENOENT signals a missing working directory, not an absent git binary. Exported as `@internal` for testability. **Completed: v1.28.0 (2026-04-13)**
 
-- [ ] **`askLine` on paused stdin after SIGINT** — Adversarial finding: if SIGINT pauses stdin via `rl.close()`, a subsequent `createInterface({ input: process.stdin })` in `askLine` might not resume it. **Investigated 2026-04-13**: `createInterface` calls `input.resume()` internally (confirmed via Node.js v25.8.2 testing — `readable.readableFlowing` goes from `false` to `true` on construction). Not a real issue on current runtime. Re-evaluate if Node minimum version changes significantly.
+- [x] **`askLine` on paused stdin after SIGINT** — Adversarial finding: if SIGINT pauses stdin via `rl.close()`, a subsequent `createInterface({ input: process.stdin })` in `askLine` might not resume it. **Investigated 2026-04-13**: `createInterface` calls `input.resume()` internally (confirmed via Node.js v25.8.2 testing — `readable.readableFlowing` goes from `false` to `true` on construction). Not a real issue on current runtime. Re-evaluate if Node minimum version changes significantly. **Closed 2026-04-22: not a bug.**
 
 ---
 

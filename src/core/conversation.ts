@@ -31,6 +31,57 @@ export class Conversation {
     return [...this.messages];
   }
 
+  /**
+   * Prefix used to identify the per-turn learnings context message.
+   * Searched by content prefix so compaction (which rewrites the messages array)
+   * does not invalidate the lookup.
+   */
+  static readonly LEARNINGS_MARKER = "[PHASE2S_LEARNINGS]";
+
+  /**
+   * Insert or replace the [PHASE2S_LEARNINGS] context message.
+   *
+   * Always places the message immediately before the last user message (the
+   * current pending turn). This ensures Anthropic's translateMessages() sees
+   * LEARNINGS + current-user-turn as consecutive user messages that get merged,
+   * rather than LEARNINGS + a historical user message from earlier in the
+   * conversation.
+   *
+   * Strategy:
+   *   1. Remove any existing LEARNINGS message (splice, not replace-in-place —
+   *      in-place replacement would keep LEARNINGS at its old position, which
+   *      may be before a historical turn rather than the current one).
+   *   2. Scan backward for the last `role === "user"` message and insert before it.
+   *   3. If no user messages exist yet, append (will be positioned correctly when
+   *      the actual user turn is added by addUser()).
+   */
+  upsertLearningsMessage(content: string): void {
+    const MARKER = Conversation.LEARNINGS_MARKER;
+    const msg: Message = { role: "user", content };
+
+    // Step 1: remove existing LEARNINGS message if present
+    const idx = this.messages.findIndex(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(MARKER),
+    );
+    if (idx !== -1) {
+      this.messages.splice(idx, 1);
+    }
+
+    // Step 2: insert just before the last user message (current pending turn)
+    let insertAt = -1;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].role === "user") {
+        insertAt = i;
+        break;
+      }
+    }
+    if (insertAt === -1) {
+      this.messages.push(msg);
+    } else {
+      this.messages.splice(insertAt, 0, msg);
+    }
+  }
+
   get length(): number {
     return this.messages.length;
   }

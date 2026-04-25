@@ -97,21 +97,29 @@ export function translateMessages(messages: Message[]): AnthropicMessage[] {
     }
 
     // Plain user or assistant message.
-    // Special case: if the previous Anthropic message is a synthetic user message
-    // containing tool_result content blocks (built above from "tool" role messages),
-    // merge this plain string into it as an additional text block rather than creating
-    // a second consecutive user message — which the Anthropic API rejects with a 400.
+    // Consecutive user messages are rejected by Anthropic with a 400. Merge into the
+    // previous user message in two cases:
+    //   1. tool_result→plain: previous is a synthetic user message with tool_result blocks
+    //      (the [PHASE2S_LEARNINGS] injection or other plain text follows tool results)
+    //   2. plain→plain: previous is a plain-string user message
+    //      (the [PHASE2S_LEARNINGS] context message precedes the actual user turn)
     if (msg.role === "user") {
       const last = result[result.length - 1];
-      if (
-        last &&
-        last.role === "user" &&
-        Array.isArray(last.content) &&
-        last.content.length > 0 &&
-        (last.content[0] as AnthropicContentBlock).type === "tool_result"
-      ) {
-        (last.content as AnthropicContentBlock[]).push({ type: "text", text: msg.content });
-        continue;
+      if (last && last.role === "user") {
+        if (
+          Array.isArray(last.content) &&
+          last.content.length > 0 &&
+          (last.content[0] as AnthropicContentBlock).type === "tool_result"
+        ) {
+          // Case 1: merge plain text into tool_result block array
+          (last.content as AnthropicContentBlock[]).push({ type: "text", text: msg.content });
+          continue;
+        }
+        if (typeof last.content === "string") {
+          // Case 2: concatenate plain-text user messages with a separator
+          last.content = `${last.content}\n\n${msg.content}`;
+          continue;
+        }
       }
     }
     result.push({

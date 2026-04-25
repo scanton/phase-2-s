@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "../tools/types.js";
 
-export function buildSystemPrompt(tools: ToolDefinition[], customPrompt?: string, learnings?: string): string {
+export function buildSystemPrompt(tools: ToolDefinition[], customPrompt?: string): string {
   const parts: string[] = [];
 
   parts.push(`You are Phase2S, an AI programming assistant running in the user's terminal.
@@ -23,10 +23,6 @@ Guidelines:
 
   if (customPrompt) {
     parts.push(`\nAdditional instructions:\n${customPrompt}`);
-  }
-
-  if (learnings) {
-    parts.push(`\n${learnings}`);
   }
 
   return parts.join("\n");

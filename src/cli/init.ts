@@ -14,12 +14,13 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import chalk from "chalk";
 import { parse as parseYaml } from "yaml";
+import type { ProviderName } from "./provider-registry.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type Provider = "codex-cli" | "openai-api" | "anthropic" | "ollama" | "openrouter" | "gemini" | "minimax";
+export type Provider = ProviderName;
 
 export interface InitConfig {
   provider: Provider;

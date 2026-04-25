@@ -8,7 +8,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { execSync, spawn } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
 import chalk from "chalk";
-import { loadConfig, type Config } from "../core/config.js";
+import { loadConfig, normalizeConfigError, type Config } from "../core/config.js";
 import { Agent } from "../core/agent.js";
 import { disposeBrowser } from "../tools/browser.js";
 import { Conversation } from "../core/conversation.js";
@@ -220,7 +220,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         return;
       }
 
-      const config = await loadConfig(configOverrides);
+      let config: Config;
+      try {
+        config = await loadConfig(configOverrides);
+      } catch (err) {
+        console.error(chalk.red(normalizeConfigError(err)));
+        process.exit(1);
+      }
       await interactiveMode(config, { resume: !!opts.resume });
       // interactiveMode now returns instead of calling process.exit(0) directly.
       // Explicitly await disposeBrowser before exiting so Chromium doesn't become
@@ -238,11 +244,17 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--reasoning-effort <level>", "Override model reasoning effort (high | low | default)")
     .action(async (prompt: string, cmdOpts: { dryRun?: boolean; reasoningEffort?: string }) => {
       const opts = program.opts();
-      const config = await loadConfig({
-        provider: opts.provider,
-        model: opts.model,
-        systemPrompt: opts.system,
-      });
+      let config: Config;
+      try {
+        config = await loadConfig({
+          provider: opts.provider,
+          model: opts.model,
+          systemPrompt: opts.system,
+        });
+      } catch (err) {
+        console.error(chalk.red(normalizeConfigError(err)));
+        process.exit(1);
+      }
       if (cmdOpts.dryRun) {
         const skills = await loadAllSkills();
         const { routedSkillName, unknownSkillName, modelOverride } = resolveSkillRouting(prompt, skills);
@@ -414,7 +426,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         // Exit 1 if score < 7 (or 0 if score >= 7 or score is null)
         if (result.score !== null && result.score < 7) process.exit(1);
       } catch (err) {
-        console.error(err instanceof Error ? err.message : String(err));
+        console.error(chalk.red(normalizeConfigError(err)));
         process.exit(1);
       }
     });
@@ -538,7 +550,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       if (selectedId) {
         // Resume the selected session by re-running interactiveMode with it active
         await writeReplState(process.cwd(), { currentSessionId: selectedId });
-        const config = await loadConfig({});
+        let config: Config;
+        try {
+          config = await loadConfig({});
+        } catch (err) {
+          console.error(chalk.red(normalizeConfigError(err)));
+          process.exit(1);
+        }
         await interactiveMode(config, { resume: true });
         await disposeBrowser().catch(() => {});
         process.exit(0);
@@ -594,7 +612,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--preview", "Show proposed message only — do not commit")
     .action(async (cmdOpts: { auto?: boolean; preview?: boolean }) => {
       const opts = program.opts();
-      const config = await loadConfig({ provider: opts.provider, model: opts.model });
+      let config: Config;
+      try {
+        config = await loadConfig({ provider: opts.provider, model: opts.model });
+      } catch (err) {
+        console.error(chalk.red(normalizeConfigError(err)));
+        process.exit(1);
+      }
       const { runCommitFlow } = await import("./commit.js");
       await runCommitFlow(config, { auto: cmdOpts.auto, preview: cmdOpts.preview });
     });
@@ -925,9 +949,9 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
   console.log(chalk.bold(`\nPhase2S v${VERSION}`));
   console.log(chalk.dim("Type your message and press Enter. Type /quit to exit.\n"));
 
-  // Load persistent memory learnings from .phase2s/memory/learnings.jsonl
+  // Load persistent memory learnings at startup (insertion order — no task text yet).
+  // Per-turn semantic refresh is done in the REPL loop via loadRelevantLearnings().
   const learningsList = await loadLearnings(process.cwd());
-  const learningsStr = formatLearningsForPrompt(learningsList);
   if (learningsList.length > 0) {
     log.dim(`Learnings: ${learningsList.length} ${learningsList.length === 1 ? "entry" : "entries"} from .phase2s/memory/`);
   }
@@ -961,7 +985,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
 
   // Pass agentsMdBlock separately from config.systemPrompt so the Agent can re-inject
   // it after switchAgentDef() (persona switches) without carrying over the old persona.
-  const agent = new Agent({ config, conversation: resumedConversation, learnings: learningsStr, systemPrompt: config.systemPrompt, agentsMdBlock });
+  const agent = new Agent({ config, conversation: resumedConversation, systemPrompt: config.systemPrompt, agentsMdBlock });
   // AbortController for cooperative SIGINT cancellation.
   // Aborted in the SIGINT handler; signal is passed to every agent.run() call so the
   // in-flight Codex/provider request is cancelled rather than waiting to finish.
@@ -1061,10 +1085,17 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     });
   };
 
-  /** Save the current conversation to the active session file (best-effort, v2 format). */
+  /** Save the current conversation to the active session file (best-effort, v2 format).
+   * Filters [PHASE2S_LEARNINGS] messages — they are re-injected fresh on resume,
+   * so saving them wastes space and would inject stale context on reload. */
   const saveSession = async (): Promise<void> => {
     try {
-      await saveSessionV2(process.cwd(), activeSessionPath, agent.getConversation(), sessionMeta);
+      const filtered = Conversation.fromMessages(
+        agent.getConversation().getMessages().filter(
+          (m) => !(m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER)),
+        ),
+      );
+      await saveSessionV2(process.cwd(), activeSessionPath, filtered, sessionMeta);
     } catch {
       // Best-effort — session save failures don't interrupt the user
     }
@@ -1093,9 +1124,12 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
   // failure or empty summary, without touching the conversation).
   const performCompaction = async (): Promise<boolean> => {
     let didCompact = false;
+    const compactionMessages = agent.getConversation().getMessages().filter(
+      (m) => !(m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER)),
+    );
     await runCompaction({
       provider: agent.provider,
-      messages: agent.getConversation().getMessages(),
+      messages: compactionMessages,
       tokenEstimate: agent.getConversation().estimateTokens(),
       activeSessionPath,
       sessionMeta,
@@ -1541,6 +1575,14 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     const normalTurnModel =
       resolveReasoningModel(reasoningOverride, config) ??
       (activeAgentDef ? resolveAgentModel(activeAgentDef.model, config) : undefined);
+
+    // Refresh learnings before this turn using the user's message as the semantic query.
+    // When Ollama is configured, this embeds the query and retrieves the most relevant
+    // learnings. Falls back to keyword/recency sort when Ollama is not configured.
+    const turnLearnings = await loadRelevantLearnings(process.cwd(), effectiveLine, config);
+    const turnLearningsStr = formatLearningsForPrompt(turnLearnings, { skipCharCap: config.ollamaBaseUrl !== undefined });
+    if (turnLearningsStr) agent.refreshLearnings(turnLearningsStr);
+
     await maybeAutoCompact();
     process.stdout.write(chalk.bold("\nassistant > "));
     try {

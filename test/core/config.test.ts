@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { loadConfig } from "../../src/core/config.js";
+import { z, ZodError } from "zod";
+import { loadConfig, normalizeConfigError } from "../../src/core/config.js";
 
 /**
  * Config tests focus on override precedence and default values.
@@ -294,5 +295,58 @@ describe("loadConfig — tools and deny (Sprint 13)", () => {
   it("max_auto_compact_count: unset means undefined (no cap — falls back to hardcoded default 3 in maybeAutoCompact)", async () => {
     const config = await loadConfig({});
     expect(config.max_auto_compact_count).toBeUndefined();
+  });
+});
+
+describe("normalizeConfigError() — Sprint 73 (Item B)", () => {
+  it("formats ZodError with field path and message", () => {
+    let zodErr: ZodError | undefined;
+    try {
+      z.object({ port: z.number() }).parse({ port: "not-a-number" });
+    } catch (e) {
+      if (e instanceof ZodError) zodErr = e;
+    }
+    expect(zodErr).toBeDefined();
+    const msg = normalizeConfigError(zodErr!);
+    expect(msg).toContain("Invalid .phase2s.yaml");
+    expect(msg).toContain("phase2s init");
+    expect(msg).toContain("port:");
+  });
+
+  it("handles ENOENT (file not found)", () => {
+    const err = Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
+    const msg = normalizeConfigError(err);
+    expect(msg).toContain("No .phase2s.yaml found");
+    expect(msg).toContain("phase2s init");
+  });
+
+  it("handles EACCES (permission denied)", () => {
+    const err = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+    const msg = normalizeConfigError(err);
+    expect(msg).toContain("permission denied");
+  });
+
+  it("handles YAMLParseError (err.name)", () => {
+    const err = Object.assign(new Error("unexpected token at line 3"), { name: "YAMLParseError" });
+    const msg = normalizeConfigError(err);
+    expect(msg).toContain("YAML syntax error");
+    expect(msg).toContain("phase2s init");
+  });
+
+  it("handles yaml error by message content", () => {
+    const err = new Error("must be a YAML mapping");
+    const msg = normalizeConfigError(err);
+    expect(msg).toContain("must be a YAML mapping");
+  });
+
+  it("returns generic Error.message for unknown errors", () => {
+    const err = new Error("Something completely unexpected");
+    const msg = normalizeConfigError(err);
+    expect(msg).toBe("Something completely unexpected");
+  });
+
+  it("stringifies non-Error throws", () => {
+    const msg = normalizeConfigError("raw string error");
+    expect(msg).toBe("raw string error");
   });
 });

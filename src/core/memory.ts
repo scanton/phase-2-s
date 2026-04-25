@@ -85,12 +85,45 @@ export function formatLearningsForPrompt(
 }
 
 /**
+ * Compute a recency weight for a learning entry.
+ * Returns 1.0 when ts is absent (treat as just-saved, no penalty).
+ * Decays by 10% per day: weight = 1 / (1 + days * 0.1).
+ */
+function recencyWeight(ts: string | undefined): number {
+  if (!ts) return 1.0;
+  const days = (Date.now() - new Date(ts).getTime()) / 86_400_000;
+  return isNaN(days) || days < 0 ? 1.0 : 1 / (1 + days * 0.1);
+}
+
+/**
+ * Keyword/recency hybrid sort for non-Ollama learnings.
+ *
+ * Scores each learning by: (matched_terms / total_query_terms) * recencyWeight(ts).
+ * Learnings with zero keyword overlap are not excluded — they fall to the bottom
+ * and serve as a recency-ordered backstop. Sort is descending by score.
+ */
+export function heuristicSort(learnings: Learning[], queryText: string): Learning[] {
+  const queryTerms = queryText.toLowerCase().match(/\w+/g) ?? [];
+  if (queryTerms.length === 0) return [...learnings];
+
+  return [...learnings].sort((a, b) => {
+    const scoreFor = (l: Learning): number => {
+      const text = `${l.key} ${l.insight}`.toLowerCase();
+      const matched = queryTerms.filter((t) => text.includes(t)).length;
+      return (matched / queryTerms.length) * recencyWeight(l.ts);
+    };
+    return scoreFor(b) - scoreFor(a);
+  });
+}
+
+/**
  * Load the most relevant learnings for the given query text using Ollama embeddings.
  *
- * Falls back to loadLearnings() when:
- * - queryText is empty (no task context, e.g. REPL startup)
+ * Falls back to heuristicSort (keyword/recency hybrid) when:
  * - ollamaBaseUrl is not configured
  * - the Ollama embed call fails (server down, model not pulled, etc.)
+ *
+ * Falls back to loadLearnings() (insertion order) when queryText is empty.
  */
 export async function loadRelevantLearnings(
   cwd: string,
@@ -99,8 +132,12 @@ export async function loadRelevantLearnings(
   k = 8,
 ): Promise<Learning[]> {
   const ollamaBaseUrl = config.ollamaBaseUrl;
-  if (!queryText.trim() || !ollamaBaseUrl) {
+  if (!queryText.trim()) {
     return loadLearnings(cwd);
+  }
+  if (!ollamaBaseUrl) {
+    const learnings = await loadLearnings(cwd);
+    return heuristicSort(learnings, queryText);
   }
 
   const learnings = await loadLearnings(cwd);
@@ -111,15 +148,15 @@ export async function loadRelevantLearnings(
 
   const queryVector = await embedFn(queryText);
   if (queryVector.length === 0) {
-    // Ollama unreachable or embed model not available — fall back
-    return learnings;
+    // Ollama unreachable or embed model not available — fall back to keyword/recency
+    return heuristicSort(learnings, queryText);
   }
 
   const index = await getOrBuildIndex(cwd, learnings, embedFn);
-  if (index.length === 0) return learnings;
+  if (index.length === 0) return heuristicSort(learnings, queryText);
 
   const topKeys = findTopK(queryVector, index, k);
-  if (topKeys.length === 0) return learnings;
+  if (topKeys.length === 0) return heuristicSort(learnings, queryText);
 
   const learningByKey = new Map(learnings.map((l) => [l.key, l]));
   return topKeys.flatMap((k) => {

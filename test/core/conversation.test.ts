@@ -177,4 +177,89 @@ describe("Conversation", () => {
     expect(c.getMessages()).toHaveLength(0);
     expect(c.length).toBe(0);
   });
+
+  // --- upsertLearningsMessage() — Sprint 73 (Item E) ---
+
+  it("inserts just before the last user message (current pending turn)", () => {
+    const c = new Conversation("system prompt");
+    c.addUser("user message");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nsome learning");
+
+    const msgs = c.getMessages();
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[1].role).toBe("user");
+    expect(msgs[1].content).toContain(Conversation.LEARNINGS_MARKER);
+    expect(msgs[2].role).toBe("user");
+    expect(msgs[2].content).toBe("user message");
+  });
+
+  it("inserts before the last user message when no system message is present", () => {
+    const c = new Conversation();
+    c.addUser("hello");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nno system message");
+
+    const msgs = c.getMessages();
+    expect(msgs[0].content).toContain(Conversation.LEARNINGS_MARKER);
+    expect(msgs[1].content).toBe("hello");
+  });
+
+  it("re-positions learnings before the current last user message on second call", () => {
+    const c = new Conversation("system");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nfirst learnings");
+    c.addUser("user turn 1");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nupdated learnings");
+
+    const msgs = c.getMessages();
+    const learningsMessages = msgs.filter(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER),
+    );
+    expect(learningsMessages).toHaveLength(1);
+    expect(learningsMessages[0].content).toContain("updated learnings");
+    expect(learningsMessages[0].content).not.toContain("first learnings");
+    // Position: LEARNINGS must be immediately before the last user message
+    const learnIdx = msgs.findIndex((m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER));
+    const lastUserIdx = msgs.map((m) => m.role).lastIndexOf("user");
+    expect(learnIdx).toBe(lastUserIdx - 1);
+  });
+
+  it("does not affect trimToTokenBudget — learnings message is not a tool result and is not trimmed", () => {
+    const c = new Conversation("system");
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nsome learning");
+    c.addAssistant("", [{ id: "c1", name: "shell", arguments: '{"command":"ls"}' }]);
+    c.addToolResult("c1", "x".repeat(100_000));
+
+    c.trimToTokenBudget(1_000);
+
+    const msgs = c.getMessages();
+    const learningsMsg = msgs.find(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER),
+    );
+    expect(learningsMsg).toBeDefined();
+  });
+
+  it("in a multi-turn conversation, LEARNINGS moves to just before the last user message (not the first)", () => {
+    // Reproduces the adversarial-review bug: in a conversation with history,
+    // upsertLearningsMessage() must NOT stay anchored to index 1 (after system).
+    // Otherwise translateMessages() merges LEARNINGS with a historical user message.
+    const c = new Conversation("sys");
+    c.addUser("turn 1 question");
+    c.addAssistant("turn 1 answer");
+    c.addUser("turn 2 question");
+
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nlearning text");
+
+    const msgs = c.getMessages();
+    // LEARNINGS must appear immediately before "turn 2 question" (the last user turn),
+    // NOT before "turn 1 question" (the first historical user turn).
+    const learnIdx = msgs.findIndex(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER),
+    );
+    const lastUserIdx = msgs.map((m) => m.role).lastIndexOf("user");
+    expect(learnIdx).toBe(lastUserIdx - 1);
+    expect(msgs[lastUserIdx].content).toBe("turn 2 question");
+  });
+
+  it("LEARNINGS_MARKER is the expected sentinel string", () => {
+    expect(Conversation.LEARNINGS_MARKER).toBe("[PHASE2S_LEARNINGS]");
+  });
 });
