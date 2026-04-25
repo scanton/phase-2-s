@@ -60,10 +60,18 @@ provider: codex-cli
 # Raise for models with higher ceilings (claude-3-opus supports up to 4096 output).
 # anthropicMaxTokens: 8192
 
-# Ollama base URL (ollama provider only, default http://localhost:11434/v1)
-# Change this if your Ollama server runs on a different host or port.
+# Ollama base URL (ollama provider only OR for semantic learnings injection)
+# Set this to enable semantic learnings retrieval even when using codex-cli or another provider.
+# Phase2S uses the local Ollama server to embed your learnings and find the most relevant ones
+# for each task — instead of just injecting the most recent ones.
 # Warning: remote URLs will send prompts and tool results to that host.
 # ollamaBaseUrl: http://localhost:11434/v1
+
+# Ollama embedding model (optional, requires ollamaBaseUrl to be set)
+# When set, Phase2S uses this model for embeddings and the main model for chat.
+# Useful for lighter, faster embed models (e.g., nomic-embed-text, mxbai-embed-large)
+# without changing your chat model. Defaults to the main model when absent.
+# ollamaEmbedModel: nomic-embed-text
 
 # OpenRouter API key (openrouter provider only)
 # Falls back to OPENROUTER_API_KEY environment variable.

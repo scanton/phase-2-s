@@ -8,13 +8,13 @@ Sprint 72 — Smart Learnings + Model Defaults.
 
 - **Semantic learnings injection** — Phase2S now injects the most *relevant* learnings into each agent session rather than the most *recent*. When Ollama is configured, `loadRelevantLearnings()` generates embeddings via the native `/api/embed` endpoint, builds an incremental vector index at `.phase2s/search-index.jsonl`, and returns the top-K most semantically similar learnings for the current task. Falls back to the existing truncate-oldest strategy when Ollama is unavailable or no query text is provided.
 
-- **`src/core/embeddings.ts`** — Ollama embedding client. Strips the `/v1` suffix from `ollamaBaseUrl` before calling the native `/api/embed` endpoint (which does not live under `/v1`). Returns `[]` on any error so callers always get a clean fallback.
+- **Ollama embedding client** (`src/core/embeddings.ts`) — Calls the native Ollama `/api/embed` endpoint (not the OpenAI-compatible `/v1` path). Strips the `/v1` suffix from `ollamaBaseUrl` automatically, so your existing `ollamaBaseUrl` config works without changes. Returns `[]` on any error so callers always get a clean fallback to recency-based injection.
 
-- **`src/core/search-index.ts`** — Incremental vector index with content-hash staleness detection. Re-embeds only changed learnings; GCs deleted learnings; writes atomically (temp file + rename) to prevent parallel executor workers from reading partial index files.
+- **Incremental vector index** (`src/core/search-index.ts`) — Persisted at `.phase2s/search-index.jsonl`. Re-embeds only changed learnings on each run (SHA-256 content-hash detection); GCs deleted learnings automatically; writes atomically (temp file + rename) so parallel executor workers never read a partial index.
 
-- **`ollamaEmbedModel` config field** — Optional field to specify a dedicated embedding model separate from the main model. Defaults to the main model if absent. Cleared on provider switch alongside `model`, `fast_model`, and `smart_model`.
+- **`ollamaEmbedModel` config field** — Point to a dedicated, lighter embedding model (e.g., `nomic-embed-text`) while keeping your main model for chat. Defaults to the main model when absent. Cleared on provider switch.
 
-- **`formatLearningsForPrompt` `skipCharCap` option** — Bypasses the 2000-char truncation when semantic retrieval is active (selection is already relevance-filtered).
+- **2000-char cap bypass for semantic results** — When semantic retrieval is active, the selected learnings bypass the 2000-char truncation. The selection is already relevance-filtered, so the cap would only discard relevant results.
 
 ### Changed
 
