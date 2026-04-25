@@ -6,6 +6,12 @@
 
 ---
 
+## Backlog — Post-Sprint 71 patch v1.45.1 (2026-04-25)
+
+Patch closed the PromptInterrupt coverage gaps missed in Sprint 71: `commit.ts` now catches `PromptInterrupt` at all four `ask()` sites (secret-warning prompt, main accept/edit/cancel, null-model fallback, `openEditor` readline fallback), `spec-template.ts` catches it in the placeholder wizard, and `runProviderList`/`runProviderLogout` now guard `readConfigRaw()` errors. Dead `PromptInterrupt` catch removed from `:commit` REPL handler. 6 regression tests added; 1710 passing. Neither Sprint 71 open item below is closed by this patch.
+
+---
+
 ## Backlog — Post-Sprint 71 notes (2026-04-25)
 
 - [ ] **REPL readline conflict between main loop and :commit helper** — The main REPL creates one readline interface (`index.ts:992`). `:commit` opens a second readline instance on the same stdin/stdout (`index.ts:1394`, `prompt-util.ts:16`). This creates a structural stability risk: the two interfaces compete for input. Sprint 71 Ctrl+C fix addresses the most dangerous symptom (bypass of session save), but the root structural issue remains. Investigate whether the helper prompts can reuse the main REPL's readline rather than creating new ones. Tracking from Codex outside-voice finding #5 (Sprint 71 review).
