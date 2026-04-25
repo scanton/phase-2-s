@@ -41,21 +41,43 @@ export class Conversation {
   /**
    * Insert or replace the [PHASE2S_LEARNINGS] context message.
    *
-   * Scans for an existing user message whose content starts with LEARNINGS_MARKER
-   * and replaces it in-place. If none is found, inserts at index 1 (after the
-   * system message). If the conversation has no system message at index 0,
-   * inserts at index 0 instead.
+   * Always places the message immediately before the last user message (the
+   * current pending turn). This ensures Anthropic's translateMessages() sees
+   * LEARNINGS + current-user-turn as consecutive user messages that get merged,
+   * rather than LEARNINGS + a historical user message from earlier in the
+   * conversation.
+   *
+   * Strategy:
+   *   1. Remove any existing LEARNINGS message (splice, not replace-in-place —
+   *      in-place replacement would keep LEARNINGS at its old position, which
+   *      may be before a historical turn rather than the current one).
+   *   2. Scan backward for the last `role === "user"` message and insert before it.
+   *   3. If no user messages exist yet, append (will be positioned correctly when
+   *      the actual user turn is added by addUser()).
    */
   upsertLearningsMessage(content: string): void {
     const MARKER = Conversation.LEARNINGS_MARKER;
+    const msg: Message = { role: "user", content };
+
+    // Step 1: remove existing LEARNINGS message if present
     const idx = this.messages.findIndex(
       (m) => m.role === "user" && (m.content ?? "").startsWith(MARKER),
     );
-    const msg: Message = { role: "user", content };
     if (idx !== -1) {
-      this.messages[idx] = msg;
+      this.messages.splice(idx, 1);
+    }
+
+    // Step 2: insert just before the last user message (current pending turn)
+    let insertAt = -1;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].role === "user") {
+        insertAt = i;
+        break;
+      }
+    }
+    if (insertAt === -1) {
+      this.messages.push(msg);
     } else {
-      const insertAt = this.messages.length > 0 && this.messages[0].role === "system" ? 1 : 0;
       this.messages.splice(insertAt, 0, msg);
     }
   }

@@ -180,7 +180,7 @@ describe("Conversation", () => {
 
   // --- upsertLearningsMessage() — Sprint 73 (Item E) ---
 
-  it("inserts at index 1 (after system) on first call", () => {
+  it("inserts just before the last user message (current pending turn)", () => {
     const c = new Conversation("system prompt");
     c.addUser("user message");
     c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nsome learning");
@@ -193,7 +193,7 @@ describe("Conversation", () => {
     expect(msgs[2].content).toBe("user message");
   });
 
-  it("inserts at index 0 when no system message is present", () => {
+  it("inserts before the last user message when no system message is present", () => {
     const c = new Conversation();
     c.addUser("hello");
     c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nno system message");
@@ -203,7 +203,7 @@ describe("Conversation", () => {
     expect(msgs[1].content).toBe("hello");
   });
 
-  it("replaces an existing learnings message in-place on second call", () => {
+  it("re-positions learnings before the current last user message on second call", () => {
     const c = new Conversation("system");
     c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nfirst learnings");
     c.addUser("user turn 1");
@@ -231,6 +231,28 @@ describe("Conversation", () => {
       (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
     );
     expect(learningsMsg).toBeDefined();
+  });
+
+  it("in a multi-turn conversation, LEARNINGS moves to just before the last user message (not the first)", () => {
+    // Reproduces the adversarial-review bug: in a conversation with history,
+    // upsertLearningsMessage() must NOT stay anchored to index 1 (after system).
+    // Otherwise translateMessages() merges LEARNINGS with a historical user message.
+    const c = new Conversation("sys");
+    c.addUser("turn 1 question");
+    c.addAssistant("turn 1 answer");
+    c.addUser("turn 2 question");
+
+    c.upsertLearningsMessage("[PHASE2S_LEARNINGS]\nlearning text");
+
+    const msgs = c.getMessages();
+    // LEARNINGS must appear immediately before "turn 2 question" (the last user turn),
+    // NOT before "turn 1 question" (the first historical user turn).
+    const learnIdx = msgs.findIndex(
+      (m) => m.role === "user" && (m.content ?? "").startsWith("[PHASE2S_LEARNINGS]"),
+    );
+    const lastUserIdx = msgs.map((m) => m.role).lastIndexOf("user");
+    expect(learnIdx).toBe(lastUserIdx - 1);
+    expect(msgs[lastUserIdx].content).toBe("turn 2 question");
   });
 
   it("LEARNINGS_MARKER is the expected sentinel string", () => {
