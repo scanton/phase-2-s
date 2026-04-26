@@ -12,11 +12,29 @@ Sprint 74 — E2E Eval Framework.
 
 - **Hybrid LLM judge** (`judgeE2E()` in `src/eval/judge.ts`) — Acceptance criteria with `type: "structural"` and a `match` field are evaluated deterministically via regex (no LLM call, `confidence: 1.0`). Criteria with `type: "quality"` or no match field are batched into a single LLM call. Invalid regex patterns fall back to quality evaluation.
 
-- **Eval cases** (`eval/adversarial.eval.yaml`, `eval/review.eval.yaml`) — Two live eval cases ship with the framework: `adversarial` (4 criteria: 2 structural checking for VERDICT and STRONGEST_CONCERN, 2 quality) and `review` (3 criteria: 1 structural checking for CRIT/WARN/NIT tags, 2 quality). `satori.eval.yaml` is stubbed but commented out (deferred to Sprint 75 due to filesystem mutation risk).
+- **Eval cases** (`eval/adversarial.eval.yaml`, `eval/review.eval.yaml`) — Two live eval cases ship with the framework: `adversarial` (4 criteria: 2 structural checking for VERDICT and STRONGEST_CONCERN, 2 quality) and `review` (3 criteria: 1 structural checking for `SEVERITY: critical/warn/nit` tags, 2 quality). `satori.eval.yaml` is stubbed but commented out (deferred to Sprint 75 due to filesystem mutation risk).
 
 - **`docs/eval.md`** — User guide covering how to add eval cases, criterion type selection, input mapping, and the output file format.
 
 - **96 new tests** across `test/eval/runner.test.ts`, `test/eval/reporter.test.ts`, `test/eval/cli.test.ts`, and additions to `test/eval/judge.test.ts` covering the full eval pipeline including agent mocking, skill-not-found errors, timeout handling, structural/quality criterion routing, and CLI gate exit codes.
+
+### Fixed
+
+- **`score === null` bypasses deploy gate** — The original gate condition `score !== null && score < 6.0` never failed a case with a null score. A completely broken judge (LLM error, no criteria) would return `null` and still emit `✔ Deploy gate: READY`. Fixed: null is now explicitly a failure via `passes = score !== null && score >= PASS_THRESHOLD`.
+
+- **Timer leak in `runEvalCase`** — The `setTimeout` for per-case timeout was created without `.unref()`, keeping the Node.js process alive for the full `timeout_ms` (default 60 s) after every eval run. Fixed: timer handle stored, `.unref?.()` called immediately, `clearTimeout` called in `.finally()` when the agent resolves first.
+
+- **`substituteInputs` crash outside try/catch** — If a YAML case omitted the `inputs:` field, `substituteInputs(template, undefined, schema)` threw an uncaught `TypeError` that surfaced as an unhandled rejection. Fixed: moved inside the existing try/catch with `ec.inputs ?? {}`.
+
+- **Malformed YAML crashes entire `runAllEvals`** — A single unreadable or malformed `.eval.yaml` file propagated its error and halted all subsequent cases. Fixed: per-file `try/catch` wraps `readFile` + `parseYaml`; bad files are skipped with a warning and the run continues.
+
+- **`writeEvalResults` crash kills gate output** — An I/O error in the reporter (disk full, bad permissions) escaped into `cli.ts` and aborted the run before pass/fail counts were printed. Fixed: `writeEvalResults` wrapped in `try/catch`; warns and continues to the gate decision.
+
+- **Filename collision for same-skill cases** — All eval cases for the same skill wrote to identical filenames when run in the same millisecond. Only the last case's artifacts survived. Fixed: the sanitized case name is embedded in the filename so `adversarial-case-a-e2e-run-*.json` and `adversarial-case-b-e2e-run-*.json` are distinct.
+
+- **Double regex compile in `judgeE2E`** — Structural criteria compiled the same `RegExp` twice: once for `.test()` and once for `.match()`. Replaced with a single `.exec()` call.
+
+- **`review.eval.yaml` scope and severity bugs** — The `scope` input was being passed as a git pathspec (the review skill runs `git diff HEAD -- {{scope}}`); passing raw diff content as a pathspec produced an empty diff and a meaningless eval. Fixed: switched to `inputs: {}` so the skill reviews the current HEAD diff as intended. The structural match pattern `CRIT:|WARN:|NIT:` did not match the skill's actual output format `SEVERITY: critical`. Fixed to `SEVERITY: critical|SEVERITY: warn|SEVERITY: nit`.
 
 ## v1.47.0 — 2026-04-25
 
