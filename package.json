@@ -1,6 +1,6 @@
 {
   "name": "@scanton/phase2s",
-  "version": "1.47.0",
+  "version": "1.48.0",
   "description": "AI coding assistant with 29 built-in skills, ChatGPT subscription support, and autonomous spec execution",
   "author": "Scott Canton",
   "homepage": "https://github.com/scanton/phase-2-s",
@@ -30,7 +30,8 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:action": "ncc build src/action/index.ts -o dist/action --license licenses.txt"
+    "build:action": "ncc build src/action/index.ts -o dist/action --license licenses.txt",
+    "eval": "tsx src/eval/cli.ts"
   },
   "test": {
     "include": [

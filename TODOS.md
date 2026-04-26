@@ -6,6 +6,24 @@
 
 ---
 
+## Backlog — Post-Sprint 74 notes (v1.48.0, 2026-04-25)
+
+Sprint 74 shipped the E2E eval framework: `npm run eval` CLI, hybrid LLM judge (structural regex + quality LLM batch), runner/reporter pipeline, two live eval cases (`adversarial`, `review`), and `docs/eval.md`. `/review` caught 8 safety bugs before merge — all fixed (null-score gate bypass, timer leak, substituteInputs try/catch, per-file YAML errors, writeEvalResults crash path, filename collision, double regex, eval case format bugs). 96 new tests; 1,852 passing.
+
+- [ ] **ReDoS via unvalidated regex in `judgeE2E`** — Structural criteria accept arbitrary `match` strings from YAML files and compile them directly into `new RegExp(c.match, "i")`. A pathological pattern (e.g., `(a+)+$`) on a long output string can cause catastrophic backtracking. Mitigation: wrap each regex compile+exec in a `try/catch` with a character budget, or use a regex complexity validator before compiling. Low risk (eval YAML is developer-authored, not user-facing), but worth closing before eval cases accept untrusted input.
+
+- [ ] **`scoresBySkill` last-write-wins for multi-case same skill** — `cli.ts` accumulates scores in a `Record<string, number | null>` keyed by skill name. When multiple eval cases run against the same skill, only the last score is retained in the summary line (`Scores: adversarial=8.5  review=7.0`). The pass/fail gate is correct (it checks all cases), but the score summary is misleading. Fix: use `Record<string, (number | null)[]>` and report min/max or all scores.
+
+- [ ] **Sequential eval execution** — `runAllEvals` runs cases in `for...of` (sequential). For 10+ cases, runtime adds up. Cases that test different skills are independent and could run in parallel via `Promise.all` with a concurrency cap (matching the parallel executor pattern). Deferring until eval suite grows to where this is felt.
+
+- [ ] **Output size cap in `buildE2EJudgePrompt`** — The skill output is inlined verbatim into the judge prompt with no size limit. A skill that returns 100KB of output would produce an oversized prompt and likely fail. Add a `MAX_OUTPUT_CHARS` cap (e.g., 20,000) with a truncation note, matching the `MAX_DIFF_CHARS` cap already present in `judgeRun()`.
+
+- [ ] **`satori.eval.yaml`** — Stubbed and commented out (Sprint 75 target). Requires temp-project scaffolding so the satori skill's filesystem mutations don't affect the working tree. Design: spin up a `tmp/` project with a `package.json` and `src/` skeleton, run satori, verify the output files, then clean up.
+
+- [ ] **`vi.hoisted` compatibility in Bun's Vitest shim** — Three eval test files (`runner.test.ts`, `judge.test.ts`, `cli.test.ts`) use `vi.hoisted()` for module-level mock state, which is not supported in Bun's Vitest compatibility layer. Tests fail with `TypeError: vi.hoisted is not a function`. Two options: (A) migrate mock state to module-level `let` + `beforeEach` reset (no `vi.hoisted` needed), or (B) wait for Bun's Vitest shim to add `vi.hoisted` support. Low urgency — all 3 files' test logic is correct; only the mock wiring is broken.
+
+---
+
 ## Backlog — Post-Sprint 73 notes (v1.47.0, 2026-04-25)
 
 Sprint 73 shipped five items: (C) provider enum consolidation — `PROVIDERS`/`isValidProvider()`/`getProviderKeyField()` from `provider-registry.ts` now imported by `config.ts`, `doctor.ts`, `init.ts` (inline lists deleted); (B) `normalizeConfigError()` — exported from `config.ts`, wired into all 5 `loadConfig()` callsites in `index.ts` plus `mcp/server.ts`; (D) `heuristicSort()` — keyword/recency hybrid sort exported from `memory.ts`, used as fallback for all Ollama failure paths in `loadRelevantLearnings()`; (E) per-turn learnings as `[PHASE2S_LEARNINGS]` rolling context messages — learnings removed from system prompt, `Conversation.upsertLearningsMessage()` injects/replaces before each LLM turn, `agent.refreshLearnings()` updates mid-session, session save and compaction filter the marker message, `buildSystemPrompt()` `learnings` param removed. 13 new tests (7 B/D/E, 6 updated prompt/memory). 1690 passing; 4 pre-existing failures (missing `marked` dep, unrelated). Item A below updated with investigation findings.

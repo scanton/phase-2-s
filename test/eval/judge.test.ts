@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   judgeRun,
+  judgeE2E,
   formatJudgeReport,
   parseJsonResponse,
   parseTextFallback,
@@ -21,6 +22,7 @@ import {
   MAX_DIFF_CHARS,
   type JudgeResult,
 } from "../../src/eval/judge.js";
+import type { RunnerResult } from "../../src/eval/runner.js";
 
 // ---------------------------------------------------------------------------
 // Agent mock
@@ -29,12 +31,12 @@ import {
 const mockState = vi.hoisted(() => ({ response: "", shouldThrow: false }));
 
 vi.mock("../../src/core/agent.js", () => ({
-  Agent: vi.fn().mockImplementation(() => ({
-    run: vi.fn().mockImplementation(async () => {
+  Agent: class MockAgent {
+    async run(_prompt: string) {
       if (mockState.shouldThrow) throw new Error("LLM provider error");
       return mockState.response;
-    }),
-  })),
+    }
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -313,6 +315,184 @@ describe("judgeRun — diffStats are always populated", () => {
     try {
       const result = await judgeRun(specPath, "", FAKE_CONFIG);
       expect(result.diffStats).toEqual({ filesChanged: 0, insertions: 0, deletions: 0 });
+    } finally { cleanup(); }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// judgeE2E() tests
+// ---------------------------------------------------------------------------
+
+function makeRunnerResult(output: string, criteria = BASIC_E2E_CRITERIA): RunnerResult {
+  return {
+    case: {
+      name: "test-e2e-case",
+      skill: "adversarial",
+      inputs: { plan: "test plan" },
+      acceptance_criteria: criteria,
+    },
+    output,
+    elapsed_ms: 500,
+  };
+}
+
+const BASIC_E2E_CRITERIA = [
+  { text: "Contains a VERDICT field", type: "structural" as const, match: "VERDICT:" },
+  { text: "Identifies at least one failure mode", type: "quality" as const },
+];
+
+describe("judgeE2E — structural criteria (regex, no LLM call)", () => {
+  beforeEach(() => {
+    mockState.shouldThrow = false;
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Identifies at least one failure mode", status: "met", evidence: "state loss on restart", confidence: 0.9 }],
+      verdict: "Quality criterion met.",
+    });
+  });
+
+  it("structural criterion matched → status: met, no LLM call counted for it", async () => {
+    const result = await judgeE2E(
+      makeRunnerResult("VERDICT: CHALLENGED\nsome analysis"),
+      FAKE_CONFIG,
+    );
+    const structural = result.criteria.find(c => c.text === "Contains a VERDICT field");
+    expect(structural?.status).toBe("met");
+  });
+
+  it("structural criterion not matched → status: missed", async () => {
+    const result = await judgeE2E(
+      makeRunnerResult("No verdict here."),
+      FAKE_CONFIG,
+    );
+    const structural = result.criteria.find(c => c.text === "Contains a VERDICT field");
+    expect(structural?.status).toBe("missed");
+  });
+
+  it("structural criterion has confidence: 1.0 (deterministic)", async () => {
+    const result = await judgeE2E(
+      makeRunnerResult("VERDICT: APPROVED"),
+      FAKE_CONFIG,
+    );
+    const structural = result.criteria.find(c => c.text === "Contains a VERDICT field");
+    expect(structural?.confidence).toBe(1.0);
+  });
+});
+
+describe("judgeE2E — quality criteria (LLM judge)", () => {
+  beforeEach(() => {
+    mockState.shouldThrow = false;
+  });
+
+  it("all quality criteria met → score >= 9.0 when structural also passes", async () => {
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Identifies at least one failure mode", status: "met", evidence: "state loss on restart", confidence: 0.95 }],
+      verdict: "Quality met.",
+    });
+    const result = await judgeE2E(
+      makeRunnerResult("VERDICT: CHALLENGED\nThe problem is state loss on restart."),
+      FAKE_CONFIG,
+    );
+    expect(result.score).not.toBeNull();
+    expect(result.score!).toBeGreaterThanOrEqual(8.0);
+  });
+
+  it("quality criterion missed → partial score", async () => {
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Identifies at least one failure mode", status: "missed", evidence: "(none found)", confidence: 0.8 }],
+      verdict: "Quality missed.",
+    });
+    const result = await judgeE2E(
+      makeRunnerResult("VERDICT: CHALLENGED"),
+      FAKE_CONFIG,
+    );
+    // structural met (VERDICT found) + quality missed → 1/2 criteria met = 5.0
+    expect(result.score).toBe(5.0);
+  });
+
+  it("all criteria missed → score: 0", async () => {
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Identifies at least one failure mode", status: "missed", evidence: "(none found)", confidence: 0.8 }],
+      verdict: "Nothing met.",
+    });
+    const result = await judgeE2E(
+      makeRunnerResult("No relevant content here."),
+      FAKE_CONFIG,
+    );
+    expect(result.score).toBe(0);
+  });
+});
+
+describe("judgeE2E — error handling", () => {
+  it("agent throws → score: null, verdict starts with 'Judge failed'", async () => {
+    mockState.shouldThrow = true;
+    const result = await judgeE2E(
+      makeRunnerResult("VERDICT: APPROVED\nsome quality content"),
+      FAKE_CONFIG,
+    );
+    expect(result.score).toBeNull();
+    expect(result.verdict).toMatch(/judge failed/i);
+    mockState.shouldThrow = false;
+  });
+
+  it("empty output → all quality criteria missed, structural also missed", async () => {
+    mockState.shouldThrow = false;
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Identifies at least one failure mode", status: "missed", evidence: "(none found)", confidence: 0.9 }],
+      verdict: "Nothing found.",
+    });
+    const result = await judgeE2E(makeRunnerResult(""), FAKE_CONFIG);
+    expect(result.score).toBe(0);
+  });
+
+  it("no acceptance_criteria → score: null", async () => {
+    const runnerResult: RunnerResult = {
+      case: {
+        name: "empty-criteria",
+        skill: "adversarial",
+        inputs: {},
+        acceptance_criteria: [],
+      },
+      output: "some output",
+      elapsed_ms: 100,
+    };
+    const result = await judgeE2E(runnerResult, FAKE_CONFIG);
+    expect(result.score).toBeNull();
+  });
+});
+
+describe("judgeE2E — responseStats", () => {
+  beforeEach(() => {
+    mockState.shouldThrow = false;
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Identifies at least one failure mode", status: "met", evidence: "state loss", confidence: 0.9 }],
+      verdict: "Met.",
+    });
+  });
+
+  it("returns responseStats with output length", async () => {
+    const output = "VERDICT: CHALLENGED\nstate loss is the issue";
+    const result = await judgeE2E(makeRunnerResult(output), FAKE_CONFIG);
+    expect(result.responseStats).toEqual({ length: output.length });
+  });
+
+  it("does not set diffStats (E2E eval has no diff)", async () => {
+    const result = await judgeE2E(makeRunnerResult("VERDICT: CHALLENGED"), FAKE_CONFIG);
+    expect(result.diffStats).toBeUndefined();
+  });
+});
+
+describe("judgeRun — backward compatibility (diffStats still populated)", () => {
+  beforeEach(() => {
+    mockState.shouldThrow = false;
+    mockState.response = JSON.stringify({ criteria: [], verdict: "No criteria." });
+  });
+
+  it("judgeRun still populates diffStats (backward compat)", async () => {
+    const { specPath, cleanup } = makeTempSpec(SPEC_WITH_CRITERIA);
+    try {
+      const result = await judgeRun(specPath, SAMPLE_DIFF, FAKE_CONFIG);
+      expect(result.diffStats).toBeDefined();
+      expect(result.diffStats!.filesChanged).toBe(1);
     } finally { cleanup(); }
   });
 });

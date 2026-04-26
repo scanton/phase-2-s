@@ -1,0 +1,18 @@
+name: adversarial-basic-plan-challenge
+skill: adversarial
+inputs:
+  plan: |
+    Add a global rate limiter to all API routes using an in-memory Map.
+    Limits reset on process restart. Deploy to a multi-instance cloud environment.
+acceptance_criteria:
+  - text: Contains a VERDICT field (APPROVED, CHALLENGED, or NEEDS_CLARIFICATION)
+    type: structural
+    match: "VERDICT:"
+  - text: Identifies at least one concrete failure mode or risk
+    type: quality
+  - text: OBJECTIONS are specific and actionable (not generic "this could fail")
+    type: quality
+  - text: Response includes STRONGEST_CONCERN section
+    type: structural
+    match: "STRONGEST_CONCERN"
+timeout_ms: 60000

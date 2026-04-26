@@ -1,0 +1,17 @@
+# Satori eval — deferred to Sprint 75
+# Satori mode has retries > 0 and calls verifyCommand in the real filesystem.
+# Running this in-process would mutate the working directory.
+# Sprint 75 ships satori eval with temp-project scaffolding.
+#
+# name: satori-simple-add-function
+# skill: satori
+# inputs:
+#   task: |
+#     Add a function called `add(a: number, b: number): number` to src/utils/math.ts.
+#     It should return the sum of a and b. Write a vitest test for it.
+# acceptance_criteria:
+#   - text: Implements add() function in src/utils/math.ts
+#     type: quality
+#   - text: Test file passes (npm test)
+#     type: quality
+# timeout_ms: 180000

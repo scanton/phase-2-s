@@ -1,0 +1,17 @@
+name: review-basic-diff-coverage
+skill: review
+# No scope provided — the review skill runs `git diff HEAD` (or `git diff HEAD~1` if
+# no uncommitted changes), reviewing whatever is currently in the working tree.
+# Note: this eval is a live smoke test, not a hermetic replay of a fixed diff.
+# For fully controlled review evals, the review skill would need a `diff` input
+# that accepts raw diff content (tracked as a Sprint 75 improvement).
+inputs: {}
+acceptance_criteria:
+  - text: Review output contains severity tags (critical, warn, or nit)
+    type: structural
+    match: "SEVERITY: critical|SEVERITY: warn|SEVERITY: nit"
+  - text: Findings are specific — each cites a file name or function, not just general advice
+    type: quality
+  - text: Provides actionable feedback with a suggested fix or next step
+    type: quality
+timeout_ms: 60000
