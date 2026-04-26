@@ -1,30 +1,17 @@
 name: review-basic-diff-coverage
 skill: review
-inputs:
-  scope: |
-    Review this diff that adds a new utility function without any tests:
-
-    diff --git a/src/utils/format.ts b/src/utils/format.ts
-    index abc1234..def5678 100644
-    --- a/src/utils/format.ts
-    +++ b/src/utils/format.ts
-    @@ -0,0 +1,15 @@
-    +/**
-    + * Formats a duration in milliseconds to a human-readable string.
-    + * Example: 1500 → "1.5s", 750 → "750ms"
-    + */
-    +export function formatDuration(ms: number): string {
-    +  if (ms >= 1000) {
-    +    return `${(ms / 1000).toFixed(1)}s`;
-    +  }
-    +  return `${ms}ms`;
-    +}
+# No scope provided — the review skill runs `git diff HEAD` (or `git diff HEAD~1` if
+# no uncommitted changes), reviewing whatever is currently in the working tree.
+# Note: this eval is a live smoke test, not a hermetic replay of a fixed diff.
+# For fully controlled review evals, the review skill would need a `diff` input
+# that accepts raw diff content (tracked as a Sprint 75 improvement).
+inputs: {}
 acceptance_criteria:
-  - text: Review output contains CRIT, WARN, or NIT severity tags
+  - text: Review output contains severity tags (critical, warn, or nit)
     type: structural
-    match: "CRIT:|WARN:|NIT:"
-  - text: Identifies missing test coverage for the new function
+    match: "SEVERITY: critical|SEVERITY: warn|SEVERITY: nit"
+  - text: Findings are specific — each cites a file name or function, not just general advice
     type: quality
-  - text: Provides actionable feedback that can be acted on immediately
+  - text: Provides actionable feedback with a suggested fix or next step
     type: quality
 timeout_ms: 60000

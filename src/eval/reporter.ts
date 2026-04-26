@@ -26,9 +26,11 @@ export function writeEvalResults(
     const runnerResult = runnerResults[i];
     const judgeResult = judgeResults[i];
     const skill = runnerResult.case.skill;
+    // Include the case name so multiple cases for the same skill don't collide
+    const safeCase = runnerResult.case.name.replace(/[^a-zA-Z0-9_-]/g, "-");
 
-    const runnerFile = join(outputDir, `${skill}-e2e-run-${dateStr}-${ts}.json`);
-    const judgeFile = join(outputDir, `${skill}-llm-judge-run-${dateStr}-${ts}.json`);
+    const runnerFile = join(outputDir, `${skill}-${safeCase}-e2e-run-${dateStr}-${ts}.json`);
+    const judgeFile = join(outputDir, `${skill}-${safeCase}-llm-judge-run-${dateStr}-${ts}.json`);
 
     writeFileSync(
       runnerFile,
@@ -44,22 +46,20 @@ export function writeEvalResults(
       ),
     );
 
-    if (judgeResult !== undefined) {
-      writeFileSync(
-        judgeFile,
-        JSON.stringify(
-          {
-            score: judgeResult.score,
-            verdict: judgeResult.verdict,
-            criteria: judgeResult.criteria,
-            ...(judgeResult.responseStats !== undefined
-              ? { responseStats: judgeResult.responseStats }
-              : {}),
-          },
-          null,
-          2,
-        ),
-      );
-    }
+    writeFileSync(
+      judgeFile,
+      JSON.stringify(
+        {
+          score: judgeResult.score,
+          verdict: judgeResult.verdict,
+          criteria: judgeResult.criteria,
+          ...(judgeResult.responseStats !== undefined
+            ? { responseStats: judgeResult.responseStats }
+            : {}),
+        },
+        null,
+        2,
+      ),
+    );
   }
 }

@@ -3,14 +3,15 @@ import { runAllEvals } from "./runner.js";
 import { judgeE2E } from "./judge.js";
 import { writeEvalResults, DEFAULT_OUTPUT_DIR } from "./reporter.js";
 
+const PASS_THRESHOLD = 6.0;
+
 async function main(): Promise<void> {
   const config = await loadConfig();
 
-  console.log("Running eval suite...");
   const runnerResults = await runAllEvals(config);
 
   if (runnerResults.length === 0) {
-    console.log("No eval cases found in eval/");
+    // runAllEvals already warned if the directory was missing
     console.log("\n✔ Deploy gate: READY (no cases to run)");
     return;
   }
@@ -21,9 +22,14 @@ async function main(): Promise<void> {
     runnerResults.map(r => judgeE2E(r, config)),
   );
 
-  writeEvalResults(runnerResults, judgeResults);
+  try {
+    writeEvalResults(runnerResults, judgeResults);
+  } catch (err) {
+    console.warn(`Warning: could not write eval results — ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   let failed = false;
+  let passed = 0;
   const scoresBySkill: Record<string, number | null> = {};
 
   for (let i = 0; i < runnerResults.length; i++) {
@@ -32,18 +38,16 @@ async function main(): Promise<void> {
     const score = j.score;
     const elapsed = (r.elapsed_ms / 1000).toFixed(1);
     const scoreStr = score === null ? "—/10" : `${score}/10`;
-    const status = score === null || score < 6.0 ? "✗" : "✓";
+    const passes = score !== null && score >= PASS_THRESHOLD;
+    const status = passes ? "✓" : "✗";
 
-    if (score !== null && score < 6.0) failed = true;
+    if (!passes) failed = true;
+    else passed++;
 
     scoresBySkill[r.case.skill] = score;
     console.log(`${status} ${r.case.name.padEnd(45)} ${scoreStr}  (${elapsed}s)`);
   }
 
-  const passed = runnerResults.filter((_, i) => {
-    const s = judgeResults[i].score;
-    return s !== null && s >= 6.0;
-  }).length;
   const failedCount = runnerResults.length - passed;
 
   console.log(`\nResults: ${passed} passed, ${failedCount} failed`);
@@ -55,7 +59,7 @@ async function main(): Promise<void> {
   console.log(`Written: ${DEFAULT_OUTPUT_DIR} (${runnerResults.length * 2} files)`);
 
   if (failed) {
-    console.log("\n✗ Deploy gate: NOT READY — one or more scores below 6.0");
+    console.log(`\n✗ Deploy gate: NOT READY — one or more scores below ${PASS_THRESHOLD} (or judge failed)`);
     process.exit(1);
   } else {
     console.log("\n✔ Deploy gate: READY");

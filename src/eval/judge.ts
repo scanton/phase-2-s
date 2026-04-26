@@ -339,16 +339,14 @@ export async function judgeE2E(
     let status: CriterionStatus = "missed";
     let evidence = "(no match)";
     try {
-      const matched = new RegExp(c.match!, "i").test(output);
-      if (matched) {
-        const m = output.match(new RegExp(c.match!, "i"));
+      const m = new RegExp(c.match!, "i").exec(output);
+      if (m) {
         status = "met";
-        evidence = m ? `matched: "${m[0]}"` : "matched";
+        evidence = `matched: "${m[0]}"`;
       }
     } catch {
       // Invalid regex — treat as quality (safe fallback)
       qualityIndices.push(i);
-      structuralIndices.splice(structuralIndices.indexOf(i), 1);
       continue;
     }
     criteriaResults[i] = { text: c.text, status, evidence, confidence: 1.0 };
