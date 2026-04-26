@@ -51,7 +51,7 @@ export type RunEvent =
       score: number | null;
       verdict: string;
       criteria: Array<{ text: string; status: "met" | "partial" | "missed"; evidence: string; confidence: number }>;
-      diffStats: { filesChanged: number; insertions: number; deletions: number };
+      diffStats?: { filesChanged: number; insertions: number; deletions: number };
     };
 
 // ---------------------------------------------------------------------------
