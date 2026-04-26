@@ -339,6 +339,7 @@ phase2s skills --json # machine-readable for scripts
 - [GitHub Action](docs/github-action.md) — `uses: scanton/phase2s@v1` for CI (requires API key)
 - [Advanced](docs/advanced.md) — streaming, model routing, tool allow/deny
 - [Configuration](docs/configuration.md) — `.phase2s.yaml` and environment variables
+- [E2E eval framework](docs/eval.md) — `npm run eval`, adding eval cases, structural vs quality criteria, deploy gate
 - [Contributing](CONTRIBUTING.md) — session storage internals, lock correctness, NFS caveats
 
 ---
