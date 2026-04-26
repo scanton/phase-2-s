@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.48.0 — 2026-04-25
+
+Sprint 74 — E2E Eval Framework.
+
+### Added
+
+- **`npm run eval` command** — New eval CLI (`src/eval/cli.ts`) runs all `eval/*.eval.yaml` cases against live Phase2S skills, scores each output with an LLM judge, and exits 1 if any score falls below 6.0. This becomes the deploy gate for prompt quality regressions.
+
+- **E2E eval framework** (`src/eval/runner.ts`, `src/eval/reporter.ts`, `src/eval/types.ts`) — Runner loads skills via `loadAllSkills()`, substitutes YAML-defined inputs into skill prompt templates, executes through the Agent, and collects outputs with elapsed timing. Reporter writes two JSON files per eval case to `~/.gstack-dev/evals/` — `{skill}-e2e-run-{date}-{ts}.json` and `{skill}-llm-judge-run-{date}-{ts}.json` — matching the glob patterns the land-and-deploy readiness gate expects.
+
+- **Hybrid LLM judge** (`judgeE2E()` in `src/eval/judge.ts`) — Acceptance criteria with `type: "structural"` and a `match` field are evaluated deterministically via regex (no LLM call, `confidence: 1.0`). Criteria with `type: "quality"` or no match field are batched into a single LLM call. Invalid regex patterns fall back to quality evaluation.
+
+- **Eval cases** (`eval/adversarial.eval.yaml`, `eval/review.eval.yaml`) — Two live eval cases ship with the framework: `adversarial` (4 criteria: 2 structural checking for VERDICT and STRONGEST_CONCERN, 2 quality) and `review` (3 criteria: 1 structural checking for CRIT/WARN/NIT tags, 2 quality). `satori.eval.yaml` is stubbed but commented out (deferred to Sprint 75 due to filesystem mutation risk).
+
+- **`docs/eval.md`** — User guide covering how to add eval cases, criterion type selection, input mapping, and the output file format.
+
+- **96 new tests** across `test/eval/runner.test.ts`, `test/eval/reporter.test.ts`, `test/eval/cli.test.ts`, and additions to `test/eval/judge.test.ts` covering the full eval pipeline including agent mocking, skill-not-found errors, timeout handling, structural/quality criterion routing, and CLI gate exit codes.
+
 ## v1.47.0 — 2026-04-25
 
 Sprint 73 — Security & Resilience Hardening v2.
