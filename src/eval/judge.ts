@@ -15,6 +15,7 @@
 import { readFileSync } from "node:fs";
 import { Agent } from "../core/agent.js";
 import type { Config } from "../core/config.js";
+import type { CriterionSpec, RunnerResult } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -33,7 +34,8 @@ export interface JudgeResult {
   score: number | null;  // null when no criteria extractable or on failure
   verdict: string;
   criteria: CriterionResult[];
-  diffStats: { filesChanged: number; insertions: number; deletions: number };
+  diffStats?: { filesChanged: number; insertions: number; deletions: number };
+  responseStats?: { length: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -281,8 +283,148 @@ function synthesizeVerdict(criteria: CriterionResult[], score: number): string {
 }
 
 function nullResult(
-  diffStats: { filesChanged: number; insertions: number; deletions: number },
+  diffStats: { filesChanged: number; insertions: number; deletions: number } | undefined,
   verdict: string,
 ): JudgeResult {
-  return { score: null, verdict, criteria: [], diffStats };
+  return { score: null, verdict, criteria: [], ...(diffStats !== undefined ? { diffStats } : {}) };
+}
+
+// ---------------------------------------------------------------------------
+// E2E judge — hybrid structural/quality criterion evaluation
+// ---------------------------------------------------------------------------
+
+/**
+ * Judge an E2E runner result against the eval case's acceptance criteria.
+ *
+ * Hybrid evaluation:
+ * - `type: "structural"` with `match`: regex test against output (no LLM call)
+ * - `type: "quality"` (or missing type, or structural without match): LLM judge
+ *
+ * Never throws — returns { score: null } on any failure.
+ */
+export async function judgeE2E(
+  runnerResult: RunnerResult,
+  config: Config,
+): Promise<JudgeResult> {
+  const criteria = runnerResult.case.acceptance_criteria ?? [];
+  const output = runnerResult.output ?? "";
+  const responseStats = { length: output.length };
+
+  if (criteria.length === 0) {
+    return { score: null, verdict: "No acceptance criteria defined", criteria: [], responseStats };
+  }
+
+  const criteriaResults: CriterionResult[] = [];
+
+  // --- Structural criteria: deterministic regex check ---
+  const structuralIndices: number[] = [];
+  const qualityIndices: number[] = [];
+
+  for (let i = 0; i < criteria.length; i++) {
+    const c = criteria[i];
+    if (c.type === "structural" && c.match) {
+      structuralIndices.push(i);
+    } else {
+      qualityIndices.push(i);
+    }
+  }
+
+  // Fill placeholders so we can assign in order later
+  for (let i = 0; i < criteria.length; i++) {
+    criteriaResults.push({ text: criteria[i].text, status: "missed", evidence: "", confidence: 0 });
+  }
+
+  for (const i of structuralIndices) {
+    const c = criteria[i];
+    let status: CriterionStatus = "missed";
+    let evidence = "(no match)";
+    try {
+      const matched = new RegExp(c.match!, "i").test(output);
+      if (matched) {
+        const m = output.match(new RegExp(c.match!, "i"));
+        status = "met";
+        evidence = m ? `matched: "${m[0]}"` : "matched";
+      }
+    } catch {
+      // Invalid regex — treat as quality (safe fallback)
+      qualityIndices.push(i);
+      structuralIndices.splice(structuralIndices.indexOf(i), 1);
+      continue;
+    }
+    criteriaResults[i] = { text: c.text, status, evidence, confidence: 1.0 };
+  }
+
+  // --- Quality criteria: LLM judge in one batch call ---
+  if (qualityIndices.length > 0) {
+    const qualityCriteria = qualityIndices.map(i => criteria[i]);
+    const prompt = buildE2EJudgePrompt(output, qualityCriteria);
+
+    let rawResponse: string;
+    try {
+      const agent = new Agent({ config });
+      rawResponse = await agent.run(prompt);
+    } catch (err) {
+      return {
+        score: null,
+        verdict: `Judge failed: ${err instanceof Error ? err.message : String(err)}`,
+        criteria: [],
+        responseStats,
+      };
+    }
+
+    let judgedCriteria: CriterionResult[];
+    try {
+      judgedCriteria = parseJsonResponse(rawResponse);
+    } catch {
+      judgedCriteria = parseTextFallback(rawResponse);
+    }
+
+    for (let j = 0; j < qualityIndices.length; j++) {
+      const i = qualityIndices[j];
+      if (j < judgedCriteria.length) {
+        criteriaResults[i] = judgedCriteria[j];
+      }
+    }
+  }
+
+  // --- Score ---
+  const total = criteriaResults.length;
+  const met = criteriaResults.filter(c => c.status === "met").length;
+  const partial = criteriaResults.filter(c => c.status === "partial").length;
+  const score = Math.round(((met * 1.0 + partial * 0.5) / total) * 10 * 10) / 10;
+  const verdict = synthesizeVerdict(criteriaResults, score);
+
+  return { score, verdict, criteria: criteriaResults, responseStats };
+}
+
+function buildE2EJudgePrompt(output: string, criteria: CriterionSpec[]): string {
+  const criteriaList = criteria.map((c, i) => `${i + 1}. ${c.text}`).join("\n");
+  return `You are an eval judge. Given the output of an AI skill and a list of quality criteria, \
+classify each criterion as met, partial, or missed based on the output.
+
+Return a JSON object with this exact shape:
+{
+  "criteria": [
+    {
+      "text": "<criterion text>",
+      "status": "met" | "partial" | "missed",
+      "evidence": "<quote or reference from the output, or (none found)>",
+      "confidence": <0.0–1.0>
+    }
+  ],
+  "verdict": "<1-2 sentence summary>"
+}
+
+Rules:
+- Evaluate criteria in the order listed. Return exactly ${criteria.length} criterion object(s).
+- "met": the output clearly satisfies the criterion.
+- "partial": the criterion is partially addressed but incomplete.
+- "missed": the output does not address the criterion.
+- Evidence must cite actual text from the output (quote ≤ 80 chars) or "(none found)".
+
+CRITERIA TO EVALUATE:
+${criteriaList}
+
+SKILL OUTPUT:
+${output}`;
 }
