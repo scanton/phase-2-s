@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 
 let mockAgentRun: ReturnType<typeof vi.fn>;
 let mockLoadAllSkills: ReturnType<typeof vi.fn>;
+let mockSubstituteInputs: ReturnType<typeof vi.fn>;
 
 vi.mock("../../src/core/agent.js", () => ({
   Agent: class MockAgent {
@@ -22,15 +23,7 @@ vi.mock("../../src/skills/loader.js", () => ({
 }));
 
 vi.mock("../../src/skills/template.js", () => ({
-  substituteInputs: vi.fn().mockImplementation(
-    (template: string, values: Record<string, string>, _inputs: unknown) => {
-      let result = template;
-      for (const [k, v] of Object.entries(values)) {
-        result = result.replaceAll(`{{${k}}}`, v);
-      }
-      return result;
-    },
-  ),
+  substituteInputs: (...args: unknown[]) => mockSubstituteInputs(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -64,6 +57,15 @@ describe("runEvalCase — happy path", () => {
   beforeEach(() => {
     mockAgentRun = vi.fn(async () => "VERDICT: CHALLENGED\nSTRONGEST_CONCERN: state loss");
     mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
+    mockSubstituteInputs = vi.fn().mockImplementation(
+      (template: string, values: Record<string, string>) => {
+        let result = template;
+        for (const [k, v] of Object.entries(values)) {
+          result = result.replaceAll(`{{${k}}}`, v);
+        }
+        return result;
+      },
+    );
   });
 
   it("returns RunnerResult with output and elapsed_ms", async () => {
@@ -79,9 +81,8 @@ describe("runEvalCase — happy path", () => {
   });
 
   it("substitutes inputs into the prompt template before calling agent.run()", async () => {
-    const { substituteInputs } = await import("../../src/skills/template.js");
     await runEvalCase(BASIC_CASE, FAKE_CONFIG);
-    expect(vi.mocked(substituteInputs)).toHaveBeenCalledWith(
+    expect(mockSubstituteInputs).toHaveBeenCalledWith(
       "Challenge this plan: {{plan}}",
       { plan: "Add a rate limiter." },
       expect.anything(),
@@ -93,6 +94,7 @@ describe("runEvalCase — skill not found", () => {
   beforeEach(() => {
     mockAgentRun = vi.fn(async () => "");
     mockLoadAllSkills = vi.fn(async () => []);
+    mockSubstituteInputs = vi.fn((t: string) => t);
   });
 
   it("returns error field when skill name does not match any loaded skill", async () => {
@@ -111,6 +113,7 @@ describe("runEvalCase — agent throws", () => {
   beforeEach(() => {
     mockAgentRun = vi.fn(async () => { throw new Error("LLM provider error"); });
     mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
+    mockSubstituteInputs = vi.fn((t: string) => t);
   });
 
   it("returns error field with message when agent.run() throws", async () => {
@@ -124,6 +127,7 @@ describe("runAllEvals — directory handling", () => {
   beforeEach(() => {
     mockAgentRun = vi.fn(async () => "");
     mockLoadAllSkills = vi.fn(async () => []);
+    mockSubstituteInputs = vi.fn((t: string) => t);
   });
 
   it("returns empty array when eval/ directory does not exist", async () => {
@@ -170,6 +174,7 @@ describe("EvalFixture — setupFixture and teardownFixture", () => {
   it("teardown runs even when agent throws (fixture case error path)", async () => {
     mockAgentRun = vi.fn(async () => { throw new Error("agent failed"); });
     mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
+    mockSubstituteInputs = vi.fn((t: string) => t);
 
     const fixtureCase: EvalCase = {
       ...BASIC_CASE,
@@ -192,6 +197,7 @@ describe("EvalFixture — verify_files", () => {
   it("returns error when a verify_files path does not exist after run", async () => {
     mockAgentRun = vi.fn(async () => "done");
     mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
+    mockSubstituteInputs = vi.fn((t: string) => t);
 
     const fixtureCase: EvalCase = {
       ...BASIC_CASE,
@@ -212,6 +218,7 @@ describe("EvalFixture — verify_files", () => {
 
       mockAgentRun = vi.fn(async () => "wrote src/add.ts");
       mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
+      mockSubstituteInputs = vi.fn((t: string) => t);
 
       // Use setupFixture to create a controlled tmp dir and pre-populate it
       const { setupFixture, teardownFixture } = await import("../../src/eval/runner.js");
