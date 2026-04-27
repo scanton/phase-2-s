@@ -16,40 +16,45 @@ function sanitizeError(err: unknown): string {
   return msg.replace(/,\s*open\s+'[^']*'/g, "").replace(/\/[^\s']*/g, "<path>");
 }
 
-export const fileReadTool: ToolDefinition = {
-  name: "file_read",
-  description: "Read the contents of a file. Optionally specify a line range. Paths are relative to the project directory.",
-  parameters: params,
-  async execute(raw: unknown): Promise<ToolResult> {
-    const args = params.parse(raw);
+export function createFileReadTool(cwd: string = process.cwd()): ToolDefinition {
+  return {
+    name: "file_read",
+    description: "Read the contents of a file. Optionally specify a line range. Paths are relative to the project directory.",
+    parameters: params,
+    async execute(raw: unknown): Promise<ToolResult> {
+      const args = params.parse(raw);
 
-    // Sandbox: reject paths outside the project directory (realpath-based, blocks symlink escapes)
-    let fullPath: string;
-    try {
-      fullPath = await assertInSandbox(args.path);
-    } catch (err) {
-      return {
-        success: false,
-        output: "",
-        error: err instanceof Error ? err.message : `Path outside project directory: ${args.path}`,
-      };
-    }
-
-    try {
-      const content = await readFile(fullPath, "utf-8");
-
-      if (args.startLine !== undefined || args.endLine !== undefined) {
-        const lines = content.split("\n");
-        const start = (args.startLine ?? 1) - 1;  // already validated min(1), so min index is 0
-        const end = args.endLine ?? lines.length;
-        const slice = lines.slice(start, end);
-        const numbered = slice.map((line, i) => `${start + i + 1}\t${line}`);
-        return { success: true, output: numbered.join("\n") };
+      // Sandbox: reject paths outside the project directory (realpath-based, blocks symlink escapes)
+      let fullPath: string;
+      try {
+        fullPath = await assertInSandbox(args.path, cwd);
+      } catch (err) {
+        return {
+          success: false,
+          output: "",
+          error: err instanceof Error ? err.message : `Path outside project directory: ${args.path}`,
+        };
       }
 
-      return { success: true, output: content };
-    } catch (err: unknown) {
-      return { success: false, output: "", error: sanitizeError(err) };
-    }
-  },
-};
+      try {
+        const content = await readFile(fullPath, "utf-8");
+
+        if (args.startLine !== undefined || args.endLine !== undefined) {
+          const lines = content.split("\n");
+          const start = (args.startLine ?? 1) - 1;  // already validated min(1), so min index is 0
+          const end = args.endLine ?? lines.length;
+          const slice = lines.slice(start, end);
+          const numbered = slice.map((line, i) => `${start + i + 1}\t${line}`);
+          return { success: true, output: numbered.join("\n") };
+        }
+
+        return { success: true, output: content };
+      } catch (err: unknown) {
+        return { success: false, output: "", error: sanitizeError(err) };
+      }
+    },
+  };
+}
+
+// Backward-compat static export — uses process.cwd() at call time.
+export const fileReadTool = createFileReadTool();

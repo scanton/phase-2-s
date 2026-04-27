@@ -34,7 +34,7 @@ const params = z.object({
  * When allowDestructive is false (default), commands matching DESTRUCTIVE_PATTERNS
  * are blocked and return success: false. When true, they are allowed with a warning.
  */
-export function createShellTool(allowDestructive = false): ToolDefinition {
+export function createShellTool(allowDestructive = false, projectRoot: string = process.cwd()): ToolDefinition {
   return {
     name: "shell",
     description: "Execute a shell command and return its output. Use for running builds, tests, git commands, etc.",
@@ -59,7 +59,6 @@ export function createShellTool(allowDestructive = false): ToolDefinition {
       }
 
       // Sandbox: reject cwd values that escape the project directory
-      const projectRoot = process.cwd();
       let cwdPath = projectRoot;
       if (args.cwd) {
         const resolvedCwd = resolve(args.cwd);
@@ -107,6 +106,5 @@ export function createShellTool(allowDestructive = false): ToolDefinition {
   };
 }
 
-// Backward-compat export — blocks destructive commands (safe default).
-// All existing non-destructive shell tests use this directly and are unaffected.
+// Backward-compat export — blocks destructive commands, uses process.cwd() at call time.
 export const shellTool = createShellTool(false);

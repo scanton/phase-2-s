@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.49.0 — 2026-04-26
+
+Sprint 75 — Eval Framework Completion.
+
+### Added
+
+- **EvalFixture abstraction** (`src/eval/types.ts`, `src/eval/runner.ts`) — Eval cases can now declare a `fixture:` block in YAML to get a temp project scaffolded before the run and torn down unconditionally after. `setupFixture()` / `teardownFixture()` create/remove a `mkdtemp`-backed directory. `cwd` is injected into the Agent constructor (`new Agent({ config, cwd: tmpDir })`) — not via `process.chdir()` — so it's parallel-safe.
+
+- **`verify_files` existence check** — Fixture-based eval cases can declare `verify_files: [...]` to assert that specific paths exist in the fixture directory after the eval run. Checked for existence only (not content diff). Failure is returned as a `RunnerResult` error.
+
+- **`satori.eval.yaml`** (`eval/satori.eval.yaml`) — Satori eval is now active (was stubbed/commented since Sprint 74). Uses the new EvalFixture with a minimal node-project: `package.json` (test = `echo 'test passed'`) + `src/add.ts` skeleton. Verifies that `src/add.ts` exists post-run and checks output for structural + quality criteria.
+
+- **`MAX_OUTPUT_CHARS = 20_000` cap in `buildE2EJudgePrompt`** — Eval outputs exceeding 20,000 characters are truncated before being inlined into the judge prompt, matching the existing `MAX_DIFF_CHARS = 40_000` truncation in `judgeRun`. Prevents token limit errors on unexpectedly large skill outputs.
+
+### Fixed
+
+- **`vi.hoisted` Bun incompatibility** (`test/eval/runner.test.ts`, `test/eval/judge.test.ts`, `test/eval/cli.test.ts`) — Migrated all three eval test files away from `vi.hoisted()`. `judge.test.ts` uses Pattern B (mutable state object at module scope, mutation not reassignment). `runner.test.ts` and `cli.test.ts` use Pattern A (module-level `let` + `beforeEach` reassign, wrapper function defers mock lookup to call time). All 3 files previously failed under Bun's Vitest shim; all now pass.
+
+- **`scoresBySkill` last-write-wins** (`src/eval/cli.ts`) — When multiple eval cases share the same skill, the summary line now shows the score range (`review=7.0-8.5`) rather than silently discarding all but the last score. Accumulator changed from `Record<string, number | null>` to `Record<string, (number | null)[]>`. The per-case pass/fail gate logic is unchanged.
+
+- **Empty/whitespace `match` field treated as quality criterion** (`src/eval/judge.ts`) — A structural criterion with `match: ""` or `match: "   "` previously passed into the regex branch and produced a degenerate match-everything regex. Now guarded with `c.match.trim()` check; degenerate match fields are routed to the quality (LLM) branch instead.
+
+- **Path traversal blocked in fixture and verify_files** (`src/eval/runner.ts`) — `setupFixture()` now validates each file path with `resolve() + startsWith(tmpDir + "/")` before writing. `verify_files` paths are validated the same way. Paths that escape the fixture root (e.g. `../../etc/passwd`) throw immediately and the temp directory is cleaned up.
+
+- **Partial temp directory leak on fixture write failure** (`src/eval/runner.ts`) — If any file in `setupFixture()` failed to write (bad path, disk full), the partially-created temp directory was left behind. Fixed: the file-write loop runs inside a `try/catch`; on error the temp directory is removed before rethrowing.
+
+- **`verify_files` silently no-ops without a fixture** (`src/eval/runner.ts`) — A case that declared `verify_files` but no `fixture:` block reached the verify loop with `tmpDir = undefined`, skipped all checks, and returned success. Now returns an explicit error: `verify_files declared but no fixture — cannot resolve paths`.
+
+- **`teardownFixture` exception masked original error** (`src/eval/runner.ts`) — The `finally` block called `teardownFixture(tmpDir)` without a `try/catch`. If teardown threw, the original agent error was discarded and the teardown failure surfaced instead. Fixed: teardown is wrapped in `try/catch`; failure is suppressed (best-effort cleanup) so the original error propagates.
+
+- **Satori retry loop not wired to eval runner** (`src/eval/runner.ts`, `src/core/agent.ts`) — Skills with `retries > 0` in their frontmatter were not invoking the satori retry loop during evals. `runEvalCase` now passes `maxRetries: skill.retries` and `verifyCommand: ec.inputs.eval_command` to `agent.run()`, enabling the full implement→verify→retry cycle for fixture-based cases. `agent.ts:runVerify` was also using `process.cwd()` instead of `this.cwd`; fixed so verification runs in the fixture directory.
+
+- **Tool sandbox checks used `process.cwd()` instead of injected cwd** (`src/tools/`) — All five tool implementations (`file_read`, `file_write`, `shell`, `glob`, `grep`) read `process.cwd()` directly for their sandbox boundary. When an agent ran with an injected fixture `cwd`, tools would reject valid fixture-relative paths as "outside project directory". Fixed: all five tools converted to factory functions (`createFileReadTool(cwd)` etc.); `createDefaultRegistry` threads the registry's `cwd` option through all factories. Backward-compat static exports preserved.
+
 ## v1.48.0 — 2026-04-25
 
 Sprint 74 — E2E Eval Framework.

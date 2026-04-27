@@ -30,7 +30,7 @@ async function main(): Promise<void> {
 
   let failed = false;
   let passed = 0;
-  const scoresBySkill: Record<string, number | null> = {};
+  const scoresBySkill: Record<string, (number | null)[]> = {};
 
   for (let i = 0; i < runnerResults.length; i++) {
     const r = runnerResults[i];
@@ -44,7 +44,8 @@ async function main(): Promise<void> {
     if (!passes) failed = true;
     else passed++;
 
-    scoresBySkill[r.case.skill] = score;
+    const existing = scoresBySkill[r.case.skill] ?? [];
+    scoresBySkill[r.case.skill] = [...existing, score];
     console.log(`${status} ${r.case.name.padEnd(45)} ${scoreStr}  (${elapsed}s)`);
   }
 
@@ -53,7 +54,14 @@ async function main(): Promise<void> {
   console.log(`\nResults: ${passed} passed, ${failedCount} failed`);
 
   const scoreEntries = Object.entries(scoresBySkill)
-    .map(([k, v]) => `${k}=${v ?? "—"}`)
+    .map(([k, scores]) => {
+      const nums = scores.filter((s): s is number => s !== null);
+      if (nums.length === 0) return `${k}=—`;
+      if (nums.length === 1) return `${k}=${nums[0]}`;
+      const min = Math.min(...nums);
+      const max = Math.max(...nums);
+      return min === max ? `${k}=${min}` : `${k}=${min}-${max}`;
+    })
     .join("  ");
   console.log(`Scores:  ${scoreEntries}`);
   console.log(`Written: ${DEFAULT_OUTPUT_DIR} (${runnerResults.length * 2} files)`);

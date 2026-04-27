@@ -16,82 +16,84 @@ const params = z.object({
   createDirs: z.boolean().optional().describe("Create parent directories if they don't exist"),
 });
 
-export const fileWriteTool: ToolDefinition = {
-  name: "file_write",
-  description: "Write content to a file. Creates the file if it doesn't exist. Paths are relative to the project directory.",
-  parameters: params,
-  async execute(raw: unknown): Promise<ToolResult> {
-    const args = params.parse(raw);
+export function createFileWriteTool(cwd: string = process.cwd()): ToolDefinition {
+  return {
+    name: "file_write",
+    description: "Write content to a file. Creates the file if it doesn't exist. Paths are relative to the project directory.",
+    parameters: params,
+    async execute(raw: unknown): Promise<ToolResult> {
+      const args = params.parse(raw);
 
-    // For files that need createDirs, we need to mkdir first so that
-    // realpath() can resolve the parent directory. We use a lexical resolve
-    // pre-check before mkdir, then assertInSandbox after dirs exist.
-    const lexicalFullPath = resolve(args.path);
+      // For files that need createDirs, we need to mkdir first so that
+      // realpath() can resolve the parent directory. We use a lexical resolve
+      // pre-check before mkdir, then assertInSandbox after dirs exist.
+      const lexicalFullPath = resolve(cwd, args.path);
 
-    // Capture cwd once — used for both the pre-check and passed to assertInSandbox.
-    const cwd = process.cwd();
+      if (args.createDirs) {
+        // Pre-check using lexical resolve before creating dirs (prevents creating
+        // dirs outside the project before we can realpath-check them).
+        if (!lexicalFullPath.startsWith(cwd + sep) && lexicalFullPath !== cwd) {
+          return {
+            success: false,
+            output: "",
+            error: `Path outside project directory: ${args.path}`,
+          };
+        }
+        await mkdir(dirname(lexicalFullPath), { recursive: true });
+      }
 
-    if (args.createDirs) {
-      // Pre-check using lexical resolve before creating dirs (prevents creating
-      // dirs outside the project before we can realpath-check them).
-      if (!lexicalFullPath.startsWith(cwd + sep) && lexicalFullPath !== cwd) {
+      // Sandbox: reject paths outside the project directory (realpath-based, blocks symlink escapes)
+      // After dirs are created, realpath() can resolve the parent reliably.
+      let fullPath: string;
+      try {
+        fullPath = await assertInSandbox(args.path, cwd);
+      } catch (err) {
         return {
           success: false,
           output: "",
-          error: `Path outside project directory: ${args.path}`,
+          error: err instanceof Error ? err.message : `Path outside project directory: ${args.path}`,
         };
       }
-      await mkdir(dirname(lexicalFullPath), { recursive: true });
-    }
 
-    // Sandbox: reject paths outside the project directory (realpath-based, blocks symlink escapes)
-    // After dirs are created, realpath() can resolve the parent reliably.
-    let fullPath: string;
-    try {
-      fullPath = await assertInSandbox(args.path, cwd);
-    } catch (err) {
-      return {
-        success: false,
-        output: "",
-        error: err instanceof Error ? err.message : `Path outside project directory: ${args.path}`,
-      };
-    }
+      // Guard: reject near-empty writes to existing files (silent truncation is data loss).
+      // Trim check catches whitespace-only content that would also effectively destroy a file.
+      if (args.content.trim() === "") {
+        try {
+          await access(fullPath);
+          // File exists — refuse the empty write
+          return {
+            success: false,
+            output: "",
+            error: `Refusing to truncate existing file to empty: ${args.path}. Pass non-empty content.`,
+          };
+        } catch {
+          // File doesn't exist — writing empty is fine (creates the file)
+        }
+      }
 
-    // Guard: reject near-empty writes to existing files (silent truncation is data loss).
-    // Trim check catches whitespace-only content that would also effectively destroy a file.
-    if (args.content.trim() === "") {
       try {
-        await access(fullPath);
-        // File exists — refuse the empty write
-        return {
-          success: false,
-          output: "",
-          error: `Refusing to truncate existing file to empty: ${args.path}. Pass non-empty content.`,
-        };
-      } catch {
-        // File doesn't exist — writing empty is fine (creates the file)
-      }
-    }
+        // Check if file exists to produce an informative log
+        let existed = false;
+        try {
+          await access(fullPath);
+          existed = true;
+        } catch {
+          // doesn't exist
+        }
 
-    try {
-      // Check if file exists to produce an informative log
-      let existed = false;
-      try {
-        await access(fullPath);
-        existed = true;
-      } catch {
-        // doesn't exist
-      }
+        await writeFile(fullPath, args.content, "utf-8");
 
-      await writeFile(fullPath, args.content, "utf-8");
-
-      const verb = existed ? "Overwrote" : "Wrote";
-      if (existed) {
-        process.stdout.write(`  [file_write] Overwriting existing file: ${args.path}\n`);
+        const verb = existed ? "Overwrote" : "Wrote";
+        if (existed) {
+          process.stdout.write(`  [file_write] Overwriting existing file: ${args.path}\n`);
+        }
+        return { success: true, output: `${verb} ${args.content.length} bytes to ${args.path}` };
+      } catch (err: unknown) {
+        return { success: false, output: "", error: sanitizeError(err) };
       }
-      return { success: true, output: `${verb} ${args.content.length} bytes to ${args.path}` };
-    } catch (err: unknown) {
-      return { success: false, output: "", error: sanitizeError(err) };
-    }
-  },
-};
+    },
+  };
+}
+
+// Backward-compat static export — uses process.cwd() at call time.
+export const fileWriteTool = createFileWriteTool();
