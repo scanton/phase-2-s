@@ -8,12 +8,25 @@ export interface CriterionSpec {
   match?: string;
 }
 
+export interface EvalFixtureFile {
+  path: string;    // relative to fixture root
+  content: string;
+}
+
+export interface EvalFixture {
+  type: "node-project" | "bare-dir";
+  files: EvalFixtureFile[];
+}
+
 export interface EvalCase {
   name: string;
   skill: string;
   inputs: Record<string, string>;
   acceptance_criteria: CriterionSpec[];
   timeout_ms?: number;
+  fixture?: EvalFixture;
+  // Paths relative to fixture root. Checked for existence only after the eval run.
+  verify_files?: string[];
 }
 
 export interface RunnerResult {

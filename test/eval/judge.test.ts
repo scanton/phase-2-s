@@ -28,7 +28,7 @@ import type { RunnerResult } from "../../src/eval/runner.js";
 // Agent mock
 // ---------------------------------------------------------------------------
 
-const mockState = vi.hoisted(() => ({ response: "", shouldThrow: false }));
+const mockState = { response: "" as string, shouldThrow: false };
 
 vi.mock("../../src/core/agent.js", () => ({
   Agent: class MockAgent {

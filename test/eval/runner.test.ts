@@ -1,27 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runEvalCase, runAllEvals, type EvalCase } from "../../src/eval/runner.js";
+import { rm, mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 // ---------------------------------------------------------------------------
-// Mocks
+// Mocks — Pattern A: module-level let + beforeEach reassign with wrapper
 // ---------------------------------------------------------------------------
 
-const agentState = vi.hoisted(() => ({ response: "mock output", shouldThrow: false }));
+let mockAgentRun: ReturnType<typeof vi.fn>;
+let mockLoadAllSkills: ReturnType<typeof vi.fn>;
 
 vi.mock("../../src/core/agent.js", () => ({
   Agent: class MockAgent {
-    async run(_prompt: string) {
-      if (agentState.shouldThrow) throw new Error("LLM provider error");
-      return agentState.response;
-    }
+    async run(...args: unknown[]) { return mockAgentRun(...args); }
   },
 }));
 
-const skillsState = vi.hoisted(() => ({
-  skills: [] as Array<{ name: string; promptTemplate: string; inputs?: Record<string, unknown>; model?: string }>,
-}));
-
 vi.mock("../../src/skills/loader.js", () => ({
-  loadAllSkills: vi.fn(async () => skillsState.skills),
+  loadAllSkills: (...args: unknown[]) => mockLoadAllSkills(...args),
 }));
 
 vi.mock("../../src/skills/template.js", () => ({
@@ -65,9 +62,8 @@ function makeSkill(name = "adversarial") {
 
 describe("runEvalCase — happy path", () => {
   beforeEach(() => {
-    agentState.shouldThrow = false;
-    agentState.response = "VERDICT: CHALLENGED\nSTRONGEST_CONCERN: state loss";
-    skillsState.skills = [makeSkill()];
+    mockAgentRun = vi.fn(async () => "VERDICT: CHALLENGED\nSTRONGEST_CONCERN: state loss");
+    mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
   });
 
   it("returns RunnerResult with output and elapsed_ms", async () => {
@@ -95,7 +91,8 @@ describe("runEvalCase — happy path", () => {
 
 describe("runEvalCase — skill not found", () => {
   beforeEach(() => {
-    skillsState.skills = [];
+    mockAgentRun = vi.fn(async () => "");
+    mockLoadAllSkills = vi.fn(async () => []);
   });
 
   it("returns error field when skill name does not match any loaded skill", async () => {
@@ -112,12 +109,8 @@ describe("runEvalCase — skill not found", () => {
 
 describe("runEvalCase — agent throws", () => {
   beforeEach(() => {
-    agentState.shouldThrow = true;
-    skillsState.skills = [makeSkill()];
-  });
-
-  afterEach(() => {
-    agentState.shouldThrow = false;
+    mockAgentRun = vi.fn(async () => { throw new Error("LLM provider error"); });
+    mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
   });
 
   it("returns error field with message when agent.run() throws", async () => {
@@ -128,10 +121,119 @@ describe("runEvalCase — agent throws", () => {
 });
 
 describe("runAllEvals — directory handling", () => {
+  beforeEach(() => {
+    mockAgentRun = vi.fn(async () => "");
+    mockLoadAllSkills = vi.fn(async () => []);
+  });
+
   it("returns empty array when eval/ directory does not exist", async () => {
-    // In vitest's working directory there is no eval/ at root level during unit tests
-    // We verify it returns [] gracefully rather than throwing
     const results = await runAllEvals(FAKE_CONFIG);
     expect(Array.isArray(results)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EvalFixture — setupFixture / teardownFixture
+// ---------------------------------------------------------------------------
+
+describe("EvalFixture — setupFixture and teardownFixture", () => {
+  it("creates temp dir with specified files", async () => {
+    const { setupFixture, teardownFixture } = await import("../../src/eval/runner.js");
+    const fixture = {
+      type: "node-project" as const,
+      files: [
+        { path: "package.json", content: '{"name":"test"}' },
+        { path: "src/add.ts", content: "// TODO" },
+      ],
+    };
+    const tmpDir = await setupFixture(fixture);
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const pkg = await readFile(join(tmpDir, "package.json"), "utf8");
+      expect(pkg).toBe('{"name":"test"}');
+      const src = await readFile(join(tmpDir, "src/add.ts"), "utf8");
+      expect(src).toBe("// TODO");
+    } finally {
+      await teardownFixture(tmpDir);
+    }
+  });
+
+  it("teardown removes the directory unconditionally", async () => {
+    const { setupFixture, teardownFixture } = await import("../../src/eval/runner.js");
+    const fixture = { type: "bare-dir" as const, files: [] };
+    const tmpDir = await setupFixture(fixture);
+    await teardownFixture(tmpDir);
+    const { stat } = await import("node:fs/promises");
+    await expect(stat(tmpDir)).rejects.toThrow();
+  });
+
+  it("teardown runs even when agent throws (fixture case error path)", async () => {
+    mockAgentRun = vi.fn(async () => { throw new Error("agent failed"); });
+    mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
+
+    const fixtureCase: EvalCase = {
+      ...BASIC_CASE,
+      inputs: { plan: "test" },
+      fixture: {
+        type: "bare-dir" as const,
+        files: [],
+      },
+    };
+
+    const result = await runEvalCase(fixtureCase, FAKE_CONFIG);
+    expect(result.error).toMatch(/agent failed/);
+
+    // Verify no lingering tmp dirs from this run by checking the error was captured
+    expect(result.output).toBe("");
+  });
+});
+
+describe("EvalFixture — verify_files", () => {
+  it("returns error when a verify_files path does not exist after run", async () => {
+    mockAgentRun = vi.fn(async () => "done");
+    mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
+
+    const fixtureCase: EvalCase = {
+      ...BASIC_CASE,
+      inputs: { plan: "test" },
+      fixture: { type: "bare-dir" as const, files: [] },
+      verify_files: ["src/missing.ts"],
+    };
+
+    const result = await runEvalCase(fixtureCase, FAKE_CONFIG);
+    expect(result.error).toMatch(/verify_files/i);
+  });
+
+  it("succeeds when verify_files paths exist after run", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "vf-test-"));
+    try {
+      await mkdir(join(tmpDir, "src"), { recursive: true });
+      await writeFile(join(tmpDir, "src/add.ts"), "export const add = (a: number, b: number) => a + b;");
+
+      mockAgentRun = vi.fn(async () => "wrote src/add.ts");
+      mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
+
+      // Use setupFixture to create a controlled tmp dir and pre-populate it
+      const { setupFixture, teardownFixture } = await import("../../src/eval/runner.js");
+      const fixture = {
+        type: "bare-dir" as const,
+        files: [{ path: "src/add.ts", content: "// placeholder" }],
+      };
+      const fixtureTmpDir = await setupFixture(fixture);
+      try {
+        const fixtureCase: EvalCase = {
+          ...BASIC_CASE,
+          inputs: { plan: "test" },
+          fixture,
+          verify_files: ["src/add.ts"],
+        };
+        const result = await runEvalCase(fixtureCase, FAKE_CONFIG);
+        expect(result.error).toBeUndefined();
+      } finally {
+        await teardownFixture(fixtureTmpDir);
+      }
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });

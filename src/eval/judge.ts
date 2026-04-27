@@ -45,6 +45,9 @@ export interface JudgeResult {
 /** Max diff characters to include in the judge prompt. Prevents token limit errors. */
 export const MAX_DIFF_CHARS = 40_000;
 
+/** Max output characters to include in the E2E judge prompt. */
+export const MAX_OUTPUT_CHARS = 20_000;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -322,7 +325,7 @@ export async function judgeE2E(
 
   for (let i = 0; i < criteria.length; i++) {
     const c = criteria[i];
-    if (c.type === "structural" && c.match) {
+    if (c.type === "structural" && c.match && c.match.trim()) {
       structuralIndices.push(i);
     } else {
       qualityIndices.push(i);
@@ -396,6 +399,9 @@ export async function judgeE2E(
 }
 
 function buildE2EJudgePrompt(output: string, criteria: CriterionSpec[]): string {
+  const safeOutput = output.length > MAX_OUTPUT_CHARS
+    ? output.slice(0, MAX_OUTPUT_CHARS) + `\n\n[output truncated at ${MAX_OUTPUT_CHARS} chars]`
+    : output;
   const criteriaList = criteria.map((c, i) => `${i + 1}. ${c.text}`).join("\n");
   return `You are an eval judge. Given the output of an AI skill and a list of quality criteria, \
 classify each criterion as met, partial, or missed based on the output.
@@ -424,5 +430,5 @@ CRITERIA TO EVALUATE:
 ${criteriaList}
 
 SKILL OUTPUT:
-${output}`;
+${safeOutput}`;
 }

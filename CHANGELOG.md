@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.49.0 — 2026-04-26
+
+Sprint 75 — Eval Framework Completion.
+
+### Added
+
+- **EvalFixture abstraction** (`src/eval/types.ts`, `src/eval/runner.ts`) — Eval cases can now declare a `fixture:` block in YAML to get a temp project scaffolded before the run and torn down unconditionally after. `setupFixture()` / `teardownFixture()` create/remove a `mkdtemp`-backed directory. `cwd` is injected into the Agent constructor (`new Agent({ config, cwd: tmpDir })`) — not via `process.chdir()` — so it's parallel-safe.
+
+- **`verify_files` existence check** — Fixture-based eval cases can declare `verify_files: [...]` to assert that specific paths exist in the fixture directory after the eval run. Checked for existence only (not content diff). Failure is returned as a `RunnerResult` error.
+
+- **`satori.eval.yaml`** (`eval/satori.eval.yaml`) — Satori eval is now active (was stubbed/commented since Sprint 74). Uses the new EvalFixture with a minimal node-project: `package.json` (test = `echo 'test passed'`) + `src/add.ts` skeleton. Verifies that `src/add.ts` exists post-run and checks output for structural + quality criteria.
+
+- **`MAX_OUTPUT_CHARS = 20_000` cap in `buildE2EJudgePrompt`** — Eval outputs exceeding 20,000 characters are truncated before being inlined into the judge prompt, matching the existing `MAX_DIFF_CHARS = 40_000` truncation in `judgeRun`. Prevents token limit errors on unexpectedly large skill outputs.
+
+### Fixed
+
+- **`vi.hoisted` Bun incompatibility** (`test/eval/runner.test.ts`, `test/eval/judge.test.ts`, `test/eval/cli.test.ts`) — Migrated all three eval test files away from `vi.hoisted()`. `judge.test.ts` uses Pattern B (mutable state object at module scope, mutation not reassignment). `runner.test.ts` and `cli.test.ts` use Pattern A (module-level `let` + `beforeEach` reassign, wrapper function defers mock lookup to call time). All 3 files previously failed under Bun's Vitest shim; all now pass.
+
+- **`scoresBySkill` last-write-wins** (`src/eval/cli.ts`) — When multiple eval cases share the same skill, the summary line now shows the score range (`review=7.0-8.5`) rather than silently discarding all but the last score. Accumulator changed from `Record<string, number | null>` to `Record<string, (number | null)[]>`. The per-case pass/fail gate logic is unchanged.
+
+- **Empty/whitespace `match` field treated as quality criterion** (`src/eval/judge.ts`) — A structural criterion with `match: ""` or `match: "   "` previously passed into the regex branch and produced a degenerate match-everything regex. Now guarded with `c.match.trim()` check; degenerate match fields are routed to the quality (LLM) branch instead.
+
 ## v1.48.0 — 2026-04-25
 
 Sprint 74 — E2E Eval Framework.
