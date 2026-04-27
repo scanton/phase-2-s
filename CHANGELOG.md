@@ -22,6 +22,18 @@ Sprint 75 — Eval Framework Completion.
 
 - **Empty/whitespace `match` field treated as quality criterion** (`src/eval/judge.ts`) — A structural criterion with `match: ""` or `match: "   "` previously passed into the regex branch and produced a degenerate match-everything regex. Now guarded with `c.match.trim()` check; degenerate match fields are routed to the quality (LLM) branch instead.
 
+- **Path traversal blocked in fixture and verify_files** (`src/eval/runner.ts`) — `setupFixture()` now validates each file path with `resolve() + startsWith(tmpDir + "/")` before writing. `verify_files` paths are validated the same way. Paths that escape the fixture root (e.g. `../../etc/passwd`) throw immediately and the temp directory is cleaned up.
+
+- **Partial temp directory leak on fixture write failure** (`src/eval/runner.ts`) — If any file in `setupFixture()` failed to write (bad path, disk full), the partially-created temp directory was left behind. Fixed: the file-write loop runs inside a `try/catch`; on error the temp directory is removed before rethrowing.
+
+- **`verify_files` silently no-ops without a fixture** (`src/eval/runner.ts`) — A case that declared `verify_files` but no `fixture:` block reached the verify loop with `tmpDir = undefined`, skipped all checks, and returned success. Now returns an explicit error: `verify_files declared but no fixture — cannot resolve paths`.
+
+- **`teardownFixture` exception masked original error** (`src/eval/runner.ts`) — The `finally` block called `teardownFixture(tmpDir)` without a `try/catch`. If teardown threw, the original agent error was discarded and the teardown failure surfaced instead. Fixed: teardown is wrapped in `try/catch`; failure is suppressed (best-effort cleanup) so the original error propagates.
+
+- **Satori retry loop not wired to eval runner** (`src/eval/runner.ts`, `src/core/agent.ts`) — Skills with `retries > 0` in their frontmatter were not invoking the satori retry loop during evals. `runEvalCase` now passes `maxRetries: skill.retries` and `verifyCommand: ec.inputs.eval_command` to `agent.run()`, enabling the full implement→verify→retry cycle for fixture-based cases. `agent.ts:runVerify` was also using `process.cwd()` instead of `this.cwd`; fixed so verification runs in the fixture directory.
+
+- **Tool sandbox checks used `process.cwd()` instead of injected cwd** (`src/tools/`) — All five tool implementations (`file_read`, `file_write`, `shell`, `glob`, `grep`) read `process.cwd()` directly for their sandbox boundary. When an agent ran with an injected fixture `cwd`, tools would reject valid fixture-relative paths as "outside project directory". Fixed: all five tools converted to factory functions (`createFileReadTool(cwd)` etc.); `createDefaultRegistry` threads the registry's `cwd` option through all factories. Backward-compat static exports preserved.
+
 ## v1.48.0 — 2026-04-25
 
 Sprint 74 — E2E Eval Framework.
