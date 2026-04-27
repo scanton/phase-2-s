@@ -162,6 +162,15 @@ describe("EvalFixture — setupFixture and teardownFixture", () => {
     }
   });
 
+  it("rejects path traversal in fixture file paths", async () => {
+    const { setupFixture } = await import("../../src/eval/runner.js");
+    const fixture = {
+      type: "bare-dir" as const,
+      files: [{ path: "../../etc/passwd", content: "malicious" }],
+    };
+    await expect(setupFixture(fixture)).rejects.toThrow(/escapes fixture root/);
+  });
+
   it("teardown removes the directory unconditionally", async () => {
     const { setupFixture, teardownFixture } = await import("../../src/eval/runner.js");
     const fixture = { type: "bare-dir" as const, files: [] };
@@ -194,6 +203,21 @@ describe("EvalFixture — setupFixture and teardownFixture", () => {
 });
 
 describe("EvalFixture — verify_files", () => {
+  it("returns error when verify_files declared but no fixture is set", async () => {
+    mockAgentRun = vi.fn(async () => "done");
+    mockLoadAllSkills = vi.fn(async () => [makeSkill()]);
+    mockSubstituteInputs = vi.fn((t: string) => t);
+
+    const noFixtureCase: EvalCase = {
+      ...BASIC_CASE,
+      inputs: { plan: "test" },
+      verify_files: ["src/add.ts"],
+    };
+
+    const result = await runEvalCase(noFixtureCase, FAKE_CONFIG);
+    expect(result.error).toMatch(/no fixture/i);
+  });
+
   it("returns error when a verify_files path does not exist after run", async () => {
     mockAgentRun = vi.fn(async () => "done");
     mockLoadAllSkills = vi.fn(async () => [makeSkill()]);

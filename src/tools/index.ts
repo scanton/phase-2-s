@@ -1,9 +1,9 @@
 import { ToolRegistry } from "./registry.js";
-import { fileReadTool } from "./file-read.js";
-import { fileWriteTool } from "./file-write.js";
+import { createFileReadTool } from "./file-read.js";
+import { createFileWriteTool } from "./file-write.js";
 import { createShellTool } from "./shell.js";
-import { globTool } from "./glob-tool.js";
-import { grepTool } from "./grep-tool.js";
+import { createGlobTool } from "./glob-tool.js";
+import { createGrepTool } from "./grep-tool.js";
 import { createBrowserTool } from "./browser.js";
 
 export interface RegistryOptions {
@@ -23,11 +23,11 @@ export function createDefaultRegistry(
   const { allowDestructive = false, cwd = process.cwd(), browserEnabled = false } = opts;
 
   const registry = new ToolRegistry();
-  registry.register(fileReadTool);
-  registry.register(fileWriteTool);
-  registry.register(createShellTool(allowDestructive));
-  registry.register(globTool);
-  registry.register(grepTool);
+  registry.register(createFileReadTool(cwd));
+  registry.register(createFileWriteTool(cwd));
+  registry.register(createShellTool(allowDestructive, cwd));
+  registry.register(createGlobTool(cwd));
+  registry.register(createGrepTool(cwd));
 
   if (browserEnabled) {
     registry.register(createBrowserTool(cwd));

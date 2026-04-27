@@ -17,6 +17,7 @@ let mockRunnerResults: Array<{
 }> = [];
 
 let mockJudgeScore: number | null = 8.5;
+let mockJudgeScoreQueue: (number | null)[] = [];
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -32,7 +33,7 @@ vi.mock("../../src/eval/runner.js", () => ({
 
 vi.mock("../../src/eval/judge.js", () => ({
   judgeE2E: (...args: unknown[]) => Promise.resolve({
-    score: mockJudgeScore,
+    score: mockJudgeScoreQueue.length > 0 ? mockJudgeScoreQueue.shift()! : mockJudgeScore,
     verdict: "Test verdict.",
     criteria: [],
     responseStats: { length: 100 },
@@ -79,6 +80,7 @@ describe("cli gate — exit codes", () => {
   beforeEach(() => {
     mockRunnerResults = [];
     mockJudgeScore = 8.5;
+    mockJudgeScoreQueue = [];
     exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: number) => {
       return undefined as never;
     });
@@ -139,6 +141,9 @@ describe("cli scoresBySkill — multi-case same skill", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    mockRunnerResults = [];
+    mockJudgeScore = 8.5;
+    mockJudgeScoreQueue = [];
     exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: number) => undefined as never);
     logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -148,24 +153,36 @@ describe("cli scoresBySkill — multi-case same skill", () => {
     vi.restoreAllMocks();
   });
 
-  it("two cases with the same skill → score summary shows range, not last-write", async () => {
-    // Two adversarial cases. Mock will return the same score for both since
-    // judgeE2E is mocked globally, but we can vary them via mockJudgeScore
-    // by using two different mock calls. For the multi-case display test,
-    // the key assertion is that Scores line contains both cases' skill.
+  it("two cases with the same skill → score summary shows min-max range", async () => {
     mockRunnerResults = [
       makeRunnerResult("adversarial", "adversarial-case-1"),
       makeRunnerResult("adversarial", "adversarial-case-2"),
     ];
-    mockJudgeScore = 8.5;
+    // Return different scores for the two judgeE2E calls
+    mockJudgeScoreQueue = [7.0, 9.0];
 
     await main();
 
     const allLogs = logSpy.mock.calls.map(c => c[0] as string).join("\n");
-    // Should show adversarial in the scores summary
-    expect(allLogs).toMatch(/adversarial/);
-    // Should not call exit(1) since all scores pass
+    // Score line must show range format: adversarial=7-9
+    expect(allLogs).toMatch(/adversarial=7-9/);
+    // Both scores pass the 6.0 gate
     const exit1Calls = exitSpy.mock.calls.filter(args => args[0] === 1);
     expect(exit1Calls).toHaveLength(0);
+  });
+
+  it("two cases with the same score → summary shows scalar, not range", async () => {
+    mockRunnerResults = [
+      makeRunnerResult("adversarial", "adversarial-case-1"),
+      makeRunnerResult("adversarial", "adversarial-case-2"),
+    ];
+    mockJudgeScore = 8.5; // both calls return 8.5
+
+    await main();
+
+    const allLogs = logSpy.mock.calls.map(c => c[0] as string).join("\n");
+    // min === max → scalar display, not range
+    expect(allLogs).toMatch(/adversarial=8\.5/);
+    expect(allLogs).not.toMatch(/adversarial=8\.5-8\.5/);
   });
 });

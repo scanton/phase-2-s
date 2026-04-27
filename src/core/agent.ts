@@ -212,7 +212,7 @@ export class Agent {
     if (verifyFn) return verifyFn(command);
     try {
       const { stdout, stderr } = await execAsync(command, {
-        cwd: process.cwd(),
+        cwd: this.cwd,
         timeout: 120_000,
       });
       return { exitCode: 0, output: stdout + stderr };
