@@ -1399,7 +1399,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
             console.log(chalk.yellow(`\n⚠  ${err.message}`));
             rl.removeListener("line", onLine);
             try {
-              const answer = await askUser(rl, "  [s]end anyway / [c]ancel: ");
+              const answer = await askUser(rl, "  [s]end anyway / [c]ancel: ", { noClose: true });
               if (answer.toLowerCase().startsWith("s")) {
                 secretsSendAnyway = true;
                 continue;
@@ -1435,7 +1435,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       // acceptable on an uncommon branch).
       rl.removeListener("line", onLine);
       try {
-        const answer = await askUser(rl, "[a]ccept / [e]dit / [c]ancel: ");
+        const answer = await askUser(rl, "[a]ccept / [e]dit / [c]ancel: ", { noClose: true });
         const key = answer.toLowerCase().trim();
         if (key.startsWith("a") || key === "") {
           const { ok, output } = runGitCommit(result.message);
