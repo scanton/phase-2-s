@@ -104,6 +104,8 @@ If `type` is omitted, it defaults to `quality`.
 
 A `structural` criterion without a `match` field also falls back to `quality`.
 
+A `structural` criterion with an invalid `match` regex (e.g. `"[unclosed"`) records `status: "missed"` with `evidence: "(invalid regex: <message>)"` — it does not fall back to the LLM judge. Fix the pattern in your YAML file.
+
 ### Finding your skill's input keys
 
 Look at the skill's SKILL.md frontmatter:
