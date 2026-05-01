@@ -70,7 +70,7 @@ provider: codex-cli
 # Ollama embedding model (optional, requires ollamaBaseUrl to be set)
 # When set, Phase2S uses this model for embeddings and the main model for chat.
 # Useful for lighter, faster embed models (e.g., nomic-embed-text, mxbai-embed-large)
-# without changing your chat model. Defaults to the main model when absent.
+# without changing your chat model. Defaults to gemma4:latest when absent.
 # ollamaEmbedModel: nomic-embed-text
 
 # OpenRouter API key (openrouter provider only)

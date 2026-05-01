@@ -104,12 +104,10 @@ export async function getOrBuildIndex(
       const vector = await embedFn(learning.insight);
       if (vector.length > 0) {
         updated.push({ key: learning.key, hash, vector, ts: new Date().toISOString() });
-        changed = true;
-      } else {
-        // Embed failed (Ollama down, model not pulled, etc.) — mark changed so the
-        // next run retries rather than treating this entry as permanently absent.
-        changed = true;
       }
+      // Mark changed whether embed succeeded or failed. On failure, this forces a
+      // write so the next run retries instead of treating the entry as permanently absent.
+      changed = true;
     }
   }
 
