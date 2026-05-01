@@ -376,6 +376,18 @@ describe("judgeE2E — structural criteria (regex, no LLM call)", () => {
     const structural = result.criteria.find(c => c.text === "Contains a VERDICT field");
     expect(structural?.confidence).toBe(1.0);
   });
+
+  it("invalid regex in structural match → status: missed, evidence contains 'invalid regex'", async () => {
+    const result = await judgeE2E(
+      makeRunnerResult("some output", [
+        { text: "Has a result field", type: "structural" as const, match: "[invalid" },
+      ]),
+      FAKE_CONFIG,
+    );
+    const criterion = result.criteria[0];
+    expect(criterion.status).toBe("missed");
+    expect(criterion.evidence).toContain("invalid regex");
+  });
 });
 
 describe("judgeE2E — quality criteria (LLM judge)", () => {

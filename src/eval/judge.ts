@@ -347,9 +347,13 @@ export async function judgeE2E(
         status = "met";
         evidence = `matched: "${m[0]}"`;
       }
-    } catch {
-      // Invalid regex — treat as quality (safe fallback)
-      qualityIndices.push(i);
+    } catch (err) {
+      criteriaResults[i] = {
+        text: c.text,
+        status: "missed",
+        evidence: `(invalid regex: ${(err as Error).message})`,
+        confidence: 1.0,
+      };
       continue;
     }
     criteriaResults[i] = { text: c.text, status, evidence, confidence: 1.0 };
