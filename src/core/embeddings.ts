@@ -13,6 +13,8 @@ export async function generateEmbedding(
   model: string,
   baseUrl: string,
 ): Promise<number[]> {
+  // Reject non-HTTP(S) schemes (file://, data:, empty string) before making any network call.
+  if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) return [];
   try {
     // Strip /v1 suffix — ollamaBaseUrl is stored with /v1 for OpenAI-compat API,
     // but the native embed endpoint lives at /api/embed (no /v1).

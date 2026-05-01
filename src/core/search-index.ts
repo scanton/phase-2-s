@@ -17,7 +17,8 @@ import { join } from "node:path";
 import type { Learning } from "./memory.js";
 
 const INDEX_FILE = ".phase2s/search-index.jsonl";
-const INDEX_TMP_FILE = ".phase2s/search-index.jsonl.tmp";
+// Per-process unique tmp path prevents concurrent CLI instances from clobbering each other's write
+const INDEX_TMP_FILE = `.phase2s/search-index.jsonl.${process.pid}.tmp`;
 
 interface SearchEntry {
   key: string;
@@ -103,8 +104,10 @@ export async function getOrBuildIndex(
       const vector = await embedFn(learning.insight);
       if (vector.length > 0) {
         updated.push({ key: learning.key, hash, vector, ts: new Date().toISOString() });
-        changed = true;
       }
+      // Mark changed whether embed succeeded or failed. On failure, this forces a
+      // write so the next run retries instead of treating the entry as permanently absent.
+      changed = true;
     }
   }
 
