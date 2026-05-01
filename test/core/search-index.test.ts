@@ -81,14 +81,56 @@ describe("getOrBuildIndex", () => {
     const learnings: Learning[] = [{ key: "a", insight: "atomic write test" }];
     await getOrBuildIndex(tmpDir, learnings, fakeEmbed);
 
-    // Temp file must not exist after write completes
-    const tmpFile = join(tmpDir, ".phase2s/search-index.jsonl.tmp");
+    // PID-unique temp file must not exist after write completes
+    const tmpFile = join(tmpDir, `.phase2s/search-index.jsonl.${process.pid}.tmp`);
     const { existsSync } = await import("node:fs");
     expect(existsSync(tmpFile)).toBe(false);
 
     // Final file must exist
     const finalFile = join(tmpDir, ".phase2s/search-index.jsonl");
     expect(existsSync(finalFile)).toBe(true);
+  });
+
+  it("retries embed on next run when embedFn returns [] (changed=true)", async () => {
+    const learnings: Learning[] = [{ key: "a", insight: "retry me" }];
+    const failingEmbed = (_text: string): Promise<number[]> => Promise.resolve([]);
+
+    // First run: embed fails, no entry is added
+    const firstIndex = await getOrBuildIndex(tmpDir, learnings, failingEmbed);
+    expect(firstIndex).toHaveLength(0);
+
+    // Second run: embed succeeds — entry should now be embedded (not skipped as "unchanged")
+    const embedCalls: string[] = [];
+    const succeedingEmbed = (text: string) => { embedCalls.push(text); return fakeEmbed(text); };
+    const secondIndex = await getOrBuildIndex(tmpDir, learnings, succeedingEmbed);
+
+    expect(embedCalls).toContain("retry me");
+    expect(secondIndex).toHaveLength(1);
+    expect(secondIndex[0].key).toBe("a");
+  });
+
+  it("skips corrupt JSONL lines without crashing", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    // Write a partially corrupt index — two valid entries, one garbage line
+    // Hashes are SHA-256 of the insight strings
+    const corruptContent = [
+      '{"key":"a","hash":"4137145e59e527aa449cc1f0ffad8d02d9adeab84ef151f7b7e3d1346e5f90cf","vector":[0.1,0.2],"ts":""}',
+      "NOT_JSON{{{",
+      '{"key":"b","hash":"80ea378a2a6d8da2f8d2051d7be8d6ff87661cf1aeede55bb410ed51575a654c","vector":[0.3,0.4],"ts":""}',
+    ].join("\n") + "\n";
+    await writeFile(join(tmpDir, ".phase2s/search-index.jsonl"), corruptContent, "utf-8");
+
+    const learnings: Learning[] = [
+      { key: "a", insight: "already indexed" },
+      { key: "b", insight: "also indexed" },
+    ];
+    const embedCalls: string[] = [];
+    const trackingEmbed = (text: string) => { embedCalls.push(text); return fakeEmbed(text); };
+    const index = await getOrBuildIndex(tmpDir, learnings, trackingEmbed);
+
+    // Valid entries should be preserved without re-embedding
+    expect(embedCalls).toHaveLength(0);
+    expect(index.map((e) => e.key).sort()).toEqual(["a", "b"]);
   });
 
   it("handles empty learnings list gracefully", async () => {
@@ -121,5 +163,14 @@ describe("findTopK", () => {
     const index = [{ key: "a", hash: "h1", vector: [1, 0], ts: "" }];
     const result = findTopK([], index, 1);
     expect(result).toEqual([]);
+  });
+
+  it("returns all entries when k > index.length", () => {
+    const index = [
+      { key: "a", hash: "h1", vector: [1, 0, 0], ts: "" },
+      { key: "b", hash: "h2", vector: [0, 1, 0], ts: "" },
+    ];
+    const result = findTopK([1, 0, 0], index, 100);
+    expect(result).toHaveLength(2);
   });
 });

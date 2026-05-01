@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.49.1 — 2026-05-01
+
+Sprint 72 Hardening — Semantic Search Resilience.
+
+### Fixed
+
+- **URL scheme guard in `generateEmbedding`** (`src/core/embeddings.ts`) — `baseUrl` values with non-HTTP/HTTPS schemes (`file://`, `data:`, empty string) now return `[]` immediately without making a network call. Prevents unintended side-effects when misconfigured or empty `ollamaBaseUrl` values reach the embed client.
+
+- **PID-unique tmp path for atomic index writes** (`src/core/search-index.ts`) — The intermediate temp file used during atomic index writes was a shared constant (`search-index.jsonl.tmp`). Concurrent CLI processes (e.g. parallel goal workers) could overwrite each other's in-flight write. Changed to `search-index.jsonl.${process.pid}.tmp` so each process owns its temp file exclusively. `.gitignore` glob updated from `.phase2s/search-index.jsonl.tmp` to `.phase2s/search-index.jsonl.*.tmp`.
+
+- **Embed retry on Ollama failure** (`src/core/search-index.ts`) — When `embedFn` returned an empty vector (Ollama unreachable, model not pulled, timeout), the learning's entry was silently omitted from the index without setting `changed = true`. On the next run the index appeared up-to-date for that key (hash mismatch → no entry present), so the embed was never retried and the learning was permanently absent from semantic search. Fixed: `changed = true` is now set in the empty-vector branch, forcing a re-embed attempt on the next run.
+
+- **Embed model fallback uses wrong model** (`src/core/memory.ts`) — `loadRelevantLearnings` used `config.model` as the fallback embed model when `config.ollamaEmbedModel` was unset. `config.model` is the chat model (e.g. `gpt-4o`, `claude-sonnet-4-5`), which is not an Ollama embed model and causes embed calls to fail silently. Fallback is now a fixed `"gemma4:latest"` default, matching the documented embed model recommendation.
+
+### Tests
+
+- Added URL scheme tests to `test/core/embeddings.test.ts`: `file://`, `data:`, empty string, and missing `embeddings` field in response body.
+- Added embed-retry test to `test/core/search-index.test.ts`: verifies that a learning with a failed first embed is re-embedded on the next `getOrBuildIndex` call.
+- Added corrupt JSONL tolerance test: verifies that a malformed line in the index file is skipped and valid entries are preserved without re-embedding.
+- Added `findTopK` k > index.length test: verifies all entries are returned when k exceeds the index size.
+- Fixed atomic write test: checks for PID-unique tmp path (`search-index.jsonl.${process.pid}.tmp`) instead of the old shared path.
+
 ## v1.49.0 — 2026-04-26
 
 Sprint 75 — Eval Framework Completion.

@@ -143,7 +143,7 @@ export async function loadRelevantLearnings(
   const learnings = await loadLearnings(cwd);
   if (learnings.length === 0) return [];
 
-  const embedModel = config.ollamaEmbedModel ?? config.model ?? "gemma4:latest";
+  const embedModel = config.ollamaEmbedModel ?? "gemma4:latest";
   const embedFn = (text: string) => generateEmbedding(text, embedModel, ollamaBaseUrl);
 
   const queryVector = await embedFn(queryText);

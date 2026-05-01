@@ -52,4 +52,45 @@ describe("generateEmbedding", () => {
       expect.anything(),
     );
   });
+
+  it("returns [] for file:// baseUrl (non-HTTP scheme)", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await generateEmbedding("test", "gemma4:latest", "file:///etc/passwd");
+
+    expect(result).toEqual([]);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns [] for data: baseUrl (non-HTTP scheme)", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await generateEmbedding("test", "gemma4:latest", "data:text/plain,hello");
+
+    expect(result).toEqual([]);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns [] for empty baseUrl", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await generateEmbedding("test", "gemma4:latest", "");
+
+    expect(result).toEqual([]);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns [] when response has no embeddings field", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    } as Response));
+
+    const result = await generateEmbedding("test", "gemma4:latest", "http://localhost:11434/v1");
+
+    expect(result).toEqual([]);
+  });
 });
