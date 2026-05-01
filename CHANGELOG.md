@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.50.0 — 2026-05-01
+
+Sprint 76 — Observability & Eval Hardening.
+
+### Fixed
+
+- **`:commit` readline conflict** (`src/cli/index.ts`) — The REPL's main readline interface is now shared safely with `:commit` prompts. The anonymous `rl.on("line", ...)` handler is extracted as a named `onLine` function; each prompt site calls `rl.removeListener("line", onLine)` before and restores it in a `finally` block. The two ephemeral interfaces (`rl2`, `rl3`) are eliminated entirely. Ctrl+C during a `:commit` prompt no longer closes the main readline — `ask()` gains a `{ noClose: true }` option used at both REPL call sites.
+
+- **`judgeE2E` invalid regex crash** (`src/eval/judge.ts`) — A structural criterion with a malformed `match` pattern (e.g. `"[invalid"`) previously fell through silently to the LLM quality judge. Now the `catch` block assigns `status: "missed"` with `evidence: "(invalid regex: <message>)"` and skips the quality path entirely.
+
+- **`judgeE2E` ReDoS budget guards** (`src/eval/judge.ts`) — Structural criteria with patterns longer than 500 characters or outputs exceeding `MAX_OUTPUT_CHARS` now fall through to the LLM quality judge instead of running the regex engine. Defense-in-depth for developer-authored YAML; not a complete ReDoS guarantee for short catastrophic patterns.
+
+- **Ollama embedding cache model staleness** (`src/core/search-index.ts`, `src/core/memory.ts`) — Cached embedding vectors are now invalidated when `ollamaEmbedModel` changes. `SearchEntry` gains an optional `model` field; `getOrBuildIndex` takes a required `embedModel` parameter and treats entries without a matching model as cache misses. Existing index files without `model` fields are re-embedded once on first run, then cached correctly.
+
+### Added
+
+- **Per-turn learnings DX indicator** (`src/cli/index.ts`) — The REPL now prints `↻ learnings refreshed (N entry/entries)` in dim text immediately after `agent.refreshLearnings()`, so you can see when contextual learnings are injected before your next message.
+
 ## v1.49.1 — 2026-05-01
 
 Sprint 72 Hardening — Semantic Search Resilience.
