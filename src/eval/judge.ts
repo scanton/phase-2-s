@@ -48,6 +48,9 @@ export const MAX_DIFF_CHARS = 40_000;
 /** Max output characters to include in the E2E judge prompt. */
 export const MAX_OUTPUT_CHARS = 20_000;
 
+/** Max structural-match pattern length before falling back to LLM judge (ReDoS budget). */
+export const STRUCTURAL_PATTERN_MAX_LEN = 500;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -339,9 +342,7 @@ export async function judgeE2E(
 
   // ReDoS budget: cap pattern length and output size before the regex engine sees them.
   // This is defence-in-depth for developer-authored YAML; not a complete ReDoS guarantee.
-  const STRUCTURAL_PATTERN_MAX_LEN = 500;
-  // Reuse MAX_OUTPUT_CHARS (already defined above) for the structural output cap — consistent
-  // with the LLM judge's treatment of "too long to reason about".
+  // STRUCTURAL_PATTERN_MAX_LEN and MAX_OUTPUT_CHARS are module-level constants.
 
   for (const i of structuralIndices) {
     const c = criteria[i];

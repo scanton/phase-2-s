@@ -20,6 +20,8 @@ import {
   parseTextFallback,
   parseDiffStats,
   MAX_DIFF_CHARS,
+  MAX_OUTPUT_CHARS,
+  STRUCTURAL_PATTERN_MAX_LEN,
   type JudgeResult,
 } from "../../src/eval/judge.js";
 import type { RunnerResult } from "../../src/eval/runner.js";
@@ -394,7 +396,7 @@ describe("judgeE2E — structural criteria (regex, no LLM call)", () => {
       criteria: [{ text: "Long pattern criterion", status: "met", evidence: "matched", confidence: 0.9 }],
       verdict: "Quality met.",
     });
-    const longPattern = "a".repeat(501);
+    const longPattern = "a".repeat(STRUCTURAL_PATTERN_MAX_LEN + 1);
     const result = await judgeE2E(
       makeRunnerResult("some output text", [
         { text: "Long pattern criterion", type: "structural" as const, match: longPattern },
@@ -410,7 +412,7 @@ describe("judgeE2E — structural criteria (regex, no LLM call)", () => {
       criteria: [{ text: "Large output criterion", status: "met", evidence: "matched", confidence: 0.9 }],
       verdict: "Quality met.",
     });
-    const bigOutput = "x".repeat(20_001);
+    const bigOutput = "x".repeat(MAX_OUTPUT_CHARS + 1);
     const result = await judgeE2E(
       makeRunnerResult(bigOutput, [
         { text: "Large output criterion", type: "structural" as const, match: "simple" },
