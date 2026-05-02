@@ -1025,7 +1025,8 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
   let pendingResolve: ((line: string | null) => void) | null = null;
   let isOpen = true;
 
-  rl.on("line", (line) => {
+  // Named so :commit prompts can remove/restore it around their own ask() calls
+  const onLine = (line: string) => {
     if (pendingResolve) {
       const resolve = pendingResolve;
       pendingResolve = null;
@@ -1033,7 +1034,8 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     } else {
       lineQueue.push(line);
     }
-  });
+  };
+  rl.on("line", onLine);
 
   rl.on("close", () => {
     isOpen = false;
@@ -1383,7 +1385,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     // :commit — generate an AI commit message for staged changes from inside the REPL
     if (cleanLine === ":commit" || cleanLine.startsWith(":commit ")) {
       const { buildCommitMessage, runCommitFlow, runGitCommit, SecretWarningError } = await import("./commit.js");
-      const { createRl: makeRl, ask: askUser, PromptInterrupt } = await import("./prompt-util.js");
+      const { ask: askUser, PromptInterrupt } = await import("./prompt-util.js");
       let secretsSendAnyway = false;
       let result: Awaited<ReturnType<typeof buildCommitMessage>> | undefined;
       // Loop to handle secret warnings interactively (same pattern as runCommitFlow)
@@ -1395,9 +1397,9 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
         } catch (err: unknown) {
           if (err instanceof SecretWarningError) {
             console.log(chalk.yellow(`\n⚠  ${err.message}`));
-            const rl3 = makeRl();
+            rl.removeListener("line", onLine);
             try {
-              const answer = await askUser(rl3, "  [s]end anyway / [c]ancel: ");
+              const answer = await askUser(rl, "  [s]end anyway / [c]ancel: ", { noClose: true });
               if (answer.toLowerCase().startsWith("s")) {
                 secretsSendAnyway = true;
                 continue;
@@ -1409,7 +1411,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
               }
               throw inner;
             } finally {
-              rl3.close();
+              rl.on("line", onLine);
             }
             console.log(chalk.dim("Commit cancelled."));
           } else {
@@ -1431,9 +1433,9 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       // Show accept/edit/cancel prompt. Accept uses the already-generated message.
       // Edit delegates to runCommitFlow() which will rebuild the message (one extra LLM call,
       // acceptable on an uncommon branch).
-      const rl2 = makeRl();
+      rl.removeListener("line", onLine);
       try {
-        const answer = await askUser(rl2, "[a]ccept / [e]dit / [c]ancel: ");
+        const answer = await askUser(rl, "[a]ccept / [e]dit / [c]ancel: ", { noClose: true });
         const key = answer.toLowerCase().trim();
         if (key.startsWith("a") || key === "") {
           const { ok, output } = runGitCommit(result.message);
@@ -1454,7 +1456,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
         if (!(err instanceof PromptInterrupt)) throw err;
         console.log(chalk.dim("\nCommit cancelled."));
       } finally {
-        rl2.close();
+        rl.on("line", onLine);
       }
       continue;
     }
@@ -1581,7 +1583,10 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     // learnings. Falls back to keyword/recency sort when Ollama is not configured.
     const turnLearnings = await loadRelevantLearnings(process.cwd(), effectiveLine, config);
     const turnLearningsStr = formatLearningsForPrompt(turnLearnings, { skipCharCap: config.ollamaBaseUrl !== undefined });
-    if (turnLearningsStr) agent.refreshLearnings(turnLearningsStr);
+    if (turnLearningsStr) {
+      agent.refreshLearnings(turnLearningsStr);
+      log.dim(`↻ learnings refreshed (${turnLearnings.length} ${turnLearnings.length === 1 ? "entry" : "entries"})`);
+    }
 
     await maybeAutoCompact();
     process.stdout.write(chalk.bold("\nassistant > "));

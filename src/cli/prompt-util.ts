@@ -34,11 +34,14 @@ export function createRl(): Interface {
 /**
  * Prompt the user with `question` and return their trimmed input.
  * Rejects with PromptInterrupt if the user presses Ctrl+C.
+ *
+ * Pass `{ noClose: true }` when `rl` is a long-lived readline (e.g. the main
+ * REPL interface) that must not be closed on SIGINT.
  */
-export function ask(rl: Interface, question: string): Promise<string> {
+export function ask(rl: Interface, question: string, opts?: { noClose?: boolean }): Promise<string> {
   return new Promise((resolve, reject) => {
     const onSigint = () => {
-      rl.close();
+      if (!opts?.noClose) rl.close();
       reject(new PromptInterrupt());
     };
     rl.once("SIGINT", onSigint);

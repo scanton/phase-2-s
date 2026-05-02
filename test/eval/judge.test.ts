@@ -20,6 +20,8 @@ import {
   parseTextFallback,
   parseDiffStats,
   MAX_DIFF_CHARS,
+  MAX_OUTPUT_CHARS,
+  STRUCTURAL_PATTERN_MAX_LEN,
   type JudgeResult,
 } from "../../src/eval/judge.js";
 import type { RunnerResult } from "../../src/eval/runner.js";
@@ -375,6 +377,50 @@ describe("judgeE2E — structural criteria (regex, no LLM call)", () => {
     );
     const structural = result.criteria.find(c => c.text === "Contains a VERDICT field");
     expect(structural?.confidence).toBe(1.0);
+  });
+
+  it("invalid regex in structural match → status: missed, evidence contains 'invalid regex'", async () => {
+    const result = await judgeE2E(
+      makeRunnerResult("some output", [
+        { text: "Has a result field", type: "structural" as const, match: "[invalid" },
+      ]),
+      FAKE_CONFIG,
+    );
+    const criterion = result.criteria[0];
+    expect(criterion.status).toBe("missed");
+    expect(criterion.evidence).toContain("invalid regex");
+  });
+
+  it("pattern length > 500 falls through to LLM quality judge (ReDoS budget)", async () => {
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Long pattern criterion", status: "met", evidence: "matched", confidence: 0.9 }],
+      verdict: "Quality met.",
+    });
+    const longPattern = "a".repeat(STRUCTURAL_PATTERN_MAX_LEN + 1);
+    const result = await judgeE2E(
+      makeRunnerResult("some output text", [
+        { text: "Long pattern criterion", type: "structural" as const, match: longPattern },
+      ]),
+      FAKE_CONFIG,
+    );
+    // Must reach the LLM judge (mockState.response used) — not evaluated structurally
+    expect(result.criteria[0].status).toBe("met");
+  });
+
+  it("output length > MAX_OUTPUT_CHARS falls through to LLM quality judge (ReDoS budget)", async () => {
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Large output criterion", status: "met", evidence: "matched", confidence: 0.9 }],
+      verdict: "Quality met.",
+    });
+    const bigOutput = "x".repeat(MAX_OUTPUT_CHARS + 1);
+    const result = await judgeE2E(
+      makeRunnerResult(bigOutput, [
+        { text: "Large output criterion", type: "structural" as const, match: "simple" },
+      ]),
+      FAKE_CONFIG,
+    );
+    // Must reach the LLM judge (mockState.response used) — not evaluated structurally
+    expect(result.criteria[0].status).toBe("met");
   });
 });
 

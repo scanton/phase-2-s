@@ -48,6 +48,9 @@ export const MAX_DIFF_CHARS = 40_000;
 /** Max output characters to include in the E2E judge prompt. */
 export const MAX_OUTPUT_CHARS = 20_000;
 
+/** Max structural-match pattern length before falling back to LLM judge (ReDoS budget). */
+export const STRUCTURAL_PATTERN_MAX_LEN = 500;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -337,8 +340,16 @@ export async function judgeE2E(
     criteriaResults.push({ text: criteria[i].text, status: "missed", evidence: "", confidence: 0 });
   }
 
+  // ReDoS budget: cap pattern length and output size before the regex engine sees them.
+  // This is defence-in-depth for developer-authored YAML; not a complete ReDoS guarantee.
+  // STRUCTURAL_PATTERN_MAX_LEN and MAX_OUTPUT_CHARS are module-level constants.
+
   for (const i of structuralIndices) {
     const c = criteria[i];
+    if (c.match!.length > STRUCTURAL_PATTERN_MAX_LEN || output.length > MAX_OUTPUT_CHARS) {
+      qualityIndices.push(i);  // fall through to LLM judge
+      continue;
+    }
     let status: CriterionStatus = "missed";
     let evidence = "(no match)";
     try {
@@ -347,9 +358,13 @@ export async function judgeE2E(
         status = "met";
         evidence = `matched: "${m[0]}"`;
       }
-    } catch {
-      // Invalid regex — treat as quality (safe fallback)
-      qualityIndices.push(i);
+    } catch (err) {
+      criteriaResults[i] = {
+        text: c.text,
+        status: "missed",
+        evidence: `(invalid regex: ${(err as Error).message})`,
+        confidence: 1.0,
+      };
       continue;
     }
     criteriaResults[i] = { text: c.text, status, evidence, confidence: 1.0 };

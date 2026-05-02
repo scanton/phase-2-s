@@ -25,6 +25,7 @@ interface SearchEntry {
   hash: string;
   vector: number[];
   ts: string;
+  model?: string;
 }
 
 function sha256(text: string): string {
@@ -79,13 +80,16 @@ async function writeIndex(cwd: string, entries: SearchEntry[]): Promise<void> {
  *
  * - New learnings are embedded and added.
  * - Learnings with changed text (hash mismatch) are re-embedded.
- * - Unchanged learnings reuse the existing vector.
+ * - Learnings whose cached model differs from embedModel are re-embedded.
+ * - Unchanged learnings (same hash + same model) reuse the existing vector.
  * - Learnings removed from the file are GC'd from the index.
+ * - Old entries without a model field are treated as cache misses (model staleness).
  */
 export async function getOrBuildIndex(
   cwd: string,
   learnings: Learning[],
   embedFn: (text: string) => Promise<number[]>,
+  embedModel: string,
 ): Promise<SearchEntry[]> {
   if (learnings.length === 0) return [];
 
@@ -97,13 +101,13 @@ export async function getOrBuildIndex(
     const hash = sha256(learning.insight);
     const cached = existing.get(learning.key);
 
-    if (cached && cached.hash === hash) {
+    if (cached && cached.hash === hash && cached.model === embedModel) {
       updated.push(cached);
     } else {
-      // New or updated learning — re-embed
+      // New, updated, or model-changed learning — re-embed
       const vector = await embedFn(learning.insight);
       if (vector.length > 0) {
-        updated.push({ key: learning.key, hash, vector, ts: new Date().toISOString() });
+        updated.push({ key: learning.key, hash, vector, ts: new Date().toISOString(), model: embedModel });
       }
       // Mark changed whether embed succeeded or failed. On failure, this forces a
       // write so the next run retries instead of treating the entry as permanently absent.
