@@ -195,7 +195,7 @@ By default, Phase2S injects up to 2000 characters of learnings, using the most r
 2. Score every learning by cosine similarity against that embedding
 3. Inject the top matches — the ones most relevant to what you're working on — and skip the 2000-char truncation (since the selection is already filtered)
 
-The index is built on first use and updated incrementally at `.phase2s/search-index.jsonl`. Only changed or new learnings are re-embedded — existing unchanged entries are reused.
+The index is built on first use and updated incrementally at `.phase2s/search-index.jsonl`. Only changed or new learnings are re-embedded — existing unchanged entries are reused. If you switch `ollamaEmbedModel`, all cached vectors are invalidated and re-embedded once on the next session (the index stores a `model` field per entry to detect staleness).
 
 **Fallback:** if Ollama is unavailable, the embed call fails, or no task text exists yet (e.g., fresh REPL session before your first message), Phase2S falls back to the recency-based 2000-char injection automatically. No configuration needed for the fallback — it's always there.
 
