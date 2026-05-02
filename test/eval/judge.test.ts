@@ -388,6 +388,38 @@ describe("judgeE2E — structural criteria (regex, no LLM call)", () => {
     expect(criterion.status).toBe("missed");
     expect(criterion.evidence).toContain("invalid regex");
   });
+
+  it("pattern length > 500 falls through to LLM quality judge (ReDoS budget)", async () => {
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Long pattern criterion", status: "met", evidence: "matched", confidence: 0.9 }],
+      verdict: "Quality met.",
+    });
+    const longPattern = "a".repeat(501);
+    const result = await judgeE2E(
+      makeRunnerResult("some output text", [
+        { text: "Long pattern criterion", type: "structural" as const, match: longPattern },
+      ]),
+      FAKE_CONFIG,
+    );
+    // Must reach the LLM judge (mockState.response used) — not evaluated structurally
+    expect(result.criteria[0].status).toBe("met");
+  });
+
+  it("output length > MAX_OUTPUT_CHARS falls through to LLM quality judge (ReDoS budget)", async () => {
+    mockState.response = JSON.stringify({
+      criteria: [{ text: "Large output criterion", status: "met", evidence: "matched", confidence: 0.9 }],
+      verdict: "Quality met.",
+    });
+    const bigOutput = "x".repeat(20_001);
+    const result = await judgeE2E(
+      makeRunnerResult(bigOutput, [
+        { text: "Large output criterion", type: "structural" as const, match: "simple" },
+      ]),
+      FAKE_CONFIG,
+    );
+    // Must reach the LLM judge (mockState.response used) — not evaluated structurally
+    expect(result.criteria[0].status).toBe("met");
+  });
 });
 
 describe("judgeE2E — quality criteria (LLM judge)", () => {

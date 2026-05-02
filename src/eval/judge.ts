@@ -337,8 +337,18 @@ export async function judgeE2E(
     criteriaResults.push({ text: criteria[i].text, status: "missed", evidence: "", confidence: 0 });
   }
 
+  // ReDoS budget: cap pattern length and output size before the regex engine sees them.
+  // This is defence-in-depth for developer-authored YAML; not a complete ReDoS guarantee.
+  const STRUCTURAL_PATTERN_MAX_LEN = 500;
+  // Reuse MAX_OUTPUT_CHARS (already defined above) for the structural output cap — consistent
+  // with the LLM judge's treatment of "too long to reason about".
+
   for (const i of structuralIndices) {
     const c = criteria[i];
+    if (c.match!.length > STRUCTURAL_PATTERN_MAX_LEN || output.length > MAX_OUTPUT_CHARS) {
+      qualityIndices.push(i);  // fall through to LLM judge
+      continue;
+    }
     let status: CriterionStatus = "missed";
     let evidence = "(no match)";
     try {

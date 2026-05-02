@@ -152,7 +152,7 @@ export async function loadRelevantLearnings(
     return heuristicSort(learnings, queryText);
   }
 
-  const index = await getOrBuildIndex(cwd, learnings, embedFn);
+  const index = await getOrBuildIndex(cwd, learnings, embedFn, embedModel);
   if (index.length === 0) return heuristicSort(learnings, queryText);
 
   const topKeys = findTopK(queryVector, index, k);
