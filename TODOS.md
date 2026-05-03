@@ -14,9 +14,9 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
-## Backlog — Sprint 77 in-progress (v1.51.0, 2026-05-02)
+## Backlog — Post-Sprint 77 notes (v1.51.0, 2026-05-02)
 
-Sprint 77 target: Semantic Codebase Indexing — `phase2s sync` + `:search <query>` REPL command. `src/core/code-index.ts` + `src/cli/sync.ts` + `src/cli/search.ts`. Reuses Ollama embed infrastructure from Sprint 72. Separate index: `.phase2s/code-index.jsonl`.
+Sprint 77 shipped Semantic Codebase Indexing. `phase2s sync` discovers all git-tracked source files via `git ls-files`, embeds each file's first 4,000 chars via Ollama, and writes an incremental vector index to `.phase2s/code-index.jsonl`. `phase2s search <query>` embeds the query and returns top-K files by cosine similarity with one-line snippets extracted from the first non-comment line. Reuses the Ollama embed infrastructure from Sprint 72; intentionally separate from the learnings index (different GC and staleness semantics). Post-sprint `/review` hardened four issues: path traversal guard, embed-failure resilience (stale entry preserved on Ollama down), `mkdir` on first write, and staleness check replaced O(N) file stat loop with a single `git log -1 --format=%ct HEAD` call. 35 new tests; 1,851 passing.
 
 - [ ] **Doctor staleness upgrade for code-index** — `checkCodeIndex()` currently warns only when `code-index.jsonl` is absent. When it exists but is older than 24h, emit a distinct warning: "Code index is N days old. Run 'phase2s sync' to refresh." Makes the doctor check actionable for users who sync once and forget to re-run after significant changes. (Identified during Sprint 77 /plan-eng-review, outside voice finding.)
 
