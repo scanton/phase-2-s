@@ -39,7 +39,7 @@ alias p2='__phase2s_run'
 if [[ -n "$BASH_VERSION" ]] && command -v complete &>/dev/null; then
   _phase2s_completions() {
     local subcommands=(
-      chat run skills mcp goal report init upgrade lint
+      chat run skills mcp goal judge report sync search init upgrade lint
       doctor completion setup template
     )
     local cur="${COMP_WORDS[COMP_CWORD]}"

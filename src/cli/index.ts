@@ -431,6 +431,44 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       }
     });
 
+  // Semantic codebase sync — embed all source files
+  program
+    .command("sync")
+    .description("Index the current codebase for semantic search (requires Ollama)")
+    .action(async () => {
+      const { runSync } = await import("./sync.js");
+      const { loadConfig } = await import("../core/config.js");
+      try {
+        const config = await loadConfig();
+        await runSync(process.cwd(), config);
+      } catch (err) {
+        if (!(err instanceof Error && err.message.startsWith("process.exit"))) {
+          console.error(chalk.red(normalizeConfigError(err)));
+          process.exit(1);
+        }
+      }
+    });
+
+  // Semantic codebase search
+  program
+    .command("search <query>")
+    .description("Search the indexed codebase semantically (requires phase2s sync)")
+    .option("-k, --top <number>", "Number of results to return", "5")
+    .action(async (query: string, cmdOpts: { top?: string }) => {
+      const { runSearch } = await import("./search.js");
+      const { loadConfig } = await import("../core/config.js");
+      const k = parseInt(cmdOpts.top ?? "5", 10);
+      try {
+        const config = await loadConfig();
+        await runSearch(query, process.cwd(), config, isNaN(k) ? 5 : k);
+      } catch (err) {
+        if (!(err instanceof Error && err.message.startsWith("process.exit"))) {
+          console.error(chalk.red(normalizeConfigError(err)));
+          process.exit(1);
+        }
+      }
+    });
+
   // Run log report viewer
   program
     .command("report <logfile>")
@@ -700,7 +738,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp goal judge report init upgrade lint doctor completion setup template" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run skills mcp goal judge report sync search init upgrade lint doctor completion setup template" -- "\$cur"))
     return
   fi
 
@@ -746,6 +784,8 @@ _phase2s() {
     'completion:Output shell completion script'
     'setup:Install ZSH shell integration'
     'template:Manage spec templates (list / use)'
+    'sync:Index the codebase for semantic search (requires Ollama)'
+    'search:Search the indexed codebase semantically'
   )
 
   if (( CURRENT == 2 )); then
@@ -1382,6 +1422,33 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       continue;
     }
 
+    // :sync — index the codebase for semantic search
+    if (cleanLine === ":sync") {
+      const { runSync } = await import("./sync.js");
+      try {
+        await runSync(process.cwd(), config);
+      } catch (err) {
+        log.error(err instanceof Error ? err.message : String(err));
+      }
+      continue;
+    }
+
+    // :search <query> — semantic search over the indexed codebase
+    if (cleanLine.startsWith(":search ") || cleanLine === ":search") {
+      const { runSearch } = await import("./search.js");
+      const query = cleanLine.slice(":search".length).trim();
+      if (!query) {
+        log.error("Usage: :search <query>\nExample: :search authentication middleware");
+        continue;
+      }
+      try {
+        await runSearch(query, process.cwd(), config);
+      } catch (err) {
+        log.error(err instanceof Error ? err.message : String(err));
+      }
+      continue;
+    }
+
     // :commit — generate an AI commit message for staged changes from inside the REPL
     if (cleanLine === ":commit" || cleanLine.startsWith(":commit ")) {
       const { buildCommitMessage, runCommitFlow, runGitCommit, SecretWarningError } = await import("./commit.js");
@@ -1835,6 +1902,8 @@ function printHelp(skills: Array<{ name: string; description: string }>): void {
   console.log("  /quit    — Exit the session");
   console.log("  /exit    — Exit the session");
   console.log("  :compact — Compact conversation history to free context window");
+  console.log("  :sync — Index the codebase for semantic :search (requires Ollama)");
+  console.log("  :search <query> — Semantic search over the indexed codebase");
   if (skills.length > 0) {
     console.log(chalk.bold("\nSkills:"));
     for (const skill of skills) {

@@ -14,6 +14,16 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Sprint 77 in-progress (v1.51.0, 2026-05-02)
+
+Sprint 77 target: Semantic Codebase Indexing — `phase2s sync` + `:search <query>` REPL command. `src/core/code-index.ts` + `src/cli/sync.ts` + `src/cli/search.ts`. Reuses Ollama embed infrastructure from Sprint 72. Separate index: `.phase2s/code-index.jsonl`.
+
+- [ ] **Doctor staleness upgrade for code-index** — `checkCodeIndex()` currently warns only when `code-index.jsonl` is absent. When it exists but is older than 24h, emit a distinct warning: "Code index is N days old. Run 'phase2s sync' to refresh." Makes the doctor check actionable for users who sync once and forget to re-run after significant changes. (Identified during Sprint 77 /plan-eng-review, outside voice finding.)
+
+- [ ] **Function-level chunking for code-index** — Sprint 77 embeds whole files (truncated at 4,000 chars). For large files with multiple unrelated concerns, a whole-file vector averages across everything and recall degrades. Future: chunk at function/class boundaries (parse via tree-sitter or regex heuristics), embed each chunk, store chunk offset + parent path in the entry. Better top-K recall, especially for large service files. Natural upgrade from the Sprint 77 whole-file baseline — the `CodeEntry` interface can gain `chunkStart?: number` without breaking existing entries.
+
+---
+
 ## Backlog — Post-Sprint 75 notes (v1.49.0, 2026-04-27)
 
 Sprint 75 completed the eval framework: EvalFixture abstraction (`setupFixture`/`teardownFixture`, `fixture:` YAML block), `verify_files` existence checks, `satori.eval.yaml` activated, `MAX_OUTPUT_CHARS = 20_000` cap in `buildE2EJudgePrompt`, `scoresBySkill` range aggregation, empty/whitespace `match` guard. `/review` caught 5 additional bugs (path traversal in fixtures, partial tmpDir leak, verify_files no-op without fixture, teardown exception masking, scoresBySkill test false positive) — all fixed. D1: satori retry pass-through (runner threads `maxRetries`/`verifyCommand` to `agent.run()`). D2: tool cwd sandboxing (file-read/write/shell/glob/grep converted to factory functions; `createDefaultRegistry` threads `cwd` through all five). 1796 passing.

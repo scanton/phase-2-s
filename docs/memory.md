@@ -269,6 +269,7 @@ Everything goes to `.phase2s/` inside your project directory. Nothing writes out
 | `.phase2s/state.json` | Active session UUID pointer | On each session start |
 | `.phase2s/memory/learnings.jsonl` | Persistent learnings from `/remember` | When you run `/remember` |
 | `.phase2s/search-index.jsonl` | Vector index for semantic learnings retrieval (SHA-256 + embedding per entry) | On first session with Ollama configured; updated incrementally on changes |
+| `.phase2s/code-index.jsonl` | Semantic code index for `:search` / `phase2s search` (SHA-256 + embedding per file) | After `phase2s sync` |
 | `.phase2s/skills/<name>/SKILL.md` | Custom skills from `/skill` | When you run `/skill` |
 | `.phase2s/context/<ts>-<slug>.md` | Satori context snapshot (git branch, commits, diff, task) | Before every `/satori` run |
 | `.phase2s/satori/<slug>.json` | Satori attempt log (attempt #, pass/fail, failure lines) | After every `/satori` run |
