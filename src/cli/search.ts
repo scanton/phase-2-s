@@ -68,6 +68,18 @@ export async function runSearch(
     process.exit(1);
   }
 
+  // Model mismatch: if the index was built with a different embed model,
+  // vectors are incompatible and all entries will score 0 silently.
+  const indexedModel = index[0]?.model;
+  if (indexedModel && indexedModel !== embedModel) {
+    console.log(
+      chalk.yellow(
+        `⚠  Index was built with model "${indexedModel}" but current model is "${embedModel}". ` +
+        `Run 'phase2s sync' to rebuild with the current model.`,
+      ),
+    );
+  }
+
   const results = findTopKCode(queryVector, index, k);
   if (results.length === 0) {
     console.log(chalk.dim(`No results for "${query}".`));

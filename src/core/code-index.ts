@@ -19,13 +19,11 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFile, writeFile, rename, stat } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { readFile, writeFile, rename, stat, mkdir } from "node:fs/promises";
+import { join, extname, resolve as resolvePath, sep } from "node:path";
 import { spawn } from "node:child_process";
 
 const CODE_INDEX_FILE = ".phase2s/code-index.jsonl";
-// Per-process unique tmp path prevents concurrent CLI instances from clobbering each other
-const CODE_INDEX_TMP = `.phase2s/code-index.jsonl.${process.pid}.tmp`;
 
 /** Maximum characters of file content used for embedding. ~1,000 tokens —
  *  stays safely under the 2,048-token limit of common Ollama embed models
@@ -60,6 +58,8 @@ export interface SyncResult {
   skipped: number;
   /** GC'd entries (file deleted or no longer discovered) */
   removed: number;
+  /** Files where embed failed (Ollama unavailable); stale entry preserved */
+  failed: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,10 +125,16 @@ export async function discoverFiles(cwd: string): Promise<string[]> {
         return;
       }
 
+      const cwdNorm = resolvePath(cwd) + sep;
       const files = stdout
         .split("\n")
         .map((l) => l.trim())
-        .filter((l) => l.length > 0 && INDEXABLE_EXTENSIONS.has(extname(l)))
+        .filter((l) => {
+          if (!l || !INDEXABLE_EXTENSIONS.has(extname(l))) return false;
+          // Path traversal guard: reject any path that escapes the repo root
+          const abs = resolvePath(join(cwd, l));
+          return abs.startsWith(cwdNorm) || abs === resolvePath(cwd);
+        })
         .sort();
 
       resolve(files);
@@ -174,7 +180,10 @@ export async function readCodeIndex(cwd: string): Promise<CodeEntry[]> {
 }
 
 async function writeCodeIndex(cwd: string, entries: CodeEntry[]): Promise<void> {
-  const tmpPath = join(cwd, CODE_INDEX_TMP);
+  // Ensure .phase2s/ exists (no-op if already present) — handles fresh repos
+  await mkdir(join(cwd, ".phase2s"), { recursive: true });
+  // Generate tmp path at call time to be safe in long-running processes (e.g. MCP server)
+  const tmpPath = join(cwd, `${CODE_INDEX_FILE}.${process.pid}.${Date.now()}.tmp`);
   const finalPath = join(cwd, CODE_INDEX_FILE);
   const content = entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
   await writeFile(tmpPath, content, "utf-8");
@@ -267,6 +276,7 @@ export async function syncCodebase(
   const updated: CodeEntry[] = [];
   let indexedCount = 0;
   let skippedCount = 0;
+  let failedCount = 0;
 
   // Process in batches of CONCURRENCY_CAP
   for (let i = 0; i < discovered.length; i += CONCURRENCY_CAP) {
@@ -294,8 +304,10 @@ export async function syncCodebase(
         // New, updated, or model-changed — embed
         const vector = await embedFn(truncated);
         if (vector.length === 0) {
-          // Embed failed (Ollama down etc.) — skip this file this run
-          return null;
+          // Embed failed (Ollama down etc.) — preserve stale entry if one exists
+          // so a flaky Ollama run doesn't permanently erase previously-indexed files
+          failedCount++;
+          return cached ?? null;
         }
         indexedCount++;
         return {
@@ -322,7 +334,7 @@ export async function syncCodebase(
   // Write full rewrite (not append) — same contract as search-index.ts writeIndex
   await writeCodeIndex(cwd, updated);
 
-  return { indexed: indexedCount, skipped: skippedCount, removed: removedCount };
+  return { indexed: indexedCount, skipped: skippedCount, removed: removedCount, failed: failedCount };
 }
 
 // ---------------------------------------------------------------------------
@@ -352,11 +364,14 @@ export function findTopKCode(
 // ---------------------------------------------------------------------------
 
 /**
- * Check whether the code index is stale relative to the newest discovered source file.
+ * Check whether the code index is stale relative to the latest git commit.
  *
- * Returns `{ stale: true, indexMtime, newestFileMtime }` when the index exists but
- * at least one source file is newer. Returns `{ stale: false }` if the index is
- * current or does not exist (can't be stale if absent).
+ * Uses `git log -1 --format=%ct HEAD` (one fast call) instead of stat-ing
+ * every discovered file — avoids spawning a full ls-files on every search.
+ *
+ * Returns `{ stale: true, ... }` when the index exists but the HEAD commit
+ * is newer than the index. Returns `{ stale: false }` if the index is
+ * current, absent, or git is unavailable.
  */
 export async function checkIndexStaleness(cwd: string): Promise<
   | { stale: false }
@@ -372,30 +387,26 @@ export async function checkIndexStaleness(cwd: string): Promise<
     return { stale: false }; // index absent — not stale, just missing
   }
 
-  let files: string[];
-  try {
-    files = await discoverFiles(cwd);
-  } catch {
-    return { stale: false }; // git not available — skip check
-  }
+  // One fast git call: get HEAD commit timestamp (unix seconds)
+  const headCommitMs = await new Promise<number>((res) => {
+    const proc = spawn("git", ["log", "-1", "--format=%ct", "HEAD"], {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let out = "";
+    proc.stdout.on("data", (c: Buffer) => { out += c.toString(); });
+    proc.on("close", (code) => {
+      if (code !== 0) { res(0); return; }
+      const ts = parseInt(out.trim(), 10);
+      res(isNaN(ts) ? 0 : ts * 1000);
+    });
+    proc.on("error", () => res(0));
+  });
 
-  let newestFileMtime = 0;
-  let newestFile = "";
+  if (headCommitMs === 0) return { stale: false }; // git unavailable — skip
 
-  for (const relPath of files) {
-    try {
-      const s = await stat(join(cwd, relPath));
-      if (s.mtimeMs > newestFileMtime) {
-        newestFileMtime = s.mtimeMs;
-        newestFile = relPath;
-      }
-    } catch {
-      // File disappeared — skip
-    }
-  }
-
-  if (newestFileMtime > indexMtime) {
-    return { stale: true, indexMtime, newestFileMtime, newestFile };
+  if (headCommitMs > indexMtime) {
+    return { stale: true, indexMtime, newestFileMtime: headCommitMs, newestFile: "HEAD commit" };
   }
   return { stale: false };
 }

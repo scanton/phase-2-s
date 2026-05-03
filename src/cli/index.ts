@@ -457,10 +457,11 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .action(async (query: string, cmdOpts: { top?: string }) => {
       const { runSearch } = await import("./search.js");
       const { loadConfig } = await import("../core/config.js");
-      const k = parseInt(cmdOpts.top ?? "5", 10);
+      const kParsed = parseInt(cmdOpts.top ?? "5", 10);
+      const k = (!isNaN(kParsed) && kParsed > 0) ? kParsed : 5;
       try {
         const config = await loadConfig();
-        await runSearch(query, process.cwd(), config, isNaN(k) ? 5 : k);
+        await runSearch(query, process.cwd(), config, k);
       } catch (err) {
         if (!(err instanceof Error && err.message.startsWith("process.exit"))) {
           console.error(chalk.red(normalizeConfigError(err)));

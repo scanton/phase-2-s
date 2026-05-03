@@ -34,12 +34,13 @@ export async function runSync(cwd: string, config: Config): Promise<void> {
     process.exit(1);
   }
 
-  const { indexed, skipped, removed } = result;
+  const { indexed, skipped, removed, failed } = result;
   console.log(
     chalk.green("✔") +
     ` Indexed ${indexed} ${indexed === 1 ? "file" : "files"}, ` +
     `skipped ${skipped} (unchanged), ` +
-    `removed ${removed}`,
+    `removed ${removed}` +
+    (failed > 0 ? chalk.yellow(`, ${failed} failed (Ollama unavailable — stale entries preserved)`) : ""),
   );
   console.log(chalk.dim("  Index: .phase2s/code-index.jsonl"));
 }
