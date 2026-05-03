@@ -8,7 +8,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, accessSync, mkdirSync, constants, readdirSync, readFileSync } from "node:fs";
+import { existsSync, accessSync, mkdirSync, constants, readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
@@ -556,6 +556,60 @@ export function checkSessionDag(sessionsDir: string): CheckResult {
 }
 
 /**
+ * Check that .phase2s/code-index.jsonl exists when ollamaBaseUrl is configured.
+ *
+ * - If ollamaBaseUrl is not configured: skip (N/A).
+ * - If index is absent: warn — user should run 'phase2s sync'.
+ * - If index is present but older than 24h: advisory warning (non-failing).
+ * - If index is present and fresh: ok.
+ */
+export function checkCodeIndex(
+  cwd: string = process.cwd(),
+  config: Record<string, unknown> = {},
+): CheckResult {
+  const ollamaBaseUrl = config.ollamaBaseUrl as string | undefined;
+  if (!ollamaBaseUrl) {
+    return {
+      name: "Code index",
+      ok: true,
+      detail: "N/A (ollamaBaseUrl not configured)",
+    };
+  }
+
+  const indexPath = join(cwd, ".phase2s", "code-index.jsonl");
+  if (!existsSync(indexPath)) {
+    return {
+      name: "Code index",
+      ok: false,
+      detail: "code-index.jsonl not found",
+      fix: "Run 'phase2s sync' to build the semantic code index.",
+    };
+  }
+
+  try {
+    const { mtimeMs } = statSync(indexPath);
+    const ageMs = Date.now() - mtimeMs;
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    if (ageMs > oneDayMs) {
+      const ageDays = Math.floor(ageMs / oneDayMs);
+      return {
+        name: "Code index",
+        ok: true,
+        detail: `code-index.jsonl is ${ageDays} day${ageDays === 1 ? "" : "s"} old (tip: run 'phase2s sync' to refresh)`,
+      };
+    }
+  } catch {
+    // stat failed — index exists but unreadable
+  }
+
+  return {
+    name: "Code index",
+    ok: true,
+    detail: "code-index.jsonl present",
+  };
+}
+
+/**
  * Tip: check whether AGENTS.md exists (project-level or user-global).
  *
  * Non-failing — AGENTS.md is optional. Returns ok:true regardless.
@@ -700,6 +754,7 @@ export async function runDoctor(opts: { fix?: boolean } = {}): Promise<void> {
     checkTmux(),
     checkGitWorktree(),
     checkSessionDag(resolve(".phase2s", "sessions")),
+    checkCodeIndex(resolve("."), existingConfig),
     checkAgentsMd(),
   ];
 

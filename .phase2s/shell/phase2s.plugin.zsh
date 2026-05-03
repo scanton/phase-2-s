@@ -55,6 +55,8 @@ if [[ -n "$ZSH_VERSION" ]]; then
       'completion:Output shell completion script'
       'setup:Install shell integration (ZSH plugin)'
       'template:Manage spec templates (list / use)'
+      'sync:Index the codebase for semantic search (requires Ollama)'
+      'search:Search the indexed codebase semantically'
     )
     _describe 'subcommand' subcommands
   }

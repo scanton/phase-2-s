@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.51.0 — 2026-05-02
+
+Sprint 77 — Semantic Codebase Indexing.
+
+### Added
+
+- **`phase2s sync`** (`src/cli/sync.ts`, `src/core/code-index.ts`) — Indexes all git-tracked source files for semantic search. Discovers files via `git ls-files --cached --others --exclude-standard` (respects all .gitignore sources, no JS gitignore library needed). Embeds each file's first 4,000 characters using the configured Ollama embed model. Writes an incremental vector index to `.phase2s/code-index.jsonl` — unchanged files (same SHA-256 + same model) are skipped; deleted files are GC'd; index is written atomically (PID+timestamp tmp + rename).
+
+- **`phase2s search <query>`** (`src/cli/search.ts`) — Semantic codebase search. Embeds the query via Ollama, scores all code-index entries by cosine similarity, and prints the top-K results with path, score, and a one-line snippet extracted from the file. Pass `--top N` to change the result count (default 5). Warns when the index may be stale (HEAD commit newer than index) or when the index was built with a different embed model.
+
+- **Embed model mismatch warning** (`src/cli/search.ts`) — When the index was built with a different `ollamaEmbedModel` than the currently configured one, `phase2s search` warns before returning results (all scores would be 0 due to incompatible vector spaces).
+
+- **`phase2s doctor`** — Extended to check for a missing code index and recommend `phase2s sync`.
+
+### Fixed
+
+- **Path traversal guard in `discoverFiles`** (`src/core/code-index.ts`) — Files resolved outside the repo root (e.g. via symlinks pointing to `../`) are filtered before embedding. Guard uses `resolvePath(join(cwd, path)).startsWith(cwdNorm)`.
+
+- **Embed failure resilience** (`src/core/code-index.ts`) — When Ollama is unreachable during a sync run, stale index entries for failed files are preserved rather than silently deleted. The failed count is surfaced in the sync summary line. Re-running sync after Ollama recovers re-embeds only the failed files.
+
+- **`mkdir` before first write** (`src/core/code-index.ts`) — `.phase2s/` directory is created with `{ recursive: true }` before the index is written, preventing ENOENT on fresh repos or repos where `.phase2s/` was deleted.
+
+- **O(N) git subprocess eliminated from staleness check** (`src/core/code-index.ts`) — `checkIndexStaleness()` previously stat-ed every discovered file on each `phase2s search` call. Replaced with a single `git log -1 --format=%ct HEAD` subprocess call — one fast call regardless of repo size.
+
 ## v1.50.0 — 2026-05-01
 
 Sprint 76 — Observability & Eval Hardening.

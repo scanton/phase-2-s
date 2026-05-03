@@ -486,6 +486,50 @@ When `ollamaEmbedModel` is set, the main model handles chat and the embed model 
 
 ---
 
+### Semantic Codebase Search (Ollama)
+
+Index your entire codebase and search it by meaning, not just keywords.
+
+```bash
+# Index (or re-index) your codebase
+phase2s sync
+
+# Search by concept
+phase2s search "rate limiting middleware"
+phase2s search "session persistence"
+phase2s search --top 10 "authentication flow"
+```
+
+`phase2s sync` discovers all git-tracked source files (via `git ls-files` — respects all `.gitignore` sources), embeds each file using the configured Ollama embed model, and writes an incremental vector index to `.phase2s/code-index.jsonl`. Unchanged files (same content hash + same model) are skipped — re-runs are fast.
+
+`phase2s search` embeds your query, scores every indexed file by cosine similarity, and returns the top matches with path, score, and a one-line snippet:
+
+```
+Top 5 matches for "rate limiting middleware":
+
+1. src/providers/backoff.ts  (0.91)
+   export const MAX_RATE_LIMIT_RETRIES = 5;
+
+2. src/cli/index.ts  (0.87)
+   export async function startRepl(config: Config): Promise<void>
+
+3. src/core/agent.ts  (0.84)
+   export class Agent {
+```
+
+**The index is separate from the learnings index.** `.phase2s/search-index.jsonl` is your learnings memory; `.phase2s/code-index.jsonl` is your codebase map. They use the same Ollama embed infrastructure but GC and sync independently.
+
+Requires `ollamaBaseUrl` to be set in `.phase2s.yaml`:
+
+```yaml
+ollamaBaseUrl: http://localhost:11434/v1
+ollamaEmbedModel: nomic-embed-text  # optional; defaults to nomic-embed-text:latest
+```
+
+`phase2s doctor` checks for a missing code index and tells you to run `phase2s sync`.
+
+---
+
 ### AI Commit Messages
 
 ```bash
@@ -576,7 +620,7 @@ browser: true  # requires playwright installed
 - [x] Codex CLI provider (ChatGPT subscription, no API key required)
 - [x] 29 built-in skills across 6 categories
 - [x] File sandbox: tools reject paths outside project directory, including symlink escapes
-- [x] 1,730 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, AI-generated commit messages, session index/locking/DAG integrity, session lock hardening (PID-suffixed tmp files, SIGKILL recovery, symlink escape guard), replan agent (hallucination guard, tail-slice eval, empty tool registry), parallel goal retry loop, onDelta newline injection, rate-limit resilience (typed RateLimitError, rate_limited ProviderEvent, auto-backoff across all 7 providers), compaction rate-limit propagation, orchestrator rate-limit propagation, orchestrator sibling cancellation, @file attachment (REPL + one-shot), @url attachment with SSRF protection, `:goal` REPL command with reentrancy guard, `throwOnRateLimit`, and `handleRunGoalCase` extraction, `:dump`/`:dump html` conversation export, `:help` REPL command reference, `marked` v18 HTML rendering + ranked Tab completions, BFS `@file` Tab traversal, atomic compaction backup, sandbox execFileSync migration + TOCTOU guard, plans_write symlink escape guard, `phase2s provider` subcommand with 9 tests, and semantic learnings injection via Ollama embeddings (embeddings, vector index, memory retrieval, ordering)
+- [x] 1,851 tests covering all tools, core modules, agent integration, goal executor, state server, run logs, MCP goal tool, notification gateway, run report viewer, onboarding wizard, glob tool filtering, OpenRouter provider, Gemini provider, MiniMax provider, installation health checks, self-update, skills search, spec linting, dark factory dry-run, lint PATH checks, parallel execution, dependency graph, worktree lifecycle, tmux dashboard, level context injection, parallel executor behavior, merge conflict detection, stash/unstash lifecycle, shared integration test harness, spec eval judge, multi-agent orchestrator, live re-planning, Telegram notification channel, spec template library, session branching DAG, bash shell integration, secrets scanning, AI-generated commit messages, session index/locking/DAG integrity, session lock hardening (PID-suffixed tmp files, SIGKILL recovery, symlink escape guard), replan agent (hallucination guard, tail-slice eval, empty tool registry), parallel goal retry loop, onDelta newline injection, rate-limit resilience (typed RateLimitError, rate_limited ProviderEvent, auto-backoff across all 7 providers), compaction rate-limit propagation, orchestrator rate-limit propagation, orchestrator sibling cancellation, @file attachment (REPL + one-shot), @url attachment with SSRF protection, `:goal` REPL command with reentrancy guard, `throwOnRateLimit`, and `handleRunGoalCase` extraction, `:dump`/`:dump html` conversation export, `:help` REPL command reference, `marked` v18 HTML rendering + ranked Tab completions, BFS `@file` Tab traversal, atomic compaction backup, sandbox execFileSync migration + TOCTOU guard, plans_write symlink escape guard, `phase2s provider` subcommand with 9 tests, semantic learnings injection via Ollama embeddings (embeddings, vector index, memory retrieval, ordering), and semantic codebase search (code-index, sync, search CLI, snippet extraction, staleness detection, embed resilience)
 - [x] CI: runs `npm test` on every push and PR
 - [x] OpenAI API provider with live tool calling
 - [x] Anthropic API provider — Claude 3.5 Sonnet and family
@@ -678,6 +722,7 @@ browser: true  # requires playwright installed
 - [x] E2E eval framework (v1.48.0) — `npm run eval` runs all `eval/*.eval.yaml` cases through live Phase2S skills, scores each output with an LLM judge (hybrid: structural regex + quality LLM), and exits 1 if any score falls below 6.0. Becomes the deploy gate for prompt quality regressions. Ships with two live eval cases (`adversarial`, `review`) and a user guide at `docs/eval.md`. Eight safety bugs found and fixed by `/review` before merge: null-score gate bypass (most critical), timer leak, substituteInputs outside try/catch, per-file YAML error isolation, writeEvalResults crash path, filename collision for same-skill cases, double regex compile, review.eval.yaml scope and severity format bugs. 96 new tests. 1,852 tests.
 - [x] Eval framework completion (v1.49.0) — `fixture:` YAML block scaffolds a temp project directory for skills that write files (e.g. `/satori`); torn down unconditionally after the run. `verify_files` checks that listed paths exist in the fixture after the run. `satori.eval.yaml` is now active (was stubbed since v1.48.0). `scoresBySkill` summary shows min–max range when multiple cases share a skill (`adversarial=7-9`). `MAX_OUTPUT_CHARS = 20,000` cap prevents token limit errors in the judge prompt. Satori retry loop wired to eval runner: `skill.retries` and `eval_command` now thread through to `agent.run()`. Tool sandbox checks (file_read, file_write, shell, glob, grep) thread the agent's injected `cwd` through all five tools via factory functions — fixture evals now operate in the temp directory as intended. Five additional safety bugs caught by `/review`: path traversal in fixture paths, partial tmpDir leak, verify_files no-op without fixture, teardown exception masking, scoresBySkill test false positive. 1,796 tests.
 - [x] Observability & eval hardening (v1.50.0) — `:commit` REPL prompts now reuse the main readline instead of creating concurrent interfaces on stdin. The anonymous `line` handler is extracted as named `onLine`; each `:commit` prompt site calls `removeListener` before prompting and restores it in `finally`. `ask()` gains `{ noClose: true }` so Ctrl+C during a `:commit` prompt cancels the prompt but keeps the REPL alive. REPL prints `↻ learnings refreshed (N entry/entries)` after each `agent.refreshLearnings()` call. Ollama embedding cache now invalidates when `ollamaEmbedModel` changes: `SearchEntry` gains an optional `model` field; `getOrBuildIndex` takes a required `embedModel` param; old entries without a `model` field re-embed once on first run. `judgeE2E` hardened: invalid regex patterns record `status: "missed"` with `evidence: "(invalid regex: …)"` instead of falling through to the LLM judge; patterns longer than 500 characters or outputs exceeding `MAX_OUTPUT_CHARS` also route to the LLM judge as a ReDoS budget guard. `STRUCTURAL_PATTERN_MAX_LEN` exported alongside `MAX_DIFF_CHARS` and `MAX_OUTPUT_CHARS`. 13 new tests. 1,816 tests.
+- [x] Semantic codebase indexing (v1.51.0) — `phase2s sync` discovers all git-tracked source files via `git ls-files` (respects all `.gitignore` sources; no JS gitignore library needed), embeds each file's first 4,000 characters using the configured Ollama embed model, and writes an incremental vector index to `.phase2s/code-index.jsonl`. Unchanged files (same SHA-256 + same model) are skipped; deleted files are GC'd; writes are atomic (PID+timestamp tmp + rename). `phase2s search <query>` embeds the query and returns top-K files by cosine similarity with one-line snippets. `--top N` flag controls result count (default 5). Staleness warning when HEAD commit is newer than the index; model mismatch warning when the index was built with a different embed model. `phase2s doctor` extended to check for a missing code index. Path traversal guard in `discoverFiles`, embed-failure resilience (stale entries preserved when Ollama is down), and O(1) staleness check via `git log -1` applied in post-sprint hardening. Separate from the learnings index — different GC semantics, different use case. 35 new tests. 1,851 tests.
 
 ---
 
