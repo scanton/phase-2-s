@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile, rename, stat, mkdir } from "node:fs/promises";
 import { join, extname, resolve as resolvePath, sep } from "node:path";
 import { spawn } from "node:child_process";
+import { chunkFile, type Chunk } from "./chunker.js";
 
 const CODE_INDEX_FILE = ".phase2s/code-index.jsonl";
 
@@ -44,11 +45,17 @@ export const INDEXABLE_EXTENSIONS = new Set([
 export interface CodeEntry {
   /** Relative path from cwd */
   path: string;
-  /** SHA-256 of truncated content */
+  /** SHA-256 of truncated content (whole file) or chunk content */
   hash: string;
   vector: number[];
   ts: string;
   model: string;
+  /** Present when this entry is a function/method chunk (0-indexed start line) */
+  chunkStart?: number;
+  /** Present when this entry is a function/method chunk (0-indexed end line, inclusive) */
+  chunkEnd?: number;
+  /** Present when this entry is a function/method chunk (first 80 chars of chunk source) */
+  chunkName?: string;
 }
 
 export interface SyncResult {
@@ -60,6 +67,8 @@ export interface SyncResult {
   removed: number;
   /** Files where embed failed (Ollama unavailable); stale entry preserved */
   failed: number;
+  /** Total chunk entries indexed (0 when chunking unavailable or all whole-file) */
+  chunks: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +89,14 @@ function cosineSimilarity(a: number[], b: number[]): number {
   }
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;
+}
+
+/**
+ * Composite cache key: "path:chunkStart" for chunk entries, "path" for whole-file.
+ * Enables O(1) staleness lookup across both entry types.
+ */
+export function entryKey(path: string, chunkStart?: number): string {
+  return chunkStart != null ? `${path}:${chunkStart}` : path;
 }
 
 // ---------------------------------------------------------------------------
@@ -249,8 +266,12 @@ export function extractSnippet(content: string): string {
  * Sync the code index with the current codebase.
  *
  * - Discovers files via git ls-files (throws on non-git cwd)
- * - Embeds files whose content SHA-256 or model has changed
- * - Embeds in parallel batches of up to CONCURRENCY_CAP (no new deps)
+ * - Chunks each file via chunkFile() (AST-based for code, heading-based for Markdown)
+ * - Falls back to whole-file embedding when chunkFile() returns []
+ * - Two-phase embed to respect CONCURRENCY_CAP across all (file, chunk) pairs (D1):
+ *     Phase 1: read files + compute hashes in CONCURRENCY_CAP batches, collect ChunkWork
+ *     Phase 2: embed in batches of CHUNK_EMBED_CAP (flat across all files)
+ * - D2: if all chunks for a file fail to embed on first transition, falls back to stale whole-file entry
  * - GCs entries whose paths are no longer discovered
  * - Atomically writes the updated index
  *
@@ -258,6 +279,17 @@ export function extractSnippet(content: string): string {
  * @param embedModel  Embed model name — cache invalidates when this changes
  */
 const CONCURRENCY_CAP = 5;
+
+/** Maximum parallel embed calls across all files in a Phase 2 batch */
+const CHUNK_EMBED_CAP = 20;
+
+interface ChunkWork {
+  relPath: string;
+  chunk: Chunk | null;  // null = whole-file
+  text: string;         // content to embed (truncated)
+  hash: string;
+  cachedEntry: CodeEntry | null;
+}
 
 export async function syncCodebase(
   cwd: string,
@@ -267,56 +299,116 @@ export async function syncCodebase(
   const discovered = await discoverFiles(cwd); // throws on non-git cwd
   const discoveredSet = new Set(discovered);
 
-  // Load existing index keyed by path
+  // Load existing index keyed by entryKey(path, chunkStart?)
   const existing = new Map<string, CodeEntry>();
   for (const entry of await readCodeIndex(cwd)) {
-    existing.set(entry.path, entry);
+    existing.set(entryKey(entry.path, entry.chunkStart), entry);
   }
 
   const updated: CodeEntry[] = [];
   let indexedCount = 0;
   let skippedCount = 0;
   let failedCount = 0;
+  let chunkCount = 0;
 
-  // Process in batches of CONCURRENCY_CAP
+  // ─── Phase 1: read files, compute hashes, collect work ─────────────────────
+  // Process files in batches of CONCURRENCY_CAP to bound parallel I/O
+  const allWork: ChunkWork[] = [];
+
   for (let i = 0; i < discovered.length; i += CONCURRENCY_CAP) {
     const batch = discovered.slice(i, i + CONCURRENCY_CAP);
 
-    const results = await Promise.all(
-      batch.map(async (relPath) => {
+    const batchWork = await Promise.all(
+      batch.map(async (relPath): Promise<ChunkWork[]> => {
         let content: string;
         try {
           content = await readFile(join(cwd, relPath), "utf-8");
         } catch {
-          // File disappeared between discovery and read — skip it
+          // File disappeared between discovery and read — skip
+          return [];
+        }
+
+        const chunks = chunkFile(content, relPath);
+
+        if (chunks.length === 0) {
+          // Whole-file path: truncate to MAX_CODE_CHARS
+          const truncated = content.slice(0, MAX_CODE_CHARS);
+          return [{
+            relPath,
+            chunk: null,
+            text: truncated,
+            hash: sha256(truncated),
+            cachedEntry: existing.get(entryKey(relPath)) ?? null,
+          }];
+        }
+
+        // Chunked path: one work item per chunk
+        return chunks.map((chunk) => ({
+          relPath,
+          chunk,
+          text: chunk.content.slice(0, MAX_CODE_CHARS),
+          hash: sha256(chunk.content.slice(0, MAX_CODE_CHARS)),
+          cachedEntry: existing.get(entryKey(relPath, chunk.start)) ?? null,
+        }));
+      }),
+    );
+
+    for (const workItems of batchWork) {
+      allWork.push(...workItems);
+    }
+  }
+
+  // Separate cached hits from work that needs embedding
+  const toEmbed: ChunkWork[] = [];
+  for (const work of allWork) {
+    const cached = work.cachedEntry;
+    if (cached && cached.hash === work.hash && cached.model === embedModel) {
+      // Cache hit — carry forward as-is
+      updated.push(cached);
+      skippedCount++;
+    } else {
+      toEmbed.push(work);
+    }
+  }
+
+  // ─── Phase 2: embed in CHUNK_EMBED_CAP batches (flat across all files) ──────
+  // Track per-file embed outcomes for D2 fallback
+  const fileEmbedSucceeded = new Map<string, boolean>();
+
+  for (let i = 0; i < toEmbed.length; i += CHUNK_EMBED_CAP) {
+    const batch = toEmbed.slice(i, i + CHUNK_EMBED_CAP);
+
+    const results = await Promise.all(
+      batch.map(async (work) => {
+        const vector = await embedFn(work.text);
+        if (vector.length === 0) {
+          // Embed failed
+          failedCount++;
+          // Mark this file as having at least one failure (if not already succeeded)
+          if (!fileEmbedSucceeded.get(work.relPath)) {
+            fileEmbedSucceeded.set(work.relPath, false);
+          }
           return null;
         }
 
-        const truncated = content.slice(0, MAX_CODE_CHARS);
-        const hash = sha256(truncated);
-        const cached = existing.get(relPath);
-
-        if (cached && cached.hash === hash && cached.model === embedModel) {
-          skippedCount++;
-          return cached;
-        }
-
-        // New, updated, or model-changed — embed
-        const vector = await embedFn(truncated);
-        if (vector.length === 0) {
-          // Embed failed (Ollama down etc.) — preserve stale entry if one exists
-          // so a flaky Ollama run doesn't permanently erase previously-indexed files
-          failedCount++;
-          return cached ?? null;
-        }
+        // Success
+        fileEmbedSucceeded.set(work.relPath, true);
         indexedCount++;
-        return {
-          path: relPath,
-          hash,
+        if (work.chunk != null) chunkCount++;
+
+        const entry: CodeEntry = {
+          path: work.relPath,
+          hash: work.hash,
           vector,
           ts: new Date().toISOString(),
           model: embedModel,
-        } satisfies CodeEntry;
+        };
+        if (work.chunk != null) {
+          entry.chunkStart = work.chunk.start;
+          entry.chunkEnd = work.chunk.end;
+          entry.chunkName = work.chunk.name;
+        }
+        return entry;
       }),
     );
 
@@ -325,16 +417,47 @@ export async function syncCodebase(
     }
   }
 
-  // GC: count entries that are no longer in the discovered set
+  // ─── D2: whole-file fallback for files where all chunks failed to embed ──────
+  // When transitioning from whole-file to chunked for the first time and Ollama is
+  // down, all chunk embed calls return []. Without this, the file would disappear
+  // from the index. Preserve the stale whole-file entry instead.
+  for (const [relPath, succeeded] of fileEmbedSucceeded) {
+    if (!succeeded) {
+      const wholeFileKey = entryKey(relPath);
+      const staleWholeFile = existing.get(wholeFileKey);
+      if (staleWholeFile) {
+        updated.push(staleWholeFile);
+      }
+    }
+  }
+
+  // ─── GC: count entries no longer in discovered set ───────────────────────────
+  // Build a set of keys that made it into updated[] for O(1) lookup
+  const updatedKeys = new Set(updated.map((u) => entryKey(u.path, u.chunkStart)));
+
   let removedCount = 0;
-  for (const path of existing.keys()) {
-    if (!discoveredSet.has(path)) removedCount++;
+  for (const [key, entry] of existing) {
+    if (!discoveredSet.has(entry.path)) {
+      // File deleted or no longer tracked — GC it
+      removedCount++;
+    } else if (!updatedKeys.has(key)) {
+      // Entry exists for a still-discovered file but was not carried forward.
+      // This covers stale whole-file entries when a file upgraded to chunks,
+      // and stale chunk entries when a file downgraded to whole-file.
+      removedCount++;
+    }
   }
 
   // Write full rewrite (not append) — same contract as search-index.ts writeIndex
   await writeCodeIndex(cwd, updated);
 
-  return { indexed: indexedCount, skipped: skippedCount, removed: removedCount, failed: failedCount };
+  return {
+    indexed: indexedCount,
+    skipped: skippedCount,
+    removed: removedCount,
+    failed: failedCount,
+    chunks: chunkCount,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -346,15 +469,21 @@ export async function syncCodebase(
  * Results sorted descending by cosine similarity.
  *
  * Returns [] when queryVector is empty or index is empty.
+ * chunk fields (chunkStart, chunkName) are included when present.
  */
 export function findTopKCode(
   queryVector: number[],
   index: CodeEntry[],
   k: number,
-): Array<{ path: string; score: number }> {
+): Array<{ path: string; score: number; chunkStart?: number; chunkName?: string }> {
   if (queryVector.length === 0 || index.length === 0) return [];
   return index
-    .map((entry) => ({ path: entry.path, score: cosineSimilarity(queryVector, entry.vector) }))
+    .map((entry) => ({
+      path: entry.path,
+      score: cosineSimilarity(queryVector, entry.vector),
+      chunkStart: entry.chunkStart,
+      chunkName: entry.chunkName,
+    }))
     .sort((a, b) => b.score - a.score)
     .slice(0, k);
 }
