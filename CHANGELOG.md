@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.52.0 — 2026-05-04
+
+Sprint 78 — Function-Level AST Chunking for Semantic Search.
+
+### Added
+
+- **Function-level code chunking** (`src/core/chunker.ts`) — New `chunkFile()` function parses TypeScript, JavaScript, Python, Ruby, Go, Rust, Java, Kotlin, C, C++, C#, and Swift source files using `@ast-grep/napi` (native AST via napi-rs). Extracts top-level `function_declaration` and `method_definition` nodes (arrow functions excluded — see Sprint 79). Each chunk becomes its own embedding entry in the index, enabling search to surface the specific function that matches your query rather than the whole file.
+
+- **Markdown section chunking** (`src/core/chunker.ts`) — `.md` and `.mdx` files are split at `##` and `###` heading boundaries. Each section becomes a separate embedding, enabling search to return the specific documentation section that answers your question.
+
+- **Two-phase embed pipeline** (`src/core/code-index.ts`) — `syncCodebase` now uses a two-phase design (D1): Phase 1 reads files and computes hashes in batches of 5 (bounds parallel file I/O); Phase 2 embeds all (file, chunk) pairs in flat batches of 20 (prevents Ollama overload from large multi-function files). Chunk count is reported in the sync summary.
+
+- **Composite index keys** (`src/core/code-index.ts`) — New `entryKey(path, chunkStart?)` export returns `"path:N"` for chunk entries and `"path"` for whole-file entries, enabling O(1) cache lookup across both entry types.
+
+- **Chunk display in `phase2s search`** (`src/cli/search.ts`) — Results from chunk entries show `file.ts:N` (1-indexed line number), the first 10 lines of the chunk as snippet, and the function name/signature as a label.
+
+### Changed
+
+- **`phase2s sync` output includes chunk count** (`src/cli/sync.ts`) — When chunks are indexed, the summary line now reads `Indexed 5 files (47 chunks), skipped 2 (unchanged), removed 0`.
+
+- **`syncCodebase` SyncResult gains `chunks` field** (`src/core/code-index.ts`) — Count of chunk entries written (0 when chunking unavailable or all whole-file). Accessible to MCP callers and sync CLI.
+
+### Fixed
+
+- **Ollama-down resilience at first chunk transition (D2)** (`src/core/code-index.ts`) — When a file has never been chunked and Ollama goes down mid-transition, all chunk embeds return `[]`. Previously the file would disappear from the index. Now the stale whole-file entry is preserved until Ollama recovers. Re-running sync after recovery re-embeds the chunks and GCs the stale whole-file entry.
+
+- **Alpine/musl fallback** (`src/core/chunker.ts`) — `@ast-grep/napi` native binary is loaded via `require()` in a module-scope `try/catch`. On platforms without a prebuilt binary (Alpine Linux, unsupported arch), `chunkFile()` returns `[]` and the whole-file embedding path is used instead. Markdown chunking works on all platforms (no native module needed).
+
 ## v1.51.0 — 2026-05-02
 
 Sprint 77 — Semantic Codebase Indexing.
