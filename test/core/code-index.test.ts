@@ -10,6 +10,7 @@ import {
   readCodeIndex,
   findTopKCode,
   extractSnippet,
+  entryKey,
   MAX_CODE_CHARS,
   INDEXABLE_EXTENSIONS,
 } from "../../src/core/code-index.js";
@@ -235,9 +236,10 @@ describe("syncCodebase", () => {
     expect(index.find((e) => e.path === "app.ts")).toBeUndefined();
   });
 
-  it("respects CONCURRENCY_CAP (never more than 5 embeds in-flight)", async () => {
-    // Create 12 files
-    for (let i = 0; i < 12; i++) {
+  it("respects CHUNK_EMBED_CAP (never more than 20 embeds in-flight during Phase 2)", async () => {
+    // Create 25 files — all one-liners so chunker returns [] → whole-file path
+    // Phase 2 embeds them in batches of CHUNK_EMBED_CAP (20), so max in-flight ≤ 20
+    for (let i = 0; i < 25; i++) {
       await writeFile(join(dir, `file${i}.ts`), `export const n${i} = ${i};`);
     }
     await gitAddAll(dir);
@@ -256,8 +258,40 @@ describe("syncCodebase", () => {
 
     await syncCodebase(dir, concurrencyTrackingEmbed, "test-model");
 
-    expect(maxInFlight).toBeLessThanOrEqual(5);
+    // Two-phase design: Phase 2 embeds in CHUNK_EMBED_CAP=20 batches
+    expect(maxInFlight).toBeLessThanOrEqual(20);
     expect(maxInFlight).toBeGreaterThan(0);
+  });
+
+  it("includes chunks field in SyncResult (0 for whole-file only repos)", async () => {
+    await writeFile(join(dir, "simple.ts"), `export const x = 1;`);
+    await gitAddAll(dir);
+    await gitCommit(dir);
+
+    const result = await syncCodebase(dir, fakeEmbed, "test-model");
+    expect(typeof result.chunks).toBe("number");
+    expect(result.chunks).toBeGreaterThanOrEqual(0);
+  });
+
+  it("D2 regression: preserves stale whole-file entry when all embeds fail on first chunk transition", async () => {
+    // Seed the index with a whole-file entry
+    const content = "export const stable = true;";
+    await writeFile(join(dir, "stable.ts"), content);
+    await gitAddAll(dir);
+    await gitCommit(dir);
+    await syncCodebase(dir, fakeEmbed, "test-model");
+
+    // Verify seeded
+    let index = await readCodeIndex(dir);
+    expect(index.find((e) => e.path === "stable.ts")).toBeDefined();
+
+    // Now simulate Ollama going down — embed always returns []
+    const failEmbed = (_text: string): Promise<number[]> => Promise.resolve([]);
+    await syncCodebase(dir, failEmbed, "test-model");
+
+    // D2: stale entry should be preserved (not wiped)
+    index = await readCodeIndex(dir);
+    expect(index.find((e) => e.path === "stable.ts")).toBeDefined();
   });
 });
 
@@ -290,6 +324,13 @@ describe("findTopKCode", () => {
     model: "test",
   });
 
+  const makeChunkEntry = (path: string, vec: number[], chunkStart: number) => ({
+    ...makeEntry(path, vec),
+    chunkStart,
+    chunkEnd: chunkStart + 4,
+    chunkName: `function at line ${chunkStart}`,
+  });
+
   it("returns results sorted descending by cosine similarity", () => {
     const index = [
       makeEntry("c.ts", [0.1, 0.1, 0.9]),
@@ -315,6 +356,41 @@ describe("findTopKCode", () => {
     const index = [makeEntry("a.ts", [1, 0, 0]), makeEntry("b.ts", [0, 1, 0])];
     const results = findTopKCode([1, 0, 0], index, 10);
     expect(results).toHaveLength(2);
+  });
+
+  it("includes chunkStart and chunkName in results for chunk entries", () => {
+    const index = [makeChunkEntry("auth.ts", [1, 0, 0], 10)];
+    const results = findTopKCode([1, 0, 0], index, 1);
+    expect(results[0].chunkStart).toBe(10);
+    expect(results[0].chunkName).toBe("function at line 10");
+  });
+
+  it("chunkStart is undefined for whole-file entries", () => {
+    const index = [makeEntry("app.ts", [1, 0, 0])];
+    const results = findTopKCode([1, 0, 0], index, 1);
+    expect(results[0].chunkStart).toBeUndefined();
+    expect(results[0].chunkName).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// entryKey
+// ---------------------------------------------------------------------------
+
+describe("entryKey", () => {
+  it("returns path for whole-file entry (chunkStart undefined)", () => {
+    expect(entryKey("src/app.ts")).toBe("src/app.ts");
+    expect(entryKey("src/app.ts", undefined)).toBe("src/app.ts");
+  });
+
+  it("returns path\\x00N for chunk entry (NUL separator avoids colon-collision)", () => {
+    expect(entryKey("src/app.ts", 0)).toBe("src/app.ts\x000");
+    expect(entryKey("src/app.ts", 42)).toBe("src/app.ts\x0042");
+  });
+
+  it("produces distinct keys for different chunks of the same file", () => {
+    expect(entryKey("auth.ts", 0)).not.toBe(entryKey("auth.ts", 10));
+    expect(entryKey("auth.ts", 0)).not.toBe(entryKey("auth.ts"));
   });
 });
 

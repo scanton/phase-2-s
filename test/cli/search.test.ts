@@ -28,9 +28,18 @@ vi.mock("../../src/core/embeddings.js", () => ({
 
 vi.mock("../../src/core/code-index.js", () => ({
   readCodeIndex: readCodeIndexMock,
-  findTopKCode: (q: number[], idx: Array<{ path: string; vector: number[] }>, k: number) =>
+  findTopKCode: (
+    q: number[],
+    idx: Array<{ path: string; vector: number[]; chunkStart?: number; chunkName?: string }>,
+    k: number,
+  ) =>
     idx
-      .map((e) => ({ path: e.path, score: cosineSim(q, e.vector) }))
+      .map((e) => ({
+        path: e.path,
+        score: cosineSim(q, e.vector),
+        chunkStart: e.chunkStart,
+        chunkName: e.chunkName,
+      }))
       .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
       .slice(0, k),
   extractSnippet: (content: string) => {
@@ -185,5 +194,103 @@ describe("runSearch", () => {
 
     const errorOutput = consoleErrorSpy.mock.calls.map((c) => c.join(" ")).join("\n");
     expect(errorOutput).toMatch(/Ollama|embed/i);
+  });
+
+  it("displays path:N (1-indexed) for chunk entries (SR1)", async () => {
+    await writeFile(join(tmpDir, ".phase2s", "code-index.jsonl"), "");
+    // File with content at lines 0-9 so chunkStart=2 yields a real snippet
+    const content = Array.from({ length: 15 }, (_, i) => `line${i}`).join("\n");
+    await writeFile(join(tmpDir, "auth.ts"), content);
+
+    generateEmbeddingMock.mockResolvedValue([1, 0, 0]);
+    readCodeIndexMock.mockResolvedValue([
+      {
+        path: "auth.ts",
+        hash: "abc",
+        vector: [1, 0, 0],
+        ts: new Date().toISOString(),
+        model: "test",
+        chunkStart: 2,
+        chunkEnd: 6,
+        chunkName: "function authMiddleware() {",
+      },
+    ]);
+
+    const { runSearch } = await import("../../src/cli/search.js");
+    const config = { ollamaBaseUrl: "http://localhost:11434/v1" } as never;
+
+    await runSearch("auth", tmpDir, config, 1);
+
+    const logOutput = consoleLogSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    // chunkStart=2 → displayed as line 3 (1-indexed)
+    expect(logOutput).toMatch(/auth\.ts:3/);
+  });
+
+  it("appends chunkName label to chunk result output (SR4)", async () => {
+    await writeFile(join(tmpDir, ".phase2s", "code-index.jsonl"), "");
+    await writeFile(join(tmpDir, "auth.ts"), "function authMiddleware() {\n  return true;\n}\n");
+
+    generateEmbeddingMock.mockResolvedValue([1, 0, 0]);
+    readCodeIndexMock.mockResolvedValue([
+      {
+        path: "auth.ts",
+        hash: "abc",
+        vector: [1, 0, 0],
+        ts: new Date().toISOString(),
+        model: "test",
+        chunkStart: 0,
+        chunkEnd: 2,
+        chunkName: "function authMiddleware() {",
+      },
+    ]);
+
+    const { runSearch } = await import("../../src/cli/search.js");
+    const config = { ollamaBaseUrl: "http://localhost:11434/v1" } as never;
+
+    await runSearch("auth", tmpDir, config, 1);
+
+    const logOutput = consoleLogSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(logOutput).toMatch(/authMiddleware/);
+  });
+
+  it("uses chunk-based snippet (lines.slice) for chunk entries (SR3)", async () => {
+    await writeFile(join(tmpDir, ".phase2s", "code-index.jsonl"), "");
+    // Line 0 is unrelated; line 5 is the chunk content we want to appear
+    const lines = [
+      "// top-level comment",
+      "const a = 1;",
+      "const b = 2;",
+      "const c = 3;",
+      "const d = 4;",
+      "export function targetFn() {", // chunkStart=5
+      "  return true;",
+      "}",
+    ];
+    await writeFile(join(tmpDir, "utils.ts"), lines.join("\n"));
+
+    generateEmbeddingMock.mockResolvedValue([1, 0, 0]);
+    readCodeIndexMock.mockResolvedValue([
+      {
+        path: "utils.ts",
+        hash: "abc",
+        vector: [1, 0, 0],
+        ts: new Date().toISOString(),
+        model: "test",
+        chunkStart: 5,
+        chunkEnd: 7,
+        chunkName: "export function targetFn() {",
+      },
+    ]);
+
+    const { runSearch } = await import("../../src/cli/search.js");
+    const config = { ollamaBaseUrl: "http://localhost:11434/v1" } as never;
+
+    await runSearch("targetFn", tmpDir, config, 1);
+
+    const logOutput = consoleLogSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    // Chunk snippet reads lines[5..14], so "export function targetFn" should appear
+    expect(logOutput).toMatch(/targetFn/);
+    // The whole-file snippet would show "const a = 1;" (first non-comment line) — this should NOT appear
+    expect(logOutput).not.toMatch(/const a = 1/);
   });
 });

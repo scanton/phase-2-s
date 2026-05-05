@@ -14,13 +14,25 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 78 notes (v1.52.0, 2026-05-04)
+
+Sprint 78 ships function-level chunking via @ast-grep/napi. Identified during /plan-eng-review.
+
+- [ ] **Arrow function chunking with parent-walk (Sprint 79)** — `arrow_function` kind was removed from TS/JS CHUNK_KINDS in Sprint 78 because unnamed arrows (top-level module-scope `(e) => {}`) produced meaningless chunks that diluted top-K results. Re-add in Sprint 79 with a `variable_declarator` parent-walk heuristic: if the arrow's parent is a variable binding, use the binding name (`const handler = () => {}` → name `handler`). Skip arrows with no binding parent (anonymous callbacks). This makes `export const rateLimitBackoff = async (retries) => { ... }` searchable as a named chunk. Start in `chunker.ts` at the `arrow_function` case in the per-kind loop.
+
+- [ ] **Verify CHUNK_KINDS node kind names for non-TypeScript languages** — Only the TypeScript kinds (`function_declaration`, `method_definition`) are confirmed. Python, Ruby, Go, Rust, Java, Kotlin, C, C++, C#, Swift kinds are speculative and may be wrong — wrong kind names silently return 0 chunks (whole-file fallback, no error). Verify each using the tree-sitter playground (https://tree-sitter.github.io/tree-sitter/playground): paste a sample function, check the AST node kind name. Fix any mismatches in `CHUNK_KINDS` in `chunker.ts`. A language that consistently returns 0 chunks on a real codebase is the signal.
+
+- [ ] **Alpine CI enforcement** — The pre-publish Alpine Docker smoke test is currently a manual step in the distribution plan. Add a CI job (GitHub Actions) that runs after npm publish: `docker run --rm node:22-alpine sh -c "npm install -g @scanton/phase2s && phase2s --version"`. Verifies that the Alpine fallback (whole-file mode when @ast-grep/napi native binary is unavailable) doesn't regress. Currently no automated gate; a musl ABI change could break install silently.
+
+---
+
 ## Backlog — Post-Sprint 77 notes (v1.51.0, 2026-05-02)
 
 Sprint 77 shipped Semantic Codebase Indexing. `phase2s sync` discovers all git-tracked source files via `git ls-files`, embeds each file's first 4,000 chars via Ollama, and writes an incremental vector index to `.phase2s/code-index.jsonl`. `phase2s search <query>` embeds the query and returns top-K files by cosine similarity with one-line snippets extracted from the first non-comment line. Reuses the Ollama embed infrastructure from Sprint 72; intentionally separate from the learnings index (different GC and staleness semantics). Post-sprint `/review` hardened four issues: path traversal guard, embed-failure resilience (stale entry preserved on Ollama down), `mkdir` on first write, and staleness check replaced O(N) file stat loop with a single `git log -1 --format=%ct HEAD` call. 35 new tests; 1,851 passing.
 
 - [ ] **Doctor staleness upgrade for code-index** — `checkCodeIndex()` currently warns only when `code-index.jsonl` is absent. When it exists but is older than 24h, emit a distinct warning: "Code index is N days old. Run 'phase2s sync' to refresh." Makes the doctor check actionable for users who sync once and forget to re-run after significant changes. (Identified during Sprint 77 /plan-eng-review, outside voice finding.)
 
-- [ ] **Function-level chunking for code-index** — Sprint 77 embeds whole files (truncated at 4,000 chars). For large files with multiple unrelated concerns, a whole-file vector averages across everything and recall degrades. Future: chunk at function/class boundaries (parse via tree-sitter or regex heuristics), embed each chunk, store chunk offset + parent path in the entry. Better top-K recall, especially for large service files. Natural upgrade from the Sprint 77 whole-file baseline — the `CodeEntry` interface can gain `chunkStart?: number` without breaking existing entries.
+- [x] **Function-level chunking for code-index** — Sprint 77 embeds whole files (truncated at 4,000 chars). For large files with multiple unrelated concerns, a whole-file vector averages across everything and recall degrades. Future: chunk at function/class boundaries (parse via tree-sitter or regex heuristics), embed each chunk, store chunk offset + parent path in the entry. Better top-K recall, especially for large service files. Natural upgrade from the Sprint 77 whole-file baseline — the `CodeEntry` interface can gain `chunkStart?: number` without breaking existing entries. **Completed: v1.52.0 (2026-05-04)**
 
 ---
 
