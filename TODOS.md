@@ -14,7 +14,7 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
-## Backlog — Post-Sprint 78 notes (v1.52.0, planned)
+## Backlog — Post-Sprint 78 notes (v1.52.0, 2026-05-04)
 
 Sprint 78 ships function-level chunking via @ast-grep/napi. Identified during /plan-eng-review.
 
@@ -32,7 +32,7 @@ Sprint 77 shipped Semantic Codebase Indexing. `phase2s sync` discovers all git-t
 
 - [ ] **Doctor staleness upgrade for code-index** — `checkCodeIndex()` currently warns only when `code-index.jsonl` is absent. When it exists but is older than 24h, emit a distinct warning: "Code index is N days old. Run 'phase2s sync' to refresh." Makes the doctor check actionable for users who sync once and forget to re-run after significant changes. (Identified during Sprint 77 /plan-eng-review, outside voice finding.)
 
-- [ ] **Function-level chunking for code-index** — Sprint 77 embeds whole files (truncated at 4,000 chars). For large files with multiple unrelated concerns, a whole-file vector averages across everything and recall degrades. Future: chunk at function/class boundaries (parse via tree-sitter or regex heuristics), embed each chunk, store chunk offset + parent path in the entry. Better top-K recall, especially for large service files. Natural upgrade from the Sprint 77 whole-file baseline — the `CodeEntry` interface can gain `chunkStart?: number` without breaking existing entries.
+- [x] **Function-level chunking for code-index** — Sprint 77 embeds whole files (truncated at 4,000 chars). For large files with multiple unrelated concerns, a whole-file vector averages across everything and recall degrades. Future: chunk at function/class boundaries (parse via tree-sitter or regex heuristics), embed each chunk, store chunk offset + parent path in the entry. Better top-K recall, especially for large service files. Natural upgrade from the Sprint 77 whole-file baseline — the `CodeEntry` interface can gain `chunkStart?: number` without breaking existing entries. **Completed: v1.52.0 (2026-05-04)**
 
 ---
 

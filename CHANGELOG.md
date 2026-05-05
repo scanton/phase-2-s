@@ -12,7 +12,7 @@ Sprint 78 — Function-Level AST Chunking for Semantic Search.
 
 - **Two-phase embed pipeline** (`src/core/code-index.ts`) — `syncCodebase` now uses a two-phase design (D1): Phase 1 reads files and computes hashes in batches of 5 (bounds parallel file I/O); Phase 2 embeds all (file, chunk) pairs in flat batches of 20 (prevents Ollama overload from large multi-function files). Chunk count is reported in the sync summary.
 
-- **Composite index keys** (`src/core/code-index.ts`) — New `entryKey(path, chunkStart?)` export returns `"path:N"` for chunk entries and `"path"` for whole-file entries, enabling O(1) cache lookup across both entry types.
+- **Composite index keys** (`src/core/code-index.ts`) — New `entryKey(path, chunkStart?)` export returns `"path\x00N"` (NUL-separated) for chunk entries and `"path"` for whole-file entries, enabling O(1) cache lookup across both entry types without collisions for files whose names contain colon-number suffixes.
 
 - **Chunk display in `phase2s search`** (`src/cli/search.ts`) — Results from chunk entries show `file.ts:N` (1-indexed line number), the first 10 lines of the chunk as snippet, and the function name/signature as a label.
 
@@ -24,9 +24,13 @@ Sprint 78 — Function-Level AST Chunking for Semantic Search.
 
 ### Fixed
 
-- **Ollama-down resilience at first chunk transition (D2)** (`src/core/code-index.ts`) — When a file has never been chunked and Ollama goes down mid-transition, all chunk embeds return `[]`. Previously the file would disappear from the index. Now the stale whole-file entry is preserved until Ollama recovers. Re-running sync after recovery re-embeds the chunks and GCs the stale whole-file entry.
+- **Ollama-down resilience — both chunk-transition cases** (`src/core/code-index.ts`) — When Ollama goes down during a sync, stale entries are now preserved for both transition cases: (a) file previously stored as a whole-file entry — the stale whole-file entry is kept; (b) file previously stored as chunks — all existing chunk entries for that path are kept. Previously, case (b) caused the file to disappear from the index entirely on re-embed failure. Re-running sync after Ollama recovers re-embeds both cases and GCs the stale entries.
 
-- **Alpine/musl fallback** (`src/core/chunker.ts`) — `@ast-grep/napi` native binary is loaded via `require()` in a module-scope `try/catch`. On platforms without a prebuilt binary (Alpine Linux, unsupported arch), `chunkFile()` returns `[]` and the whole-file embedding path is used instead. Markdown chunking works on all platforms (no native module needed).
+- **`chunkMarkdown` first-heading name bug** (`src/core/chunker.ts`) — When a Markdown file's first line is a `##` heading, the condition `if (m && i > start)` (with `start=0` and `i=0`) evaluated false, skipping both the section push and the `name`/`start` update. The entire first section was then emitted under the name `"(header)"` rather than the actual heading text. Fixed by decoupling name/start update from the section flush: name and start now update whenever any heading is found; a section is only pushed when `i > start` (i.e., there are lines before the new heading).
+
+- **ESM `require()` in `chunkFile`** (`src/core/chunker.ts`) — `package.json` declares `"type": "module"`, making all compiled output ESM. Bare `require("@ast-grep/napi")` is not defined in ESM and was throwing `ReferenceError: require is not defined`, caught silently by the surrounding `try/catch`. This left `astGrep = null` permanently, making `chunkFile()` return `[]` for every non-Markdown file in production (tests passed because vitest transforms `require()` during test runs). Fixed by using `createRequire(import.meta.url)` from `node:module`.
+
+- **Alpine/musl fallback** (`src/core/chunker.ts`) — `@ast-grep/napi` native binary is loaded via `createRequire(import.meta.url)` in a module-scope `try/catch` (ESM-safe; bare `require()` is not available in ESM context). `@ast-grep/napi` is listed under `optionalDependencies` so `npm install` skips it gracefully on platforms without a prebuilt binary. On Alpine Linux and unsupported architectures, `chunkFile()` returns `[]` and the whole-file embedding path is used instead. Markdown chunking works on all platforms (no native module needed).
 
 ## v1.51.0 — 2026-05-02
 
