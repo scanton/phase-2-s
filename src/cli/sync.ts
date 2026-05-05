@@ -34,10 +34,11 @@ export async function runSync(cwd: string, config: Config): Promise<void> {
     process.exit(1);
   }
 
-  const { indexed, skipped, removed, failed } = result;
+  const { indexed, skipped, removed, failed, chunks } = result;
+  const chunkNote = chunks > 0 ? ` (${chunks} ${chunks === 1 ? "chunk" : "chunks"})` : "";
   console.log(
     chalk.green("✔") +
-    ` Indexed ${indexed} ${indexed === 1 ? "file" : "files"}, ` +
+    ` Indexed ${indexed} ${indexed === 1 ? "file" : "files"}${chunkNote}, ` +
     `skipped ${skipped} (unchanged), ` +
     `removed ${removed}` +
     (failed > 0 ? chalk.yellow(`, ${failed} failed (Ollama unavailable — stale entries preserved)`) : ""),

@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.52.0 — 2026-05-04
+
+Sprint 78 — Function-Level AST Chunking for Semantic Search.
+
+### Added
+
+- **Function-level code chunking** (`src/core/chunker.ts`) — New `chunkFile()` function parses TypeScript, JavaScript, Python, Ruby, Go, Rust, Java, Kotlin, C, C++, C#, and Swift source files using `@ast-grep/napi` (native AST via napi-rs). Extracts top-level `function_declaration` and `method_definition` nodes (arrow functions excluded — see Sprint 79). Each chunk becomes its own embedding entry in the index, enabling search to surface the specific function that matches your query rather than the whole file.
+
+- **Markdown section chunking** (`src/core/chunker.ts`) — `.md` and `.mdx` files are split at `##` and `###` heading boundaries. Each section becomes a separate embedding, enabling search to return the specific documentation section that answers your question.
+
+- **Two-phase embed pipeline** (`src/core/code-index.ts`) — `syncCodebase` now uses a two-phase design (D1): Phase 1 reads files and computes hashes in batches of 5 (bounds parallel file I/O); Phase 2 embeds all (file, chunk) pairs in flat batches of 20 (prevents Ollama overload from large multi-function files). Chunk count is reported in the sync summary.
+
+- **Composite index keys** (`src/core/code-index.ts`) — New `entryKey(path, chunkStart?)` export returns `"path\x00N"` (NUL-separated) for chunk entries and `"path"` for whole-file entries, enabling O(1) cache lookup across both entry types without collisions for files whose names contain colon-number suffixes.
+
+- **Chunk display in `phase2s search`** (`src/cli/search.ts`) — Results from chunk entries show `file.ts:N` (1-indexed line number), the first 10 lines of the chunk as snippet, and the function name/signature as a label.
+
+### Changed
+
+- **`phase2s sync` output includes chunk count** (`src/cli/sync.ts`) — When chunks are indexed, the summary line now reads `Indexed 5 files (47 chunks), skipped 2 (unchanged), removed 0`.
+
+- **`syncCodebase` SyncResult gains `chunks` field** (`src/core/code-index.ts`) — Count of chunk entries written (0 when chunking unavailable or all whole-file). Accessible to MCP callers and sync CLI.
+
+### Fixed
+
+- **Ollama-down resilience — both chunk-transition cases** (`src/core/code-index.ts`) — When Ollama goes down during a sync, stale entries are now preserved for both transition cases: (a) file previously stored as a whole-file entry — the stale whole-file entry is kept; (b) file previously stored as chunks — all existing chunk entries for that path are kept. Previously, case (b) caused the file to disappear from the index entirely on re-embed failure. Re-running sync after Ollama recovers re-embeds both cases and GCs the stale entries.
+
+- **`chunkMarkdown` first-heading name bug** (`src/core/chunker.ts`) — When a Markdown file's first line is a `##` heading, the condition `if (m && i > start)` (with `start=0` and `i=0`) evaluated false, skipping both the section push and the `name`/`start` update. The entire first section was then emitted under the name `"(header)"` rather than the actual heading text. Fixed by decoupling name/start update from the section flush: name and start now update whenever any heading is found; a section is only pushed when `i > start` (i.e., there are lines before the new heading).
+
+- **ESM `require()` in `chunkFile`** (`src/core/chunker.ts`) — `package.json` declares `"type": "module"`, making all compiled output ESM. Bare `require("@ast-grep/napi")` is not defined in ESM and was throwing `ReferenceError: require is not defined`, caught silently by the surrounding `try/catch`. This left `astGrep = null` permanently, making `chunkFile()` return `[]` for every non-Markdown file in production (tests passed because vitest transforms `require()` during test runs). Fixed by using `createRequire(import.meta.url)` from `node:module`.
+
+- **Alpine/musl fallback** (`src/core/chunker.ts`) — `@ast-grep/napi` native binary is loaded via `createRequire(import.meta.url)` in a module-scope `try/catch` (ESM-safe; bare `require()` is not available in ESM context). `@ast-grep/napi` is listed under `optionalDependencies` so `npm install` skips it gracefully on platforms without a prebuilt binary. On Alpine Linux and unsupported architectures, `chunkFile()` returns `[]` and the whole-file embedding path is used instead. Markdown chunking works on all platforms (no native module needed).
+
 ## v1.51.0 — 2026-05-02
 
 Sprint 77 — Semantic Codebase Indexing.
