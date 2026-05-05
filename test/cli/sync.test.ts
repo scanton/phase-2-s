@@ -123,7 +123,7 @@ describe("runSync", () => {
   });
 
   it("prints index path in output", async () => {
-    syncCodebaseMock.mockResolvedValue({ indexed: 1, skipped: 0, removed: 0 });
+    syncCodebaseMock.mockResolvedValue({ indexed: 1, skipped: 0, removed: 0, failed: 0, chunks: 0 });
 
     const { runSync } = await import("../../src/cli/sync.js");
     const config = {

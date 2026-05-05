@@ -383,9 +383,9 @@ describe("entryKey", () => {
     expect(entryKey("src/app.ts", undefined)).toBe("src/app.ts");
   });
 
-  it("returns path:N for chunk entry", () => {
-    expect(entryKey("src/app.ts", 0)).toBe("src/app.ts:0");
-    expect(entryKey("src/app.ts", 42)).toBe("src/app.ts:42");
+  it("returns path\\x00N for chunk entry (NUL separator avoids colon-collision)", () => {
+    expect(entryKey("src/app.ts", 0)).toBe("src/app.ts\x000");
+    expect(entryKey("src/app.ts", 42)).toBe("src/app.ts\x0042");
   });
 
   it("produces distinct keys for different chunks of the same file", () => {

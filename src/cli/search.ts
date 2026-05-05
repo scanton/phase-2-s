@@ -20,6 +20,10 @@ import type { Config } from "../core/config.js";
 
 const CODE_INDEX_FILE = ".phase2s/code-index.jsonl";
 const DEFAULT_K = 5;
+/** Number of lines to show from a chunk when displaying search results. */
+const CHUNK_SNIPPET_LINES = 10;
+/** Max chars for the inline snippet display. */
+const CHUNK_SNIPPET_CHARS = 100;
 
 export async function runSearch(
   query: string,
@@ -99,9 +103,9 @@ export async function runSearch(
     try {
       const content = await readFile(join(cwd, path), "utf-8");
       if (chunkStart != null) {
-        // For chunks: show first 10 lines starting at the chunk's start line
+        // For chunks: show first CHUNK_SNIPPET_LINES starting at the chunk's start line
         const lines = content.split("\n");
-        snippet = lines.slice(chunkStart, chunkStart + 10).join(" ").slice(0, 100).trim();
+        snippet = lines.slice(chunkStart, chunkStart + CHUNK_SNIPPET_LINES).join(" ").slice(0, CHUNK_SNIPPET_CHARS).trim();
       } else {
         snippet = extractSnippet(content);
       }

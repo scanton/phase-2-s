@@ -9,21 +9,23 @@
  *
  * Caller uses [] as the signal to apply whole-file embedding instead.
  *
- * NOTE: Module-scope require() with try/catch (not `await import()` at module scope).
- * Phase2S compiles to CJS; `await import()` at module scope is ESM-only and throws
- * a syntax error (not catchable at runtime). require() in try/catch is CJS-safe.
+ * NOTE: createRequire(import.meta.url) is required because the package is ESM
+ * ("type":"module") and bare require() is not available in ESM context. We use
+ * createRequire to load the optional native addon inside a try/catch so that
+ * platforms without a prebuilt binary (Alpine/musl, unsupported arch) degrade
+ * gracefully to whole-file embedding rather than crashing.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+import { createRequire } from "node:module";
+import { extname } from "node:path";
+
+const _require = createRequire(import.meta.url);
 let astGrep: typeof import("@ast-grep/napi") | null = null;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  astGrep = require("@ast-grep/napi") as typeof import("@ast-grep/napi");
+  astGrep = _require("@ast-grep/napi") as typeof import("@ast-grep/napi");
 } catch {
   // Platform not supported (Alpine/musl, unsupported arch) — chunkFile returns []
 }
-
-import { extname } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -108,22 +110,38 @@ function chunkMarkdown(content: string): Chunk[] {
   const chunks: Chunk[] = [];
   let start = 0;
   let name = "(header)";
+  // True once we've seen a ## heading; used to distinguish "initial prose block"
+  // (body starts at `start`) from "heading-started section" (body starts at `start+1`).
+  let sectionHasHeading = false;
 
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^#{2,3} (.+)/);
-    if (m && i > start) {
-      const sectionContent = lines.slice(start, i).join("\n");
-      if (sectionContent.trim().length > 0) {
-        chunks.push({ name, start, end: i - 1, content: sectionContent });
+    if (m) {
+      // Flush the previous section before advancing the window.
+      // When i === 0 (heading at document start) there is no previous section
+      // to flush, so the push is skipped — but name/start still update correctly.
+      if (i > start) {
+        const sectionContent = lines.slice(start, i).join("\n");
+        // Filter out sections whose body (excluding the heading line) is blank.
+        // This prevents heading-only sections (e.g. "## Empty\n\n## Next") from
+        // polluting the index with empty embeddings.
+        // For the initial "(header)" block (sectionHasHeading=false), the heading
+        // line test does not apply — check the full content instead.
+        const bodyStart = sectionHasHeading ? start + 1 : start;
+        if (lines.slice(bodyStart, i).join("\n").trim().length > 0) {
+          chunks.push({ name, start, end: i - 1, content: sectionContent });
+        }
       }
       start = i;
       name = m[1].trim();
+      sectionHasHeading = true;
     }
   }
 
   if (start < lines.length) {
     const sectionContent = lines.slice(start).join("\n");
-    if (sectionContent.trim().length > 0) {
+    const bodyStart = sectionHasHeading ? start + 1 : start;
+    if (lines.slice(bodyStart).join("\n").trim().length > 0) {
       chunks.push({ name, start, end: lines.length - 1, content: sectionContent });
     }
   }
@@ -138,9 +156,12 @@ function chunkMarkdown(content: string): Chunk[] {
 /**
  * Minimum line span for a chunk to be worth embedding.
  * end - start < MIN_CHUNK_LINES → filtered (e.g. one-liner getters, empty stubs).
- * The Assignment verified: sha256 (lines=2) is correctly filtered at this threshold.
+ * Verified in test/core/chunker.test.ts: sha256 (end-start=1) is correctly filtered.
  */
 export const MIN_CHUNK_LINES = 3;
+
+/** Max chars to capture from node source text for the chunk name (function signature). */
+export const CHUNK_NAME_CHARS = 80;
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -190,8 +211,8 @@ export function chunkFile(content: string, filePath: string): Chunk[] {
         // Filter trivial chunks (one-liners, stubs)
         if (end - start < MIN_CHUNK_LINES) continue;
 
-        // Name: first 80 chars of the node's source text (contains the signature)
-        const name = node.text().slice(0, 80);
+        // Name: first CHUNK_NAME_CHARS of the node's source text (contains the signature)
+        const name = node.text().slice(0, CHUNK_NAME_CHARS);
 
         chunks.push({
           name,

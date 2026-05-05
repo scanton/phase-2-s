@@ -92,11 +92,13 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
- * Composite cache key: "path:chunkStart" for chunk entries, "path" for whole-file.
+ * Composite cache key: "path\x00chunkStart" for chunk entries, "path" for whole-file.
+ * Uses a NUL separator (not ":") to avoid collisions with files whose names contain
+ * colon-number suffixes (e.g. "foo:10" would otherwise collide with chunk 10 of "foo").
  * Enables O(1) staleness lookup across both entry types.
  */
 export function entryKey(path: string, chunkStart?: number): string {
-  return chunkStart != null ? `${path}:${chunkStart}` : path;
+  return chunkStart != null ? `${path}\x00${chunkStart}` : path;
 }
 
 // ---------------------------------------------------------------------------
@@ -417,16 +419,30 @@ export async function syncCodebase(
     }
   }
 
-  // ─── D2: whole-file fallback for files where all chunks failed to embed ──────
-  // When transitioning from whole-file to chunked for the first time and Ollama is
-  // down, all chunk embed calls return []. Without this, the file would disappear
-  // from the index. Preserve the stale whole-file entry instead.
+  // ─── D2: stale-entry fallback for files where all chunks failed to embed ─────
+  // When Ollama is unavailable during re-embed, embed calls return [] and no new
+  // entry is written. Without this block, the file would disappear from the index.
+  //
+  // Two cases to handle:
+  //   (a) File was previously whole-file: existing key is entryKey(relPath) — a
+  //       simple path string with no colon suffix.
+  //   (b) File was previously chunked: existing keys are entryKey(relPath, N) for
+  //       each chunk. entryKey(relPath) alone yields undefined here, so we must
+  //       collect all existing entries whose .path matches relPath.
   for (const [relPath, succeeded] of fileEmbedSucceeded) {
     if (!succeeded) {
       const wholeFileKey = entryKey(relPath);
       const staleWholeFile = existing.get(wholeFileKey);
       if (staleWholeFile) {
+        // Case (a): stale whole-file entry found
         updated.push(staleWholeFile);
+      } else {
+        // Case (b): file was previously chunked — preserve all stale chunk entries
+        for (const entry of existing.values()) {
+          if (entry.path === relPath) {
+            updated.push(entry);
+          }
+        }
       }
     }
   }
