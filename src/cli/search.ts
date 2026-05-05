@@ -89,18 +89,30 @@ export async function runSearch(
   console.log(chalk.bold(`\nTop ${results.length} matches for "${query}":\n`));
 
   for (let i = 0; i < results.length; i++) {
-    const { path, score } = results[i];
+    const { path, score, chunkStart, chunkName } = results[i];
+
+    // Display: "path:N" (1-indexed) for chunks, "path" for whole-file entries
+    const location = chunkStart != null ? `${path}:${chunkStart + 1}` : path;
 
     // Load snippet from file (best-effort — skip if unreadable)
     let snippet = "";
     try {
       const content = await readFile(join(cwd, path), "utf-8");
-      snippet = extractSnippet(content);
+      if (chunkStart != null) {
+        // For chunks: show first 10 lines starting at the chunk's start line
+        const lines = content.split("\n");
+        snippet = lines.slice(chunkStart, chunkStart + 10).join(" ").slice(0, 100).trim();
+      } else {
+        snippet = extractSnippet(content);
+      }
     } catch {
       // File disappeared since last sync — snippet stays empty
     }
 
-    console.log(`${i + 1}. ${chalk.cyan(path)}  ${chalk.dim(`(${score.toFixed(2)})`)}`);
+    // For chunk entries, prefer chunkName (first 80 chars of node source) as label
+    const label = chunkName ? chalk.dim(` — ${chunkName.split("\n")[0].trim().slice(0, 60)}`) : "";
+
+    console.log(`${i + 1}. ${chalk.cyan(location)}${label}  ${chalk.dim(`(${score.toFixed(2)})`)}`);
     if (snippet) {
       console.log(`   ${chalk.dim(snippet)}`);
     }

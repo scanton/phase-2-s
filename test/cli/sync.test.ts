@@ -62,7 +62,7 @@ describe("runSync", () => {
   });
 
   it("calls syncCodebase and prints the indexed/skipped/removed report", async () => {
-    syncCodebaseMock.mockResolvedValue({ indexed: 42, skipped: 10, removed: 3 });
+    syncCodebaseMock.mockResolvedValue({ indexed: 42, skipped: 10, removed: 3, failed: 0, chunks: 0 });
 
     const { runSync } = await import("../../src/cli/sync.js");
     const config = {
@@ -76,6 +76,50 @@ describe("runSync", () => {
     expect(logOutput).toMatch(/42/);
     expect(logOutput).toMatch(/10/);
     expect(logOutput).toMatch(/3/);
+  });
+
+  it("includes chunk count in output when chunks > 0", async () => {
+    syncCodebaseMock.mockResolvedValue({ indexed: 5, skipped: 2, removed: 0, failed: 0, chunks: 47 });
+
+    const { runSync } = await import("../../src/cli/sync.js");
+    const config = {
+      ollamaBaseUrl: "http://localhost:11434/v1",
+    } as never;
+
+    await runSync(tmpDir, config);
+
+    const logOutput = consoleLogSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(logOutput).toMatch(/47.*chunk/);
+  });
+
+  it("uses singular 'chunk' when chunks is 1 (S3)", async () => {
+    syncCodebaseMock.mockResolvedValue({ indexed: 1, skipped: 0, removed: 0, failed: 0, chunks: 1 });
+
+    const { runSync } = await import("../../src/cli/sync.js");
+    const config = {
+      ollamaBaseUrl: "http://localhost:11434/v1",
+    } as never;
+
+    await runSync(tmpDir, config);
+
+    const logOutput = consoleLogSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    // Should say "1 chunk" not "1 chunks"
+    expect(logOutput).toMatch(/1 chunk\b/);
+    expect(logOutput).not.toMatch(/1 chunks/);
+  });
+
+  it("omits chunk note when chunks is 0", async () => {
+    syncCodebaseMock.mockResolvedValue({ indexed: 3, skipped: 0, removed: 0, failed: 0, chunks: 0 });
+
+    const { runSync } = await import("../../src/cli/sync.js");
+    const config = {
+      ollamaBaseUrl: "http://localhost:11434/v1",
+    } as never;
+
+    await runSync(tmpDir, config);
+
+    const logOutput = consoleLogSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(logOutput).not.toMatch(/chunk/);
   });
 
   it("prints index path in output", async () => {
