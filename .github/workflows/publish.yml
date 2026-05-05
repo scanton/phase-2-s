@@ -47,3 +47,42 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -f v1
           git push origin v1 --force
+
+  alpine-smoke:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    container:
+      image: node:22-alpine
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: Install phase2s from npm
+        run: npm install -g @scanton/phase2s
+
+      - name: Verify version
+        run: phase2s --version
+
+      - name: Verify chunker fallback (no native binary on musl)
+        run: |
+          mkdir -p /tmp/test-repo
+          cd /tmp/test-repo
+          git init
+          git config user.email "ci@test.com"
+          git config user.name "CI"
+          echo "export const x = 1;" > index.ts
+          git add . && git commit -m "init"
+          # sync will fail at embed time (Ollama not present in CI) — that's expected.
+          # We grep stderr to confirm the failure is embed-time, not a native module crash.
+          phase2s sync --repo . --embed-model nomic-embed-text 2>sync_err.txt || {
+            if grep -qE "ECONNREFUSED|connect ECONNREFUSED" sync_err.txt \
+               && ! grep -qiE "cannot find module|SyntaxError|ReferenceError|native|napi" sync_err.txt; then
+              echo "sync failed at embed time (expected -- no Ollama in CI)"
+              exit 0
+            else
+              echo "sync failed unexpectedly (possible native module crash or import error):"
+              cat sync_err.txt
+              exit 1
+            fi
+          }

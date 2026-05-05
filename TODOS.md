@@ -22,7 +22,7 @@ Sprint 78 ships function-level chunking via @ast-grep/napi. Identified during /p
 
 - [ ] **Verify CHUNK_KINDS node kind names for non-TypeScript languages** — Only the TypeScript kinds (`function_declaration`, `method_definition`) are confirmed. Python, Ruby, Go, Rust, Java, Kotlin, C, C++, C#, Swift kinds are speculative and may be wrong — wrong kind names silently return 0 chunks (whole-file fallback, no error). Verify each using the tree-sitter playground (https://tree-sitter.github.io/tree-sitter/playground): paste a sample function, check the AST node kind name. Fix any mismatches in `CHUNK_KINDS` in `chunker.ts`. A language that consistently returns 0 chunks on a real codebase is the signal.
 
-- [ ] **Alpine CI enforcement** — The pre-publish Alpine Docker smoke test is currently a manual step in the distribution plan. Add a CI job (GitHub Actions) that runs after npm publish: `docker run --rm node:22-alpine sh -c "npm install -g @scanton/phase2s && phase2s --version"`. Verifies that the Alpine fallback (whole-file mode when @ast-grep/napi native binary is unavailable) doesn't regress. Currently no automated gate; a musl ABI change could break install silently.
+- [x] **Alpine CI enforcement** — Added `alpine-smoke` job to `.github/workflows/publish.yml` that runs after npm publish using `node:22-alpine` container. Installs phase2s from npm, verifies `phase2s --version`, then runs `phase2s sync` and distinguishes embed-time failures (ECONNREFUSED — expected, no Ollama in CI) from native module crashes via stderr grep. Uses `defaults: run: shell: sh` since Alpine doesn't include bash. **Completed: v1.53.0 (2026-05-05)**
 
 ---
 
