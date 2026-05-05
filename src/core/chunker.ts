@@ -46,6 +46,9 @@ export interface Chunk {
 // Language routing
 // ---------------------------------------------------------------------------
 
+/** Languages that support arrow function parent-walk (TS, TSX, JS variants) */
+const ARROW_WALK_LANGS = new Set(["TypeScript", "Tsx", "JavaScript"]);
+
 /** Map file extension → ast-grep Language name */
 const EXT_TO_LANG: Record<string, string> = {
   ".ts":   "TypeScript",
@@ -70,9 +73,10 @@ const EXT_TO_LANG: Record<string, string> = {
 /**
  * Node kinds for function/method-level chunking per language.
  *
- * arrow_function intentionally omitted from TS/JS — top-level module-scope
- * arrows produce meaningless names like '(e) => {' that dilute search results.
- * Re-add in Sprint 79 with variable_declarator parent-walk for binding name.
+ * arrow_function intentionally omitted from CHUNK_KINDS — anonymous and
+ * callback arrows produce meaningless names. Named arrows are handled by a
+ * separate parent-walk pass (see ARROW_WALK_LANGS) that reads the binding
+ * identifier from the variable_declarator parent for clean chunk names.
  *
  * class_declaration omitted from all languages — findAll descends into class
  * bodies and returns inner methods, so class chunks would swallow their methods.
@@ -216,6 +220,53 @@ export function chunkFile(content: string, filePath: string): Chunk[] {
 
         chunks.push({
           name,
+          start,
+          end,
+          content: lines.slice(start, end + 1).join("\n"),
+        });
+      }
+    }
+
+    // Arrow function parent-walk (TypeScript, TSX, JavaScript only).
+    //
+    // Finds named arrow functions by walking bottom-up: arrow_function → parent
+    // variable_declarator → binding identifier. Only chunks named arrows
+    // (anonymous callbacks and one-liners are filtered).
+    //
+    // Example AST for `export const rateLimitBackoff = async () => {}`:
+    //   export_statement
+    //     lexical_declaration
+    //       variable_declarator        ← immediate parent of arrow_function
+    //         identifier (rateLimitBackoff)
+    //         arrow_function
+    //
+    // `.parent()` returns the immediate parent only — always variable_declarator
+    // for top-level const/let arrow bindings regardless of export status.
+    if (ARROW_WALK_LANGS.has(langName)) {
+      const arrowNodes = root.findAll({ rule: { kind: "arrow_function" } });
+      for (const node of arrowNodes) {
+        const parent = node.parent();
+        // Only process arrows whose immediate parent is a variable_declarator
+        if (!parent || parent.kind() !== "variable_declarator") continue;
+
+        // Extract the binding identifier (first named child of variable_declarator)
+        const nameNode = parent.children().find(
+          (c) => c.kind() === "identifier" || c.kind() === "shorthand_property_identifier_pattern",
+        );
+        if (!nameNode) continue;
+
+        const bindingName = nameNode.text();
+        if (!bindingName) continue;
+
+        const range = node.range();
+        const start = range.start.line;
+        const end = range.end.line;
+
+        // Filter trivial arrows (one-liners, expression bodies)
+        if (end - start < MIN_CHUNK_LINES) continue;
+
+        chunks.push({
+          name: bindingName.slice(0, CHUNK_NAME_CHARS),
           start,
           end,
           content: lines.slice(start, end + 1).join("\n"),

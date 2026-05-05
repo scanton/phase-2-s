@@ -243,3 +243,80 @@ describe("chunkFile — Alpine fallback contract", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// chunkFile — Arrow function parent-walk (Sprint 79)
+// ---------------------------------------------------------------------------
+
+describe("chunkFile — arrow function parent-walk", () => {
+  it("chunks an exported async arrow and names it with the binding identifier", () => {
+    const content = [
+      "export const rateLimitBackoff = async (attempt: number): Promise<void> => {",
+      "  const delay = Math.pow(2, attempt) * 100;",
+      "  await new Promise((resolve) => setTimeout(resolve, delay));",
+      "  console.log(`Backing off for ${delay}ms`);",
+      "};",
+    ].join("\n");
+    const chunks = chunkFile(content, "utils.ts");
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].name).toBe("rateLimitBackoff");
+  });
+
+  it("does not chunk a non-exported one-liner arrow (MIN_CHUNK_LINES filter)", () => {
+    const content = "const double = (x: number) => x * 2;\n";
+    const chunks = chunkFile(content, "math.ts");
+    expect(chunks).toHaveLength(0);
+  });
+
+  it("does not chunk an anonymous callback arrow (parent is call_expression/arguments)", () => {
+    const content = [
+      "const result = [1, 2, 3].map((x) => {",
+      "  return x * 2;",
+      "});",
+    ].join("\n");
+    const chunks = chunkFile(content, "transform.ts");
+    // The arrow's parent is `arguments`, not `variable_declarator` → skipped
+    expect(chunks).toHaveLength(0);
+  });
+
+  it("chunks a named arrow alongside a function_declaration — 2 chunks, no swallow", () => {
+    const content = [
+      "export function fetchUser(id: string) {",
+      "  return db.users.findById(id);",
+      "  // line 3",
+      "}",
+      "",
+      "export const processUser = async (user: User): Promise<ProcessedUser> => {",
+      "  const normalized = normalizeUser(user);",
+      "  const enriched = await enrichUser(normalized);",
+      "  return enriched;",
+      "};",
+    ].join("\n");
+    const chunks = chunkFile(content, "users.ts");
+    expect(chunks).toHaveLength(2);
+    const names = chunks.map((c) => c.name);
+    expect(names).toContain("processUser");
+    // function_declaration node text starts with 'function' (export keyword is in parent export_statement)
+    expect(names.some((n) => n.startsWith("function fetchUser"))).toBe(true);
+  });
+
+  it("does not chunk a one-liner expression-body arrow (MIN_CHUNK_LINES filter)", () => {
+    const content = "export const add = (a: number, b: number) => a + b;\n";
+    const chunks = chunkFile(content, "math.ts");
+    expect(chunks).toHaveLength(0);
+  });
+
+  it("arrow chunk name is the binding name, not raw source text", () => {
+    const content = [
+      "const handleRequest = async (req: Request, res: Response): Promise<void> => {",
+      "  const body = await req.json();",
+      "  const result = await process(body);",
+      "  res.json(result);",
+      "};",
+    ].join("\n");
+    const chunks = chunkFile(content, "handler.ts");
+    expect(chunks).toHaveLength(1);
+    // Name should be the identifier, not 'async (req: Request...'
+    expect(chunks[0].name).toBe("handleRequest");
+  });
+});
