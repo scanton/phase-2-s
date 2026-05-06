@@ -470,6 +470,41 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       }
     });
 
+  // Search quality benchmark
+  program
+    .command("search-audit")
+    .description("Benchmark semantic search quality (hit@1, hit@3, MRR)")
+    .option("--cases <path>", "Path to a JSON/JSONL file with additional audit cases")
+    .option("--cases-only", "Skip built-in cases, only run --cases file")
+    .option("--built-in-only", "Skip user cases, only run built-in Phase2S cases")
+    .option("--k <n>", "Top-K to retrieve per query", "10")
+    .option("--ci", "Exit 1 if hit@1 < 70% or hit@3 < 85%")
+    .option("--json", "Output results as JSON instead of table")
+    .option("--verbose", "Show per-query notes and match details")
+    .action(async (cmdOpts: { cases?: string; casesOnly?: boolean; builtInOnly?: boolean; k?: string; ci?: boolean; json?: boolean; verbose?: boolean }) => {
+      const { runAudit } = await import("./search-audit.js");
+      const { loadConfig } = await import("../core/config.js");
+      const kParsed = parseInt(cmdOpts.k ?? "10", 10);
+      const k = (!isNaN(kParsed) && kParsed > 0) ? kParsed : 10;
+      try {
+        const config = await loadConfig();
+        await runAudit(process.cwd(), config, {
+          casesFile: cmdOpts.cases,
+          casesOnly: cmdOpts.casesOnly,
+          builtInOnly: cmdOpts.builtInOnly,
+          k,
+          ci: cmdOpts.ci,
+          json: cmdOpts.json,
+          verbose: cmdOpts.verbose,
+        });
+      } catch (err) {
+        if (!(err instanceof Error && err.message.startsWith("process.exit"))) {
+          console.error(chalk.red(normalizeConfigError(err)));
+          process.exit(1);
+        }
+      }
+    });
+
   // Run log report viewer
   program
     .command("report <logfile>")
@@ -739,7 +774,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp goal judge report sync search init upgrade lint doctor completion setup template" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template" -- "\$cur"))
     return
   fi
 
@@ -787,6 +822,7 @@ _phase2s() {
     'template:Manage spec templates (list / use)'
     'sync:Index the codebase for semantic search (requires Ollama)'
     'search:Search the indexed codebase semantically'
+    'search-audit:Benchmark semantic search quality (hit@1, hit@3, MRR)'
   )
 
   if (( CURRENT == 2 )); then
