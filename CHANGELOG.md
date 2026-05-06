@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.54.0 — 2026-05-05
+
+Sprint 80 — `code_search` Agent Tool + `:search` Dispatcher Migration.
+
+### Added
+
+- **`code_search` agent tool** (`src/tools/code-search.ts`) — New `ToolDefinition` that exposes semantic codebase search to the agent. Takes `query` (natural language) and optional `k` (default 3, max 20). Calls `generateEmbedding` via Ollama, runs `findTopKCode` over the loaded index, and returns numbered results with file path, line range, function name, similarity score, and an inline code snippet (lines `chunkStart..chunkEnd`). Snippet read failures (file deleted since last sync) are silently swallowed — the result is still returned without the snippet fence. Staleness warning prepended when `checkIndexStaleness` returns `stale: true`.
+
+- **Ollama-gated registration** (`src/tools/index.ts`) — `createDefaultRegistry()` accepts two new `RegistryOptions` fields: `ollamaBaseUrl` and `ollamaEmbedModel`. `code_search` is only registered when both are present. The five default tools (`file_read`, `file_write`, `shell`, `glob`, `grep`) are always registered regardless of Ollama config.
+
+- **`code_search` wired into agent constructor and `switchAgentDef`** (`src/core/agent.ts`) — Both `createDefaultRegistry` call sites now pass `ollamaBaseUrl` and `ollamaEmbedModel` from `config`, so `code_search` is available to any agent def when Ollama is configured.
+
+- **`findTopKCode` returns `chunkEnd`** (`src/core/code-index.ts`) — Return type extended to include `chunkEnd?: number` alongside the existing `chunkStart`, `chunkName`, and `path`. The snippet window in `code_search` uses `slice(chunkStart, chunkEnd + 1)`.
+
+- **`:search` in colon-commands dispatcher** (`src/cli/colon-commands.ts`) — `:search <query>` now returns `{ type: "search_codebase", query }` from `handleColonCommand`. Empty query returns `{ type: "error" }` with a usage hint. Migrated from a raw string match in `src/cli/index.ts` to the structured dispatcher so it appears in `:help` output, is testable in isolation, and shares the same action-type pattern as all other commands.
+
+### Changed
+
+- **`RegistryOptions`** — Added `ollamaBaseUrl?` and `ollamaEmbedModel?` fields.
+- **`ColonAction`** union — Added `{ type: "search_codebase"; query: string }` variant.
+- **TODOS.md** — Marked Sprint 80 items as completed (v1.54.0).
+
+### Tests
+
+- **`test/tools/code-search.test.ts`** (new, 23 tests) — Full coverage of `createCodeSearchTool`: metadata (name, description, schema), parameter schema boundaries (k=0, k=21, k=1, k=20, fractional k), embedding failure via empty vector → `success:false`, embedding failure via throw (Ollama crash) → `success:false`, index load failure via throw → `success:false` with sync hint, `checkIndexStaleness` throw swallowed (non-fatal), path traversal guard (`../../.env` skips `readFile`), no results → sync hint, results with chunk boundaries (path, line range, function name, score), snippet extraction via `readFile`, snippet omitted on `readFile` throw (file deleted), snippet omitted when chunk boundaries absent, numbered result index, `k` parameter threading, default `k=3`, staleness warning injected, staleness absent when current.
+- **`test/tools/code-search-registry.test.ts`** (new, 5 tests) — Gating: not registered when Ollama config absent, not registered with only `ollamaBaseUrl`, not registered with only `ollamaEmbedModel`, registered when both set, 5 default tools always present.
+- **`test/cli/colon-commands.test.ts`** — Added 4 `:search` tests: query forwarded, whitespace trimmed, empty query → error, spaces-only → error.
+- **`test/core/code-index.test.ts`** — Added 2 `findTopKCode` tests: `chunkEnd` included in results for chunk entries, `chunkEnd` undefined for whole-file entries.
+
+Total: **1930 tests** (up from 1896, +34). The review-hardening pass added 9 tests beyond the initial 25: k boundary values (0, 21, 1, 20, 3.5), `generateEmbedding` throw, `readCodeIndex` throw, `checkIndexStaleness` throw, and path traversal guard.
+
 ## v1.53.0 — 2026-05-05
 
 Sprint 79 — Arrow Function Chunking + Doctor Index Tests + Alpine CI.

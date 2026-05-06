@@ -1356,6 +1356,16 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           continue;
         }
 
+        case "search_codebase": {
+          const { runSearch } = await import("./search.js");
+          try {
+            await runSearch(action.query, process.cwd(), config);
+          } catch (err) {
+            log.error(err instanceof Error ? err.message : String(err));
+          }
+          continue;
+        }
+
         default: {
           // TypeScript exhaustiveness guard — if a new ColonAction variant is
           // added to colon-commands.ts and not handled here, this becomes a
@@ -1428,22 +1438,6 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       const { runSync } = await import("./sync.js");
       try {
         await runSync(process.cwd(), config);
-      } catch (err) {
-        log.error(err instanceof Error ? err.message : String(err));
-      }
-      continue;
-    }
-
-    // :search <query> — semantic search over the indexed codebase
-    if (cleanLine.startsWith(":search ") || cleanLine === ":search") {
-      const { runSearch } = await import("./search.js");
-      const query = cleanLine.slice(":search".length).trim();
-      if (!query) {
-        log.error("Usage: :search <query>\nExample: :search authentication middleware");
-        continue;
-      }
-      try {
-        await runSearch(query, process.cwd(), config);
       } catch (err) {
         log.error(err instanceof Error ? err.message : String(err));
       }

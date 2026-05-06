@@ -14,6 +14,16 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 80 notes (v1.54.0, 2026-05-05)
+
+Sprint 80 wires `findTopKCode` into the agent tool registry and cleans up the `:search` colon-command dispatcher.
+
+- [x] **`code_search` agent tool** — `src/tools/code-search.ts` exposes semantic codebase search as a `ToolDefinition`. Ollama-gated: only registers when `ollamaBaseUrl` + `ollamaEmbedModel` both present in `RegistryOptions`. Returns numbered results with file path, line range, function name, score, and inline code snippet. **Completed: v1.54.0 (2026-05-05)**
+
+- [x] **`:search` dispatcher migration** — Moved raw `:search` string match from `src/cli/index.ts` into `handleColonCommand()` in `src/cli/colon-commands.ts`. Returns `{ type: "search_codebase", query }`, appears in `:help`, and is independently unit-tested. **Completed: v1.54.0 (2026-05-05)**
+
+---
+
 ## Backlog — Post-Sprint 78 notes (v1.52.0, 2026-05-04)
 
 Sprint 78 ships function-level chunking via @ast-grep/napi. Identified during /plan-eng-review.

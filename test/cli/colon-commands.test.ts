@@ -308,3 +308,34 @@ describe(":help — command reference", () => {
     expect(handleColonCommand(":help", makeCtx())).toEqual({ type: "show_help" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// :search — semantic search (Sprint 80)
+// ---------------------------------------------------------------------------
+
+describe(":search — semantic codebase search", () => {
+  it(":search <query> returns search_codebase with the query", () => {
+    expect(handleColonCommand(":search rate limit backoff", makeCtx())).toEqual({
+      type: "search_codebase",
+      query: "rate limit backoff",
+    });
+  });
+
+  it(":search with extra whitespace trims the query", () => {
+    const result = handleColonCommand(":search   auth middleware  ", makeCtx());
+    expect(result).toEqual({ type: "search_codebase", query: "auth middleware" });
+  });
+
+  it(":search with no query returns error (not null)", () => {
+    const result = handleColonCommand(":search", makeCtx());
+    expect(result.type).toBe("error");
+    if (result.type === "error") {
+      expect(result.message).toContain("Usage: :search");
+    }
+  });
+
+  it(":search with only spaces returns error", () => {
+    const result = handleColonCommand(":search   ", makeCtx());
+    expect(result.type).toBe("error");
+  });
+});

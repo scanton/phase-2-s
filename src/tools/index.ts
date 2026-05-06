@@ -5,11 +5,16 @@ import { createShellTool } from "./shell.js";
 import { createGlobTool } from "./glob-tool.js";
 import { createGrepTool } from "./grep-tool.js";
 import { createBrowserTool } from "./browser.js";
+import { createCodeSearchTool } from "./code-search.js";
 
 export interface RegistryOptions {
   allowDestructive?: boolean;
   cwd?: string;
   browserEnabled?: boolean;
+  /** Ollama base URL. When set alongside ollamaEmbedModel, enables code_search tool. */
+  ollamaBaseUrl?: string;
+  /** Ollama embedding model. Required together with ollamaBaseUrl for code_search. */
+  ollamaEmbedModel?: string;
 }
 
 export function createDefaultRegistry(
@@ -20,7 +25,13 @@ export function createDefaultRegistry(
     ? { allowDestructive: allowDestructiveOrOpts }
     : allowDestructiveOrOpts;
 
-  const { allowDestructive = false, cwd = process.cwd(), browserEnabled = false } = opts;
+  const {
+    allowDestructive = false,
+    cwd = process.cwd(),
+    browserEnabled = false,
+    ollamaBaseUrl,
+    ollamaEmbedModel,
+  } = opts;
 
   const registry = new ToolRegistry();
   registry.register(createFileReadTool(cwd));
@@ -31,6 +42,10 @@ export function createDefaultRegistry(
 
   if (browserEnabled) {
     registry.register(createBrowserTool(cwd));
+  }
+
+  if (ollamaBaseUrl && ollamaEmbedModel) {
+    registry.register(createCodeSearchTool(cwd, ollamaBaseUrl, ollamaEmbedModel));
   }
 
   return registry;
