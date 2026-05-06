@@ -24,12 +24,12 @@ Sprint 80 — `code_search` Agent Tool + `:search` Dispatcher Migration.
 
 ### Tests
 
-- **`test/tools/code-search.test.ts`** (new, 16 tests) — Full coverage of `createCodeSearchTool`: metadata (name, description, schema), embedding failure → `success:false`, no results → sync hint, results with chunk boundaries (path, line range, function name, score), snippet extraction via `readFile`, snippet omitted on read failure, snippet omitted when chunk boundaries absent, numbered result index, `k` parameter threading, default `k=3`, staleness warning injected, staleness absent when current.
+- **`test/tools/code-search.test.ts`** (new, 23 tests) — Full coverage of `createCodeSearchTool`: metadata (name, description, schema), parameter schema boundaries (k=0, k=21, k=1, k=20, fractional k), embedding failure via empty vector → `success:false`, embedding failure via throw (Ollama crash) → `success:false`, index load failure via throw → `success:false` with sync hint, `checkIndexStaleness` throw swallowed (non-fatal), path traversal guard (`../../.env` skips `readFile`), no results → sync hint, results with chunk boundaries (path, line range, function name, score), snippet extraction via `readFile`, snippet omitted on `readFile` throw (file deleted), snippet omitted when chunk boundaries absent, numbered result index, `k` parameter threading, default `k=3`, staleness warning injected, staleness absent when current.
 - **`test/tools/code-search-registry.test.ts`** (new, 5 tests) — Gating: not registered when Ollama config absent, not registered with only `ollamaBaseUrl`, not registered with only `ollamaEmbedModel`, registered when both set, 5 default tools always present.
 - **`test/cli/colon-commands.test.ts`** — Added 4 `:search` tests: query forwarded, whitespace trimmed, empty query → error, spaces-only → error.
 - **`test/core/code-index.test.ts`** — Added 2 `findTopKCode` tests: `chunkEnd` included in results for chunk entries, `chunkEnd` undefined for whole-file entries.
 
-Total: **1921 tests** (up from 1896, +25).
+Total: **1930 tests** (up from 1896, +34). The review-hardening pass added 9 tests beyond the initial 25: k boundary values (0, 21, 1, 20, 3.5), `generateEmbedding` throw, `readCodeIndex` throw, `checkIndexStaleness` throw, and path traversal guard.
 
 ## v1.53.0 — 2026-05-05
 
