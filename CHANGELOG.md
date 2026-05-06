@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.55.0 — 2026-05-05
+
+Sprint 81 — `phase2s search-audit` Semantic Search Quality Benchmark.
+
+### Added
+
+- **`phase2s search-audit`** (`src/cli/search-audit.ts`) — New CLI subcommand that benchmarks semantic search quality by running curated natural-language queries against the live `.phase2s/code-index.jsonl` and reporting hit@1, hit@3, and MRR (Mean Reciprocal Rank). Ships with 20 built-in self-referential Phase2S queries covering all major modules (embeddings, code-index, chunker, CLI commands, memory, config, tools, MCP server, init wizard, goal runner). The self-referential design means Phase2S validates its own semantic stack with zero user setup after `phase2s sync`.
+
+- **`src/data/search-audit-cases.ts`** — `AuditCase` interface and `BUILT_IN_CASES` array (20 entries). `expectedChunk` uses `chunkName.includes()` matching — correct for both regular functions (chunkName = first 80 chars of source text) and arrow functions (chunkName = binding identifier). `expectedHit?: false` marks known-weak cases: excluded from MRR denominator and CI thresholds, shown as `[known weak]` in table output.
+
+- **CI gate** — `--ci` flag exits 1 when hit@1 < 70% (`CI_HIT1_THRESHOLD`) or hit@3 < 85% (`CI_HIT3_THRESHOLD`). Model mismatch (index built with a different embed model) aborts under `--ci`; emits a `chalk.yellow` warning and continues interactively.
+
+- **`--json` output** — Emits a machine-readable `AuditResult` to stdout; all warnings and errors route to stderr for clean piping and script integration.
+
+- **`--cases <file>`** — Loads a user-provided JSON array or JSONL benchmark file. Combinable with `--built-in-only` (skip user cases) or `--cases-only` (skip built-in cases). JSONL parser skips empty lines and `//`/`#` comment lines.
+
+- **`--verbose`** — Shows matched path/chunk and per-case notes alongside pass/fail status.
+
+- **`search-audit` subcommand wired into CLI** (`src/cli/index.ts`) — Registered with full option set; added to bash and zsh completions.
+
+### Changed
+
+- **TODOS.md** — Added Post-Sprint 81 section (v1.55.0).
+
+### Tests
+
+- **`test/cli/search-audit.test.ts`** (new, 42 tests) — Full coverage using `vi.hoisted()` mock pattern: CI threshold constant exports, `BUILT_IN_CASES` structural integrity (20 cases, path format, expectedHit shape), pre-flight validation (missing Ollama URL, empty index, `--cases-only`+`--built-in-only` conflict), model mismatch (interactive warn vs CI exit), hit@1, hit@3, miss (rank null), `chunkName.includes()` semantics, MRR computation (including zero-denominator no divide-by-zero guard), `expectedHit:false` exclusion from denominator, mid-loop embed failure (skip + continue), `--ci` flag gate (pass and fail), `--json` stdout/stderr split, JSON array and JSONL cases file loading (with comment/blank-line skipping and malformed JSONL error), and Windows backslash path normalization.
+
+---
+
 ## v1.54.0 — 2026-05-05
 
 Sprint 80 — `code_search` Agent Tool + `:search` Dispatcher Migration.

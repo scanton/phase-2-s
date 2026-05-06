@@ -14,6 +14,14 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 81 notes (v1.55.0, 2026-05-05)
+
+Sprint 81 ships `phase2s search-audit`, a self-referential semantic search quality benchmark.
+
+- [x] **`phase2s search-audit`** — 20 built-in Phase2S self-audit queries, hit@1/hit@3/MRR reporting, `--ci` gate (exit 1 below 70%/85% thresholds), `--json` output, `expectedHit: false` for known-weak cases, `--cases` for user-provided JSON/JSONL files. **Completed: v1.55.0 (2026-05-05)**
+
+---
+
 ## Backlog — Post-Sprint 80 notes (v1.54.0, 2026-05-05)
 
 Sprint 80 wires `findTopKCode` into the agent tool registry and cleans up the `:search` colon-command dispatcher.
