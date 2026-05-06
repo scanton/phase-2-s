@@ -491,13 +491,14 @@ export function findTopKCode(
   queryVector: number[],
   index: CodeEntry[],
   k: number,
-): Array<{ path: string; score: number; chunkStart?: number; chunkName?: string }> {
+): Array<{ path: string; score: number; chunkStart?: number; chunkEnd?: number; chunkName?: string }> {
   if (queryVector.length === 0 || index.length === 0) return [];
   return index
     .map((entry) => ({
       path: entry.path,
       score: cosineSimilarity(queryVector, entry.vector),
       chunkStart: entry.chunkStart,
+      chunkEnd: entry.chunkEnd,
       chunkName: entry.chunkName,
     }))
     .sort((a, b) => b.score - a.score)

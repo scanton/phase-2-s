@@ -37,7 +37,9 @@ export type ColonAction =
   /** :xyz — unrecognized colon command (not :clone or :commit) */
   | { type: "unknown_command"; command: string }
   /** :re <invalid tier> */
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /** :search <query> — semantic search over the code index */
+  | { type: "search_codebase"; query: string };
 
 // ---------------------------------------------------------------------------
 // COMMAND_REGISTRY — static list of documented REPL commands for :help
@@ -52,6 +54,7 @@ export const COMMAND_REGISTRY: Array<{ command: string; description: string }> =
   { command: ":commit [message]",     description: "AI-generated commit message and commit" },
   { command: ":compact",              description: "Compact the current session context" },
   { command: ":dump [html]",          description: "Export conversation as markdown (or HTML)" },
+  { command: ":search <query>",       description: "Semantic search over the indexed codebase (requires phase2s sync)" },
   { command: ":help",                 description: "Show this command reference" },
 ];
 
@@ -135,6 +138,15 @@ export function handleColonCommand(trimmed: string, ctx: ColonCommandCtx): Colon
 
   // :help
   if (trimmed === ":help") return { type: "show_help" };
+
+  // :search <query> — semantic search over the indexed codebase
+  if (trimmed === ":search" || trimmed.startsWith(":search ")) {
+    const query = trimmed.slice(":search".length).trim();
+    if (!query) {
+      return { type: "error", message: "Usage: :search <query>\nExample: :search authentication middleware" };
+    }
+    return { type: "search_codebase", query };
+  }
 
   // Agent switching — handles:
   //   bare ids:          "ares" (caught above, but :ares handled here via strip)

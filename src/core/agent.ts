@@ -89,6 +89,8 @@ export class Agent {
       allowDestructive: opts.config.allowDestructive,
       cwd: this.cwd,
       browserEnabled: opts.config.browser,
+      ollamaBaseUrl: opts.config.ollamaBaseUrl,
+      ollamaEmbedModel: opts.config.ollamaEmbedModel,
     });
     // Apply per-project allow/deny list from config (deny overrides allow)
     this.tools = baseRegistry.allowed(opts.config.tools, opts.config.deny);
@@ -169,6 +171,8 @@ export class Agent {
       allowDestructive: this.config.allowDestructive,
       cwd: this.cwd,
       browserEnabled: this.config.browser,
+      ollamaBaseUrl: this.config.ollamaBaseUrl,
+      ollamaEmbedModel: this.config.ollamaEmbedModel,
     };
     const builtRegistry = buildRegistryForAgent(def, registryOpts);
     // Re-apply project config allow/deny list so switchAgentDef cannot bypass
