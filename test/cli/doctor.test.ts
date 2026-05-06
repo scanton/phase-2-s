@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, chmodSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -907,5 +907,81 @@ describe("doctor --fix", () => {
     expect(output).toContain("Phase2S doctor");
     expect(output).not.toContain("Rebuilding session index");
     expect(output).not.toContain("Recovered:");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkCodeIndex
+// ---------------------------------------------------------------------------
+
+describe("checkCodeIndex", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTmpDir();
+    mkdirSync(join(tmpDir, ".phase2s"), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns N/A when ollamaBaseUrl is not configured", async () => {
+    const { checkCodeIndex } = await import("../../src/cli/doctor.js");
+    const result = checkCodeIndex(tmpDir, {});
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("N/A");
+  });
+
+  it("warns when code-index.jsonl is absent", async () => {
+    const { checkCodeIndex } = await import("../../src/cli/doctor.js");
+    const result = checkCodeIndex(tmpDir, { ollamaBaseUrl: "http://localhost:11434" });
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain("not found");
+  });
+
+  it("warns with '1 day old' when index mtime is 25h ago", async () => {
+    const indexPath = join(tmpDir, ".phase2s", "code-index.jsonl");
+    writeFileSync(indexPath, "");
+    const twentyFiveHoursAgo = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    utimesSync(indexPath, twentyFiveHoursAgo, twentyFiveHoursAgo);
+    const { checkCodeIndex } = await import("../../src/cli/doctor.js");
+    const result = checkCodeIndex(tmpDir, { ollamaBaseUrl: "http://localhost:11434" });
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("1 day");
+    expect(result.detail).not.toContain("days");
+  });
+
+  it("does not warn when index mtime is 23h ago (fresh)", async () => {
+    const indexPath = join(tmpDir, ".phase2s", "code-index.jsonl");
+    writeFileSync(indexPath, "");
+    const twentyThreeHoursAgo = new Date(Date.now() - 23 * 60 * 60 * 1000);
+    utimesSync(indexPath, twentyThreeHoursAgo, twentyThreeHoursAgo);
+    const { checkCodeIndex } = await import("../../src/cli/doctor.js");
+    const result = checkCodeIndex(tmpDir, { ollamaBaseUrl: "http://localhost:11434" });
+    expect(result.ok).toBe(true);
+    expect(result.detail).not.toContain("day");
+  });
+
+  it("warns with '2 days old' (plural) when index mtime is 48h ago", async () => {
+    const indexPath = join(tmpDir, ".phase2s", "code-index.jsonl");
+    writeFileSync(indexPath, "");
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    utimesSync(indexPath, fortyEightHoursAgo, fortyEightHoursAgo);
+    const { checkCodeIndex } = await import("../../src/cli/doctor.js");
+    const result = checkCodeIndex(tmpDir, { ollamaBaseUrl: "http://localhost:11434" });
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("2 days");
+  });
+
+  it("returns ok:true with 'present' detail when index is fresh (< 1h old)", async () => {
+    const indexPath = join(tmpDir, ".phase2s", "code-index.jsonl");
+    writeFileSync(indexPath, "");
+    // mtime defaults to now → under 24h threshold → no staleness warning
+    const { checkCodeIndex } = await import("../../src/cli/doctor.js");
+    const result = checkCodeIndex(tmpDir, { ollamaBaseUrl: "http://localhost:11434" });
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain("present");
+    expect(result.detail).not.toContain("day");
   });
 });

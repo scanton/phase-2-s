@@ -47,3 +47,19 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -f v1
           git push origin v1 --force
+
+  alpine-smoke:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    container:
+      image: node:22-alpine
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: Install phase2s from npm
+        run: npm install -g @scanton/phase2s@${GITHUB_REF_NAME#v}
+
+      - name: Verify version (exercises full CLI startup including all module loading)
+        run: phase2s --version

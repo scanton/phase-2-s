@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.53.0 — 2026-05-05
+
+Sprint 79 — Arrow Function Chunking + Doctor Index Tests + Alpine CI.
+
+### Added
+
+- **Arrow function parent-walk chunking** (`src/core/chunker.ts`) — Named arrow functions (`export const foo = async () => {}`) are now indexed as first-class chunks with clean binding names (e.g., `"rateLimitBackoff"`), not raw source text. The parent-walk traverses: `arrow_function → variable_declarator → binding identifier`. Anonymous callbacks (parent is `arguments`) and one-liner expression-body arrows (below `MIN_CHUNK_LINES`) are filtered. Applies to TypeScript, TSX, and JavaScript only (`ARROW_WALK_LANGS` guard).
+
+- **`checkCodeIndex` tests** (`test/cli/doctor.test.ts`) — Six new tests covering the staleness detection path added in v1.52.0: N/A when `ollamaBaseUrl` unconfigured, warns when `code-index.jsonl` absent, reports `"1 day old"` / `"2 days old"` (with correct plural), no warning when index is fresh (< 24h), and `ok:true` with `"present"` detail for a recently updated index. Tests use `utimesSync` to backdate file mtimes rather than mocking `statSync` (ESM-compatible).
+
+- **Alpine CI smoke test** (`.github/workflows/publish.yml`) — Added `alpine-smoke` job gated on the `publish` job. Runs inside `node:22-alpine` container with `defaults: run: shell: sh` (Alpine has no bash). Installs `@scanton/phase2s` from npm and runs `phase2s --version`, exercising full CLI startup including all module loading paths on musl Linux.
+
+### Changed
+
+- **TODOS.md** — Marked `Doctor staleness upgrade for code-index` and `Alpine CI enforcement` as completed (v1.53.0).
+
 ## v1.52.0 — 2026-05-04
 
 Sprint 78 — Function-Level AST Chunking for Semantic Search.
