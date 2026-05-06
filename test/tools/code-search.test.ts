@@ -117,6 +117,32 @@ describe("createCodeSearchTool — metadata", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Parameter schema boundary values
+// ---------------------------------------------------------------------------
+
+describe("createCodeSearchTool — parameter schema boundaries", () => {
+  it("rejects k=0 (below min=1)", () => {
+    expect(() => (tool.parameters as import("zod").ZodType).parse({ query: "x", k: 0 })).toThrow();
+  });
+
+  it("rejects k=21 (above max=20)", () => {
+    expect(() => (tool.parameters as import("zod").ZodType).parse({ query: "x", k: 21 })).toThrow();
+  });
+
+  it("accepts k=1 (min boundary)", () => {
+    expect(() => (tool.parameters as import("zod").ZodType).parse({ query: "x", k: 1 })).not.toThrow();
+  });
+
+  it("accepts k=20 (max boundary)", () => {
+    expect(() => (tool.parameters as import("zod").ZodType).parse({ query: "x", k: 20 })).not.toThrow();
+  });
+
+  it("rejects fractional k (e.g. k=3.5)", () => {
+    expect(() => (tool.parameters as import("zod").ZodType).parse({ query: "x", k: 3.5 })).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Embedding failure
 // ---------------------------------------------------------------------------
 
@@ -132,6 +158,65 @@ describe("createCodeSearchTool — embedding failure", () => {
     expect(result.error).toContain(EMBED_MODEL);
     // findTopKCode must NOT be called — empty vector check is before it
     expect(findTopKCodeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns success:false when generateEmbedding throws (Ollama crash path)", async () => {
+    generateEmbeddingMock.mockRejectedValue(new Error("Ollama connection refused"));
+
+    const result = await tool.execute({ query: "rate limit" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Embedding failed/);
+    expect(findTopKCodeMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Index load failure
+// ---------------------------------------------------------------------------
+
+describe("createCodeSearchTool — index load failure", () => {
+  it("returns success:false when readCodeIndex throws (missing or malformed index)", async () => {
+    readCodeIndexMock.mockRejectedValue(new Error("ENOENT: no such file or directory"));
+
+    const result = await tool.execute({ query: "rate limit" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Failed to load code index/);
+    expect(result.error).toContain("phase2s sync");
+  });
+
+  it("still succeeds when checkIndexStaleness throws (non-git repo, etc.)", async () => {
+    checkIndexStalenessMock.mockRejectedValue(new Error("not a git repository"));
+    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK]);
+
+    // Staleness error is swallowed — results still returned
+    const result = await tool.execute({ query: "rate limit" });
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("src/core/auth.ts");
+    // No staleness warning — error was swallowed
+    expect(result.output).not.toMatch(/stale/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Path traversal guard
+// ---------------------------------------------------------------------------
+
+describe("createCodeSearchTool — path traversal guard", () => {
+  it("omits snippet for index entries with traversal paths (e.g. ../../.env)", async () => {
+    findTopKCodeMock.mockReturnValue([
+      { ...RESULT_WITH_CHUNK, path: "../../.env" },
+    ]);
+
+    const result = await tool.execute({ query: "secrets" });
+
+    // Should succeed but not include any snippet content from outside CWD
+    expect(result.success).toBe(true);
+    expect(result.output).not.toContain("```");
+    // readFile must NOT have been called with the traversal path
+    expect(readFileMock).not.toHaveBeenCalled();
   });
 });
 

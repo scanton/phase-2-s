@@ -14,7 +14,7 @@
 
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { generateEmbedding } from "../core/embeddings.js";
 import { findTopKCode, readCodeIndex, checkIndexStaleness } from "../core/code-index.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
@@ -40,26 +40,51 @@ export function createCodeSearchTool(
     async execute(raw: unknown): Promise<ToolResult> {
       const { query, k = 3 } = params.parse(raw);
 
-      // Embed the query
-      const queryVector = await generateEmbedding(query, ollamaEmbedModel, ollamaBaseUrl);
+      // Embed the query — generateEmbedding returns [] on any error (no throw)
+      let queryVector: number[];
+      try {
+        queryVector = await generateEmbedding(query, ollamaEmbedModel, ollamaBaseUrl);
+      } catch {
+        return {
+          success: false,
+          output: "",
+          error:
+            "Embedding failed — is Ollama running with the configured model? " +
+            `(model: ${ollamaEmbedModel})`,
+        };
+      }
       if (queryVector.length === 0) {
         return {
           success: false,
           output: "",
           error:
             "Embedding failed — is Ollama running with the configured model? " +
-            `(model: ${ollamaEmbedModel}, url: ${ollamaBaseUrl})`,
+            `(model: ${ollamaEmbedModel})`,
         };
       }
 
-      // Load the code index
-      const index = await readCodeIndex(cwd);
-      const results = findTopKCode(queryVector, index, k);
+      // Load the code index and check staleness concurrently
+      let index: Awaited<ReturnType<typeof readCodeIndex>>;
+      let staleness: Awaited<ReturnType<typeof checkIndexStaleness>>;
+      try {
+        [index, staleness] = await Promise.all([
+          readCodeIndex(cwd),
+          checkIndexStaleness(cwd).catch(() => ({ stale: false as const })),
+        ]);
+      } catch (err) {
+        return {
+          success: false,
+          output: "",
+          error:
+            "Failed to load code index — has `phase2s sync` been run? " +
+            `(${err instanceof Error ? err.message : String(err)})`,
+        };
+      }
 
+      const results = findTopKCode(queryVector, index, k);
       const parts: string[] = [];
 
       // Non-blocking staleness note
-      const staleness = await checkIndexStaleness(cwd);
       if (staleness.stale) {
         parts.push(
           `⚠ Index may be stale (${staleness.newestFile} is newer than the index). ` +
@@ -73,22 +98,31 @@ export function createCodeSearchTool(
       }
 
       // Format results — read file lines for snippet when chunk boundaries known
+      const cwdWithSep = cwd.endsWith(sep) ? cwd : cwd + sep;
       const formatted = await Promise.all(
         results.map(async (r, i) => {
           let snippet = "";
           if (r.chunkStart != null && r.chunkEnd != null) {
             try {
-              const content = await readFile(join(cwd, r.path), "utf-8");
-              snippet = content
-                .split("\n")
-                .slice(r.chunkStart, r.chunkEnd + 1)
-                .join("\n");
+              const resolved = join(cwd, r.path);
+              // Guard against path traversal in index entries (e.g. "../../.env")
+              if (resolved.startsWith(cwdWithSep) || resolved === cwd) {
+                const content = await readFile(resolved, "utf-8");
+                // chunkEnd is inclusive — slice up to chunkEnd + 1
+                snippet = content
+                  .split("\n")
+                  .slice(r.chunkStart, r.chunkEnd + 1)
+                  .join("\n");
+              }
             } catch {
               // Skip snippet on read failure (file deleted since last sync)
             }
           }
+          // Only show line range when chunk boundaries are known; whole-file entries
+          // have no meaningful range — showing ":0–?" would mislead the agent.
+          const range = r.chunkStart != null ? `:${r.chunkStart}–${r.chunkEnd ?? "?"}` : "";
           return (
-            `[${i + 1}] ${r.path}:${r.chunkStart ?? 0}–${r.chunkEnd ?? "?"}` +
+            `[${i + 1}] ${r.path}${range}` +
             (r.chunkName ? `\nFunction: ${r.chunkName}` : "") +
             `\nScore: ${r.score.toFixed(3)}` +
             (snippet ? `\n\`\`\`\n${snippet}\n\`\`\`` : "")

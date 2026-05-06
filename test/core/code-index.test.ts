@@ -373,14 +373,14 @@ describe("findTopKCode", () => {
   });
 
   // Sprint 80: chunkEnd included in return type (needed by code_search tool for snippet extraction)
-  it("includes chunkEnd in results for chunk entries (Sprint 80)", () => {
+  it("includes chunkEnd in results for chunk entries", () => {
     const index = [makeChunkEntry("auth.ts", [1, 0, 0], 10)];
     const results = findTopKCode([1, 0, 0], index, 1);
     // makeChunkEntry sets chunkEnd = chunkStart + 4 = 14
     expect(results[0].chunkEnd).toBe(14);
   });
 
-  it("chunkEnd is undefined for whole-file entries (Sprint 80)", () => {
+  it("chunkEnd is undefined for whole-file entries", () => {
     const index = [makeEntry("app.ts", [1, 0, 0])];
     const results = findTopKCode([1, 0, 0], index, 1);
     expect(results[0].chunkEnd).toBeUndefined();
