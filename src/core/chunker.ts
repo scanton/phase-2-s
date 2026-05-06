@@ -274,7 +274,11 @@ export function chunkFile(content: string, filePath: string): Chunk[] {
       }
     }
 
-    // Dedup: sort by start, then keep only non-overlapping chunks (outer-wins).
+    // Dedup: sort by start asc, then end asc; keep only non-overlapping chunks.
+    // "Outer-wins" applies to different-start overlaps (outer starts earlier, so
+    // it's added first and the inner chunk is dropped because inner.start <= outer.end).
+    // For same-start ties the shorter chunk wins — a degenerate case that doesn't
+    // occur in practice because two declarations can't share a start line.
     // With method-only CHUNK_KINDS (no class_declaration), most overlaps are
     // nested methods inside closures. Outer context provides more embedding signal.
     chunks.sort((a, b) => a.start - b.start || a.end - b.end);

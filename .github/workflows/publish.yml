@@ -59,7 +59,7 @@ jobs:
         shell: sh
     steps:
       - name: Install phase2s from npm
-        run: npm install -g @scanton/phase2s
+        run: npm install -g @scanton/phase2s@${GITHUB_REF_NAME#v}
 
       - name: Verify version (exercises full CLI startup including all module loading)
         run: phase2s --version
