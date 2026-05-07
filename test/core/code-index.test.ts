@@ -13,6 +13,7 @@ import {
   entryKey,
   searchCode,
   MAX_CODE_CHARS,
+  MAX_SNIPPET_LINES,
   MIN_CODE_RAG_SCORE,
   INDEXABLE_EXTENSIONS,
 } from "../../src/core/code-index.js";
@@ -459,7 +460,7 @@ describe("searchCode", () => {
   it("returns [] immediately when queryVector is empty (no index read)", async () => {
     // No index file — if searchCode tried to read it, it would throw.
     // An empty queryVector short-circuits before any I/O.
-    const results = await searchCode(dir, [], "", "", 3);
+    const results = await searchCode(dir, [], 3);
     expect(results).toEqual([]);
   });
 
@@ -473,24 +474,35 @@ describe("searchCode", () => {
 
     // Use a query vector that will yield very low scores against the indexed content.
     // MIN_CODE_RAG_SCORE is 0.25; we use all-zeros which gives cosine = 0.
-    const results = await searchCode(dir, [0, 0, 0], "", "", 3);
+    const results = await searchCode(dir, [0, 0, 0], 3);
     expect(results).toEqual([]);
   });
 
   it("normal path returns CodeSearchResult[] with path, score, snippet", async () => {
-    // Write a file and index it
+    // Write a file to disk (searchCode reads it for snippet extraction).
     const content = Array.from({ length: 10 }, (_, i) => `const line${i} = ${i};`).join("\n");
     await writeFile(join(dir, "utils.ts"), content);
-    await gitAddAll(dir);
-    await gitCommit(dir);
-    await syncCodebase(dir, fakeEmbed, "test-model");
 
-    // Query with a vector that fakeEmbed would produce for some text
-    const qv = await fakeEmbed("const line0");
-    const results = await searchCode(dir, qv, "", "", 3);
-    // At least one result above threshold
+    // Write the code index directly with a known query vector so cosine similarity = 1.0,
+    // bypassing syncCodebase chunking that can produce non-matching vectors for fakeEmbed.
+    const QUERY_VEC = [0.7, 0.3, 0.5];
+    await mkdir(join(dir, ".phase2s"), { recursive: true });
+    const indexEntry = JSON.stringify({
+      path: "utils.ts",
+      hash: "abc123",
+      vector: QUERY_VEC,
+      ts: new Date().toISOString(),
+      model: "test-model",
+      chunkStart: 0,
+      chunkEnd: 9,
+    });
+    await writeFile(join(dir, ".phase2s", "code-index.jsonl"), indexEntry + "\n");
+
+    const results = await searchCode(dir, QUERY_VEC, 3);
+    // At least one result above threshold (similarity = 1.0 → well above 0.25)
     const above = results.filter(r => r.score >= MIN_CODE_RAG_SCORE);
-    expect(above.length).toBeGreaterThanOrEqual(0);
+    expect(results.length).toBeGreaterThan(0);
+    expect(above.length).toBeGreaterThan(0);
     // All returned results have required fields
     for (const r of results) {
       expect(r).toHaveProperty("path");
@@ -503,50 +515,62 @@ describe("searchCode", () => {
   it("returns [] when index file is missing (no throw)", async () => {
     // No sync run — .phase2s/code-index.jsonl does not exist
     const qv = [0.1, 0.2, 0.3];
-    const results = await searchCode(dir, qv, "", "", 3);
+    const results = await searchCode(dir, qv, 3);
     expect(results).toEqual([]);
   });
 
   it("skips path traversal entries (../../etc/passwd)", async () => {
-    // Manually write a poisoned index entry with a traversal path
+    // Manually write a poisoned index entry with a traversal path.
+    // Uses the correct CodeEntry field names (vector, hash, ts, model) so
+    // readCodeIndex() actually parses the entry and the path-traversal guard fires.
     const indexPath = join(dir, ".phase2s", "code-index.jsonl");
     const maliciousEntry = JSON.stringify({
       path: "../../etc/passwd",
-      embedding: [0.9, 0.9, 0.9],
+      hash: "abc123",
+      vector: [0.9, 0.9, 0.9],
+      ts: new Date().toISOString(),
+      model: "test-model",
       chunkStart: 0,
       chunkEnd: 1,
-      snippet: "should not appear",
     });
     await writeFile(indexPath, maliciousEntry + "\n");
 
-    const results = await searchCode(dir, [0.9, 0.9, 0.9], "", "", 3);
+    const results = await searchCode(dir, [0.9, 0.9, 0.9], 3);
     expect(results).toEqual([]);
   });
 
   it("truncates snippets to MAX_SNIPPET_LINES with a trailer when chunk is longer", async () => {
-    // Write a file with 30 lines so a single-chunk entry spans all 30 lines (>MAX_SNIPPET_LINES=25)
+    // Write a file with 30 lines so it spans >MAX_SNIPPET_LINES=25 lines.
     const lines = Array.from({ length: 30 }, (_, i) => `const line${i} = ${i};`);
-    await writeFile(join(dir, "long.ts"), lines.join("\n"));
-    await gitAddAll(dir);
-    await gitCommit(dir);
-    await syncCodebase(dir, fakeEmbed, "test-model");
+    const content = lines.join("\n");
+    await writeFile(join(dir, "long.ts"), content);
 
-    // Use the same query vector fakeEmbed would produce for this content
-    const qv = await fakeEmbed(lines.slice(0, 5).join("\n"));
-    const results = await searchCode(dir, qv, "", "", 3);
+    // Write the code index directly with a known query vector [0.9, 0.9, 0.9] so
+    // cosine similarity = 1.0 with our query — no dependency on syncCodebase chunking behavior.
+    const QUERY_VEC = [0.9, 0.9, 0.9];
+    await mkdir(join(dir, ".phase2s"), { recursive: true });
+    const indexEntry = JSON.stringify({
+      path: "long.ts",
+      hash: "abc123",
+      vector: QUERY_VEC,
+      ts: new Date().toISOString(),
+      model: "test-model",
+      chunkStart: 0,
+      chunkEnd: 29,   // 0-indexed, all 30 lines
+    });
+    await writeFile(join(dir, ".phase2s", "code-index.jsonl"), indexEntry + "\n");
 
-    // Find the long.ts result (if it scored above threshold)
+    const results = await searchCode(dir, QUERY_VEC, 3);
+
+    // long.ts must be found (similarity = 1.0 → well above 0.25 threshold)
     const longResult = results.find(r => r.path === "long.ts");
-    if (longResult && longResult.snippet) {
+    expect(longResult).toBeDefined();
+    if (longResult?.snippet) {
       const snippetLines = longResult.snippet.split("\n");
-      // When truncated, last line is the trailer comment; total = MAX_SNIPPET_LINES + 1
-      if (snippetLines.some(l => l.startsWith("// ..."))) {
-        expect(snippetLines.at(-1)).toMatch(/^\/\/ \.\.\.\d+ more lines$/);
-        expect(snippetLines.length).toBeLessThanOrEqual(MAX_SNIPPET_LINES + 1);
-      }
+      // Snippet must be truncated: last line is the trailer; total ≤ MAX_SNIPPET_LINES + 1
+      expect(snippetLines.at(-1)).toMatch(/^\/\/ \.\.\.\d+ more lines$/);
+      expect(snippetLines.length).toBeLessThanOrEqual(MAX_SNIPPET_LINES + 1);
     }
-    // Even if no above-threshold results, the test verified no throw
-    await expect(searchCode(dir, qv, "", "", 3)).resolves.not.toThrow();
   });
 
   it("does not throw when a file is deleted since index was built; any result for deleted file has empty snippet", async () => {
@@ -563,9 +587,9 @@ describe("searchCode", () => {
 
     // Query — should not throw; searchCode handles missing files gracefully
     const qv = await fakeEmbed("dead");
-    await expect(searchCode(dir, qv, "", "", 3)).resolves.not.toThrow();
+    await expect(searchCode(dir, qv, 3)).resolves.not.toThrow();
 
-    const results = await searchCode(dir, qv, "", "", 3);
+    const results = await searchCode(dir, qv, 3);
     // If dead.ts appears in results (whole-file entries have no snippet read),
     // its snippet must be empty — no content from a deleted file
     const deadResults = results.filter(r => r.path === "dead.ts");

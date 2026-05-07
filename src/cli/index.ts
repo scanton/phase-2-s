@@ -1843,8 +1843,6 @@ export async function refreshAgentContext(
     const results = await searchCode(
       process.cwd(),
       queryVector,
-      ollamaEmbedModel,
-      ollamaBaseUrl,
       3,
     );
     const block = buildCodeContextBlock(results);

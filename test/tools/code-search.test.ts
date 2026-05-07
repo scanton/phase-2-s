@@ -284,8 +284,6 @@ describe("createCodeSearchTool — results present", () => {
     expect(searchCodeMock).toHaveBeenCalledWith(
       CWD,
       QUERY_VECTOR,
-      EMBED_MODEL,
-      BASE_URL,
       7,
     );
   });
@@ -298,8 +296,6 @@ describe("createCodeSearchTool — results present", () => {
     expect(searchCodeMock).toHaveBeenCalledWith(
       CWD,
       QUERY_VECTOR,
-      EMBED_MODEL,
-      BASE_URL,
       3,
     );
   });

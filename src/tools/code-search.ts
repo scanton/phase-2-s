@@ -64,7 +64,7 @@ export function createCodeSearchTool(
       // Run semantic search + staleness check concurrently.
       // searchCode handles index loading, path traversal guard, snippet extraction.
       const [results, staleness] = await Promise.all([
-        searchCode(cwd, queryVector, ollamaEmbedModel, ollamaBaseUrl, k),
+        searchCode(cwd, queryVector, k),
         checkIndexStaleness(cwd).catch(() => ({ stale: false as const })),
       ]);
 
