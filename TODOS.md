@@ -14,6 +14,18 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 82 notes (v1.56.0, 2026-05-07)
+
+Sprint 82 ships Codebase RAG — automatic code context injection before each REPL turn via a rolling `[PHASE2S_CODE_CONTEXT]` message. Identified during /plan-eng-review; 7 issues resolved (D2–D4, C1–C4).
+
+- [ ] **`code_rag_min_score` configurable** — `MIN_CODE_RAG_SCORE = 0.25` is hardcoded. Promote to `.phase2s.yaml` as `codeRagMinScore: z.number().optional()` when users report false positives or want stricter/looser injection. **Priority:** P3
+
+- [ ] **Trivial turn skip optimization** — Skip code context injection (and embedding) for 1–2 word inputs (e.g. `:help`, `yes`, `no`). These turns are UI responses, not task queries; embedding them wastes an Ollama call and injects irrelevant context. Heuristic: `effectiveLine.trim().split(/\s+/).length <= 2`. **Priority:** P3
+
+- [ ] **In-memory code index cache** — `searchCode()` calls `readCodeIndex(cwd)` on every REPL turn, re-reading and JSON-parsing the `.phase2s/code-index.jsonl` file each time. Cache the loaded `CodeEntry[]` in a module-level `Map<string, { mtime: number; entries: CodeEntry[] }>` keyed by cwd. Invalidate on file `mtime` change (stat before read, compare). Per-turn file read consistent with learnings; optimize when latency is felt. **Priority:** P3
+
+---
+
 ## Backlog — Post-Sprint 81 notes (v1.55.0, 2026-05-05)
 
 Sprint 81 ships `phase2s search-audit`, a self-referential semantic search quality benchmark.
@@ -1053,9 +1065,9 @@ These were flagged but not fixed — they need deeper analysis before touching.
 
 ## Sprint 72 follow-ons (from /plan-eng-review 2026-04-25)
 
-- [ ] **Heuristic sort fallback for non-Ollama providers** — When Ollama is not configured, `loadRelevantLearnings` falls back to `loadLearnings` which truncates-oldest. Improve this with a lightweight keyword/recency hybrid sort so non-Ollama users also get better-than-random injection. Could weight by keyword overlap with query text + recency decay. Sprint 73 candidate. **Priority:** P3
+- [x] **Heuristic sort fallback for non-Ollama providers** — When Ollama is not configured, `loadRelevantLearnings` falls back to `loadLearnings` which truncates-oldest. Improve this with a lightweight keyword/recency hybrid sort so non-Ollama users also get better-than-random injection. Could weight by keyword overlap with query text + recency decay. Sprint 73 candidate. **Priority:** P3 **Completed: `heuristicSort()` in `memory.ts` (Sprint 73)**
 
-- [ ] **REPL mid-conversation semantic context refresh** — REPL startup uses `loadLearnings` (no task text at startup). After the user's first message establishes a topic, refresh the injected learnings block using `loadRelevantLearnings(cwd, firstMessage, config)`. Requires baking learnings into the system prompt at turn-1 rather than session-start. Sprint 73+ candidate. **Priority:** P3
+- [x] **REPL mid-conversation semantic context refresh** — REPL startup uses `loadLearnings` (no task text at startup). After the user's first message establishes a topic, refresh the injected learnings block using `loadRelevantLearnings(cwd, firstMessage, config)`. Requires baking learnings into the system prompt at turn-1 rather than session-start. Sprint 73+ candidate. **Priority:** P3 **Completed: `loadRelevantLearnings(effectiveLine)` per-turn at `index.ts:1682` (Sprint 73)**
 
 ---
 

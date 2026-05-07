@@ -130,6 +130,9 @@ export async function loadRelevantLearnings(
   queryText: string,
   config: Config,
   k = 8,
+  /** Pre-computed query vector. When provided, skips the generateEmbedding call
+   *  so the embedding is shared with code-RAG (one embed per REPL turn). */
+  precomputedQueryVector?: number[],
 ): Promise<Learning[]> {
   const ollamaBaseUrl = config.ollamaBaseUrl;
   if (!queryText.trim()) {
@@ -146,7 +149,7 @@ export async function loadRelevantLearnings(
   const embedModel = config.ollamaEmbedModel ?? "gemma4:latest";
   const embedFn = (text: string) => generateEmbedding(text, embedModel, ollamaBaseUrl);
 
-  const queryVector = await embedFn(queryText);
+  const queryVector = precomputedQueryVector ?? await embedFn(queryText);
   if (queryVector.length === 0) {
     // Ollama unreachable or embed model not available — fall back to keyword/recency
     return heuristicSort(learnings, queryText);

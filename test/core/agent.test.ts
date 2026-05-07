@@ -1554,3 +1554,74 @@ describe("LEARNINGS_MARKER filter (saveSession / compaction) — Sprint 73 (Item
     expect(filtered).toHaveLength(msgs.length);
   });
 });
+
+// ---------------------------------------------------------------------------
+// refreshCodeContext / codeContext field
+// ---------------------------------------------------------------------------
+
+describe("refreshCodeContext", () => {
+  function makeAgent(): Agent {
+    const fakeClient = makeStreamingFakeClient([makeTextChunks("done")]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    return new Agent({ config: minimalConfig, provider });
+  }
+
+  it("refreshCodeContext(block) injects [PHASE2S_CODE_CONTEXT] marker before next runOnce", async () => {
+    const agent = makeAgent();
+    const block = "<code_context>\n[1] foo.ts — score 0.812\n</code_context>";
+    agent.refreshCodeContext(block);
+    await agent.run("test question");
+    const msgs = agent.getConversation().getMessages();
+    const hasCtx = msgs.some(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER),
+    );
+    expect(hasCtx).toBe(true);
+  });
+
+  it("refreshCodeContext(null) when marker exists removes [PHASE2S_CODE_CONTEXT] from conversation", async () => {
+    const fakeClient = makeStreamingFakeClient([
+      makeTextChunks("first"),
+      makeTextChunks("second"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({ config: minimalConfig, provider });
+
+    // First turn: inject context
+    agent.refreshCodeContext("<code_context>some code</code_context>");
+    await agent.run("first question");
+
+    // Second turn: clear it
+    agent.refreshCodeContext(null);
+    await agent.run("second question");
+
+    const msgs = agent.getConversation().getMessages();
+    const ctxMsgs = msgs.filter(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER),
+    );
+    expect(ctxMsgs).toHaveLength(0);
+  });
+
+  it("codeContext starts as undefined — runOnce() does NOT call upsertCodeContextMessage", async () => {
+    const agent = makeAgent();
+    // No refreshCodeContext call — codeContext === undefined
+    await agent.run("question with no code context");
+    const msgs = agent.getConversation().getMessages();
+    const hasCtx = msgs.some(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER),
+    );
+    expect(hasCtx).toBe(false);
+  });
+
+  it("after refreshCodeContext(block) then run, CODE_CONTEXT_MARKER appears in conversation", async () => {
+    const agent = makeAgent();
+    const block = "<code_context>relevant chunk</code_context>";
+    agent.refreshCodeContext(block);
+    await agent.run("write a function");
+    const msgs = agent.getConversation().getMessages();
+    const ctxMsg = msgs.find(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER),
+    );
+    expect(ctxMsg).toBeDefined();
+    expect(ctxMsg?.content).toContain("relevant chunk");
+  });
+});

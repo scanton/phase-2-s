@@ -113,6 +113,15 @@ const configSchema = z.object({
    * Set to 0 to disable auto-backoff entirely (always checkpoint immediately on rate limit).
    */
   rate_limit_backoff_threshold: z.number().int().min(0).default(60),
+
+  /**
+   * Enable automatic code context injection (code-RAG) in the REPL.
+   * When true (default), top-K relevant code chunks are injected as a
+   * [PHASE2S_CODE_CONTEXT] rolling user message before each turn.
+   * Requires Ollama to be configured (ollamaBaseUrl + ollamaEmbedModel).
+   * Set to false (or pass --no-rag) to disable.
+   */
+  codeRag: z.boolean().optional(),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };

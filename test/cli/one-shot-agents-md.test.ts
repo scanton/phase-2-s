@@ -29,6 +29,8 @@ vi.mock("../../src/core/agent.js", () => {
     }
     run = vi.fn().mockResolvedValue("one-shot response");
     getConversation = vi.fn().mockReturnValue({});
+    refreshLearnings = vi.fn();
+    refreshCodeContext = vi.fn();
   }
   return { Agent: MockAgent };
 });

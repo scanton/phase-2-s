@@ -24,6 +24,18 @@ import { join, extname, resolve as resolvePath, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { chunkFile, type Chunk } from "./chunker.js";
 
+// ---------------------------------------------------------------------------
+// RAG constants (exported so callers can gate on them without magic numbers)
+// ---------------------------------------------------------------------------
+
+/** Minimum cosine similarity score to include a result in RAG injection.
+ *  Results below this threshold are dropped — too semantically distant to be useful. */
+export const MIN_CODE_RAG_SCORE = 0.25;
+
+/** Maximum lines to include in a code snippet injected via RAG.
+ *  Longer chunks are truncated with a `// ...N more lines` trailer. */
+export const MAX_SNIPPET_LINES = 25;
+
 const CODE_INDEX_FILE = ".phase2s/code-index.jsonl";
 
 /** Maximum characters of file content used for embedding. ~1,000 tokens —
@@ -503,6 +515,110 @@ export function findTopKCode(
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, k);
+}
+
+// ---------------------------------------------------------------------------
+// High-level RAG search helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Result from the high-level searchCode() pipeline.
+ * Snippet is already read from disk and capped at MAX_SNIPPET_LINES.
+ */
+export interface CodeSearchResult {
+  path: string;
+  chunkName?: string;
+  chunkStart?: number;
+  chunkEnd?: number;
+  score: number;
+  /** File lines for this chunk, capped at MAX_SNIPPET_LINES.
+   *  Empty string when chunk boundaries are unknown or the file is unreadable. */
+  snippet: string;
+}
+
+/**
+ * High-level semantic code search pipeline for RAG injection.
+ *
+ * Takes a pre-computed embedding vector (does NOT embed — callers must do that).
+ * Loads the index, ranks by cosine similarity, applies the score threshold,
+ * guards against path traversal, reads file snippets, and returns results.
+ *
+ * Returns [] when:
+ *  - queryVector is empty (caller indicates Ollama was unavailable)
+ *  - code index is absent or unreadable
+ *  - all results score below MIN_CODE_RAG_SCORE (0.25)
+ *
+ * Path traversal guard: each result path is resolved against cwd and must
+ * start with `cwd + path.sep`. Entries that fail are skipped silently.
+ *
+ * Never throws — all errors are handled gracefully so callers don't need
+ * try/catch around per-turn injection.
+ */
+export async function searchCode(
+  cwd: string,
+  queryVector: number[],
+  k = 3,
+): Promise<CodeSearchResult[]> {
+  if (queryVector.length === 0) return [];
+
+  let index: CodeEntry[];
+  try {
+    index = await readCodeIndex(cwd);
+  } catch {
+    return [];
+  }
+
+  const raw = findTopKCode(queryVector, index, k);
+  if (raw.length === 0) return [];
+
+  // Filter below threshold
+  const above = raw.filter((r) => r.score >= MIN_CODE_RAG_SCORE);
+  if (above.length === 0) return [];
+
+  const cwdWithSep = cwd.endsWith(sep) ? cwd : cwd + sep;
+
+  const results = await Promise.all(
+    above.map(async (r): Promise<CodeSearchResult | null> => {
+      // Path traversal guard — resolved path must be inside cwd
+      let resolved: string;
+      try {
+        resolved = resolvePath(join(cwd, r.path));
+      } catch {
+        return null;
+      }
+      if (resolved !== resolvePath(cwd) && !resolved.startsWith(cwdWithSep)) {
+        return null; // path escape attempt — skip
+      }
+
+      let snippet = "";
+      if (r.chunkStart != null && r.chunkEnd != null) {
+        try {
+          const content = await readFile(resolved, "utf-8");
+          const lines = content.split("\n");
+          const sliced = lines.slice(r.chunkStart, r.chunkEnd + 1);
+          if (sliced.length > MAX_SNIPPET_LINES) {
+            const extra = sliced.length - MAX_SNIPPET_LINES;
+            snippet = sliced.slice(0, MAX_SNIPPET_LINES).join("\n") + `\n// ...${extra} more lines`;
+          } else {
+            snippet = sliced.join("\n");
+          }
+        } catch {
+          // File deleted since last sync — skip snippet, still return result
+        }
+      }
+
+      return {
+        path: r.path,
+        chunkName: r.chunkName,
+        chunkStart: r.chunkStart,
+        chunkEnd: r.chunkEnd,
+        score: r.score,
+        snippet,
+      };
+    }),
+  );
+
+  return results.filter((r): r is CodeSearchResult => r !== null);
 }
 
 // ---------------------------------------------------------------------------

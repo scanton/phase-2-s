@@ -544,6 +544,30 @@ When Ollama is configured, the Phase2S agent gains a `code_search` tool automati
 
 Results include the file path, line range (e.g. `src/providers/backoff.ts:14–32`), function name, similarity score, and an inline code snippet. If the index is stale the tool prepends a warning; if Ollama is unreachable it returns a descriptive error rather than silently failing.
 
+#### Automatic code context injection
+
+When Ollama is configured and a code index exists, Phase2S automatically injects the most relevant code chunks into your conversation before each REPL turn — without you asking. You'll see a dim status line confirming it:
+
+```
+↻ code context: 3 chunks
+```
+
+This works the same way as learnings injection: Phase2S embeds your query once, uses that vector to rank both your learnings and your codebase, and prepends the top-K code chunks as context before the model responds. The embedding call is shared — one Ollama round-trip per turn covers both.
+
+The injected chunks appear as a `[PHASE2S_CODE_CONTEXT]` message that is stripped from saved sessions so it doesn't bloat your history. Only chunks scoring above 0.25 cosine similarity are injected.
+
+To turn it off for a session:
+
+```bash
+phase2s --no-rag
+```
+
+To disable permanently, add to `.phase2s.yaml`:
+
+```yaml
+codeRag: false
+```
+
 ---
 
 ### AI Commit Messages

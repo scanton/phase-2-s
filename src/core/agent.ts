@@ -79,6 +79,16 @@ export class Agent {
    * switchAgentDef() without carrying over the previous persona's instructions.
    */
   private agentsMdBlock: string | undefined;
+  /**
+   * Code context string for the current REPL turn.
+   * Three-state:
+   *   undefined = never set — runOnce() skips upsertCodeContextMessage() entirely
+   *   null      = cleared — runOnce() removes any existing CODE_CONTEXT marker
+   *   string    = inject — runOnce() inserts/replaces the CODE_CONTEXT message
+   *
+   * Set via refreshCodeContext() by the CLI before each agent.run() call.
+   */
+  private codeContext: string | null | undefined = undefined;
 
   constructor(opts: AgentOptions) {
     this.config = opts.config;
@@ -131,6 +141,17 @@ export class Agent {
    */
   refreshLearnings(newStr: string): void {
     this.learnings = newStr;
+  }
+
+  /**
+   * Update the stored code context block.
+   * Called by the CLI before each agent.run() call.
+   *   block = string  → inject [PHASE2S_CODE_CONTEXT] before the next LLM turn
+   *   block = null    → clear any existing [PHASE2S_CODE_CONTEXT] marker
+   * Once set (to string or null), runOnce() will always call upsertCodeContextMessage().
+   */
+  refreshCodeContext(block: string | null): void {
+    this.codeContext = block;
   }
 
 
@@ -258,6 +279,18 @@ export class Agent {
       if (this.learnings) {
         this.conversation.upsertLearningsMessage(
           `${Conversation.LEARNINGS_MARKER}\n${this.learnings}`,
+        );
+      }
+
+      // Inject (or clear) the [PHASE2S_CODE_CONTEXT] message when codeContext has been set.
+      // Placed after LEARNINGS so the final conversation order is:
+      //   [LEARNINGS] [CODE_CONTEXT] [USER]
+      // Skipped entirely when codeContext is undefined (code-rag not configured this session).
+      if (this.codeContext !== undefined) {
+        this.conversation.upsertCodeContextMessage(
+          this.codeContext !== null
+            ? `${Conversation.CODE_CONTEXT_MARKER}\n${this.codeContext}`
+            : null,
         );
       }
 

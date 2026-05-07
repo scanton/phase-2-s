@@ -13,6 +13,9 @@ import { Agent } from "../core/agent.js";
 import { disposeBrowser } from "../tools/browser.js";
 import { Conversation } from "../core/conversation.js";
 import { loadLearnings, loadRelevantLearnings, formatLearningsForPrompt } from "../core/memory.js";
+import { generateEmbedding } from "../core/embeddings.js";
+import { searchCode } from "../core/code-index.js";
+import { buildCodeContextBlock } from "../core/code-context.js";
 import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, getUnfilledInputKeys, extractAskTokens, substituteAskValues, stripAskTokens } from "../skills/template.js";
 import { log } from "../utils/logger.js";
@@ -173,7 +176,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--system <prompt>", "Custom system prompt")
     .option("--resume", "Resume the most recent session")
     .option("-s, --sandbox <name>", "Start session in an isolated git worktree named <name>")
-    .option("-C, --cwd <path>", "Run as if started in <path> — useful for IDE integrations");
+    .option("-C, --cwd <path>", "Run as if started in <path> — useful for IDE integrations")
+    .option("--no-rag", "Disable automatic code context injection (code-RAG)");
 
   // Apply -C before any subcommand runs.
   // process.chdir() here means all subsequent process.cwd() calls (including sessionDir())
@@ -210,6 +214,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         provider: opts.provider,
         model: opts.model,
         systemPrompt: opts.system,
+        // --no-rag sets opts.rag to false (Commander --no-X convention)
+        ...(opts.rag === false ? { codeRag: false } : {}),
       };
 
       if (opts.sandbox) {
@@ -1171,7 +1177,12 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
     try {
       const filtered = Conversation.fromMessages(
         agent.getConversation().getMessages().filter(
-          (m) => !(m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER)),
+          (m) => !(
+            m.role === "user" && (
+              (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER) ||
+              (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER)
+            )
+          ),
         ),
       );
       await saveSessionV2(process.cwd(), activeSessionPath, filtered, sessionMeta);
@@ -1204,7 +1215,12 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
   const performCompaction = async (): Promise<boolean> => {
     let didCompact = false;
     const compactionMessages = agent.getConversation().getMessages().filter(
-      (m) => !(m.role === "user" && (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER)),
+      (m) => !(
+        m.role === "user" && (
+          (m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER) ||
+          (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER)
+        )
+      ),
     );
     await runCompaction({
       provider: agent.provider,
@@ -1676,15 +1692,9 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       resolveReasoningModel(reasoningOverride, config) ??
       (activeAgentDef ? resolveAgentModel(activeAgentDef.model, config) : undefined);
 
-    // Refresh learnings before this turn using the user's message as the semantic query.
-    // When Ollama is configured, this embeds the query and retrieves the most relevant
-    // learnings. Falls back to keyword/recency sort when Ollama is not configured.
-    const turnLearnings = await loadRelevantLearnings(process.cwd(), effectiveLine, config);
-    const turnLearningsStr = formatLearningsForPrompt(turnLearnings, { skipCharCap: config.ollamaBaseUrl !== undefined });
-    if (turnLearningsStr) {
-      agent.refreshLearnings(turnLearningsStr);
-      log.dim(`↻ learnings refreshed (${turnLearnings.length} ${turnLearnings.length === 1 ? "entry" : "entries"})`);
-    }
+    // Refresh learnings + code context before each turn.
+    // Embedding is computed once and shared by both features (single embed call per turn).
+    await refreshAgentContext(agent, effectiveLine, config);
 
     await maybeAutoCompact();
     process.stdout.write(chalk.bold("\nassistant > "));
@@ -1778,6 +1788,72 @@ function checkAnthropicKey(config: Config): boolean {
 }
 
 /**
+ * Refresh agent context (learnings + code-RAG) before each turn.
+ *
+ * Computes the query embedding once (when Ollama is configured) and shares it
+ * with both the learnings semantic lookup and the code-RAG search, so
+ * generateEmbedding is called at most once per turn.
+ *
+ * Code-RAG is skipped (refreshCodeContext(null) called) when:
+ *   - config.codeRag === false (--no-rag flag)
+ *   - ollamaBaseUrl is not configured
+ *   - Ollama is unreachable (embedding returns [])
+ *   - No results score above MIN_CODE_RAG_SCORE
+ */
+export async function refreshAgentContext(
+  agent: Agent,
+  queryText: string,
+  config: Config,
+): Promise<void> {
+  const ollamaBaseUrl = config.ollamaBaseUrl;
+  const ollamaEmbedModel = config.ollamaEmbedModel ?? "gemma4:latest";
+
+  // Compute embedding once — shared by learnings lookup and code-RAG
+  let queryVector: number[] | undefined;
+  if (ollamaBaseUrl) {
+    try {
+      queryVector = await generateEmbedding(queryText, ollamaEmbedModel, ollamaBaseUrl);
+    } catch {
+      queryVector = [];
+    }
+  }
+
+  // Refresh learnings using the pre-computed vector (avoids a second embed call)
+  const turnLearnings = await loadRelevantLearnings(
+    process.cwd(),
+    queryText,
+    config,
+    8,
+    queryVector,
+  );
+  const turnLearningsStr = formatLearningsForPrompt(turnLearnings, { skipCharCap: ollamaBaseUrl !== undefined });
+  if (turnLearningsStr) {
+    agent.refreshLearnings(turnLearningsStr);
+    log.dim(`↻ learnings refreshed (${turnLearnings.length} ${turnLearnings.length === 1 ? "entry" : "entries"})`);
+  }
+
+  // Code-RAG: inject top-K relevant code chunks as [PHASE2S_CODE_CONTEXT] message
+  if (config.codeRag === false) {
+    // Explicitly disabled via --no-rag or config
+    agent.refreshCodeContext(null);
+  } else if (!ollamaBaseUrl || !queryVector || queryVector.length === 0) {
+    // Ollama not configured or unreachable — clear any stale context
+    agent.refreshCodeContext(null);
+  } else {
+    const results = await searchCode(
+      process.cwd(),
+      queryVector,
+      3,
+    );
+    const block = buildCodeContextBlock(results);
+    agent.refreshCodeContext(block);
+    if (block) {
+      log.dim(`↻ code context: ${results.length} chunk${results.length === 1 ? "" : "s"}`);
+    }
+  }
+}
+
+/**
  * Resolve a one-shot prompt against a skill list.
  *
  * If `prompt` starts with "/" and the skill name matches, returns the expanded
@@ -1825,13 +1901,6 @@ export async function oneShotMode(config: Config, prompt: string, reasoningEffor
   if (!checkOpenAIKey(config)) process.exit(1);
   if (!checkAnthropicKey(config)) process.exit(1);
 
-  // Load persistent memory learnings — semantic lookup when Ollama configured, else recent-N
-  const learningsList = await loadRelevantLearnings(process.cwd(), prompt, config);
-  const learningsStr = formatLearningsForPrompt(learningsList, { skipCharCap: config.ollamaBaseUrl !== undefined });
-  if (learningsList.length > 0) {
-    log.dim(`Learnings: ${learningsList.length} ${learningsList.length === 1 ? "entry" : "entries"} from .phase2s/memory/`);
-  }
-
   // Sprint 56: load AGENTS.md (same logic as startReplMode() AGENTS.md load).
   // ENOENT is silent (file simply absent). Other errors (EACCES, EISDIR, etc.)
   // are surfaced as dim warnings so filesystem issues don't silently disappear.
@@ -1846,7 +1915,11 @@ export async function oneShotMode(config: Config, prompt: string, reasoningEffor
     }
   }
 
-  const agent = new Agent({ config, learnings: learningsStr, agentsMdBlock });
+  const agent = new Agent({ config, agentsMdBlock });
+
+  // Inject learnings + code context (shared embedding, one embed call for both)
+  await refreshAgentContext(agent, prompt, config);
+
   let hasOutput = false;
 
   // Skill routing: if prompt starts with "/" look up and run the named skill

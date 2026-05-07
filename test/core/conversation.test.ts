@@ -263,3 +263,95 @@ describe("Conversation", () => {
     expect(Conversation.LEARNINGS_MARKER).toBe("[PHASE2S_LEARNINGS]");
   });
 });
+
+// ---------------------------------------------------------------------------
+// upsertCodeContextMessage
+// ---------------------------------------------------------------------------
+
+describe("upsertCodeContextMessage", () => {
+  it("first call inserts [PHASE2S_CODE_CONTEXT] message immediately before last user message", () => {
+    const c = new Conversation();
+    c.addUser("current question");
+    c.upsertCodeContextMessage("[PHASE2S_CODE_CONTEXT]\nsome code context");
+
+    const msgs = c.getMessages();
+    const ctxIdx = msgs.findIndex(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER),
+    );
+    const lastUserIdx = msgs.map((m) => m.role).lastIndexOf("user");
+    expect(ctxIdx).toBe(lastUserIdx - 1);
+    expect(msgs[lastUserIdx].content).toBe("current question");
+  });
+
+  it("second call replaces the first (no accumulation); message count unchanged", () => {
+    const c = new Conversation();
+    c.addUser("current question");
+    c.upsertCodeContextMessage("[PHASE2S_CODE_CONTEXT]\nfirst context");
+    const countAfterFirst = c.length;
+    c.upsertCodeContextMessage("[PHASE2S_CODE_CONTEXT]\nsecond context");
+    expect(c.length).toBe(countAfterFirst);
+
+    const msgs = c.getMessages();
+    const ctxMsgs = msgs.filter(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER),
+    );
+    expect(ctxMsgs).toHaveLength(1);
+    expect(ctxMsgs[0].content).toContain("second context");
+  });
+
+  it("null content removes existing marker and does not insert a new one", () => {
+    const c = new Conversation();
+    c.addUser("question");
+    c.upsertCodeContextMessage("[PHASE2S_CODE_CONTEXT]\nsome context");
+    const countBefore = c.length;
+
+    c.upsertCodeContextMessage(null);
+    expect(c.length).toBe(countBefore - 1);
+
+    const msgs = c.getMessages();
+    const ctxMsgs = msgs.filter(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER),
+    );
+    expect(ctxMsgs).toHaveLength(0);
+  });
+
+  it("LEARNINGS then CODE_CONTEXT then USER ordering is stable", () => {
+    const c = new Conversation();
+    c.addUser("current question");
+    c.upsertLearningsMessage(`${Conversation.LEARNINGS_MARKER}\nlearnings`);
+    c.upsertCodeContextMessage(`${Conversation.CODE_CONTEXT_MARKER}\ncode context`);
+
+    const msgs = c.getMessages();
+    const roles = msgs.map((m) => {
+      if ((m.content ?? "").startsWith(Conversation.LEARNINGS_MARKER)) return "LEARNINGS";
+      if ((m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER)) return "CODE_CONTEXT";
+      return m.role;
+    });
+
+    const learnIdx = roles.indexOf("LEARNINGS");
+    const ctxIdx = roles.indexOf("CODE_CONTEXT");
+    const lastUserIdx = roles.lastIndexOf("user");
+    expect(learnIdx).toBeLessThan(ctxIdx);
+    expect(ctxIdx).toBeLessThan(lastUserIdx);
+  });
+
+  it("null call with no existing marker is a no-op (does not insert or throw)", () => {
+    const c = new Conversation("system");
+    c.addUser("hello");
+    const before = c.getMessages().length;
+    // Calling null when no code context marker exists should silently do nothing
+    c.upsertCodeContextMessage(null);
+    expect(c.getMessages().length).toBe(before);
+    expect(
+      c.getMessages().some((m) => (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER)),
+    ).toBe(false);
+  });
+
+  it("inserts via push when conversation has no user messages", () => {
+    // Conversation with only a system message — insertAt === -1 → messages.push(msg)
+    const c = new Conversation("system");
+    c.upsertCodeContextMessage(`${Conversation.CODE_CONTEXT_MARKER}\ncode`);
+    const msgs = c.getMessages();
+    expect(msgs.some((m) => (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER))).toBe(true);
+  });
+});
