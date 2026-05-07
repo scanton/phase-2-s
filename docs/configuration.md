@@ -60,10 +60,11 @@ provider: codex-cli
 # Raise for models with higher ceilings (claude-3-opus supports up to 4096 output).
 # anthropicMaxTokens: 8192
 
-# Ollama base URL (ollama provider only OR for semantic learnings injection)
-# Set this to enable semantic learnings retrieval even when using codex-cli or another provider.
-# Phase2S uses the local Ollama server to embed your learnings and find the most relevant ones
-# for each task — instead of just injecting the most recent ones.
+# Ollama base URL (ollama provider only OR for semantic learnings + code-RAG)
+# Set this to enable semantic learnings retrieval and automatic code context injection
+# even when using codex-cli or another provider for chat.
+# Phase2S embeds your query once per REPL turn and uses it to find the most relevant
+# learnings AND the most relevant code chunks from your synced index.
 # Warning: remote URLs will send prompts and tool results to that host.
 # ollamaBaseUrl: http://localhost:11434/v1
 
@@ -72,6 +73,12 @@ provider: codex-cli
 # Useful for lighter, faster embed models (e.g., nomic-embed-text, mxbai-embed-large)
 # without changing your chat model. Defaults to gemma4:latest when absent.
 # ollamaEmbedModel: nomic-embed-text
+
+# Disable automatic code context injection (code-RAG) — default: true
+# When true (default), Phase2S injects top-K relevant code chunks from the synced
+# code index before each REPL turn. Requires ollamaBaseUrl + a synced index.
+# Set to false to disable; also available as the --no-rag CLI flag (per-run only).
+# codeRag: false
 
 # OpenRouter API key (openrouter provider only)
 # Falls back to OPENROUTER_API_KEY environment variable.
