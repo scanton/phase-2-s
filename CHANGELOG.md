@@ -1,5 +1,51 @@
 # Changelog
 
+## v1.56.0 — 2026-05-07
+
+Sprint 82 — Codebase RAG: Automatic Code Context Injection.
+
+### Added
+
+- **`searchCode()` shared helper** (`src/core/code-index.ts`) — High-level pipeline: accepts a pre-computed `queryVector`, loads `.phase2s/code-index.jsonl`, ranks entries by cosine similarity, applies a path-traversal guard (resolved path must be inside cwd), reads per-chunk file snippets capped at `MAX_SNIPPET_LINES=25` with a `// ...N more lines` trailer, and returns `CodeSearchResult[]`. Filtering by `MIN_CODE_RAG_SCORE=0.25` ensures only semantically relevant chunks are returned. Dead embedding parameters (`_ollamaEmbedModel`, `_ollamaBaseUrl`) removed — embedding is the caller's responsibility.
+
+- **`CodeSearchResult` interface** (`src/core/code-index.ts`) — `{ path, chunkName?, chunkStart?, chunkEnd?, score, snippet }`. Exported so callers can type-check results without importing internal `CodeEntry`.
+
+- **`buildCodeContextBlock()`** (`src/core/code-context.ts`) — Formats `CodeSearchResult[]` into a numbered `<code_context>` block with path, optional chunk name, score (3 decimal places), and a fenced code snippet. Returns `null` for empty results so callers can pass `null` directly to `agent.refreshCodeContext()`.
+
+- **`CODE_CONTEXT_MARKER = "[PHASE2S_CODE_CONTEXT]"` static** on `Conversation` — Sentinel that uniquely identifies the rolling code context injection message.
+
+- **`upsertCodeContextMessage(content: string | null)`** on `Conversation` — Inserts or replaces the code context user message immediately before the last user message (same position discipline as `upsertLearningsMessage`). Calling with `null` removes the marker; calling `null` when no marker exists is a safe no-op. Stable ordering with learnings: LEARNINGS → CODE_CONTEXT → USER.
+
+- **`refreshCodeContext(content: string | null | undefined)`** on `Agent` — Three-state interface: `undefined` = never injected (no-op on first turn), `null` = clear any existing block, `string` = inject/replace. Public so CLI wiring can call it before `agent.run()` in one-shot mode.
+
+- **`refreshAgentContext()`** (`src/cli/index.ts`) — Per-turn orchestrator called in REPL loop and before one-shot `agent.run()`. Generates a single embedding for the user's query text (shared across learnings retrieval and code-RAG), then calls `loadRelevantLearnings` (with `precomputedQueryVector`) and `searchCode` in parallel. Falls back gracefully when Ollama is unreachable (embedding fails → empty vector) or `config.codeRag` is false.
+
+- **`--no-rag` CLI flag** — Commander `--no-X` convention sets `config.codeRag = false`. Allows users to disable code context injection without removing Ollama config. Persisted in `.phase2s/config.json` as `codeRag: false`.
+
+- **`MIN_CODE_RAG_SCORE = 0.25`** and **`MAX_SNIPPET_LINES = 25`** — Named constants exported from `src/core/code-index.ts`. Gate the threshold below which chunks are dropped and the line count above which snippets are truncated.
+
+### Changed
+
+- **Single embed per turn** — `generateEmbedding()` called exactly once per REPL turn, shared between learnings retrieval and code search via `precomputedQueryVector` parameter. Eliminates the previous double-embed overhead when both features are active.
+
+- **`src/tools/code-search.ts`** — Updated to call `searchCode(cwd, queryVector, k)` without the now-removed embedding model/URL parameters. The tool continues to handle its own embedding via `generateEmbedding()` internally.
+
+- **`src/core/memory.ts`** — `loadRelevantLearnings` accepts an optional `precomputedQueryVector` parameter; skips its own `embedFn` call when the vector is already computed.
+
+- **TODOS.md** — Added Post-Sprint 82 section.
+
+### Tests
+
+- **`test/cli/code-context.test.ts`** (new, 8 tests) — Integration tests for `refreshAgentContext()`: `codeRag=false` skips searchCode; no Ollama config skips both embed and search; single embed call per turn; Ollama down falls back gracefully; results above threshold pass block to `refreshCodeContext`; empty results call `refreshCodeContext(null)`; one-shot code context injection wired; `CODE_CONTEXT_MARKER` filtered from saved sessions.
+
+- **`test/core/code-context.test.ts`** (new, 6 tests) — `buildCodeContextBlock()` unit tests: empty → null; path/chunkName/score/snippet format; no truncation at 25 lines; truncation marker passthrough; absent chunkName omits parenthetical; empty snippet → "(no snippet)" literal.
+
+- **`test/core/conversation.test.ts`** additions (7 tests) — `upsertCodeContextMessage`: first call inserts before last user; second call replaces (no accumulation); null removes marker; LEARNINGS→CODE_CONTEXT→USER ordering stable; null on absent marker is no-op; inserts via push when no user messages. Plus `CODE_CONTEXT_MARKER` sentinel value.
+
+- **`test/core/code-index.test.ts`** additions (6 tests) — `searchCode()`: empty queryVector returns []; below-threshold returns []; normal path returns required fields with score ≥ threshold; missing index returns []; path-traversal entries skipped; snippets truncated at `MAX_SNIPPET_LINES` with trailer.
+
+- **`test/core/memory.test.ts`** additions (2 tests) — `loadRelevantLearnings`: falls back to heuristicSort when ollamaBaseUrl absent; precomputedQueryVector=[] triggers heuristicSort fallback (shortcut path exercised); semantic path used when embed succeeds; results in similarity rank order.
+
 ## v1.55.0 — 2026-05-05
 
 Sprint 81 — `phase2s search-audit` Semantic Search Quality Benchmark.

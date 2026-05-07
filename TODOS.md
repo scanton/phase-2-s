@@ -14,7 +14,7 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
-## Backlog — Post-Sprint 82 notes (v1.56.0, 2026-05-xx)
+## Backlog — Post-Sprint 82 notes (v1.56.0, 2026-05-07)
 
 Sprint 82 ships Codebase RAG — automatic code context injection before each REPL turn via a rolling `[PHASE2S_CODE_CONTEXT]` message. Identified during /plan-eng-review; 7 issues resolved (D2–D4, C1–C4).
 
