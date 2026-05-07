@@ -39,6 +39,11 @@ export class Conversation {
   static readonly LEARNINGS_MARKER = "[PHASE2S_LEARNINGS]";
 
   /**
+   * Prefix used to identify the per-turn code context message.
+   */
+  static readonly CODE_CONTEXT_MARKER = "[PHASE2S_CODE_CONTEXT]";
+
+  /**
    * Insert or replace the [PHASE2S_LEARNINGS] context message.
    *
    * Always places the message immediately before the last user message (the
@@ -68,6 +73,45 @@ export class Conversation {
     }
 
     // Step 2: insert just before the last user message (current pending turn)
+    let insertAt = -1;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].role === "user") {
+        insertAt = i;
+        break;
+      }
+    }
+    if (insertAt === -1) {
+      this.messages.push(msg);
+    } else {
+      this.messages.splice(insertAt, 0, msg);
+    }
+  }
+
+  /**
+   * Insert or replace the [PHASE2S_CODE_CONTEXT] context message.
+   *
+   * Mirrors upsertLearningsMessage() — always placed immediately before the
+   * last user message so the final order at LLM-call time is:
+   *   [LEARNINGS] [CODE_CONTEXT] [USER]
+   *
+   * When content is null, any existing CODE_CONTEXT message is removed and
+   * nothing is inserted (clears the marker without inserting a new one).
+   */
+  upsertCodeContextMessage(content: string | null): void {
+    const MARKER = Conversation.CODE_CONTEXT_MARKER;
+
+    // Step 1: remove existing CODE_CONTEXT message if present
+    const idx = this.messages.findIndex(
+      (m) => m.role === "user" && (m.content ?? "").startsWith(MARKER),
+    );
+    if (idx !== -1) {
+      this.messages.splice(idx, 1);
+    }
+
+    if (content === null) return;
+
+    // Step 2: insert just before the last user message (current pending turn)
+    const msg: Message = { role: "user", content };
     let insertAt = -1;
     for (let i = this.messages.length - 1; i >= 0; i--) {
       if (this.messages[i].role === "user") {
