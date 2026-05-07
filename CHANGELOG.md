@@ -18,9 +18,9 @@ Sprint 82 — Codebase RAG: Automatic Code Context Injection.
 
 - **`refreshCodeContext(content: string | null | undefined)`** on `Agent` — Three-state interface: `undefined` = never injected (no-op on first turn), `null` = clear any existing block, `string` = inject/replace. Public so CLI wiring can call it before `agent.run()` in one-shot mode.
 
-- **`refreshAgentContext()`** (`src/cli/index.ts`) — Per-turn orchestrator called in REPL loop and before one-shot `agent.run()`. Generates a single embedding for the user's query text (shared across learnings retrieval and code-RAG), then calls `loadRelevantLearnings` (with `precomputedQueryVector`) and `searchCode` in parallel. Falls back gracefully when Ollama is unreachable (embedding fails → empty vector) or `config.codeRag` is false.
+- **`refreshAgentContext()`** (`src/cli/index.ts`) — Per-turn orchestrator called in REPL loop and before one-shot `agent.run()`. Generates a single embedding for the user's query text (shared across learnings retrieval and code-RAG), then calls `loadRelevantLearnings` (with `precomputedQueryVector`) and `searchCode` sequentially (embedding computed once, passed to both). Falls back gracefully when Ollama is unreachable (embedding fails → empty vector) or `config.codeRag` is false.
 
-- **`--no-rag` CLI flag** — Commander `--no-X` convention sets `config.codeRag = false`. Allows users to disable code context injection without removing Ollama config. Persisted in `.phase2s/config.json` as `codeRag: false`.
+- **`--no-rag` CLI flag** — Commander `--no-X` convention sets `config.codeRag = false` for the current run. Allows users to disable code context injection without removing Ollama config. To make the setting permanent, add `"codeRag": false` to `.phase2s/config.json`.
 
 - **`MIN_CODE_RAG_SCORE = 0.25`** and **`MAX_SNIPPET_LINES = 25`** — Named constants exported from `src/core/code-index.ts`. Gate the threshold below which chunks are dropped and the line count above which snippets are truncated.
 
