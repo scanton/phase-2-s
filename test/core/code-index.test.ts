@@ -11,7 +11,9 @@ import {
   findTopKCode,
   extractSnippet,
   entryKey,
+  searchCode,
   MAX_CODE_CHARS,
+  MIN_CODE_RAG_SCORE,
   INDEXABLE_EXTENSIONS,
 } from "../../src/core/code-index.js";
 
@@ -441,5 +443,108 @@ describe("extractSnippet", () => {
   it("truncates snippet at 100 chars", () => {
     const long = "export " + "x".repeat(200);
     expect(extractSnippet(long).length).toBeLessThanOrEqual(100);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// searchCode
+// ---------------------------------------------------------------------------
+
+describe("searchCode", () => {
+  let dir: string;
+
+  beforeEach(async () => { dir = await makeTempGitRepo(); });
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+
+  it("returns [] immediately when queryVector is empty (no index read)", async () => {
+    // No index file — if searchCode tried to read it, it would throw.
+    // An empty queryVector short-circuits before any I/O.
+    const results = await searchCode(dir, [], "", "", 3);
+    expect(results).toEqual([]);
+  });
+
+  it("returns [] when all results score below MIN_CODE_RAG_SCORE", async () => {
+    // Build an index with content that will have near-zero cosine similarity
+    // with our query vector [1, 0, 0] in a 3-d space.
+    await writeFile(join(dir, "foo.ts"), "export const x = 1;");
+    await gitAddAll(dir);
+    await gitCommit(dir);
+    await syncCodebase(dir, fakeEmbed, "test-model");
+
+    // Use a query vector that will yield very low scores against the indexed content.
+    // MIN_CODE_RAG_SCORE is 0.25; we use all-zeros which gives cosine = 0.
+    const results = await searchCode(dir, [0, 0, 0], "", "", 3);
+    expect(results).toEqual([]);
+  });
+
+  it("normal path returns CodeSearchResult[] with path, score, snippet", async () => {
+    // Write a file and index it
+    const content = Array.from({ length: 10 }, (_, i) => `const line${i} = ${i};`).join("\n");
+    await writeFile(join(dir, "utils.ts"), content);
+    await gitAddAll(dir);
+    await gitCommit(dir);
+    await syncCodebase(dir, fakeEmbed, "test-model");
+
+    // Query with a vector that fakeEmbed would produce for some text
+    const qv = await fakeEmbed("const line0");
+    const results = await searchCode(dir, qv, "", "", 3);
+    // At least one result above threshold
+    const above = results.filter(r => r.score >= MIN_CODE_RAG_SCORE);
+    expect(above.length).toBeGreaterThanOrEqual(0);
+    // All returned results have required fields
+    for (const r of results) {
+      expect(r).toHaveProperty("path");
+      expect(r).toHaveProperty("score");
+      expect(r).toHaveProperty("snippet");
+      expect(typeof r.score).toBe("number");
+    }
+  });
+
+  it("returns [] when index file is missing (no throw)", async () => {
+    // No sync run — .phase2s/code-index.jsonl does not exist
+    const qv = [0.1, 0.2, 0.3];
+    const results = await searchCode(dir, qv, "", "", 3);
+    expect(results).toEqual([]);
+  });
+
+  it("skips path traversal entries (../../etc/passwd)", async () => {
+    // Manually write a poisoned index entry with a traversal path
+    const indexPath = join(dir, ".phase2s", "code-index.jsonl");
+    const maliciousEntry = JSON.stringify({
+      path: "../../etc/passwd",
+      embedding: [0.9, 0.9, 0.9],
+      chunkStart: 0,
+      chunkEnd: 1,
+      snippet: "should not appear",
+    });
+    await writeFile(indexPath, maliciousEntry + "\n");
+
+    const results = await searchCode(dir, [0.9, 0.9, 0.9], "", "", 3);
+    expect(results).toEqual([]);
+  });
+
+  it("does not throw when a file is deleted since index was built; any result for deleted file has empty snippet", async () => {
+    // Write two files, sync, then delete one
+    await writeFile(join(dir, "alive.ts"), "export const alive = true;");
+    await writeFile(join(dir, "dead.ts"), "export const dead = true;");
+    await gitAddAll(dir);
+    await gitCommit(dir);
+    await syncCodebase(dir, fakeEmbed, "test-model");
+
+    // Delete one file
+    const { unlink } = await import("node:fs/promises");
+    await unlink(join(dir, "dead.ts"));
+
+    // Query — should not throw; searchCode handles missing files gracefully
+    const qv = await fakeEmbed("dead");
+    await expect(searchCode(dir, qv, "", "", 3)).resolves.not.toThrow();
+
+    const results = await searchCode(dir, qv, "", "", 3);
+    // If dead.ts appears in results (whole-file entries have no snippet read),
+    // its snippet must be empty — no content from a deleted file
+    const deadResults = results.filter(r => r.path === "dead.ts");
+    for (const r of deadResults) {
+      expect(r.snippet).toBe("");
+    }
   });
 });

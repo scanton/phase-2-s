@@ -1,8 +1,9 @@
 /**
  * Tests for src/tools/code-search.ts
  *
- * Mocks generateEmbedding, readCodeIndex, findTopKCode, checkIndexStaleness,
- * and readFile to exercise the tool logic without Ollama or disk I/O.
+ * After Sprint 82 refactoring, the tool delegates the pipeline to searchCode()
+ * from code-index.ts. Mocks: generateEmbedding, searchCode, checkIndexStaleness.
+ * readFile and readCodeIndex/findTopKCode are no longer called by the tool directly.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -15,16 +16,12 @@ import type { Mock } from "vitest";
 
 const {
   generateEmbeddingMock,
-  readCodeIndexMock,
-  findTopKCodeMock,
+  searchCodeMock,
   checkIndexStalenessMock,
-  readFileMock,
 } = vi.hoisted(() => ({
   generateEmbeddingMock: vi.fn() as Mock,
-  readCodeIndexMock: vi.fn() as Mock,
-  findTopKCodeMock: vi.fn() as Mock,
+  searchCodeMock: vi.fn() as Mock,
   checkIndexStalenessMock: vi.fn() as Mock,
-  readFileMock: vi.fn() as Mock,
 }));
 
 vi.mock("../../src/core/embeddings.js", () => ({
@@ -32,20 +29,17 @@ vi.mock("../../src/core/embeddings.js", () => ({
 }));
 
 vi.mock("../../src/core/code-index.js", () => ({
-  findTopKCode: findTopKCodeMock,
-  readCodeIndex: readCodeIndexMock,
+  searchCode: searchCodeMock,
   checkIndexStaleness: checkIndexStalenessMock,
+  // Keep other exports as stubs so TypeScript imports don't break
+  findTopKCode: vi.fn(),
+  readCodeIndex: vi.fn(),
+  MIN_CODE_RAG_SCORE: 0.25,
+  MAX_SNIPPET_LINES: 25,
 }));
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:fs/promises")>();
-  return {
-    ...original,
-    readFile: readFileMock,
-  };
-});
-
 import { createCodeSearchTool } from "../../src/tools/code-search.js";
+import type { CodeSearchResult } from "../../src/core/code-index.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -56,24 +50,20 @@ const BASE_URL = "http://localhost:11434/v1";
 const EMBED_MODEL = "nomic-embed-text:latest";
 const QUERY_VECTOR = [0.1, 0.2, 0.3];
 
-const RESULT_WITH_CHUNK = {
+const RESULT_WITH_CHUNK: CodeSearchResult = {
   path: "src/core/auth.ts",
   score: 0.912,
   chunkStart: 10,
   chunkEnd: 25,
   chunkName: "rateLimitBackoff",
+  snippet: Array.from({ length: 16 }, (_, i) => `line ${i + 10}`).join("\n"),
 };
 
-const RESULT_WITHOUT_CHUNK = {
+const RESULT_WITHOUT_CHUNK: CodeSearchResult = {
   path: "src/utils/helper.ts",
   score: 0.741,
-  chunkStart: undefined,
-  chunkEnd: undefined,
-  chunkName: undefined,
+  snippet: "",
 };
-
-const FILE_LINES = Array.from({ length: 30 }, (_, i) => `line ${i}`);
-const FILE_CONTENT = FILE_LINES.join("\n");
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -87,10 +77,8 @@ beforeEach(() => {
 
   // Default happy-path stubs
   generateEmbeddingMock.mockResolvedValue(QUERY_VECTOR);
-  readCodeIndexMock.mockResolvedValue([{ path: "src/core/auth.ts", vector: QUERY_VECTOR }]);
-  findTopKCodeMock.mockReturnValue([]);
+  searchCodeMock.mockResolvedValue([]);
   checkIndexStalenessMock.mockResolvedValue({ stale: false });
-  readFileMock.mockResolvedValue(FILE_CONTENT);
 });
 
 // ---------------------------------------------------------------------------
@@ -149,15 +137,14 @@ describe("createCodeSearchTool — parameter schema boundaries", () => {
 describe("createCodeSearchTool — embedding failure", () => {
   it("returns success:false with Ollama error when generateEmbedding returns []", async () => {
     generateEmbeddingMock.mockResolvedValue([]);
-    findTopKCodeMock.mockReturnValue([]);
 
     const result = await tool.execute({ query: "rate limit" });
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/Embedding failed/);
     expect(result.error).toContain(EMBED_MODEL);
-    // findTopKCode must NOT be called — empty vector check is before it
-    expect(findTopKCodeMock).not.toHaveBeenCalled();
+    // searchCode must NOT be called — empty vector check is before it
+    expect(searchCodeMock).not.toHaveBeenCalled();
   });
 
   it("returns success:false when generateEmbedding throws (Ollama crash path)", async () => {
@@ -167,28 +154,28 @@ describe("createCodeSearchTool — embedding failure", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/Embedding failed/);
-    expect(findTopKCodeMock).not.toHaveBeenCalled();
+    expect(searchCodeMock).not.toHaveBeenCalled();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Index load failure
+// Index load failure / no results
 // ---------------------------------------------------------------------------
 
 describe("createCodeSearchTool — index load failure", () => {
-  it("returns success:false when readCodeIndex throws (missing or malformed index)", async () => {
-    readCodeIndexMock.mockRejectedValue(new Error("ENOENT: no such file or directory"));
+  it("returns success:true with sync hint when searchCode returns [] (missing index)", async () => {
+    // searchCode() catches missing-index errors internally and returns []
+    searchCodeMock.mockResolvedValue([]);
 
     const result = await tool.execute({ query: "rate limit" });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Failed to load code index/);
-    expect(result.error).toContain("phase2s sync");
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("phase2s sync");
   });
 
   it("still succeeds when checkIndexStaleness throws (non-git repo, etc.)", async () => {
     checkIndexStalenessMock.mockRejectedValue(new Error("not a git repository"));
-    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK]);
+    searchCodeMock.mockResolvedValue([RESULT_WITH_CHUNK]);
 
     // Staleness error is swallowed — results still returned
     const result = await tool.execute({ query: "rate limit" });
@@ -201,22 +188,19 @@ describe("createCodeSearchTool — index load failure", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Path traversal guard
+// Path traversal guard (handled by searchCode — entry skipped, result absent)
 // ---------------------------------------------------------------------------
 
 describe("createCodeSearchTool — path traversal guard", () => {
-  it("omits snippet for index entries with traversal paths (e.g. ../../.env)", async () => {
-    findTopKCodeMock.mockReturnValue([
-      { ...RESULT_WITH_CHUNK, path: "../../.env" },
-    ]);
+  it("omits traversal-path entries when searchCode skips them (returns [])", async () => {
+    // searchCode() already guards traversal — it returns [] for such entries
+    searchCodeMock.mockResolvedValue([]);
 
     const result = await tool.execute({ query: "secrets" });
 
-    // Should succeed but not include any snippet content from outside CWD
     expect(result.success).toBe(true);
+    // No snippet content — no results above threshold
     expect(result.output).not.toContain("```");
-    // readFile must NOT have been called with the traversal path
-    expect(readFileMock).not.toHaveBeenCalled();
   });
 });
 
@@ -225,8 +209,8 @@ describe("createCodeSearchTool — path traversal guard", () => {
 // ---------------------------------------------------------------------------
 
 describe("createCodeSearchTool — no results", () => {
-  it("returns success:true with sync hint when findTopKCode returns []", async () => {
-    findTopKCodeMock.mockReturnValue([]);
+  it("returns success:true with sync hint when searchCode returns []", async () => {
+    searchCodeMock.mockResolvedValue([]);
 
     const result = await tool.execute({ query: "rate limit" });
 
@@ -241,7 +225,7 @@ describe("createCodeSearchTool — no results", () => {
 
 describe("createCodeSearchTool — results present", () => {
   it("formats file path, line range, function name, and score", async () => {
-    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK]);
+    searchCodeMock.mockResolvedValue([RESULT_WITH_CHUNK]);
 
     const result = await tool.execute({ query: "rate limit" });
 
@@ -252,29 +236,28 @@ describe("createCodeSearchTool — results present", () => {
     expect(result.output).toContain("0.912");
   });
 
-  it("includes code snippet from file when chunkStart and chunkEnd are defined", async () => {
-    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK]);
+  it("includes code snippet from searchCode result when snippet is present", async () => {
+    searchCodeMock.mockResolvedValue([RESULT_WITH_CHUNK]);
 
     const result = await tool.execute({ query: "rate limit" });
 
-    // Snippet = lines 10..25 from FILE_CONTENT
-    const expected = FILE_LINES.slice(10, 26).join("\n");
-    expect(result.output).toContain(expected);
+    expect(result.output).toContain("```");
+    expect(result.output).toContain("line 10");
   });
 
   it("omits snippet when chunk boundaries are absent", async () => {
-    findTopKCodeMock.mockReturnValue([RESULT_WITHOUT_CHUNK]);
+    searchCodeMock.mockResolvedValue([RESULT_WITHOUT_CHUNK]);
 
     const result = await tool.execute({ query: "helper" });
 
     expect(result.success).toBe(true);
-    // No snippet fences
+    // No snippet fences when snippet is empty
     expect(result.output).not.toContain("```");
   });
 
-  it("omits snippet when readFile throws (file deleted since last sync)", async () => {
-    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK]);
-    readFileMock.mockRejectedValue(new Error("ENOENT: no such file"));
+  it("omits snippet when searchCode provides empty snippet (file deleted since last sync)", async () => {
+    const resultNoSnippet: CodeSearchResult = { ...RESULT_WITH_CHUNK, snippet: "" };
+    searchCodeMock.mockResolvedValue([resultNoSnippet]);
 
     const result = await tool.execute({ query: "rate limit" });
 
@@ -285,7 +268,7 @@ describe("createCodeSearchTool — results present", () => {
   });
 
   it("numbers results starting from [1]", async () => {
-    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK, RESULT_WITHOUT_CHUNK]);
+    searchCodeMock.mockResolvedValue([RESULT_WITH_CHUNK, RESULT_WITHOUT_CHUNK]);
 
     const result = await tool.execute({ query: "misc" });
 
@@ -293,26 +276,30 @@ describe("createCodeSearchTool — results present", () => {
     expect(result.output).toContain("[2]");
   });
 
-  it("passes k parameter through to findTopKCode", async () => {
-    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK]);
+  it("passes k parameter through to searchCode", async () => {
+    searchCodeMock.mockResolvedValue([RESULT_WITH_CHUNK]);
 
     await tool.execute({ query: "rate limit", k: 7 });
 
-    expect(findTopKCodeMock).toHaveBeenCalledWith(
-      expect.any(Array),
-      expect.any(Array),
+    expect(searchCodeMock).toHaveBeenCalledWith(
+      CWD,
+      QUERY_VECTOR,
+      EMBED_MODEL,
+      BASE_URL,
       7,
     );
   });
 
   it("defaults to k=3 when k is omitted", async () => {
-    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK]);
+    searchCodeMock.mockResolvedValue([RESULT_WITH_CHUNK]);
 
     await tool.execute({ query: "rate limit" });
 
-    expect(findTopKCodeMock).toHaveBeenCalledWith(
-      expect.any(Array),
-      expect.any(Array),
+    expect(searchCodeMock).toHaveBeenCalledWith(
+      CWD,
+      QUERY_VECTOR,
+      EMBED_MODEL,
+      BASE_URL,
       3,
     );
   });
@@ -324,7 +311,7 @@ describe("createCodeSearchTool — results present", () => {
 
 describe("createCodeSearchTool — staleness", () => {
   it("prepends staleness warning when index is stale", async () => {
-    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK]);
+    searchCodeMock.mockResolvedValue([RESULT_WITH_CHUNK]);
     checkIndexStalenessMock.mockResolvedValue({ stale: true, newestFile: "src/new.ts" });
 
     const result = await tool.execute({ query: "rate limit" });
@@ -335,7 +322,7 @@ describe("createCodeSearchTool — staleness", () => {
   });
 
   it("does not include staleness text when index is current", async () => {
-    findTopKCodeMock.mockReturnValue([RESULT_WITH_CHUNK]);
+    searchCodeMock.mockResolvedValue([RESULT_WITH_CHUNK]);
     checkIndexStalenessMock.mockResolvedValue({ stale: false });
 
     const result = await tool.execute({ query: "rate limit" });

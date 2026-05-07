@@ -13,10 +13,8 @@
  */
 
 import { z } from "zod";
-import { readFile } from "node:fs/promises";
-import { join, sep } from "node:path";
 import { generateEmbedding } from "../core/embeddings.js";
-import { findTopKCode, readCodeIndex, checkIndexStaleness } from "../core/code-index.js";
+import { searchCode, checkIndexStaleness } from "../core/code-index.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
 
 const params = z.object({
@@ -63,25 +61,13 @@ export function createCodeSearchTool(
         };
       }
 
-      // Load the code index and check staleness concurrently
-      let index: Awaited<ReturnType<typeof readCodeIndex>>;
-      let staleness: Awaited<ReturnType<typeof checkIndexStaleness>>;
-      try {
-        [index, staleness] = await Promise.all([
-          readCodeIndex(cwd),
-          checkIndexStaleness(cwd).catch(() => ({ stale: false as const })),
-        ]);
-      } catch (err) {
-        return {
-          success: false,
-          output: "",
-          error:
-            "Failed to load code index — has `phase2s sync` been run? " +
-            `(${err instanceof Error ? err.message : String(err)})`,
-        };
-      }
+      // Run semantic search + staleness check concurrently.
+      // searchCode handles index loading, path traversal guard, snippet extraction.
+      const [results, staleness] = await Promise.all([
+        searchCode(cwd, queryVector, ollamaEmbedModel, ollamaBaseUrl, k),
+        checkIndexStaleness(cwd).catch(() => ({ stale: false as const })),
+      ]);
 
-      const results = findTopKCode(queryVector, index, k);
       const parts: string[] = [];
 
       // Non-blocking staleness note
@@ -97,38 +83,18 @@ export function createCodeSearchTool(
         return { success: true, output: parts.join("\n") };
       }
 
-      // Format results — read file lines for snippet when chunk boundaries known
-      const cwdWithSep = cwd.endsWith(sep) ? cwd : cwd + sep;
-      const formatted = await Promise.all(
-        results.map(async (r, i) => {
-          let snippet = "";
-          if (r.chunkStart != null && r.chunkEnd != null) {
-            try {
-              const resolved = join(cwd, r.path);
-              // Guard against path traversal in index entries (e.g. "../../.env")
-              if (resolved.startsWith(cwdWithSep) || resolved === cwd) {
-                const content = await readFile(resolved, "utf-8");
-                // chunkEnd is inclusive — slice up to chunkEnd + 1
-                snippet = content
-                  .split("\n")
-                  .slice(r.chunkStart, r.chunkEnd + 1)
-                  .join("\n");
-              }
-            } catch {
-              // Skip snippet on read failure (file deleted since last sync)
-            }
-          }
-          // Only show line range when chunk boundaries are known; whole-file entries
-          // have no meaningful range — showing ":0–?" would mislead the agent.
-          const range = r.chunkStart != null ? `:${r.chunkStart}–${r.chunkEnd ?? "?"}` : "";
-          return (
-            `[${i + 1}] ${r.path}${range}` +
-            (r.chunkName ? `\nFunction: ${r.chunkName}` : "") +
-            `\nScore: ${r.score.toFixed(3)}` +
-            (snippet ? `\n\`\`\`\n${snippet}\n\`\`\`` : "")
-          );
-        }),
-      );
+      // Format results — snippet already extracted by searchCode()
+      const formatted = results.map((r, i) => {
+        // Only show line range when chunk boundaries are known; whole-file entries
+        // have no meaningful range — showing ":0–?" would mislead the agent.
+        const range = r.chunkStart != null ? `:${r.chunkStart}–${r.chunkEnd ?? "?"}` : "";
+        return (
+          `[${i + 1}] ${r.path}${range}` +
+          (r.chunkName ? `\nFunction: ${r.chunkName}` : "") +
+          `\nScore: ${r.score.toFixed(3)}` +
+          (r.snippet ? `\n\`\`\`\n${r.snippet}\n\`\`\`` : "")
+        );
+      });
 
       parts.push(...formatted);
       return { success: true, output: parts.join("\n\n") };
