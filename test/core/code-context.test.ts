@@ -50,6 +50,21 @@ describe("buildCodeContextBlock", () => {
     expect(block).toContain("// ...3 more lines");
   });
 
+  it("omits chunkName parenthetical when chunkName is absent", () => {
+    const result = makeResult({ chunkName: undefined });
+    const block = buildCodeContextBlock([result]);
+    expect(block).not.toContain("(undefined)");
+    expect(block).not.toMatch(/\(\w+\)/); // no parenthetical at all
+    expect(block).toContain("src/core/agent.ts");
+  });
+
+  it("renders (no snippet) when snippet is empty string", () => {
+    const result = makeResult({ snippet: "", chunkName: undefined });
+    const block = buildCodeContextBlock([result]);
+    expect(block).toContain("(no snippet)");
+    expect(block).not.toContain("```");
+  });
+
   it("includes [1], [2], [3] headers for multiple results", () => {
     const results = [
       makeResult({ path: "a.ts", score: 0.9 }),

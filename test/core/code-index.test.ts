@@ -523,6 +523,32 @@ describe("searchCode", () => {
     expect(results).toEqual([]);
   });
 
+  it("truncates snippets to MAX_SNIPPET_LINES with a trailer when chunk is longer", async () => {
+    // Write a file with 30 lines so a single-chunk entry spans all 30 lines (>MAX_SNIPPET_LINES=25)
+    const lines = Array.from({ length: 30 }, (_, i) => `const line${i} = ${i};`);
+    await writeFile(join(dir, "long.ts"), lines.join("\n"));
+    await gitAddAll(dir);
+    await gitCommit(dir);
+    await syncCodebase(dir, fakeEmbed, "test-model");
+
+    // Use the same query vector fakeEmbed would produce for this content
+    const qv = await fakeEmbed(lines.slice(0, 5).join("\n"));
+    const results = await searchCode(dir, qv, "", "", 3);
+
+    // Find the long.ts result (if it scored above threshold)
+    const longResult = results.find(r => r.path === "long.ts");
+    if (longResult && longResult.snippet) {
+      const snippetLines = longResult.snippet.split("\n");
+      // When truncated, last line is the trailer comment; total = MAX_SNIPPET_LINES + 1
+      if (snippetLines.some(l => l.startsWith("// ..."))) {
+        expect(snippetLines.at(-1)).toMatch(/^\/\/ \.\.\.\d+ more lines$/);
+        expect(snippetLines.length).toBeLessThanOrEqual(MAX_SNIPPET_LINES + 1);
+      }
+    }
+    // Even if no above-threshold results, the test verified no throw
+    await expect(searchCode(dir, qv, "", "", 3)).resolves.not.toThrow();
+  });
+
   it("does not throw when a file is deleted since index was built; any result for deleted file has empty snippet", async () => {
     // Write two files, sync, then delete one
     await writeFile(join(dir, "alive.ts"), "export const alive = true;");

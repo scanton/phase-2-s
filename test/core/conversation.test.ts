@@ -334,4 +334,24 @@ describe("upsertCodeContextMessage", () => {
     expect(learnIdx).toBeLessThan(ctxIdx);
     expect(ctxIdx).toBeLessThan(lastUserIdx);
   });
+
+  it("null call with no existing marker is a no-op (does not insert or throw)", () => {
+    const c = new Conversation("system");
+    c.addUser("hello");
+    const before = c.getMessages().length;
+    // Calling null when no code context marker exists should silently do nothing
+    c.upsertCodeContextMessage(null);
+    expect(c.getMessages().length).toBe(before);
+    expect(
+      c.getMessages().some((m) => (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER)),
+    ).toBe(false);
+  });
+
+  it("inserts via push when conversation has no user messages", () => {
+    // Conversation with only a system message — insertAt === -1 → messages.push(msg)
+    const c = new Conversation("system");
+    c.upsertCodeContextMessage(`${Conversation.CODE_CONTEXT_MARKER}\ncode`);
+    const msgs = c.getMessages();
+    expect(msgs.some((m) => (m.content ?? "").startsWith(Conversation.CODE_CONTEXT_MARKER))).toBe(true);
+  });
 });

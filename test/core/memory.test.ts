@@ -286,6 +286,18 @@ describe("loadRelevantLearnings()", () => {
     vi.restoreAllMocks();
   });
 
+  it("uses precomputedQueryVector — empty vector triggers heuristicSort fallback (shortcut path exercised)", async () => {
+    // precomputedQueryVector=[] means "embedding already failed externally" →
+    // loadRelevantLearnings should skip its own embed call and fall back to heuristicSort.
+    // Stub fetch so any accidental embed call returns an error instead of hanging.
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("should not be called")));
+    // Empty precomputedQueryVector → queryVector.length === 0 → heuristicSort
+    const result = await loadRelevantLearnings(tmpDir, "write tests", baseConfig, 8, []);
+    // heuristicSort still returns learnings
+    expect(result.length).toBeGreaterThan(0);
+    vi.unstubAllGlobals();
+  });
+
   it("returns results in similarity rank order, not JSONL insertion order", async () => {
     // Return two different vectors per call: high similarity for "b", low for "a"
     let callCount = 0;
