@@ -557,8 +557,6 @@ export interface CodeSearchResult {
 export async function searchCode(
   cwd: string,
   queryVector: number[],
-  _ollamaEmbedModel: string,  // kept for API symmetry with callers; embed done externally
-  _ollamaBaseUrl: string,     // kept for API symmetry with callers; embed done externally
   k = 3,
 ): Promise<CodeSearchResult[]> {
   if (queryVector.length === 0) return [];
