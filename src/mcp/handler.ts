@@ -13,7 +13,7 @@ import { readRawState, writeRawState, clearRawState } from "../core/state.js";
 import { runGoal } from "../cli/goal.js";
 import { parseRunLog, buildRunReport, formatRunReport } from "../cli/report.js";
 import type { Skill } from "../skills/types.js";
-import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, REPORT_TOOL, MCP_SERVER_VERSION } from "./tools.js";
+import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, REPORT_TOOL, TASK_TOOL, MCP_SERVER_VERSION } from "./tools.js";
 
 // ---------------------------------------------------------------------------
 // Types (re-exported for handler consumers)
@@ -88,7 +88,7 @@ export async function handleRequest(
     return {
       jsonrpc: "2.0",
       id: request.id,
-      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, REPORT_TOOL] },
+      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, REPORT_TOOL, TASK_TOOL] },
     };
   }
 
@@ -231,6 +231,46 @@ export async function handleRequest(
         id: request.id,
         result: { content: [{ type: "text", text: `State cleared for key: ${key}` }] },
       };
+    }
+
+    // -----------------------------------------------------------------------
+    // Task tool — autonomous task executor (Sprint 84).
+    // -----------------------------------------------------------------------
+    if (toolName === "phase2s__task") {
+      const task = typeof args["task"] === "string" ? args["task"] : "";
+      if (!task) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: { code: -32602, message: "phase2s__task: task is required" },
+        };
+      }
+      const verifyCommand = typeof args["verify_command"] === "string" ? args["verify_command"] : undefined;
+
+      try {
+        const config = preloadedConfig ?? await loadConfig();
+        const agent = new Agent({ config, agentsMdBlock });
+
+        const result = await agent.run(task, {
+          taskMode: true,
+          verifyCommand: verifyCommand ?? config.verifyCommand,
+        });
+
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: { content: [{ type: "text", text: result }] },
+        };
+      } catch (err) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32603,
+            message: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
     }
 
     // -----------------------------------------------------------------------

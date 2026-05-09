@@ -40,6 +40,7 @@ export {
   STATE_TOOLS,
   GOAL_TOOL,
   REPORT_TOOL,
+  TASK_TOOL,
   buildNotification,
 } from "./tools.js";
 export { handleRequest } from "./handler.js";

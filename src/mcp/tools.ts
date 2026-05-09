@@ -200,6 +200,40 @@ export const GOAL_TOOL: MCPTool = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Task tool descriptor (Sprint 84)
+// ---------------------------------------------------------------------------
+
+/**
+ * MCP tool descriptor for the autonomous task executor.
+ *
+ * Activates task mode: injects the task-mode system prompt preamble, enables
+ * doom-loop detection (same tool + same args 3x → exit), and auto-verify
+ * injection (file_write success → run verifyCommand → inject result as user msg).
+ */
+export const TASK_TOOL: MCPTool = {
+  name: "phase2s__task",
+  description:
+    "Execute a multi-step autonomous task with aggressive tool chaining, " +
+    "auto-verify after file writes, and doom-loop prevention. " +
+    "Use for tasks like 'fix the null pointer in auth.ts' or 'add tests for the parser module'. " +
+    "The agent will plan, execute, verify, and report — no hand-holding required.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      task: {
+        type: "string",
+        description: "The task to execute (e.g. 'fix the null pointer in auth.ts').",
+      },
+      verify_command: {
+        type: "string",
+        description: "Shell command to run after file writes to verify changes (e.g. 'npm test'). Overrides config.verifyCommand.",
+      },
+    },
+    required: ["task"],
+  },
+};
+
 export const REPORT_TOOL: MCPTool = {
   name: "phase2s__report",
   description:
