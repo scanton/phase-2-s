@@ -13,7 +13,7 @@ npm run eval
 Output:
 
 ```
-Running eval suite (3 cases)...
+Ran eval suite (3 cases, concurrency=3). Judging...
 
 ✓ adversarial-basic-plan-challenge   8.5/10  (1.2s)
 ✓ review-basic-diff-coverage         7.0/10  (0.9s)
@@ -25,6 +25,15 @@ Written: ~/.gstack-dev/evals/ (6 files)
 
 ✔ Deploy gate: READY
 ```
+
+By default, evals run up to 3 cases in parallel. Use `--concurrency` to tune this:
+
+```bash
+npm run eval -- --concurrency 1   # sequential (easier to read output while debugging)
+npm run eval -- --concurrency 10  # max parallelism for large suites
+```
+
+The judge phase runs at the same concurrency level as the runner phase. Valid range: 1–20.
 
 When multiple eval cases share the same skill, the score summary shows the range:
 

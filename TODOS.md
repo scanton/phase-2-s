@@ -10,19 +10,31 @@
 
 Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All 4 items closed with no carry-overs. A: named `onLine` handler extracted; `rl.removeListener`/`rl.on` wraps both `:commit` prompt sites; `rl2`/`rl3` eliminated; `ask()` gains `{ noClose: true }`. B: `log.dim("↻ learnings refreshed (N entries)")` always-on after `agent.refreshLearnings()`. C: `SearchEntry.model` field + `getOrBuildIndex(…, embedModel)` — cache invalidates on model change; old entries without `model` re-embed once. D: `STRUCTURAL_PATTERN_MAX_LEN = 500` budget guard + `output.length > MAX_OUTPUT_CHARS` guard fall through to LLM judge; `catch(err)` now records `evidence: "(invalid regex: <msg>)"`. 13 new tests; 1816 passing.
 
-- [ ] **Sequential eval execution** — `runAllEvals` runs cases in `for...of` (sequential). For 10+ cases, runtime adds up. Cases that test different skills are independent and could run in parallel via `Promise.all` with a concurrency cap. Deferring until eval suite grows to where this is felt.
+- [x] **Sequential eval execution** — Shipped in Sprint 83: `runWithConcurrency()` + `--concurrency N` flag; both runner and judge phases capped.
 
 ---
 
-## Backlog — Post-Sprint 82 notes (v1.56.0, 2026-05-07)
+## Backlog — Post-Sprint 83 notes (v1.57.0, 2026-05-08)
+
+Sprint 83 ships Code-RAG Quality, Eval Parallelization, and Performance improvements. All 5 items + OV6 judge concurrency closed with no carry-overs.
+
+- [ ] **Eval result writer concurrency** — `writeEvalResults()` in `reporter.ts` writes both result files synchronously in a loop. With high concurrency (10+ cases), this could become a bottleneck. Consider making it async and parallelizing writes if benchmark shows impact. **Priority:** P4
+
+- [ ] **`isTrivialInput` tuning** — Threshold is now 1-word (only empty/single-word acks are trivial; two-word inputs like "add tests" get RAG). If single-word false positives emerge (e.g. "go", "run", "yes"), consider exposing a `trivialInputMinWords` config knob or a per-word allowlist. **Priority:** P4
+
+- [ ] **Cache eviction policy** — `_indexCache` grows unbounded in long-running MCP server sessions with many projects. Add an LRU eviction cap (e.g. 50 entries) when memory pressure is observed. **Priority:** P4
+
+---
+
+## Backlog — Post-Sprint 82 notes (v1.56.0, 2026-05-07) — CLOSED
 
 Sprint 82 ships Codebase RAG — automatic code context injection before each REPL turn via a rolling `[PHASE2S_CODE_CONTEXT]` message. Identified during /plan-eng-review; 7 issues resolved (D2–D4, C1–C4).
 
-- [ ] **`code_rag_min_score` configurable** — `MIN_CODE_RAG_SCORE = 0.25` is hardcoded. Promote to `.phase2s.yaml` as `codeRagMinScore: z.number().optional()` when users report false positives or want stricter/looser injection. **Priority:** P3
+- [x] **`code_rag_min_score` configurable** — Shipped in Sprint 83 as `codeRagMinScore` config field + `DEFAULT_CODE_RAG_MIN_SCORE` constant.
 
-- [ ] **Trivial turn skip optimization** — Skip code context injection (and embedding) for 1–2 word inputs (e.g. `:help`, `yes`, `no`). These turns are UI responses, not task queries; embedding them wastes an Ollama call and injects irrelevant context. Heuristic: `effectiveLine.trim().split(/\s+/).length <= 2`. **Priority:** P3
+- [x] **Trivial turn skip optimization** — Shipped in Sprint 83 as `isTrivialInput()` helper + skip path in `refreshAgentContext()`.
 
-- [ ] **In-memory code index cache** — `searchCode()` calls `readCodeIndex(cwd)` on every REPL turn, re-reading and JSON-parsing the `.phase2s/code-index.jsonl` file each time. Cache the loaded `CodeEntry[]` in a module-level `Map<string, { mtime: number; entries: CodeEntry[] }>` keyed by cwd. Invalidate on file `mtime` change (stat before read, compare). Per-turn file read consistent with learnings; optimize when latency is felt. **Priority:** P3
+- [x] **In-memory code index cache** — Shipped in Sprint 83 as mtime-based `_indexCache` Map in `code-index.ts`.
 
 ---
 
@@ -50,7 +62,7 @@ Sprint 78 ships function-level chunking via @ast-grep/napi. Identified during /p
 
 - [x] **Arrow function chunking with parent-walk (Sprint 79)** — `arrow_function` kind was removed from TS/JS CHUNK_KINDS in Sprint 78 because unnamed arrows (top-level module-scope `(e) => {}`) produced meaningless chunks that diluted top-K results. Re-added in Sprint 79 with `variable_declarator` parent-walk: arrow → parent → binding identifier. Anonymous callbacks (parent is `arguments`) and one-liners (below MIN_CHUNK_LINES) are filtered. `ARROW_WALK_LANGS` guard limits pass to TypeScript/TSX/JavaScript. **Completed: v1.53.0 (2026-05-05)**
 
-- [ ] **Verify CHUNK_KINDS node kind names for non-TypeScript languages** — Only the TypeScript kinds (`function_declaration`, `method_definition`) are confirmed. Python, Ruby, Go, Rust, Java, Kotlin, C, C++, C#, Swift kinds are speculative and may be wrong — wrong kind names silently return 0 chunks (whole-file fallback, no error). Verify each using the tree-sitter playground (https://tree-sitter.github.io/tree-sitter/playground): paste a sample function, check the AST node kind name. Fix any mismatches in `CHUNK_KINDS` in `chunker.ts`. A language that consistently returns 0 chunks on a real codebase is the signal.
+- [x] **Verify CHUNK_KINDS node kind names for non-TypeScript languages** — Shipped in Sprint 83: added `// verified via tree-sitter playground` comments for all confirmed kinds; added per-language chunker tests (`test/core/chunker.test.ts`) covering Python (`function_definition`), Ruby (`method`), Go (`function_declaration`), Rust (`function_item`), Java/Kotlin/C/C++/C#/Swift. Wrong kinds produce 0 chunks (whole-file fallback) — tests assert chunk count > 0 for each language. **Completed: v1.57.0 (2026-05-09)**
 
 - [x] **Alpine CI enforcement** — Added `alpine-smoke` job to `.github/workflows/publish.yml` that runs after npm publish using `node:22-alpine` container. Installs phase2s from npm and verifies `phase2s --version` (exercises full CLI startup including all module loading on musl). Uses `defaults: run: shell: sh` since Alpine doesn't include bash. Original sync-based fallback check removed after adversarial review (phase2s sync exits 0 when Ollama unavailable, making it a no-op). **Completed: v1.53.0 (2026-05-05)**
 

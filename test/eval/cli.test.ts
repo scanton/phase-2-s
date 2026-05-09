@@ -29,6 +29,10 @@ vi.mock("../../src/core/config.js", () => ({
 
 vi.mock("../../src/eval/runner.js", () => ({
   runAllEvals: (...args: unknown[]) => Promise.resolve(mockRunnerResults),
+  // runWithConcurrency is used in cli.ts for the judge phase — provide a real implementation
+  // so tests don't need to know about concurrency internals: just run tasks sequentially.
+  runWithConcurrency: async <T>(tasks: Array<() => Promise<T>>, _limit: number): Promise<T[]> =>
+    Promise.all(tasks.map(t => t())),
 }));
 
 vi.mock("../../src/eval/judge.js", () => ({
@@ -135,6 +139,81 @@ describe("cli gate — exit codes", () => {
 // ---------------------------------------------------------------------------
 // scoresBySkill — multi-case accumulation
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// parseConcurrency — observable via "concurrency=N" in log output
+// ---------------------------------------------------------------------------
+
+describe("cli parseConcurrency — --concurrency flag parsing", () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let origArgv: string[];
+
+  beforeEach(() => {
+    origArgv = process.argv.slice();
+    mockRunnerResults = [makeRunnerResult("adversarial")];
+    mockJudgeScore = 8.5;
+    mockJudgeScoreQueue = [];
+    exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: number) => undefined as never);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.argv = origArgv;
+    vi.restoreAllMocks();
+  });
+
+  it("--concurrency 5 → concurrency=5 in log output", async () => {
+    process.argv = ["node", "cli.ts", "--concurrency", "5"];
+    await main();
+    const allLogs = logSpy.mock.calls.map(c => c[0] as string).join("\n");
+    expect(allLogs).toMatch(/concurrency=5/);
+  });
+
+  it("--concurrency=2 (equals form) → concurrency=2 in log output", async () => {
+    process.argv = ["node", "cli.ts", "--concurrency=2"];
+    await main();
+    const allLogs = logSpy.mock.calls.map(c => c[0] as string).join("\n");
+    expect(allLogs).toMatch(/concurrency=2/);
+  });
+
+  it("no flag → uses default concurrency=3", async () => {
+    process.argv = ["node", "cli.ts"];
+    await main();
+    const allLogs = logSpy.mock.calls.map(c => c[0] as string).join("\n");
+    expect(allLogs).toMatch(/concurrency=3/);
+  });
+
+  it("--concurrency 0 → clamped to 1, warning logged", async () => {
+    process.argv = ["node", "cli.ts", "--concurrency", "0"];
+    await main();
+    const allLogs = logSpy.mock.calls.map(c => c[0] as string).join("\n");
+    expect(allLogs).toMatch(/concurrency=1/);
+    const warns = warnSpy.mock.calls.map(c => c[0] as string).join("\n");
+    expect(warns).toMatch(/clamped to 1/);
+  });
+
+  it("--concurrency abc → NaN fallback to default=3, warning logged", async () => {
+    process.argv = ["node", "cli.ts", "--concurrency", "abc"];
+    await main();
+    const allLogs = logSpy.mock.calls.map(c => c[0] as string).join("\n");
+    expect(allLogs).toMatch(/concurrency=3/);
+    const warns = warnSpy.mock.calls.map(c => c[0] as string).join("\n");
+    expect(warns).toMatch(/not a valid number/);
+  });
+
+  it("--concurrency 25 → clamped to 20, warning logged", async () => {
+    process.argv = ["node", "cli.ts", "--concurrency", "25"];
+    await main();
+    const allLogs = logSpy.mock.calls.map(c => c[0] as string).join("\n");
+    expect(allLogs).toMatch(/concurrency=20/);
+    const warns = warnSpy.mock.calls.map(c => c[0] as string).join("\n");
+    expect(warns).toMatch(/clamped to 20/);
+  });
+});
 
 describe("cli scoresBySkill — multi-case same skill", () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;

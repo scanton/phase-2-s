@@ -12,9 +12,10 @@ import {
   extractSnippet,
   entryKey,
   searchCode,
+  clearIndexCache,
   MAX_CODE_CHARS,
   MAX_SNIPPET_LINES,
-  MIN_CODE_RAG_SCORE,
+  DEFAULT_CODE_RAG_MIN_SCORE,
   INDEXABLE_EXTENSIONS,
 } from "../../src/core/code-index.js";
 
@@ -315,6 +316,139 @@ describe("readCodeIndex", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Sprint 83 — Item 3: In-memory index cache
+// ---------------------------------------------------------------------------
+
+describe("readCodeIndex — in-memory cache", () => {
+  let dir: string;
+
+  const ENTRY = JSON.stringify({
+    path: "src/foo.ts",
+    hash: "deadbeef",
+    vector: [0.1, 0.2, 0.3],
+    ts: new Date().toISOString(),
+    model: "test-model",
+  });
+
+  beforeEach(async () => {
+    dir = await makeTempGitRepo();
+    clearIndexCache(); // start each test with a clean cache
+  });
+
+  afterEach(async () => {
+    clearIndexCache();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("cache hit: second call with same mtime returns equal entries (shallow clone, no re-read)", async () => {
+    await mkdir(join(dir, ".phase2s"), { recursive: true });
+    await writeFile(join(dir, ".phase2s/code-index.jsonl"), ENTRY + "\n");
+
+    const first = await readCodeIndex(dir);
+    const second = await readCodeIndex(dir);
+    // Returns a shallow clone each time — equal content, different reference
+    expect(first).toEqual(second);
+    expect(first).not.toBe(second);
+    expect(first).toHaveLength(1);
+    expect(first[0].path).toBe("src/foo.ts");
+  });
+
+  it("cache miss: after mtime changes, fresh read returns new content", async () => {
+    await mkdir(join(dir, ".phase2s"), { recursive: true });
+    const indexPath = join(dir, ".phase2s/code-index.jsonl");
+    await writeFile(indexPath, ENTRY + "\n");
+
+    const first = await readCodeIndex(dir);
+    expect(first).toHaveLength(1);
+
+    // Wait until the filesystem mtime actually advances before overwriting.
+    // A fixed sleep is flaky on fast machines where two writes land in the same
+    // millisecond.  Instead, poll stat() until mtimeMs increases.
+    const { stat } = await import("node:fs/promises");
+    const beforeMtime = (await stat(indexPath)).mtimeMs;
+    let elapsed = 0;
+    while (elapsed < 2000) {
+      await new Promise(res => setTimeout(res, 5));
+      elapsed += 5;
+      const nowMtime = (await stat(indexPath)).mtimeMs;
+      if (nowMtime > beforeMtime) break;
+    }
+    const ENTRY2 = JSON.stringify({
+      path: "src/bar.ts",
+      hash: "cafebabe",
+      vector: [0.4, 0.5, 0.6],
+      ts: new Date().toISOString(),
+      model: "test-model",
+    });
+    await writeFile(indexPath, ENTRY + "\n" + ENTRY2 + "\n");
+
+    const second = await readCodeIndex(dir);
+    expect(second).toHaveLength(2);
+    expect(second.map(e => e.path)).toContain("src/bar.ts");
+  });
+
+  it("clearIndexCache(cwd) removes only that cwd's entry", async () => {
+    // Set up two separate dirs
+    const dir2 = await makeTempGitRepo();
+    try {
+      await mkdir(join(dir, ".phase2s"), { recursive: true });
+      await mkdir(join(dir2, ".phase2s"), { recursive: true });
+      await writeFile(join(dir, ".phase2s/code-index.jsonl"), ENTRY + "\n");
+      await writeFile(join(dir2, ".phase2s/code-index.jsonl"), ENTRY + "\n");
+
+      // Populate both caches
+      const r1 = await readCodeIndex(dir);
+      const r2 = await readCodeIndex(dir2);
+      expect(r1).toEqual(await readCodeIndex(dir));   // hit — equal content
+      expect(r2).toEqual(await readCodeIndex(dir2));  // hit — equal content
+
+      // Clear only dir's cache
+      clearIndexCache(dir);
+
+      // dir2's cache is still intact (equal content)
+      expect(await readCodeIndex(dir2)).toEqual(r2);
+    } finally {
+      await rm(dir2, { recursive: true, force: true });
+    }
+  });
+
+  it("clearIndexCache() with no args clears all entries", async () => {
+    const dir2 = await makeTempGitRepo();
+    try {
+      await mkdir(join(dir, ".phase2s"), { recursive: true });
+      await mkdir(join(dir2, ".phase2s"), { recursive: true });
+      await writeFile(join(dir, ".phase2s/code-index.jsonl"), ENTRY + "\n");
+      await writeFile(join(dir2, ".phase2s/code-index.jsonl"), ENTRY + "\n");
+
+      const r1 = await readCodeIndex(dir);
+      const r2 = await readCodeIndex(dir2);
+
+      clearIndexCache(); // clear all
+
+      // Next reads are fresh (new array references)
+      const r1b = await readCodeIndex(dir);
+      const r2b = await readCodeIndex(dir2);
+      expect(r1b).not.toBe(r1);
+      expect(r2b).not.toBe(r2);
+    } finally {
+      await rm(dir2, { recursive: true, force: true });
+    }
+  });
+
+  it("ENOENT stat: returns [] and does NOT poison cache", async () => {
+    // No index file — stat throws ENOENT
+    const result = await readCodeIndex(dir);
+    expect(result).toEqual([]);
+
+    // Create the file after the failed read — should now succeed (not poisoned)
+    await mkdir(join(dir, ".phase2s"), { recursive: true });
+    await writeFile(join(dir, ".phase2s/code-index.jsonl"), ENTRY + "\n");
+    const result2 = await readCodeIndex(dir);
+    expect(result2).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // findTopKCode
 // ---------------------------------------------------------------------------
 
@@ -464,7 +598,7 @@ describe("searchCode", () => {
     expect(results).toEqual([]);
   });
 
-  it("returns [] when all results score below MIN_CODE_RAG_SCORE", async () => {
+  it("returns [] when all results score below DEFAULT_CODE_RAG_MIN_SCORE", async () => {
     // Build an index with content that will have near-zero cosine similarity
     // with our query vector [1, 0, 0] in a 3-d space.
     await writeFile(join(dir, "foo.ts"), "export const x = 1;");
@@ -473,7 +607,7 @@ describe("searchCode", () => {
     await syncCodebase(dir, fakeEmbed, "test-model");
 
     // Use a query vector that will yield very low scores against the indexed content.
-    // MIN_CODE_RAG_SCORE is 0.25; we use all-zeros which gives cosine = 0.
+    // DEFAULT_CODE_RAG_MIN_SCORE is 0.25; we use all-zeros which gives cosine = 0.
     const results = await searchCode(dir, [0, 0, 0], 3);
     expect(results).toEqual([]);
   });
@@ -500,7 +634,7 @@ describe("searchCode", () => {
 
     const results = await searchCode(dir, QUERY_VEC, 3);
     // At least one result above threshold (similarity = 1.0 → well above 0.25)
-    const above = results.filter(r => r.score >= MIN_CODE_RAG_SCORE);
+    const above = results.filter(r => r.score >= DEFAULT_CODE_RAG_MIN_SCORE);
     expect(results.length).toBeGreaterThan(0);
     expect(above.length).toBeGreaterThan(0);
     // All returned results have required fields

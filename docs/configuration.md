@@ -80,6 +80,12 @@ provider: codex-cli
 # Set to false to disable; also available as the --no-rag CLI flag (per-run only).
 # codeRag: false
 
+# Minimum cosine similarity score for code-RAG injection (0–1). Default: 0.25.
+# Results below this threshold are dropped as semantically too distant.
+# Raise to reduce false-positive injections (e.g. 0.4 for tighter relevance).
+# Lower toward 0 to cast a wider net; set to 0 to include all indexed chunks.
+# codeRagMinScore: 0.25
+
 # OpenRouter API key (openrouter provider only)
 # Falls back to OPENROUTER_API_KEY environment variable.
 # Get your key at https://openrouter.ai/keys

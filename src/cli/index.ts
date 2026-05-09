@@ -14,7 +14,8 @@ import { disposeBrowser } from "../tools/browser.js";
 import { Conversation } from "../core/conversation.js";
 import { loadLearnings, loadRelevantLearnings, formatLearningsForPrompt } from "../core/memory.js";
 import { generateEmbedding } from "../core/embeddings.js";
-import { searchCode } from "../core/code-index.js";
+import { searchCode, DEFAULT_CODE_RAG_MIN_SCORE } from "../core/code-index.js";
+import { isTrivialInput } from "../core/rag-utils.js";
 import { buildCodeContextBlock } from "../core/code-context.js";
 import { loadAllSkills } from "../skills/index.js";
 import { substituteInputs, getUnfilledInputKeys, extractAskTokens, substituteAskValues, stripAskTokens } from "../skills/template.js";
@@ -1798,7 +1799,7 @@ function checkAnthropicKey(config: Config): boolean {
  *   - config.codeRag === false (--no-rag flag)
  *   - ollamaBaseUrl is not configured
  *   - Ollama is unreachable (embedding returns [])
- *   - No results score above MIN_CODE_RAG_SCORE
+ *   - No results score above DEFAULT_CODE_RAG_MIN_SCORE (or config.codeRagMinScore)
  */
 export async function refreshAgentContext(
   agent: Agent,
@@ -1807,6 +1808,22 @@ export async function refreshAgentContext(
 ): Promise<void> {
   const ollamaBaseUrl = config.ollamaBaseUrl;
   const ollamaEmbedModel = config.ollamaEmbedModel ?? "gemma4:latest";
+
+  // Trivial input (short UI responses, colon commands): skip embedding and code-RAG.
+  // Learnings still refresh via heuristic sort ([] forces heuristic fallback in
+  // loadRelevantLearnings — no embed call made). Existing code context is preserved.
+  if (isTrivialInput(queryText)) {
+    const turnLearnings = await loadRelevantLearnings(
+      process.cwd(), queryText, config, 8, [],
+    );
+    const trivialStr = formatLearningsForPrompt(turnLearnings, { skipCharCap: false });
+    if (trivialStr) {
+      agent.refreshLearnings(trivialStr);
+      log.dim(`↻ learnings refreshed (${turnLearnings.length} ${turnLearnings.length === 1 ? "entry" : "entries"})`);
+    }
+    log.dim("↻ code context: skipped (trivial input)");
+    return;
+  }
 
   // Compute embedding once — shared by learnings lookup and code-RAG
   let queryVector: number[] | undefined;
@@ -1844,6 +1861,7 @@ export async function refreshAgentContext(
       process.cwd(),
       queryVector,
       3,
+      config.codeRagMinScore ?? DEFAULT_CODE_RAG_MIN_SCORE,
     );
     const block = buildCodeContextBlock(results);
     agent.refreshCodeContext(block);
