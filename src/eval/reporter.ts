@@ -1,5 +1,4 @@
-import { mkdirSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { RunnerResult } from "./runner.js";
@@ -21,7 +20,7 @@ export async function writeEvalResults(
   judgeResults: JudgeResult[],
   outputDir: string = DEFAULT_OUTPUT_DIR,
 ): Promise<void> {
-  mkdirSync(outputDir, { recursive: true });
+  await mkdir(outputDir, { recursive: true });
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const ts = Date.now();

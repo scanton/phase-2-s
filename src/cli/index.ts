@@ -367,10 +367,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
                 hasOutput = true;
               },
         });
-        if (!cmdOpts.quiet && !hasOutput) {
-          process.stdout.write(result);
-        }
-        if (cmdOpts.quiet) {
+        if (cmdOpts.quiet || !hasOutput) {
           process.stdout.write(result);
         }
         process.stdout.write("\n");
