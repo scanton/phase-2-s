@@ -283,6 +283,68 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       await oneShotMode(config, prompt, cmdOpts.reasoningEffort as "high" | "low" | "default" | undefined);
     });
 
+  // Autonomous task mode — chains tools aggressively, auto-verifies after writes
+  program
+    .command("task <prompt>")
+    .description("Execute an autonomous multi-step task: plan, chain tools, auto-verify, stop on doom-loop")
+    .option("--verify <command>", "Shell command to run after file writes to verify changes (overrides config.verifyCommand)")
+    .action(async (prompt: string, cmdOpts: { verify?: string }) => {
+      const opts = program.opts();
+      let config: Config;
+      try {
+        config = await loadConfig({
+          provider: opts.provider,
+          model: opts.model,
+          systemPrompt: opts.system,
+        });
+      } catch (err) {
+        console.error(chalk.red(normalizeConfigError(err)));
+        process.exit(1);
+      }
+
+      // Load AGENTS.md for context (same as one-shot mode)
+      let agentsMdBlock: string | undefined;
+      try {
+        const { loadAgentsMd, formatAgentsMdBlock } = await import("../core/agents-md.js");
+        const agentsMdContent = await loadAgentsMd(process.cwd());
+        agentsMdBlock = agentsMdContent ? formatAgentsMdBlock(agentsMdContent) : undefined;
+      } catch {
+        // Non-critical — proceed without AGENTS.md
+      }
+
+      const agent = new Agent({ config, agentsMdBlock });
+
+      // Inject learnings + code context (shared embedding, one embed call for both)
+      await refreshAgentContext(agent, prompt, config);
+
+      // Expand @file and @url attachment tokens
+      const { expandAttachments } = await import("./file-attachment.js");
+      const { cleanLine, preamble } = await expandAttachments(prompt, process.cwd());
+      const expandedPrompt = preamble ? preamble + "\n" + cleanLine : cleanLine;
+
+      console.log(chalk.dim(`Running task: ${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}`));
+      console.log();
+
+      let hasOutput = false;
+      try {
+        const result = await agent.run(expandedPrompt, {
+          taskMode: true,
+          verifyCommand: cmdOpts.verify ?? config.verifyCommand,
+          onDelta: (chunk) => {
+            process.stdout.write(chunk);
+            hasOutput = true;
+          },
+        });
+        if (!hasOutput) {
+          process.stdout.write(result);
+        }
+        process.stdout.write("\n");
+      } catch (err) {
+        log.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
   // MCP server — exposes all Phase2S skills as Claude Code tools
   program
     .command("mcp")
@@ -781,7 +843,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template" -- "\$cur"))
     return
   fi
 
@@ -816,6 +878,7 @@ _phase2s() {
   subcommands=(
     'chat:Start an interactive REPL session'
     'run:Run a single prompt and exit'
+    'task:Execute an autonomous multi-step task with tool chaining and auto-verify'
     'skills:List available skills'
     'mcp:Start as an MCP server for Claude Code'
     'goal:Run a spec file autonomously (dark factory)'

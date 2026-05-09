@@ -14,6 +14,18 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 84 notes (v1.58.0, 2026-05-09)
+
+Sprint 84 ships the Agentic Tool Loop — `phase2s task`, doom-loop guard, auto-verify injection, and `phase2s__task` MCP tool. All 5 items closed with no carry-overs.
+
+- [ ] **Doom-loop threshold tuning** — Current thresholds are 2nd identical call → reflection nudge, 3rd → early return. If real tasks hit false positives (e.g. two legitimate writes of the same content), expose `doomLoopThreshold` as a config knob. **Priority:** P4
+
+- [ ] **Task mode streaming output** — `phase2s task` currently prints delta chunks like the REPL. A `--quiet` flag that suppresses deltas and prints only the final result (+ verify output) would help CI/script usage. **Priority:** P4
+
+- [ ] **Auto-verify cooldown config** — Verify fires once per LLM tool-call turn. For tasks with many sequential writes, per-write verification might be preferable. Consider `verifyOnEveryWrite: boolean` config option. **Priority:** P4
+
+---
+
 ## Backlog — Post-Sprint 83 notes (v1.57.0, 2026-05-08)
 
 Sprint 83 ships Code-RAG Quality, Eval Parallelization, and Performance improvements. All 5 items + OV6 judge concurrency closed with no carry-overs.

@@ -245,10 +245,11 @@ describe("Agent integration", () => {
     expect(fakeClient.chat.completions.create).toHaveBeenCalledTimes(2);
   });
 
-  it("returns max-turns sentinel when LLM keeps calling tools indefinitely", async () => {
-    // All responses are tool calls — the agent never gets a terminal text response
-    const infiniteResponses = Array.from({ length: 10 }, () =>
-      makeToolCallChunks("echo", { text: "loop" })
+  it("returns max-turns sentinel when LLM keeps calling tools with varied args (no doom-loop trigger)", async () => {
+    // All responses are tool calls with DIFFERENT args each time — doom-loop guard won't fire
+    // because each fingerprint (sha256 of args) is unique. Only max-turns stops the loop.
+    const infiniteResponses = Array.from({ length: 10 }, (_, i) =>
+      makeToolCallChunks("echo", { text: `loop-${i}` })  // unique arg each turn
     );
     const fakeClient = makeStreamingFakeClient(infiniteResponses);
     const provider = new OpenAIProvider(minimalConfig, fakeClient);
@@ -264,6 +265,30 @@ describe("Agent integration", () => {
     expect(result).toMatch(/Agent reached maximum turns/);
     // Should have stopped at maxTurns (3), not run indefinitely
     expect(fakeClient.chat.completions.create).toHaveBeenCalledTimes(3);
+  });
+
+  it("doom-loop guard exits before maxTurns when same tool+args repeated 3x", async () => {
+    // Same tool call 10 times with identical args — doom-loop guard fires at 3rd repetition.
+    // This is the preferred exit path: more informative than maxTurns sentinel.
+    const infiniteResponses = Array.from({ length: 10 }, () =>
+      makeToolCallChunks("echo", { text: "stuck" })  // identical each time
+    );
+    const fakeClient = makeStreamingFakeClient(infiniteResponses);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+
+    const agent = new Agent({
+      config: { ...minimalConfig, maxTurns: 10 },  // high maxTurns; doom-loop fires first
+      provider,
+      tools: makeStubRegistry(),
+      systemPrompt: "You are a test assistant.",
+    });
+
+    const result = await agent.run("Keep calling the same tool");
+    // Doom-loop guard returns a more specific stuck message
+    expect(result).toContain("stuck");
+    expect(result).not.toMatch(/Agent reached maximum turns/);
+    // Only 3 API calls before doom-loop exits, not 10
+    expect((fakeClient.chat.completions.create as ReturnType<typeof vi.fn>).mock.calls.length).toBeLessThanOrEqual(3);
   });
 
   it("handles finish_reason: length by returning partial text with truncation notice", async () => {
