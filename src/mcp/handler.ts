@@ -11,9 +11,12 @@ import { Conversation } from "../core/conversation.js";
 import { substituteInputs, stripAskTokens } from "../skills/template.js";
 import { readRawState, writeRawState, clearRawState } from "../core/state.js";
 import { runGoal } from "../cli/goal.js";
+import { conductorGenSpec } from "../cli/conductor-prompt.js";
 import { parseRunLog, buildRunReport, formatRunReport } from "../cli/report.js";
+import { parseSpec } from "../core/spec-parser.js";
+import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-graph.js";
 import type { Skill } from "../skills/types.js";
-import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, REPORT_TOOL, TASK_TOOL, MCP_SERVER_VERSION } from "./tools.js";
+import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, REPORT_TOOL, TASK_TOOL, MCP_SERVER_VERSION } from "./tools.js";
 
 // ---------------------------------------------------------------------------
 // Types (re-exported for handler consumers)
@@ -88,7 +91,7 @@ export async function handleRequest(
     return {
       jsonrpc: "2.0",
       id: request.id,
-      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, REPORT_TOOL, TASK_TOOL] },
+      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, REPORT_TOOL, TASK_TOOL] },
     };
   }
 
@@ -144,6 +147,108 @@ export async function handleRequest(
           jsonrpc: "2.0",
           id: request.id,
           result: { content: [{ type: "text", text: lines.join("\n") }] },
+        };
+      } catch (err) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32603,
+            message: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Conduct tool — conductor: spec-from-goal + orchestrator (Sprint 86).
+    // -----------------------------------------------------------------------
+    if (toolName === "phase2s__conduct") {
+      const goal = typeof args["goal"] === "string" ? args["goal"] : "";
+      if (!goal) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: { code: -32602, message: "phase2s__conduct: goal is required" },
+        };
+      }
+
+      const model = typeof args["model"] === "string" ? args["model"] : undefined;
+      const maxAttempts = typeof args["maxAttempts"] === "number" ? args["maxAttempts"] : 3;
+      const dryRun = typeof args["dryRun"] === "boolean" ? args["dryRun"] : false;
+      const workers = typeof args["workers"] === "number" ? args["workers"] : undefined;
+
+      try {
+        const config = preloadedConfig ?? await loadConfig();
+        const { specPath, specContent } = await conductorGenSpec(goal, config, { model, cwd });
+
+        if (!specPath) {
+          return {
+            jsonrpc: "2.0",
+            id: request.id,
+            error: { code: -32603, message: "phase2s__conduct: spec generation failed (LLM timeout or invalid output)" },
+          };
+        }
+
+        const spec = parseSpec(specContent);
+        const dagResult = spec.decomposition.length >= 2
+          ? buildDependencyGraph(spec.decomposition)
+          : null;
+        const dagPreview = dagResult
+          ? formatExecutionLevels(dagResult, spec.decomposition)
+          : `${spec.decomposition.length} subtask(s)`;
+
+        if (dryRun) {
+          return {
+            jsonrpc: "2.0",
+            id: request.id,
+            result: {
+              content: [{
+                type: "text",
+                text: [
+                  `Conductor spec generated (dry-run)`,
+                  `Spec: ${specPath}`,
+                  ``,
+                  dagPreview,
+                  ``,
+                  `Full spec content:`,
+                  specContent,
+                ].join("\n"),
+              }],
+            },
+          };
+        }
+
+        const result = await runGoal(specPath, {
+          maxAttempts: String(maxAttempts),
+          orchestrator: true,
+          workers,
+          cwd,
+          quiet: true, // non-interactive MCP mode
+        });
+
+        const passCount = Object.values(result.criteriaResults).filter(Boolean).length;
+        const totalCount = Object.keys(result.criteriaResults).length;
+        const status = result.success ? "success" : "failed";
+
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: {
+            content: [{
+              type: "text",
+              text: [
+                `Conductor run: ${status}`,
+                `Goal: ${goal}`,
+                `Spec: ${specPath}`,
+                `Attempts: ${result.attempts}`,
+                totalCount > 0 ? `Criteria: ${passCount}/${totalCount} passed` : "Criteria: (none defined)",
+                `Run log (absolute): ${result.runLogPath}`,
+                ``,
+                dagPreview,
+              ].join("\n"),
+            }],
+          },
         };
       } catch (err) {
         return {

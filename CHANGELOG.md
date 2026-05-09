@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.60.0 — 2026-05-09
+
+Sprint 86 — Conductor: `phase2s conduct "<goal>"` collapses spec-writing into a single command.
+
+### Added
+
+- **`phase2s conduct "<goal>"` command** — Natural-language front-door to the multi-agent orchestrator. Calls an LLM to generate a role-annotated 5-pillar spec (architect → implementer(s) → reviewer), validates it with `lintSpec()`, and delegates to the existing `runGoal()` executor with `--orchestrator`. One command replaces three steps (write spec → lint → goal run).
+
+- **`conductorGenSpec(goal, config, options)`** (`src/cli/conductor-prompt.ts`) — Core spec generator. Calls LLM via `provider.chatStream`, validates output with `lintSpec(parseSpec(spec))`, retries once on lint failure, saves to `.phase2s/specs/<slug>-<ts>.md`. Returns `{ specPath: "", specContent: "" }` sentinel on failure (no throws). AbortController fires after 5 minutes.
+
+- **`buildConductorContext(cwd?)`** — Gathers git branch, recent log, and diff stat for the user's project directory. Capped at 2000 bytes. Passed to the LLM as codebase context so the conductor understands the current state of the repo.
+
+- **`CONDUCTOR_PROMPT`** — Role-annotated 5-pillar spec template with strict heading requirements. Uses single-pass regex substitution to prevent prompt injection via `{goal}` or `{codebaseContext}` placeholders in user input.
+
+- **`phase2s__conduct` MCP tool** — Exposes the conductor as an MCP tool for Claude Code integration. Accepts `goal`, `model`, `maxAttempts`, `workers`, `dryRun`. `dryRun: true` returns the generated spec + DAG preview without running the orchestrator.
+
+- **`GoalOptions.cwd` and `GoalOptions.quiet`** — `runGoal()` now accepts an optional working directory (passed to all path resolution) and a quiet flag (suppresses per-turn streaming). Both are used by the MCP conductor handler.
+
+- **`--yes` / `-y` flag for `phase2s conduct`** — Skips the TTY confirmation prompt. Non-TTY environments skip automatically. Used in MCP mode and tests.
+
+- **`--dry-run`, `--model`, `--workers`, `--max-attempts`, `--quiet`, `--output` flags for `phase2s conduct`** — Full option parity with `phase2s goal --orchestrator`.
+
+- **Shell completions for `conduct` subcommand** — `phase2s completion bash/zsh` now includes `conduct` with all its flags, plus the missing `task` flags from Sprint 85 (`--quiet`, `--timeout`, `--output`, `--doom-loop-threshold`).
+
+### Changed
+
+- **`runGoal()` signature** — `GoalOptions` extended with `cwd?: string` and `quiet?: boolean`. Backward-compatible; existing callers pass neither and behavior is unchanged.
+
+- **Single-pass template substitution** — `conductorGenSpec` uses a regex replace with a substitutions map instead of chained `.replace()` calls. Prevents recursive expansion if the goal string contains a placeholder like `{codebaseContext}`.
+
+- **NaN guard for CLI numeric flags** — `parseInt(val, 10) || undefined` pattern applied to `--max-attempts` and `--workers` in the `conduct` command action. Prevents NaN from propagating to `runGoal` if a user passes a non-numeric value.
+
 ## v1.59.0 — 2026-05-09
 
 Sprint 85 — Hardening: configurable thresholds, per-write verification, CLI task flags, and observability.

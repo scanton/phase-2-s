@@ -852,6 +852,35 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       }
     });
 
+  // Conductor — spec-from-goal + orchestrator (Sprint 86)
+  program
+    .command("conduct <goal>")
+    .description("Generate a role-annotated spec from a natural language goal and run the orchestrator")
+    .option("--dry-run", "Generate spec and print DAG preview — do not run")
+    .option("--model <model>", "Override model for spec generation (default: smart_model)")
+    .option("--workers <n>", "Max parallel workers per level (default: 4)")
+    .option("--max-attempts <n>", "Max retry loops (default: 3)", "3")
+    .option("--quiet", "Suppress verbose output from conductor and goal executor")
+    .option("--output <path>", "Write final summary JSON to this path")
+    .option("-y, --yes", "Skip the Run? confirmation even in interactive mode")
+    .action(async (goal: string, cmdOpts: { dryRun?: boolean; model?: string; workers?: string; maxAttempts?: string; quiet?: boolean; output?: string; yes?: boolean }) => {
+      const { runConduct } = await import("./conduct.js");
+      try {
+        await runConduct(goal, {
+          dryRun: cmdOpts.dryRun,
+          model: cmdOpts.model,
+          workers: cmdOpts.workers ? (parseInt(cmdOpts.workers, 10) || undefined) : undefined,
+          maxAttempts: cmdOpts.maxAttempts ? (parseInt(cmdOpts.maxAttempts, 10) || undefined) : undefined,
+          quiet: cmdOpts.quiet,
+          output: cmdOpts.output,
+          yes: cmdOpts.yes,
+        }, process.cwd());
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")
@@ -888,7 +917,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct" -- "\$cur"))
     return
   fi
 
@@ -900,6 +929,15 @@ _phase2s_complete() {
         skills=$(phase2s skills --json 2>/dev/null | grep -o '"name": "[^"]*"' | sed 's/"name": "\\(.*\\)"/\\/\\1/')
         COMPREPLY=($(compgen -W "\$skills" -- "\$cur"))
       fi
+      ;;
+    goal)
+      COMPREPLY=($(compgen -W "--max-attempts --resume --review-before-run --dry-run --parallel --sequential --orchestrator --workers --dashboard --clean --judge --reasoning-effort --quiet" -- "\$cur"))
+      ;;
+    task)
+      COMPREPLY=($(compgen -W "--quiet --timeout --output --doom-loop-threshold" -- "\$cur"))
+      ;;
+    conduct)
+      COMPREPLY=($(compgen -W "--dry-run --model --workers --max-attempts --quiet --output --yes" -- "\$cur"))
       ;;
     completion)
       COMPREPLY=($(compgen -W "bash zsh" -- "\$cur"))
@@ -927,6 +965,7 @@ _phase2s() {
     'skills:List available skills'
     'mcp:Start as an MCP server for Claude Code'
     'goal:Run a spec file autonomously (dark factory)'
+    'conduct:Generate a spec from a natural language goal and run the orchestrator'
     'report:Display a human-readable summary of a run log'
     'init:Interactive setup wizard — configure .phase2s.yaml'
     'upgrade:Check for a newer version and offer to install it'
@@ -953,6 +992,39 @@ _phase2s() {
         skills=(\${(f)"\$(phase2s skills --json 2>/dev/null | grep -o '"'"'\"name\": \"[^\"]*\"'"'"' | sed 's/\"name\": \"\\(.*\\)\"/\\/\\1/')"})
         compadd -a skills
       fi
+      ;;
+    goal)
+      _arguments \
+        '--max-attempts[Max retry loops]:n' \
+        '--resume[Resume from last checkpoint]' \
+        '--review-before-run[Adversarial review before execution]' \
+        '--dry-run[Print decomposition without running]' \
+        '--parallel[Enable parallel execution]' \
+        '--sequential[Force sequential execution]' \
+        '--orchestrator[Enable multi-agent orchestrator mode]' \
+        '--workers[Max concurrent workers]:n' \
+        '--dashboard[Show tmux dashboard]' \
+        '--clean[Remove stale worktrees]' \
+        '--judge[Run eval judge after completion]' \
+        '--reasoning-effort[Override reasoning effort]:level:(high low default)' \
+        '--quiet[Suppress verbose output]'
+      ;;
+    task)
+      _arguments \
+        '--quiet[Suppress verbose output]' \
+        '--timeout[Task timeout in ms]:ms' \
+        '--output[Write output to file]:path:_files' \
+        '--doom-loop-threshold[Doom-loop detection threshold]:n'
+      ;;
+    conduct)
+      _arguments \
+        '--dry-run[Generate spec only, do not run]' \
+        '--model[Override spec generation model]:model' \
+        '--workers[Max parallel workers]:n' \
+        '--max-attempts[Max retry loops]:n' \
+        '--quiet[Suppress verbose output]' \
+        '--output[Write summary JSON to file]:path:_files' \
+        '--yes[Skip confirmation prompt]'
       ;;
     completion)
       local -a shells
