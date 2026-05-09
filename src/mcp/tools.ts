@@ -234,6 +234,50 @@ export const TASK_TOOL: MCPTool = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Conduct tool descriptor (Sprint 86)
+// ---------------------------------------------------------------------------
+
+/**
+ * MCP tool descriptor for the conductor: spec-from-goal + orchestrator.
+ *
+ * LONG-RUNNING: spec generation + full orchestration can take 20+ minutes.
+ * Non-interactive: no confirmation prompt in MCP mode.
+ */
+export const CONDUCT_TOOL: MCPTool = {
+  name: "phase2s__conduct",
+  description:
+    "Generate a role-annotated DAG spec from a natural language goal and run it " +
+    "through the multi-agent orchestrator. One call = spec generation + full " +
+    "orchestration. LONG-RUNNING: may take 20+ minutes.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      goal: {
+        type: "string",
+        description: "Natural language goal (e.g. 'add rate limiting to the API').",
+      },
+      model: {
+        type: "string",
+        description: "Override model for spec generation (default: config.smart_model).",
+      },
+      maxAttempts: {
+        type: "number",
+        description: "Max retry loops for the orchestrator (default: 3).",
+      },
+      workers: {
+        type: "number",
+        description: "Max parallel workers per dependency level (default: orchestrator setting).",
+      },
+      dryRun: {
+        type: "boolean",
+        description: "Generate spec and return it without running the orchestrator.",
+      },
+    },
+    required: ["goal"],
+  },
+};
+
 export const REPORT_TOOL: MCPTool = {
   name: "phase2s__report",
   description:

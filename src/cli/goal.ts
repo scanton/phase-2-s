@@ -99,6 +99,18 @@ export interface GoalOptions {
   dashboard?: boolean;
   /** Remove stale worktrees before starting. */
   clean?: boolean;
+  /**
+   * Working directory for spec file resolution and learnings lookup.
+   * Defaults to process.cwd() when unset. Set by the conductor so the
+   * goal executor operates relative to the invocation directory rather than
+   * the phase2s install path.
+   */
+  cwd?: string;
+  /**
+   * Suppress verbose status output (goal banner, parallel mode messages).
+   * Set by the conductor when running non-interactively.
+   */
+  quiet?: boolean;
   /** Run spec eval judge after the run and emit eval_judged to the log. */
   judge?: boolean;
   /**
@@ -134,7 +146,7 @@ export interface GoalResult {
 }
 
 export async function runGoal(specFile: string, options: GoalOptions = {}): Promise<GoalResult> {
-  const specPath = resolve(process.cwd(), specFile);
+  const specPath = resolve(options.cwd ?? process.cwd(), specFile);
   // State and run logs are stored relative to the spec file directory, not
   // invocation cwd. This keeps logs next to the spec regardless of where
   // `phase2s goal` is invoked from.
@@ -153,7 +165,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   const resume = !!options.resume;
 
   // Capture HEAD SHA before any agent execution — used for --judge diff boundary
-  const cwd = process.cwd();
+  const cwd = options.cwd ?? process.cwd();
   const baseRef = options.judge ? getHeadSha(cwd) : "";
 
   const startMs = Date.now();
@@ -180,7 +192,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
   // Clean stale worktrees if requested
   if (options.clean) {
-    cleanAllWorktrees(process.cwd());
+    cleanAllWorktrees(cwd);
   }
 
   // Dry-run: print the decomposition tree and exit immediately — zero LLM calls,
@@ -241,20 +253,22 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
     levels: depResult?.levels.length,
   });
 
-  console.log(`\nGoal executor: ${spec.title}`);
-  console.log(`Eval command: ${spec.evalCommand}`);
-  console.log(`Sub-tasks: ${spec.decomposition.length}`);
-  console.log(`Acceptance criteria: ${spec.acceptanceCriteria.length}`);
-  console.log(`Max attempts: ${maxAttempts}`);
-  if (useParallel && depResult) {
-    console.log(chalk.cyan(`Mode: parallel (${depResult.levels.length} levels, max ${maxWorkers} workers)`));
-  }
-  if (resume) {
-    if (state.orchestrator) {
-      console.log(`Resuming: ${state.orchestrator.completedJobs.length} orchestrator jobs already checkpointed`);
-    } else {
-      const doneCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
-      console.log(`Resuming: ${doneCount}/${spec.decomposition.length} sub-tasks already completed`);
+  if (!options.quiet) {
+    console.log(`\nGoal executor: ${spec.title}`);
+    console.log(`Eval command: ${spec.evalCommand}`);
+    console.log(`Sub-tasks: ${spec.decomposition.length}`);
+    console.log(`Acceptance criteria: ${spec.acceptanceCriteria.length}`);
+    console.log(`Max attempts: ${maxAttempts}`);
+    if (useParallel && depResult) {
+      console.log(chalk.cyan(`Mode: parallel (${depResult.levels.length} levels, max ${maxWorkers} workers)`));
+    }
+    if (resume) {
+      if (state.orchestrator) {
+        console.log(`Resuming: ${state.orchestrator.completedJobs.length} orchestrator jobs already checkpointed`);
+      } else {
+        const doneCount = Object.values(state.subTaskResults).filter((r) => r.status === "passed").length;
+        console.log(`Resuming: ${doneCount}/${spec.decomposition.length} sub-tasks already completed`);
+      }
     }
   }
 
@@ -282,7 +296,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   }
 
   // Set up agent — semantic learnings lookup using goal title as query
-  const learningsList = await loadRelevantLearnings(process.cwd(), spec.title, config);
+  const learningsList = await loadRelevantLearnings(cwd, spec.title, config);
   const learningsStr = formatLearningsForPrompt(learningsList, { skipCharCap: config.ollamaBaseUrl !== undefined });
 
   // Load skills to get satori + adversarial templates and settings
@@ -518,6 +532,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
           satoriModel: effectiveSatoriModel,
           revisedSubtasks,
           subsetToRun,
+          quiet: options.quiet,
         });
       } catch (err: unknown) {
         if (err instanceof RateLimitError) {

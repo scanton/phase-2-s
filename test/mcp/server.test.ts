@@ -152,8 +152,8 @@ describe("MCP server — protocol compliance", () => {
 
     expect(response.error).toBeUndefined();
     const result = response.result as { tools: unknown[] };
-    // tools/list now includes skill tools + 3 state tools + 1 goal tool + 1 report tool + 1 task tool
-    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length + 6);
+    // tools/list now includes skill tools + 3 state tools + 1 goal tool + 1 conduct tool + 1 report tool + 1 task tool
+    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length + 7);
   });
 
   it("tools/list: tool names use phase2s__ prefix and underscore convention", async () => {

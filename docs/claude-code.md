@@ -70,6 +70,8 @@ Phase2S is running as an MCP server. Use its tools proactively:
 - For engineering plan review, call `phase2s__plan_review`.
 - For scope ambiguity, call `phase2s__scope_review`.
 - For code quality checks, call `phase2s__health`.
+- To generate a spec + run the goal executor from a natural-language goal, call
+  `phase2s__conduct` with the goal as `prompt`.
 ```
 
 This tells Claude to use `phase2s__adversarial` automatically when it writes a plan, without you having to ask.
@@ -121,6 +123,7 @@ Once Phase2S is running as an MCP server, Claude Code gets a tool for every Phas
 | Phase2S skill | Claude Code tool name |
 |---|---|
 | `phase2s goal` | `phase2s__goal` |
+| `phase2s conduct` | `phase2s__conduct` |
 | `phase2s report` | `phase2s__report` |
 | `/adversarial` | `phase2s__adversarial` |
 | `/plan-review` | `phase2s__plan_review` |

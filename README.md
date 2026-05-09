@@ -416,6 +416,48 @@ phase2s report .phase2s/runs/2026-04-05-goal-abc123.jsonl
 
 Shows sub-task timeline, attempt counts, criteria verdicts, and total duration.
 
+**One-command conductor — spec + orchestration in a single step:**
+
+```bash
+# Skip spec writing entirely — describe what you want in plain English
+phase2s conduct "add per-user rate limiting to the API"
+```
+
+`phase2s conduct` generates a role-annotated multi-agent spec from your goal, previews the dependency graph, confirms with you, then hands off to the orchestrator — all in one command.
+
+```bash
+# Preview the spec and DAG without running anything
+phase2s conduct "add per-user rate limiting" --dry-run
+
+# Skip the confirmation prompt
+phase2s conduct "add caching to the data layer" --yes
+
+# Use a smarter model for spec generation
+phase2s conduct "refactor auth module" --model gpt-4o
+
+# Save the final summary as JSON
+phase2s conduct "add search indexing" --output .phase2s/runs/search-summary.json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Generate spec and show DAG preview only |
+| `--model <model>` | Override model for spec generation (default: `smart_model`) |
+| `--workers <n>` | Max parallel workers per dependency level |
+| `--max-attempts <n>` | Max retry loops for the orchestrator (default: 3) |
+| `--quiet` | Suppress verbose progress output |
+| `--output <path>` | Write final summary JSON to this path |
+| `-y, --yes` | Skip the "▶ Run? [y/N]" confirmation |
+
+The generated spec is saved to `.phase2s/specs/` so you can review, edit, or reuse it with `phase2s goal`.
+
+**Via MCP** — Claude Code can run the full conductor without leaving a conversation:
+
+```
+phase2s__conduct({ goal: "add rate limiting to the API" })
+phase2s__conduct({ goal: "refactor the auth module", dryRun: true })
+```
+
 ### MCP Integration
 
 Phase2S runs as an MCP server, exposing all skills as Claude Code tools. [Setup guide →](docs/claude-code.md)
