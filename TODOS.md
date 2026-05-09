@@ -20,7 +20,7 @@ Sprint 85 ships Task Mode Hardening — all 9 items from the Sprint 85 design do
 
 - [ ] **Shell completions for new `task` flags** — Sprint 85 adds `--quiet`, `--timeout`, `--output`, `--doom-loop-threshold` to `phase2s task`. The existing `phase2s completion bash/zsh` script doesn't suggest these. Update completions to include them. **Priority:** P4
 
-- [ ] **Document Sprint 85 config fields in README** — Three new `.phase2s.yaml` fields land in v1.59.0: `doomLoopThreshold`, `verifyOnEveryWrite`, `trivialInputMinWords`. Four new `phase2s task` CLI flags: `--quiet`, `--timeout`, `--output`, `--doom-loop-threshold`. Add all to the README config reference and CLI reference sections. **Priority:** P3
+- [x] **Document Sprint 85 config fields in README** — Three new `.phase2s.yaml` fields land in v1.59.0: `doomLoopThreshold`, `verifyOnEveryWrite`, `trivialInputMinWords`. Four new `phase2s task` CLI flags: `--quiet`, `--timeout`, `--output`, `--doom-loop-threshold`. **Completed: v1.59.0 (2026-05-09)** — README "Task mode tuning" section added by commit `ebad335`.
 
 ---
 
