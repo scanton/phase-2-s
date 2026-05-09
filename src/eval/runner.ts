@@ -143,7 +143,51 @@ export async function runEvalCase(
   }
 }
 
-export async function runAllEvals(config: Config): Promise<RunnerResult[]> {
+// ---------------------------------------------------------------------------
+// Concurrency utility
+// ---------------------------------------------------------------------------
+
+/**
+ * Run an array of async tasks with a maximum concurrency cap.
+ *
+ * Result order matches input task order (not completion order).
+ * Propagates the first rejection encountered.
+ *
+ * @param tasks  Array of zero-argument async functions
+ * @param limit  Maximum number of in-flight tasks at once (>= 1)
+ */
+export async function runWithConcurrency<T>(
+  tasks: Array<() => Promise<T>>,
+  limit: number,
+): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let nextIndex = 0; // safe — JS is single-threaded
+
+  async function worker(): Promise<void> {
+    while (nextIndex < tasks.length) {
+      const idx = nextIndex++;
+      results[idx] = await tasks[idx]();
+    }
+  }
+
+  const workerCount = Math.min(limit, tasks.length);
+  if (workerCount === 0) return results;
+  const workers = Array.from({ length: workerCount }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Options for runAllEvals
+// ---------------------------------------------------------------------------
+
+export interface RunEvalsOptions {
+  /** Maximum number of evals to run in parallel. Default: 1 (sequential). */
+  concurrency?: number;
+}
+
+export async function runAllEvals(config: Config, opts: RunEvalsOptions = {}): Promise<RunnerResult[]> {
+  const concurrency = Math.max(1, opts.concurrency ?? 1);
   const evalDir = join(process.cwd(), "eval");
 
   let files: string[];
@@ -161,7 +205,9 @@ export async function runAllEvals(config: Config): Promise<RunnerResult[]> {
   }
 
   const skills = await loadAllSkills();
-  const results: RunnerResult[] = [];
+
+  // Parse all eval files first (sequentially, cheap I/O)
+  const cases: EvalCase[] = [];
   for (const file of files) {
     let ec: EvalCase | null = null;
     try {
@@ -172,8 +218,9 @@ export async function runAllEvals(config: Config): Promise<RunnerResult[]> {
       continue;
     }
     if (!ec || !ec.name || !ec.skill) continue; // skip commented-out or empty files
-    const result = await runEvalCase(ec, config, skills);
-    results.push(result);
+    cases.push(ec);
   }
-  return results;
+
+  const tasks = cases.map(ec => () => runEvalCase(ec, config, skills));
+  return runWithConcurrency(tasks, concurrency);
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runEvalCase, runAllEvals, type EvalCase } from "../../src/eval/runner.js";
+import { runEvalCase, runAllEvals, runWithConcurrency, type EvalCase } from "../../src/eval/runner.js";
 import { rm, mkdtemp, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -268,3 +268,69 @@ describe("EvalFixture — verify_files", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sprint 83 — Item 5: runWithConcurrency
+// ---------------------------------------------------------------------------
+
+describe("runWithConcurrency", () => {
+  it("returns results in input order (not completion order)", async () => {
+    // Task 0 takes longer than task 1 so completion order would be [1, 0]
+    const tasks = [
+      () => new Promise<number>(res => setTimeout(() => res(0), 20)),
+      () => Promise.resolve(1),
+      () => Promise.resolve(2),
+    ];
+    const results = await runWithConcurrency(tasks, 3);
+    expect(results).toEqual([0, 1, 2]);
+  });
+
+  it("limits in-flight tasks to concurrency limit", async () => {
+    let maxInflight = 0;
+    let current = 0;
+
+    const makeTask = (i: number) => async () => {
+      current++;
+      maxInflight = Math.max(maxInflight, current);
+      await new Promise(res => setTimeout(res, 10));
+      current--;
+      return i;
+    };
+
+    const tasks = Array.from({ length: 6 }, (_, i) => makeTask(i));
+    await runWithConcurrency(tasks, 2);
+    expect(maxInflight).toBeLessThanOrEqual(2);
+  });
+
+  it("concurrency=1 is equivalent to sequential execution", async () => {
+    const order: number[] = [];
+    const tasks = [0, 1, 2, 3].map(i => async () => {
+      order.push(i);
+      return i;
+    });
+    const results = await runWithConcurrency(tasks, 1);
+    expect(results).toEqual([0, 1, 2, 3]);
+    expect(order).toEqual([0, 1, 2, 3]);
+  });
+
+  it("propagates rejection when a task throws", async () => {
+    const tasks = [
+      () => Promise.resolve(1),
+      () => Promise.reject(new Error("task 2 failed")),
+      () => Promise.resolve(3),
+    ];
+    await expect(runWithConcurrency(tasks, 3)).rejects.toThrow("task 2 failed");
+  });
+
+  it("returns empty array when given no tasks", async () => {
+    const results = await runWithConcurrency([], 3);
+    expect(results).toEqual([]);
+  });
+
+  it("handles concurrency greater than task count (all start immediately)", async () => {
+    const tasks = [0, 1].map(i => () => Promise.resolve(i));
+    const results = await runWithConcurrency(tasks, 10);
+    expect(results).toEqual([0, 1]);
+  });
+});
+

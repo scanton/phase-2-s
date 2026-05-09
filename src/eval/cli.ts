@@ -1,14 +1,52 @@
 import { loadConfig } from "../core/config.js";
-import { runAllEvals } from "./runner.js";
+import { runAllEvals, runWithConcurrency } from "./runner.js";
 import { judgeE2E } from "./judge.js";
 import { writeEvalResults, DEFAULT_OUTPUT_DIR } from "./reporter.js";
 
 const PASS_THRESHOLD = 6.0;
+const DEFAULT_CONCURRENCY = 3;
+const MAX_CONCURRENCY = 20;
+
+/**
+ * Parse --concurrency N (or --concurrency=N) from process.argv.
+ * Falls back to defaultValue when the flag is absent.
+ * Clamps to [1, MAX_CONCURRENCY]; warns and clamps on out-of-range values.
+ */
+function parseConcurrency(argv: string[], defaultValue: number): number {
+  let raw: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--concurrency" && i + 1 < argv.length) {
+      raw = argv[i + 1];
+      break;
+    }
+    const match = argv[i].match(/^--concurrency=(.+)$/);
+    if (match) {
+      raw = match[1];
+      break;
+    }
+  }
+  if (raw === undefined) return defaultValue;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || Number.isNaN(n)) {
+    console.warn(`Warning: --concurrency "${raw}" is not a valid number; using default ${defaultValue}`);
+    return defaultValue;
+  }
+  if (n < 1) {
+    console.warn(`Warning: --concurrency ${n} < 1; clamped to 1`);
+    return 1;
+  }
+  if (n > MAX_CONCURRENCY) {
+    console.warn(`Warning: --concurrency ${n} > ${MAX_CONCURRENCY}; clamped to ${MAX_CONCURRENCY}`);
+    return MAX_CONCURRENCY;
+  }
+  return Math.floor(n);
+}
 
 async function main(): Promise<void> {
   const config = await loadConfig();
+  const concurrency = parseConcurrency(process.argv.slice(2), DEFAULT_CONCURRENCY);
 
-  const runnerResults = await runAllEvals(config);
+  const runnerResults = await runAllEvals(config, { concurrency });
 
   if (runnerResults.length === 0) {
     // runAllEvals already warned if the directory was missing
@@ -16,11 +54,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log(`Running eval suite (${runnerResults.length} case${runnerResults.length > 1 ? "s" : ""})...\n`);
+  console.log(`Running eval suite (${runnerResults.length} case${runnerResults.length > 1 ? "s" : ""}, concurrency=${concurrency})...\n`);
 
-  const judgeResults = await Promise.all(
-    runnerResults.map(r => judgeE2E(r, config)),
-  );
+  // OV6: judge phase also capped by runWithConcurrency
+  const judgeTasks = runnerResults.map(r => () => judgeE2E(r, config));
+  const judgeResults = await runWithConcurrency(judgeTasks, concurrency);
 
   try {
     writeEvalResults(runnerResults, judgeResults);

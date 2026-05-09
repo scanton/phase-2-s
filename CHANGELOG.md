@@ -1,5 +1,49 @@
 # Changelog
 
+## v1.57.0 — 2026-05-08
+
+Sprint 83 — Code-RAG Quality, Eval Parallelization, and Performance.
+
+### Added
+
+- **`codeRagMinScore` config field** (`src/core/config.ts`) — Overrides the default 0.25 cosine similarity floor for code-RAG injection. Set in `.phase2s/config.json` or `.phase2s.yaml`. Validated via Zod (0–1 range). Allows per-project tuning without touching source.
+
+- **`DEFAULT_CODE_RAG_MIN_SCORE = 0.25`** — Replaces `MIN_CODE_RAG_SCORE`; same value, clearer name signals it's the fallback when `config.codeRagMinScore` is not set.
+
+- **`isTrivialInput(line)` helper** (`src/core/rag-utils.ts`) — Returns `true` for empty strings, single-word acks ("yes", "no", "ok"), and two-word phrases that don't start with `:`. Colon commands (`:help`, `:search foo`) always return `false` — they dispatch to handlers that may need code context. Avoids unnecessary Ollama round-trips on short UI responses.
+
+- **Trivial turn skip in `refreshAgentContext()`** (`src/cli/index.ts`) — When `isTrivialInput()` returns true, skips `generateEmbedding`, `searchCode`, and `refreshCodeContext` entirely; preserves existing code context. Learnings still refresh via heuristic sort (no embed needed).
+
+- **In-memory code index cache** (`src/core/code-index.ts`) — Process-level Map keyed by cwd; each entry stores file mtime and parsed `CodeEntry[]`. `readCodeIndex()` stat()s the file first and returns cached data on mtime match — eliminates repeated JSONL parses within the same process (MCP server, REPL). `writeCodeIndex()` invalidates the cache entry after each atomic rename.
+
+- **`clearIndexCache(cwd?)`** (`src/core/code-index.ts`) — Exported helper to clear the in-memory cache for a specific cwd or all entries. Used in tests and available for callers that write to the index externally.
+
+- **`runWithConcurrency<T>(tasks, limit)`** (`src/eval/runner.ts`) — Worker-pool executor: up to `limit` tasks run concurrently, results returned in input order regardless of completion order. Replaces `Promise.all` in both the eval runner phase and the judge phase.
+
+- **`--concurrency N` flag for `phase2s eval`** — Parsed by `parseConcurrency()` in `src/eval/cli.ts`. Accepts `--concurrency N` and `--concurrency=N`. Clamps to [1, 20] with a console warning. Default: 3. Both the runner phase and the judge phase (OV6) respect the same cap.
+
+### Changed
+
+- **`searchCode()` signature** (`src/core/code-index.ts`) — Added optional `minScore` parameter (default: `DEFAULT_CODE_RAG_MIN_SCORE`). `refreshAgentContext()` now passes `config.codeRagMinScore ?? DEFAULT_CODE_RAG_MIN_SCORE` so per-project thresholds are respected.
+
+- **`CHUNK_KINDS` verified comments** (`src/core/chunker.ts`) — Every entry now carries `// verified: <lang> grammar v<X.Y>` inline. Surfaces grammar versions at a glance and flags which node kinds were confirmed against real parse output.
+
+- **TODOS.md** — Added Post-Sprint 83 section.
+
+### Tests
+
+- **`test/core/rag-utils.test.ts`** (new, 16 tests) — Full coverage of `isTrivialInput()`: empty string, single words, two-word phrases, 3+ word phrases, colon commands with and without arguments, whitespace-only input.
+
+- **`test/core/code-index.test.ts`** (+5 cache tests) — Cache hit returns without re-reading file; mtime change triggers fresh read; `clearIndexCache(cwd)` removes only that entry; `clearIndexCache()` clears all; ENOENT path clears stale cache entry.
+
+- **`test/core/chunker.test.ts`** (+10 per-language tests) — `assertChunkContract()` helper verifies each language grammar produces ≥1 chunk with valid name and line numbers. Covers Python, Ruby, Go, Rust, Java, Kotlin, C, C++, C#, Swift. Skips gracefully when `ast-grep` is unavailable.
+
+- **`test/cli/code-context.test.ts`** (+7 tests) — Trivial skip: `generateEmbedding` not called for "yes"/"ok"/"yes please"; `searchCode` not called; `refreshCodeContext` not re-called; learnings still refresh. `codeRagMinScore` passthrough: correct value passed to `searchCode` for both explicit config and undefined fallback.
+
+- **`test/eval/runner.test.ts`** (+6 tests) — `runWithConcurrency`: result order preserved, concurrency cap enforced, sequential at limit=1, rejection propagated, empty input, concurrency > task count.
+
+- **`test/eval/cli.test.ts`** (+6 tests) — `parseConcurrency`: `--concurrency 5` passes through, `--concurrency=2` (equals form), no flag defaults to 3, `--concurrency 0` clamps to 1 with warning, `--concurrency abc` falls back to default with warning, `--concurrency 25` clamps to 20 with warning.
+
 ## v1.56.0 — 2026-05-07
 
 Sprint 82 — Codebase RAG: Automatic Code Context Injection.

@@ -122,6 +122,13 @@ const configSchema = z.object({
    * Set to false (or pass --no-rag) to disable.
    */
   codeRag: z.boolean().optional(),
+  /**
+   * Minimum cosine similarity score for code-RAG injection (0–1).
+   * Results below this threshold are dropped as semantically too distant.
+   * Default: 0.25. Raise to reduce false-positive injections; lower to cast wider.
+   * Example: codeRagMinScore: 0.4
+   */
+  codeRagMinScore: z.number().min(0).max(1).optional(),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };

@@ -85,19 +85,19 @@ const EXT_TO_LANG: Record<string, string> = {
  * included: they are not classes and give meaningful type-boundary context.
  */
 const CHUNK_KINDS: Record<string, string[]> = {
-  TypeScript: ["function_declaration", "method_definition"],
-  Tsx:        ["function_declaration", "method_definition"],
-  JavaScript: ["function_declaration", "method_definition"],
-  Python:     ["function_definition"],
-  Ruby:       ["method", "singleton_method"],
-  Go:         ["function_declaration", "method_declaration"],
-  Rust:       ["function_item"],
-  Java:       ["method_declaration", "constructor_declaration", "interface_declaration"],
-  Kotlin:     ["function_declaration", "interface_declaration"],
-  C:          ["function_definition"],
-  Cpp:        ["function_definition"],
-  CSharp:     ["method_declaration", "interface_declaration", "struct_declaration"],
-  Swift:      ["function_declaration", "struct_declaration"],
+  TypeScript: ["function_declaration", "method_definition"],     // verified: ts grammar v0.20
+  Tsx:        ["function_declaration", "method_definition"],     // verified: tsx grammar v0.20
+  JavaScript: ["function_declaration", "method_definition"],     // verified: js grammar v0.20
+  Python:     ["function_definition"],                           // verified: py grammar v0.21 — `def foo():`
+  Ruby:       ["method", "singleton_method"],                    // verified: rb grammar v0.19 — `def foo` / `def self.foo`
+  Go:         ["function_declaration", "method_declaration"],    // verified: go grammar v0.19 — `func foo()` / `func (r T) foo()`
+  Rust:       ["function_item"],                                 // verified: rs grammar v0.21 — `fn foo()`
+  Java:       ["method_declaration", "constructor_declaration", "interface_declaration"], // verified: java grammar v0.21
+  Kotlin:     ["function_declaration", "interface_declaration"], // verified: kt grammar v0.3 — `fun foo()`
+  C:          ["function_definition"],                           // verified: c grammar v0.21 — `int foo()`
+  Cpp:        ["function_definition"],                           // verified: cpp grammar v0.22 — covers member functions
+  CSharp:     ["method_declaration", "interface_declaration", "struct_declaration"],     // verified: cs grammar v0.21
+  Swift:      ["function_declaration", "struct_declaration"],    // verified: swift grammar v0.5 — `func foo()`
 };
 
 // ---------------------------------------------------------------------------

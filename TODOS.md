@@ -10,19 +10,31 @@
 
 Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All 4 items closed with no carry-overs. A: named `onLine` handler extracted; `rl.removeListener`/`rl.on` wraps both `:commit` prompt sites; `rl2`/`rl3` eliminated; `ask()` gains `{ noClose: true }`. B: `log.dim("↻ learnings refreshed (N entries)")` always-on after `agent.refreshLearnings()`. C: `SearchEntry.model` field + `getOrBuildIndex(…, embedModel)` — cache invalidates on model change; old entries without `model` re-embed once. D: `STRUCTURAL_PATTERN_MAX_LEN = 500` budget guard + `output.length > MAX_OUTPUT_CHARS` guard fall through to LLM judge; `catch(err)` now records `evidence: "(invalid regex: <msg>)"`. 13 new tests; 1816 passing.
 
-- [ ] **Sequential eval execution** — `runAllEvals` runs cases in `for...of` (sequential). For 10+ cases, runtime adds up. Cases that test different skills are independent and could run in parallel via `Promise.all` with a concurrency cap. Deferring until eval suite grows to where this is felt.
+- [x] **Sequential eval execution** — Shipped in Sprint 83: `runWithConcurrency()` + `--concurrency N` flag; both runner and judge phases capped.
 
 ---
 
-## Backlog — Post-Sprint 82 notes (v1.56.0, 2026-05-07)
+## Backlog — Post-Sprint 83 notes (v1.57.0, 2026-05-08)
+
+Sprint 83 ships Code-RAG Quality, Eval Parallelization, and Performance improvements. All 5 items + OV6 judge concurrency closed with no carry-overs.
+
+- [ ] **Eval result writer concurrency** — `writeEvalResults()` in `reporter.ts` writes both result files synchronously in a loop. With high concurrency (10+ cases), this could become a bottleneck. Consider making it async and parallelizing writes if benchmark shows impact. **Priority:** P4
+
+- [ ] **`isTrivialInput` tuning** — The 2-word heuristic works well for acks but may skip legitimate 2-word task inputs (e.g. "add tests", "fix typo"). Consider learning from user corrections or exposing a `trivialInputMinWords` config knob if real false-positive rates emerge. **Priority:** P4
+
+- [ ] **Cache eviction policy** — `_indexCache` grows unbounded in long-running MCP server sessions with many projects. Add an LRU eviction cap (e.g. 50 entries) when memory pressure is observed. **Priority:** P4
+
+---
+
+## Backlog — Post-Sprint 82 notes (v1.56.0, 2026-05-07) — CLOSED
 
 Sprint 82 ships Codebase RAG — automatic code context injection before each REPL turn via a rolling `[PHASE2S_CODE_CONTEXT]` message. Identified during /plan-eng-review; 7 issues resolved (D2–D4, C1–C4).
 
-- [ ] **`code_rag_min_score` configurable** — `MIN_CODE_RAG_SCORE = 0.25` is hardcoded. Promote to `.phase2s.yaml` as `codeRagMinScore: z.number().optional()` when users report false positives or want stricter/looser injection. **Priority:** P3
+- [x] **`code_rag_min_score` configurable** — Shipped in Sprint 83 as `codeRagMinScore` config field + `DEFAULT_CODE_RAG_MIN_SCORE` constant.
 
-- [ ] **Trivial turn skip optimization** — Skip code context injection (and embedding) for 1–2 word inputs (e.g. `:help`, `yes`, `no`). These turns are UI responses, not task queries; embedding them wastes an Ollama call and injects irrelevant context. Heuristic: `effectiveLine.trim().split(/\s+/).length <= 2`. **Priority:** P3
+- [x] **Trivial turn skip optimization** — Shipped in Sprint 83 as `isTrivialInput()` helper + skip path in `refreshAgentContext()`.
 
-- [ ] **In-memory code index cache** — `searchCode()` calls `readCodeIndex(cwd)` on every REPL turn, re-reading and JSON-parsing the `.phase2s/code-index.jsonl` file each time. Cache the loaded `CodeEntry[]` in a module-level `Map<string, { mtime: number; entries: CodeEntry[] }>` keyed by cwd. Invalidate on file `mtime` change (stat before read, compare). Per-turn file read consistent with learnings; optimize when latency is felt. **Priority:** P3
+- [x] **In-memory code index cache** — Shipped in Sprint 83 as mtime-based `_indexCache` Map in `code-index.ts`.
 
 ---
 

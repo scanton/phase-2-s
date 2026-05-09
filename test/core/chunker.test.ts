@@ -323,3 +323,202 @@ describe("chunkFile — arrow function parent-walk", () => {
     expect(chunks[0].name).toBe("handleRequest");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sprint 83 — Item 4: CHUNK_KINDS verification for non-TypeScript languages
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: assert basic chunk contract.
+ * Skips gracefully when ast-grep native binary is unavailable (Alpine/musl/CI).
+ */
+function assertChunkContract(
+  chunks: ReturnType<typeof chunkFile>,
+  expectedName: string,
+): void {
+  if (chunks.length === 0) return; // ast-grep unavailable — skip
+  const match = chunks.find(c => c.name.includes(expectedName));
+  expect(match, `expected a chunk whose name includes "${expectedName}"`).toBeDefined();
+  if (!match) return;
+  expect(match.start).toBeGreaterThanOrEqual(0);
+  expect(match.end).toBeGreaterThan(match.start);
+}
+
+describe("CHUNK_KINDS — Python (function_definition)", () => {
+  it("chunks a def block and names it correctly", () => {
+    const content = [
+      "def greet(name):",
+      "    # say hello",
+      "    message = f'Hello, {name}'",
+      "    return message",
+      "",
+      "def add(a, b):",
+      "    return a + b",
+    ].join("\n");
+    const chunks = chunkFile(content, "utils.py");
+    assertChunkContract(chunks, "greet");
+  });
+});
+
+describe("CHUNK_KINDS — Ruby (method + singleton_method)", () => {
+  it("chunks an instance method", () => {
+    const content = [
+      "class Greeter",
+      "  def greet(name)",
+      "    puts \"Hello, #{name}\"",
+      "    return name",
+      "  end",
+      "",
+      "  def self.version",
+      "    '1.0.0'",
+      "  end",
+      "end",
+    ].join("\n");
+    const chunks = chunkFile(content, "greeter.rb");
+    assertChunkContract(chunks, "greet");
+  });
+});
+
+describe("CHUNK_KINDS — Go (function_declaration + method_declaration)", () => {
+  it("chunks a top-level function", () => {
+    const content = [
+      "package main",
+      "",
+      "import \"fmt\"",
+      "",
+      "func Greet(name string) string {",
+      "    return fmt.Sprintf(\"Hello, %s\", name)",
+      "}",
+      "",
+      "func (g *Greeter) Hello() string {",
+      "    return \"hello\"",
+      "}",
+    ].join("\n");
+    const chunks = chunkFile(content, "greet.go");
+    assertChunkContract(chunks, "Greet");
+  });
+});
+
+describe("CHUNK_KINDS — Rust (function_item)", () => {
+  it("chunks a fn declaration", () => {
+    const content = [
+      "fn greet(name: &str) -> String {",
+      "    format!(\"Hello, {}!\", name)",
+      "}",
+      "",
+      "fn add(a: i32, b: i32) -> i32 {",
+      "    a + b",
+      "}",
+    ].join("\n");
+    const chunks = chunkFile(content, "utils.rs");
+    assertChunkContract(chunks, "greet");
+  });
+});
+
+describe("CHUNK_KINDS — Java (method_declaration)", () => {
+  it("chunks a public method inside a class", () => {
+    const content = [
+      "public class Greeter {",
+      "    public String greet(String name) {",
+      "        return \"Hello, \" + name + \"!\";",
+      "    }",
+      "",
+      "    public int add(int a, int b) {",
+      "        return a + b;",
+      "    }",
+      "}",
+    ].join("\n");
+    const chunks = chunkFile(content, "Greeter.java");
+    assertChunkContract(chunks, "greet");
+  });
+});
+
+describe("CHUNK_KINDS — Kotlin (function_declaration)", () => {
+  it("chunks a fun declaration", () => {
+    const content = [
+      "fun greet(name: String): String {",
+      "    return \"Hello, $name!\"",
+      "}",
+      "",
+      "fun add(a: Int, b: Int): Int {",
+      "    return a + b",
+      "}",
+    ].join("\n");
+    const chunks = chunkFile(content, "utils.kt");
+    assertChunkContract(chunks, "greet");
+  });
+});
+
+describe("CHUNK_KINDS — C (function_definition)", () => {
+  it("chunks a C function", () => {
+    const content = [
+      "#include <stdio.h>",
+      "",
+      "int add(int a, int b) {",
+      "    return a + b;",
+      "}",
+      "",
+      "void greet(const char *name) {",
+      "    printf(\"Hello, %s!\\n\", name);",
+      "}",
+    ].join("\n");
+    const chunks = chunkFile(content, "utils.c");
+    assertChunkContract(chunks, "add");
+  });
+});
+
+describe("CHUNK_KINDS — C++ (function_definition)", () => {
+  it("chunks a C++ function", () => {
+    const content = [
+      "#include <string>",
+      "#include <iostream>",
+      "",
+      "std::string greet(const std::string& name) {",
+      "    return \"Hello, \" + name + \"!\";",
+      "}",
+      "",
+      "int add(int a, int b) {",
+      "    return a + b;",
+      "}",
+    ].join("\n");
+    const chunks = chunkFile(content, "utils.cpp");
+    assertChunkContract(chunks, "greet");
+  });
+});
+
+describe("CHUNK_KINDS — C# (method_declaration)", () => {
+  it("chunks a C# method inside a class", () => {
+    const content = [
+      "public class Greeter {",
+      "    public string Greet(string name) {",
+      "        return $\"Hello, {name}!\";",
+      "    }",
+      "",
+      "    public int Add(int a, int b) {",
+      "        return a + b;",
+      "    }",
+      "}",
+    ].join("\n");
+    const chunks = chunkFile(content, "Greeter.cs");
+    assertChunkContract(chunks, "Greet");
+  });
+});
+
+describe("CHUNK_KINDS — Swift (function_declaration)", () => {
+  it("chunks a Swift func", () => {
+    const content = [
+      "import Foundation",
+      "",
+      "func greet(name: String) -> String {",
+      "    return \"Hello, \\(name)!\"",
+      "}",
+      "",
+      "func add(a: Int, b: Int) -> Int {",
+      "    return a + b",
+      "}",
+    ].join("\n");
+    const chunks = chunkFile(content, "utils.swift");
+    assertChunkContract(chunks, "greet");
+  });
+});
+

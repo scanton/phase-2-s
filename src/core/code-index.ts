@@ -29,14 +29,45 @@ import { chunkFile, type Chunk } from "./chunker.js";
 // ---------------------------------------------------------------------------
 
 /** Minimum cosine similarity score to include a result in RAG injection.
- *  Results below this threshold are dropped — too semantically distant to be useful. */
-export const MIN_CODE_RAG_SCORE = 0.25;
+ *  Results below this threshold are dropped — too semantically distant to be useful.
+ *  Override via `.phase2s.yaml` codeRagMinScore field. */
+export const DEFAULT_CODE_RAG_MIN_SCORE = 0.25;
 
 /** Maximum lines to include in a code snippet injected via RAG.
  *  Longer chunks are truncated with a `// ...N more lines` trailer. */
 export const MAX_SNIPPET_LINES = 25;
 
 const CODE_INDEX_FILE = ".phase2s/code-index.jsonl";
+
+// ---------------------------------------------------------------------------
+// In-memory index cache (avoids repeated file reads within the same process)
+// ---------------------------------------------------------------------------
+
+interface IndexCacheEntry {
+  mtime: number;
+  entries: CodeEntry[];
+}
+
+/**
+ * Process-level LRU cache keyed by cwd.
+ * Each entry stores the file's mtime and the parsed entries.
+ * A mtime change on the index file invalidates the cache for that cwd.
+ */
+const _indexCache = new Map<string, IndexCacheEntry>();
+
+/**
+ * Clear the in-memory index cache for a specific cwd, or all entries when
+ * called with no arguments.
+ *
+ * Useful in tests and after writing a new index so the next read is fresh.
+ */
+export function clearIndexCache(cwd?: string): void {
+  if (cwd === undefined) {
+    _indexCache.clear();
+  } else {
+    _indexCache.delete(cwd);
+  }
+}
 
 /** Maximum characters of file content used for embedding. ~1,000 tokens —
  *  stays safely under the 2,048-token limit of common Ollama embed models
@@ -184,6 +215,24 @@ export async function discoverFiles(cwd: string): Promise<string[]> {
  */
 export async function readCodeIndex(cwd: string): Promise<CodeEntry[]> {
   const filePath = join(cwd, CODE_INDEX_FILE);
+
+  // ── Cache check: stat() before readFile() to avoid redundant I/O ──────────
+  let mtime: number;
+  try {
+    const s = await stat(filePath);
+    mtime = s.mtimeMs;
+  } catch {
+    // ENOENT or unreadable — no valid index, clear stale cache entry
+    _indexCache.delete(cwd);
+    return [];
+  }
+
+  const cached = _indexCache.get(cwd);
+  if (cached && cached.mtime === mtime) {
+    return cached.entries;
+  }
+
+  // Cache miss — parse from disk
   try {
     const raw = await readFile(filePath, "utf-8");
     const entries: CodeEntry[] = [];
@@ -203,9 +252,11 @@ export async function readCodeIndex(cwd: string): Promise<CodeEntry[]> {
         // Skip corrupt lines — entry will be re-embedded on next sync
       }
     }
+    _indexCache.set(cwd, { mtime, entries });
     return entries;
   } catch {
-    // ENOENT or parse error — return empty (fresh start)
+    // File disappeared between stat and readFile — clear cache, return empty
+    _indexCache.delete(cwd);
     return [];
   }
 }
@@ -219,6 +270,8 @@ async function writeCodeIndex(cwd: string, entries: CodeEntry[]): Promise<void> 
   const content = entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
   await writeFile(tmpPath, content, "utf-8");
   await rename(tmpPath, finalPath); // atomic on POSIX
+  // Invalidate cache so the next readCodeIndex() picks up the new content
+  _indexCache.delete(cwd);
 }
 
 // ---------------------------------------------------------------------------
@@ -546,7 +599,7 @@ export interface CodeSearchResult {
  * Returns [] when:
  *  - queryVector is empty (caller indicates Ollama was unavailable)
  *  - code index is absent or unreadable
- *  - all results score below MIN_CODE_RAG_SCORE (0.25)
+ *  - all results score below minScore (default: DEFAULT_CODE_RAG_MIN_SCORE = 0.25)
  *
  * Path traversal guard: each result path is resolved against cwd and must
  * start with `cwd + path.sep`. Entries that fail are skipped silently.
@@ -558,6 +611,7 @@ export async function searchCode(
   cwd: string,
   queryVector: number[],
   k = 3,
+  minScore = DEFAULT_CODE_RAG_MIN_SCORE,
 ): Promise<CodeSearchResult[]> {
   if (queryVector.length === 0) return [];
 
@@ -572,7 +626,7 @@ export async function searchCode(
   if (raw.length === 0) return [];
 
   // Filter below threshold
-  const above = raw.filter((r) => r.score >= MIN_CODE_RAG_SCORE);
+  const above = raw.filter((r) => r.score >= minScore);
   if (above.length === 0) return [];
 
   const cwdWithSep = cwd.endsWith(sep) ? cwd : cwd + sep;

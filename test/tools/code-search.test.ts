@@ -34,7 +34,7 @@ vi.mock("../../src/core/code-index.js", () => ({
   // Keep other exports as stubs so TypeScript imports don't break
   findTopKCode: vi.fn(),
   readCodeIndex: vi.fn(),
-  MIN_CODE_RAG_SCORE: 0.25,
+  DEFAULT_CODE_RAG_MIN_SCORE: 0.25,
   MAX_SNIPPET_LINES: 25,
 }));
 

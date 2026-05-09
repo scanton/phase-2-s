@@ -138,7 +138,7 @@ describe("refreshAgentContext — single embed call per turn", () => {
 
     const agent = makeAgent(baseConfig);
     vi.spyOn(agent, "refreshCodeContext");
-    await refreshAgentContext(agent, "authentication logic", baseConfig);
+    await refreshAgentContext(agent, "find authentication logic", baseConfig);
 
     // generateEmbedding called exactly once (shared for learnings + code-rag)
     expect(mockGenerateEmbedding).toHaveBeenCalledTimes(1);
@@ -150,7 +150,7 @@ describe("refreshAgentContext — Ollama down (generateEmbedding rejects)", () =
     mockGenerateEmbedding.mockRejectedValue(new Error("connection refused"));
     const agent = makeAgent(baseConfig);
     const spy = vi.spyOn(agent, "refreshCodeContext");
-    await expect(refreshAgentContext(agent, "find auth", baseConfig)).resolves.not.toThrow();
+    await expect(refreshAgentContext(agent, "find the auth handler", baseConfig)).resolves.not.toThrow();
     expect(spy).toHaveBeenCalledWith(null);
     expect(mockSearchCode).not.toHaveBeenCalled();
   });
@@ -170,7 +170,7 @@ describe("refreshAgentContext — results above threshold", () => {
 
     const agent = makeAgent(baseConfig);
     const spy = vi.spyOn(agent, "refreshCodeContext");
-    await refreshAgentContext(agent, "authenticate user", baseConfig);
+    await refreshAgentContext(agent, "authenticate the user session", baseConfig);
 
     expect(spy).toHaveBeenCalledOnce();
     const arg = spy.mock.calls[0][0];
@@ -189,7 +189,7 @@ describe("refreshAgentContext — all results below threshold", () => {
 
     const agent = makeAgent(baseConfig);
     const spy = vi.spyOn(agent, "refreshCodeContext");
-    await refreshAgentContext(agent, "some query", baseConfig);
+    await refreshAgentContext(agent, "search the code base", baseConfig);
     expect(spy).toHaveBeenCalledWith(null);
   });
 });
@@ -217,6 +217,86 @@ describe("saveSession — CODE_CONTEXT_MARKER filtered from saved messages", () 
   });
 });
 
+// ---------------------------------------------------------------------------
+// Sprint 83 — Item 2: Trivial turn skip
+// ---------------------------------------------------------------------------
+
+describe("refreshAgentContext — trivial input skip", () => {
+  it("does NOT call generateEmbedding when input is 'yes' (trivial)", async () => {
+    const agent = makeAgent(baseConfig);
+    await refreshAgentContext(agent, "yes", baseConfig);
+    expect(mockGenerateEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call searchCode when input is trivial", async () => {
+    const agent = makeAgent(baseConfig);
+    await refreshAgentContext(agent, "ok", baseConfig);
+    expect(mockSearchCode).not.toHaveBeenCalled();
+  });
+
+  it("does NOT change existing code context on trivial input (refreshCodeContext not re-called)", async () => {
+    const agent = makeAgent(baseConfig);
+    const spy = vi.spyOn(agent, "refreshCodeContext");
+    await refreshAgentContext(agent, "yes please", baseConfig);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("still refreshes learnings on trivial input (heuristic fallback path)", async () => {
+    mockLoadRelevantLearnings.mockResolvedValue([]);
+    const agent = makeAgent(baseConfig);
+    await refreshAgentContext(agent, "yes", baseConfig);
+    // loadRelevantLearnings should be called even for trivial input
+    expect(mockLoadRelevantLearnings).toHaveBeenCalled();
+    // but generateEmbedding must NOT have been called
+    expect(mockGenerateEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("does call generateEmbedding when input is non-trivial (3+ words)", async () => {
+    const fakeVector = [0.1, 0.2, 0.3];
+    mockGenerateEmbedding.mockResolvedValue(fakeVector);
+    mockSearchCode.mockResolvedValue([]);
+    const agent = makeAgent(baseConfig);
+    await refreshAgentContext(agent, "fix the auth bug", baseConfig);
+    expect(mockGenerateEmbedding).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 83 — Item 1: codeRagMinScore wired through to searchCode
+// ---------------------------------------------------------------------------
+
+describe("refreshAgentContext — codeRagMinScore passed to searchCode", () => {
+  it("passes config.codeRagMinScore to searchCode when set", async () => {
+    const fakeVector = [0.5, 0.5, 0.5];
+    mockGenerateEmbedding.mockResolvedValue(fakeVector);
+    mockSearchCode.mockResolvedValue([]);
+
+    const configWithMinScore: Config = { ...baseConfig, codeRagMinScore: 0.5 };
+    const agent = makeAgent(configWithMinScore);
+    await refreshAgentContext(agent, "authenticate user session", configWithMinScore);
+
+    expect(mockSearchCode).toHaveBeenCalledWith(
+      expect.any(String), // cwd
+      fakeVector,
+      3,                  // k
+      0.5,                // minScore from config
+    );
+  });
+
+  it("passes DEFAULT_CODE_RAG_MIN_SCORE when codeRagMinScore is undefined", async () => {
+    const fakeVector = [0.4, 0.4, 0.4];
+    mockGenerateEmbedding.mockResolvedValue(fakeVector);
+    mockSearchCode.mockResolvedValue([]);
+
+    const agent = makeAgent(baseConfig); // no codeRagMinScore
+    await refreshAgentContext(agent, "find the parser logic now", baseConfig);
+
+    // 4th arg should be 0.25 (DEFAULT_CODE_RAG_MIN_SCORE)
+    const callArgs = mockSearchCode.mock.calls[0];
+    expect(callArgs[3]).toBe(0.25);
+  });
+});
+
 describe("one-shot mode — code context injected via refreshAgentContext before agent.run()", () => {
   it("code context block appears in conversation when Ollama is configured and results found", async () => {
     const fakeVector = [0.5, 0.5, 0.5];
@@ -230,7 +310,7 @@ describe("one-shot mode — code context injected via refreshAgentContext before
 
     const agent = makeAgent(baseConfig);
     // Simulate one-shot mode: refreshAgentContext then agent.run
-    await refreshAgentContext(agent, "utility functions", baseConfig);
+    await refreshAgentContext(agent, "find utility functions now", baseConfig);
     await agent.run("find utility functions");
 
     const msgs = agent.getConversation().getMessages();
