@@ -648,6 +648,24 @@ verifyCommand: pytest tests/ -x  # or: go test ./... or: npm test
 
 Override per-run with `phase2s task --verify "bun test" "your task here"`.
 
+**Task mode tuning** — control the autonomous task runner's behavior:
+
+```yaml
+# .phase2s.yaml
+doomLoopThreshold: 2        # abort faster when stuck (default: 3, min: 2)
+verifyOnEveryWrite: true    # run verify after each file_write, not just end-of-turn
+trivialInputMinWords: 2     # skip RAG for 1- and 2-word REPL inputs (default: 1)
+```
+
+Task flags for one-off overrides:
+
+```bash
+phase2s task --quiet "fix the type errors"           # suppress streaming, print result only
+phase2s task --timeout 120 "refactor auth.ts"        # abort after 120 seconds
+phase2s task --output result.md "write a plan"       # save output to file
+phase2s task --doom-loop-threshold 2 "fix the bug"   # tighter doom-loop for this run
+```
+
 **Headless browser** — enable for the `/qa` skill to test web apps:
 
 ```yaml
@@ -771,6 +789,7 @@ browser: true  # requires playwright installed
 - [x] `phase2s search-audit` — semantic search quality benchmark (v1.55.0) — `phase2s search-audit` runs a curated set of natural-language queries against the live code index and reports hit@1, hit@3, and MRR (Mean Reciprocal Rank). Ships with 20 built-in self-referential Phase2S queries (the tool uses its own semantic search to understand its own architecture — no external ground truth needed). Each case specifies `expectedPath` and an optional `expectedChunk` fragment matched via `chunkName.includes()`, handling both regular functions (first 80 chars of source text) and arrow functions (binding identifier). `expectedHit: false` marks known-weak cases — excluded from the MRR denominator and CI gate so gaps are documented rather than gamed. `--ci` flag exits 1 when hit@1 < 70% or hit@3 < 85%; model mismatch check aborts CI (`--ci`) or warns interactively. `--json` emits a machine-readable `AuditResult` to stdout (all warnings routed to stderr for clean piping). `--cases <file>` loads a user-provided JSON array or JSONL file for project-specific benchmarking; combinable with `--built-in-only` / `--cases-only` flags. `--verbose` shows per-query top-3 hits and notes. Sequential per-query loop avoids Ollama rate-limit hammering. 42 new tests. 1,972 tests.
 - [x] Code-RAG quality + eval parallelization (v1.57.0) — `codeRagMinScore` config field (default 0.25) filters out semantically weak code chunk injections before they reach the model — raise it to tighten relevance, lower it to cast wider. `isTrivialInput()` skips the Ollama embed call entirely for single-word REPL acks ("yes", "ok", "no"), saving a round-trip on turns that carry no task signal. `_indexCache` caches the parsed `CodeEntry[]` array in memory keyed by cwd + mtime, so `searchCode()` reads disk once per file-change rather than on every REPL turn. `CHUNK_KINDS` node kind names verified for all 12 languages via the tree-sitter playground; per-language tests added to `test/core/chunker.test.ts`. `runWithConcurrency<T>()` runs eval cases (and the judge phase) in a worker pool with a shared index and no shared state — both phases cap at the same limit. `--concurrency N` flag (default 3, max 20) lets you tune parallelism for large eval suites. `parseConcurrency` tested via 6 new cases covering clamping, invalid input, and both flag forms (`--concurrency N` and `--concurrency=N`). 85 new tests. 2,057 tests.
 - [x] `phase2s task` — autonomous multi-step task execution (v1.58.0) — `phase2s task "<prompt>"` runs the agent in task mode: a `TASK_MODE_PREAMBLE` injects a PLANNING / EXECUTION / COMPLETION system prompt so the LLM plans upfront and chains tools aggressively (search → read → write → verify) without pausing to narrate. Auto-verify injection fires after any successful `file_write` turn: `verifyCommand` (or `--verify <command>` override) runs automatically and the result is injected as a user message so the agent can self-correct on failures. Doom-loop guard fingerprints each tool call by SHA-256 of its arguments — on the 2nd identical call a reflection message is injected, on the 3rd the loop exits cleanly with a "stuck" message instead of exhausting `maxTurns` silently. The guard activates for all agent runs, not just task mode. `phase2s__task` exposed as an MCP tool for Claude Code.
+- [x] Task mode hardening + observability (v1.59.0) — `doomLoopThreshold` config field (min 2, default 3) makes the doom-loop threshold tunable per project. `verifyOnEveryWrite: true` runs the verify command after every `file_write` (not just once per turn); results are batched and delivered as a single user message so the LLM sees a complete picture. Four new `phase2s task` flags: `--quiet` (suppress per-turn streaming, print only the final result), `--timeout <seconds>` (abort after N seconds via `AbortController`), `--output <file>` (write the final result to disk), `--doom-loop-threshold <n>` (per-run threshold override). `Agent.lastRunStats` public field (`{ turns, fileWrites }`) exposes observable metrics after each run — resets at run start, accurate even on early exit. `isAbortError(err)` helper exported from `agent.ts` covers all abort signal variants (`AbortError`, `ABORT_ERR`, `DOMException`). `_indexCache` FIFO-evicts at 50 entries (previously unbounded). `isTrivialInput` gains a `minWords` parameter controlled by `trivialInputMinWords` config (default 1). `writeEvalResults` fully async via `Promise.all` with non-blocking `mkdir`. 63 new tests. 2,120 tests.
 
 ---
 
