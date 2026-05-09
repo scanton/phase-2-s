@@ -18,6 +18,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { createProvider } from "../providers/index.js";
 import type { Config } from "../core/config.js";
+import type { Message } from "../providers/types.js";
 import { parseSpec } from "../core/spec-parser.js";
 import { lintSpec } from "./lint.js";
 
@@ -252,7 +253,7 @@ export async function conductorGenSpec(
  */
 async function streamSpec(
   provider: import("../providers/types.js").Provider,
-  messages: Array<{ role: string; content: string }>,
+  messages: Message[],
   model: string,
 ): Promise<string | null> {
   let text = "";
