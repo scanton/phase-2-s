@@ -11,6 +11,7 @@ import {
   STATE_TOOLS,
   GOAL_TOOL,
   REPORT_TOOL,
+  TASK_TOOL,
 } from "../../src/mcp/server.js";
 import { Conversation } from "../../src/core/conversation.js";
 import type { Skill } from "../../src/skills/types.js";
@@ -151,8 +152,8 @@ describe("MCP server — protocol compliance", () => {
 
     expect(response.error).toBeUndefined();
     const result = response.result as { tools: unknown[] };
-    // tools/list now includes skill tools + 3 state tools + 1 goal tool + 1 report tool
-    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length + 5);
+    // tools/list now includes skill tools + 3 state tools + 1 goal tool + 1 report tool + 1 task tool
+    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length + 6);
   });
 
   it("tools/list: tool names use phase2s__ prefix and underscore convention", async () => {
@@ -941,5 +942,74 @@ describe("handleRequest — agentsMdBlock injection (Sprint 56)", () => {
     );
     expect(response.error).toBeUndefined();
     expect(lastAgentOpts.agentsMdBlock).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 84: TASK_TOOL descriptor + phase2s__task handler
+// ---------------------------------------------------------------------------
+
+describe("TASK_TOOL descriptor (Sprint 84)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("TASK_TOOL appears in tools/list", async () => {
+    const request = { jsonrpc: "2.0" as const, id: 1, method: "tools/list" };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    const tools = (response.result as { tools: Array<{ name: string }> }).tools;
+    const toolNames = tools.map((t) => t.name);
+    expect(toolNames).toContain("phase2s__task");
+  });
+
+  it("TASK_TOOL inputSchema requires task, verify_command is optional", () => {
+    expect(TASK_TOOL.name).toBe("phase2s__task");
+    expect(TASK_TOOL.inputSchema.required).toContain("task");
+    expect(TASK_TOOL.inputSchema.required).not.toContain("verify_command");
+    expect(TASK_TOOL.inputSchema.properties.task).toBeDefined();
+    expect(TASK_TOOL.inputSchema.properties.verify_command).toBeDefined();
+  });
+
+  it("phase2s__task with missing task returns an error response (not throws)", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 1,
+      method: "tools/call",
+      params: { name: "phase2s__task", arguments: { task: "" } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.result).toBeUndefined();
+    expect(response.error).toBeDefined();
+    expect(response.error?.message).toContain("task");
+  });
+
+  it("phase2s__task calls agent.run with taskMode: true", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 1,
+      method: "tools/call",
+      params: { name: "phase2s__task", arguments: { task: "fix the null pointer in auth.ts" } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+    expect(response.result).toBeDefined();
+    const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content[0].type).toBe("text");
+    expect(typeof content[0].text).toBe("string");
+  });
+
+  it("phase2s__task with verify_command passes it through to agent.run", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "phase2s__task",
+        arguments: { task: "refactor the config loader", verify_command: "bun test" },
+      },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+    expect(response.result).toBeDefined();
   });
 });
