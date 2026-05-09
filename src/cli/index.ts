@@ -9,7 +9,7 @@ import { execSync, spawn } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
 import chalk from "chalk";
 import { loadConfig, normalizeConfigError, type Config } from "../core/config.js";
-import { Agent } from "../core/agent.js";
+import { Agent, isAbortError } from "../core/agent.js";
 import { disposeBrowser } from "../tools/browser.js";
 import { Conversation } from "../core/conversation.js";
 import { loadLearnings, loadRelevantLearnings, formatLearningsForPrompt } from "../core/memory.js";
@@ -288,7 +288,11 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .command("task <prompt>")
     .description("Execute an autonomous multi-step task: plan, chain tools, auto-verify, stop on doom-loop")
     .option("--verify <command>", "Shell command to run after file writes to verify changes (overrides config.verifyCommand)")
-    .action(async (prompt: string, cmdOpts: { verify?: string }) => {
+    .option("--quiet", "Suppress per-turn streaming output; print only the final result (useful for CI/script usage)")
+    .option("--timeout <seconds>", "Abort the task after this many seconds (e.g. --timeout 120)")
+    .option("--output <file>", "Write the final result to this file in addition to stdout")
+    .option("--doom-loop-threshold <n>", "Number of identical tool calls before aborting as a doom-loop (overrides config.doomLoopThreshold, min 2)")
+    .action(async (prompt: string, cmdOpts: { verify?: string; quiet?: boolean; timeout?: string; output?: string; doomLoopThreshold?: string }) => {
       const opts = program.opts();
       let config: Config;
       try {
@@ -300,6 +304,28 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       } catch (err) {
         console.error(chalk.red(normalizeConfigError(err)));
         process.exit(1);
+      }
+
+      // --doom-loop-threshold override
+      if (cmdOpts.doomLoopThreshold !== undefined) {
+        const n = Number(cmdOpts.doomLoopThreshold);
+        if (!Number.isFinite(n) || n < 2 || !Number.isInteger(n)) {
+          console.error(chalk.red(`--doom-loop-threshold must be an integer >= 2, got: ${cmdOpts.doomLoopThreshold}`));
+          process.exit(1);
+        }
+        config.doomLoopThreshold = n;
+      }
+
+      // --timeout validation
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const controller = new AbortController();
+      if (cmdOpts.timeout !== undefined) {
+        const timeoutSec = Number(cmdOpts.timeout);
+        if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) {
+          console.error(chalk.red(`--timeout must be a positive number, got: ${cmdOpts.timeout}`));
+          process.exit(1);
+        }
+        timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
       }
 
       // Load AGENTS.md for context (same as one-shot mode)
@@ -322,26 +348,48 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const { cleanLine, preamble } = await expandAttachments(prompt, process.cwd());
       const expandedPrompt = preamble ? preamble + "\n" + cleanLine : cleanLine;
 
-      console.log(chalk.dim(`Running task: ${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}`));
-      console.log();
+      if (!cmdOpts.quiet) {
+        console.log(chalk.dim(`Running task: ${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}`));
+        console.log();
+      }
 
+      let result = "";
       let hasOutput = false;
       try {
-        const result = await agent.run(expandedPrompt, {
+        result = await agent.run(expandedPrompt, {
           taskMode: true,
           verifyCommand: cmdOpts.verify ?? config.verifyCommand,
-          onDelta: (chunk) => {
-            process.stdout.write(chunk);
-            hasOutput = true;
-          },
+          signal: controller.signal,
+          onDelta: cmdOpts.quiet
+            ? undefined
+            : (chunk) => {
+                process.stdout.write(chunk);
+                hasOutput = true;
+              },
         });
-        if (!hasOutput) {
+        if (!cmdOpts.quiet && !hasOutput) {
+          process.stdout.write(result);
+        }
+        if (cmdOpts.quiet) {
           process.stdout.write(result);
         }
         process.stdout.write("\n");
+
+        // --output: write final result to file
+        if (cmdOpts.output) {
+          const { writeFile: writeOutputFile } = await import("node:fs/promises");
+          await writeOutputFile(cmdOpts.output, result, "utf8");
+        }
       } catch (err) {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        if (isAbortError(err)) {
+          console.error(chalk.red(`Task timed out after ${cmdOpts.timeout} seconds.`));
+          process.exit(1);
+        }
         log.error(err instanceof Error ? err.message : String(err));
         process.exit(1);
+      } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
       }
     });
 
@@ -1875,7 +1923,7 @@ export async function refreshAgentContext(
   // Trivial input (short UI responses, colon commands): skip embedding and code-RAG.
   // Learnings still refresh via heuristic sort ([] forces heuristic fallback in
   // loadRelevantLearnings — no embed call made). Existing code context is preserved.
-  if (isTrivialInput(queryText)) {
+  if (isTrivialInput(queryText, config.trivialInputMinWords)) {
     const turnLearnings = await loadRelevantLearnings(
       process.cwd(), queryText, config, 8, [],
     );

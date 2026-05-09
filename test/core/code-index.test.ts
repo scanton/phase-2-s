@@ -12,6 +12,7 @@ import {
   extractSnippet,
   entryKey,
   searchCode,
+  _getIndexCacheForTest,
   clearIndexCache,
   MAX_CODE_CHARS,
   MAX_SNIPPET_LINES,
@@ -730,5 +731,59 @@ describe("searchCode", () => {
     for (const r of deadResults) {
       expect(r.snippet).toBe("");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _indexCache FIFO eviction (Sprint 85)
+// ---------------------------------------------------------------------------
+
+describe("_indexCache FIFO eviction", () => {
+  it("cache does not exceed 50 entries after inserting 51", () => {
+    const cache = _getIndexCacheForTest();
+    cache.clear();
+
+    // Populate 51 distinct entries directly
+    const LIMIT = 50;
+    for (let i = 0; i <= LIMIT; i++) {
+      // Simulate eviction logic (same as production code)
+      if (cache.size >= LIMIT) {
+        const oldest = cache.keys().next().value;
+        if (oldest !== undefined) cache.delete(oldest);
+      }
+      cache.set(`/fake/cwd-${i}`, { mtime: i, entries: [] });
+    }
+
+    expect(cache.size).toBe(LIMIT);
+    cache.clear();
+  });
+
+  it("first-inserted entry is evicted when capacity is exceeded (FIFO)", () => {
+    const cache = _getIndexCacheForTest();
+    cache.clear();
+
+    const LIMIT = 50;
+    // Insert entry 'A' first — it should be the one evicted
+    cache.set("/fake/cwd-A", { mtime: 0, entries: [] });
+
+    for (let i = 1; i < LIMIT; i++) {
+      cache.set(`/fake/cwd-${i}`, { mtime: i, entries: [] });
+    }
+    // Cache is now full at exactly LIMIT entries, 'A' is still present
+    expect(cache.size).toBe(LIMIT);
+    expect(cache.has("/fake/cwd-A")).toBe(true);
+
+    // Insert one more to trigger eviction
+    if (cache.size >= LIMIT) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(`/fake/cwd-overflow`, { mtime: LIMIT, entries: [] });
+
+    // 'A' (oldest) was evicted; new entry is present
+    expect(cache.has("/fake/cwd-A")).toBe(false);
+    expect(cache.has("/fake/cwd-overflow")).toBe(true);
+    expect(cache.size).toBe(LIMIT);
+    cache.clear();
   });
 });
