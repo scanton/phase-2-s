@@ -143,8 +143,11 @@ maxTurns: 50
 # Default: 60
 # rate_limit_backoff_threshold: 60
 
-# Satori verify command
-# Runs after each attempt to check if the task succeeded.
+# Verify command (Satori + task mode)
+# Used in two places:
+#   1. Satori retry loop: runs after each attempt to check if the task succeeded.
+#   2. Task mode (phase2s task "..."): auto-runs after any file_write success,
+#      injecting the result into the conversation so the agent can self-correct.
 # Must exit 0 for success, non-zero for failure.
 # Default: npm test
 # verifyCommand: npm test
@@ -152,6 +155,8 @@ maxTurns: 50
 # verifyCommand: pytest tests/
 # verifyCommand: go test ./...
 # verifyCommand: cargo test
+#
+# Override per-run with: phase2s task --verify "bun test" "your task here"
 
 # Underspecification gate
 # When true: prompts under 15 words without a file path get a warning.
@@ -425,6 +430,31 @@ This matches how `.phase2s.yaml` config changes work — both require a server r
 
 ---
 
+## Task mode (Sprint 84)
+
+`phase2s task "..."` runs the agent in autonomous task mode — the agent plans upfront, chains tools aggressively, and self-corrects without waiting for user prompts.
+
+```bash
+# Basic usage
+phase2s task "fix the null pointer in auth.ts"
+phase2s task "add tests for the parser module"
+
+# Override verify command for this run
+phase2s task --verify "bun test" "refactor the config loader"
+```
+
+Three mechanisms activate in task mode:
+
+1. **Task-mode system prompt** — injects a PLANNING / EXECUTION / COMPLETION preamble before the regular system prompt. The LLM is instructed to list steps first, then chain tools (search → read → write → verify) without pausing to narrate.
+
+2. **Auto-verify injection** — after any `file_write` tool call succeeds, the agent automatically runs `verifyCommand` (or the `--verify` override) and injects the output as a user message. The LLM sees the result and can self-correct on failures. Fires once per LLM turn that contains at least one successful write (not once per individual write).
+
+3. **Doom-loop guard** — detects when the agent is retrying the same tool call with identical arguments (fingerprinted by SHA-256 of the argument string). On the 2nd identical call, a reflection message is injected. On the 3rd, the loop exits cleanly with a "stuck" message rather than exhausting `maxTurns` silently.
+
+> **Note:** The doom-loop guard applies to all agent runs (not just task mode). `verifyCommand` is also used by the satori retry loop — task mode auto-verify is in addition to, not instead of, satori verification.
+
+---
+
 ## CLI options
 
 All config options can also be passed on the command line:
@@ -449,6 +479,8 @@ Commands:
     --clean                Remove stale worktrees before starting
     --judge                Run spec eval judge after completion; emits eval_judged to run log
     --reasoning-effort <level>  Model tier for unlabeled subtasks: high (→ smart_model), low (→ fast_model), default (no override)
+  task <prompt>            Execute an autonomous multi-step task with tool chaining (Sprint 84)
+    --verify <command>     Shell command to run after file writes; overrides config.verifyCommand
   judge <spec.md>          Score a spec's acceptance criteria against a git diff (0-10)
     --diff <file>          Path to a diff file (alternative: pipe diff via stdin)
   skills [query]           List available skills (optional search query)

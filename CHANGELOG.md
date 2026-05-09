@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.58.0 — 2026-05-09
+
+Sprint 84 — Agentic Tool Loop.
+
+### Added
+
+- **`phase2s task "<prompt>"` command** (`src/cli/index.ts`) — New CLI subcommand that runs the agent in autonomous task mode. The agent plans upfront, chains tools aggressively (search → read → write → verify), and self-corrects without requiring user prompts. Usage: `phase2s task "fix the null pointer in auth.ts"` or `phase2s task --verify "bun test" "refactor the config loader"`.
+
+- **Task-mode system prompt preamble** (`src/utils/prompt.ts`) — `TASK_MODE_PREAMBLE` constant with PLANNING / EXECUTION / COMPLETION directives. Exported for test assertions. `buildSystemPrompt()` accepts a new `taskMode?: boolean` parameter; when true, prepends the preamble to the system prompt. Injected per-run (not at construction) so a shared Agent instance used in the REPL is unaffected between calls.
+
+- **Doom-loop detection** (`src/core/agent.ts`) — Inside `runOnce()`, a `recentCalls: Map<string, number>` tracks SHA-256 fingerprints of each `(tool_name, args)` pair. On the 2nd identical call in a run: injects a reflection user message ("⚠️ You already tried this exact call. Try a different approach."). On the 3rd: returns early with "(Agent appears stuck — same tool call repeated 3+ times. Stopping.)". Scoped per `runOnce()` invocation — no state persists between `agent.run()` calls. Applies to all agent runs (not just task mode).
+
+- **Auto-verify injection** (`src/core/agent.ts`) — When a tool-processing turn contains at least one successful `file_write` call and `verifyCommand` is set, `runVerify()` is called automatically and the result is injected as a `role: "user"` message (`[Auto-verify result] PASSED/FAILED (exit N)\n<output>`). Fires once per turn (not per individual write) to avoid spamming. Uses user message (not a synthetic tool result) for OpenAI protocol compliance. `verifyFn` injectable for testing.
+
+- **`AgentRunOptions.taskMode?: boolean`** (`src/core/agent.ts`) — New field that activates task mode for a single `run()` call. Extracted in `run()` and passed to `runOnce()` as a parameter (not an instance field) to prevent contamination across calls on a shared Agent.
+
+- **`phase2s__task` MCP tool** (`src/mcp/tools.ts`, `src/mcp/handler.ts`, `src/mcp/server.ts`) — Exposes task mode to Claude Code. Schema: `{ task: string (required), verify_command?: string }`. Handler calls `agent.run(task, { taskMode: true, verifyCommand })`. Appears in `tools/list` alongside all other tools.
+
+- **Task mode section in docs** (`docs/configuration.md`) — Documents `phase2s task`, `--verify` flag, and the three task-mode mechanisms (task prompt, auto-verify, doom-loop). Also updates `verifyCommand` config description to mention task-mode auto-verify.
+
+### Changed
+
+- **`buildSystemPrompt()` signature** (`src/utils/prompt.ts`) — Added `taskMode?: boolean` as the third parameter. No breaking change — existing callers omitting it get the original behavior.
+
+- **`runOnce()` options** (`src/core/agent.ts`) — Added `taskMode?`, `verifyCommand?`, and `verifyFn?` parameters. Satori mode passes `taskMode` through but does NOT pass `verifyCommand` to `runOnce` (satori has its own verification loop; auto-verify would double-fire). Normal single-pass mode passes all three.
+
+- **Shell completion scripts** (`src/cli/index.ts`) — Added `task` to both bash and zsh completion lists.
+
+- **Existing max-turns test updated** (`test/core/agent.test.ts`) — The test that verified max-turns sentinel now uses unique args per turn to avoid triggering the doom-loop guard. Added a companion test that verifies doom-loop exits before max-turns when identical args are repeated.
+
+### Tests
+
+- **`test/core/agent-task-mode.test.ts`** (new, 20 tests) — Full coverage: `buildSystemPrompt` taskMode injection (6), doom-loop guard (5), auto-verify injection (7), contamination guard (2).
+
+- **`test/cli/task.test.ts`** (new, 5 tests) — CLI subcommand routing: taskMode=true passed to agent.run, `--verify` flag override, completion list includes "task", missing prompt error.
+
+- **`test/mcp/server.test.ts`** (+5 tests) — TASK_TOOL descriptor, tools/list inclusion, missing-task error, agent.run called with taskMode, verify_command passed through. Updated tools/list length assertion (+1 for TASK_TOOL).
+
+**Tests: 2057 → 2088 (+31)**
+
 ## v1.57.0 — 2026-05-08
 
 Sprint 83 — Code-RAG Quality, Eval Parallelization, and Performance.
