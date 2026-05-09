@@ -24,16 +24,26 @@ describe("isTrivialInput", () => {
     expect(isTrivialInput("ok")).toBe(true);
   });
 
-  it("returns true for two-word input 'yes please'", () => {
-    expect(isTrivialInput("yes please")).toBe(true);
+  // ── Non-trivial: 2-word inputs ────────────────────────────────────────────
+
+  it("returns false for two-word input 'yes please'", () => {
+    expect(isTrivialInput("yes please")).toBe(false);
   });
 
-  it("returns true for two-word input 'go ahead'", () => {
-    expect(isTrivialInput("go ahead")).toBe(true);
+  it("returns false for two-word input 'go ahead'", () => {
+    expect(isTrivialInput("go ahead")).toBe(false);
   });
 
-  it("handles leading/trailing whitespace for two-word input", () => {
-    expect(isTrivialInput("  ok sure  ")).toBe(true);
+  it("returns false for two-word input '  ok sure  ' (trimmed)", () => {
+    expect(isTrivialInput("  ok sure  ")).toBe(false);
+  });
+
+  it("returns false for two-word input 'add tests'", () => {
+    expect(isTrivialInput("add tests")).toBe(false);
+  });
+
+  it("returns false for two-word input 'fix typo'", () => {
+    expect(isTrivialInput("fix typo")).toBe(false);
   });
 
   // ── Non-trivial: 3+ words ──────────────────────────────────────────────────

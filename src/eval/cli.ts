@@ -27,7 +27,7 @@ function parseConcurrency(argv: string[], defaultValue: number): number {
   }
   if (raw === undefined) return defaultValue;
   const n = Number(raw);
-  if (!Number.isFinite(n) || Number.isNaN(n)) {
+  if (!Number.isFinite(n)) {
     console.warn(`Warning: --concurrency "${raw}" is not a valid number; using default ${defaultValue}`);
     return defaultValue;
   }
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log(`Running eval suite (${runnerResults.length} case${runnerResults.length > 1 ? "s" : ""}, concurrency=${concurrency})...\n`);
+  console.log(`Ran eval suite (${runnerResults.length} case${runnerResults.length > 1 ? "s" : ""}, concurrency=${concurrency}). Judging...\n`);
 
   // OV6: judge phase also capped by runWithConcurrency
   const judgeTasks = runnerResults.map(r => () => judgeE2E(r, config));

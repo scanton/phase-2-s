@@ -237,7 +237,7 @@ describe("refreshAgentContext — trivial input skip", () => {
   it("does NOT change existing code context on trivial input (refreshCodeContext not re-called)", async () => {
     const agent = makeAgent(baseConfig);
     const spy = vi.spyOn(agent, "refreshCodeContext");
-    await refreshAgentContext(agent, "yes please", baseConfig);
+    await refreshAgentContext(agent, "yes", baseConfig);
     expect(spy).not.toHaveBeenCalled();
   });
 

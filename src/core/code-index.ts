@@ -49,9 +49,10 @@ interface IndexCacheEntry {
 }
 
 /**
- * Process-level LRU cache keyed by cwd.
- * Each entry stores the file's mtime and the parsed entries.
- * A mtime change on the index file invalidates the cache for that cwd.
+ * Process-level mtime-keyed cache, one entry per cwd.
+ * Each entry stores the index file's mtimeMs and the parsed entries.
+ * A mtime change on the index file invalidates the entry for that cwd.
+ * Unbounded — see TODOS.md (P4) for planned LRU eviction.
  */
 const _indexCache = new Map<string, IndexCacheEntry>();
 
@@ -229,7 +230,7 @@ export async function readCodeIndex(cwd: string): Promise<CodeEntry[]> {
 
   const cached = _indexCache.get(cwd);
   if (cached && cached.mtime === mtime) {
-    return cached.entries;
+    return [...cached.entries]; // shallow clone — callers must not mutate the cache
   }
 
   // Cache miss — parse from disk

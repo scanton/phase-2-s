@@ -170,8 +170,8 @@ export async function runWithConcurrency<T>(
     }
   }
 
-  const workerCount = Math.min(limit, tasks.length);
-  if (workerCount === 0) return results;
+  const workerCount = Math.min(Math.max(1, limit), tasks.length);
+  if (workerCount === 0) return results; // tasks.length === 0
   const workers = Array.from({ length: workerCount }, () => worker());
   await Promise.all(workers);
   return results;

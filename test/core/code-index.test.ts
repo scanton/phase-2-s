@@ -340,14 +340,15 @@ describe("readCodeIndex — in-memory cache", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("cache hit: second call with same mtime returns same reference (no re-read)", async () => {
+  it("cache hit: second call with same mtime returns equal entries (shallow clone, no re-read)", async () => {
     await mkdir(join(dir, ".phase2s"), { recursive: true });
     await writeFile(join(dir, ".phase2s/code-index.jsonl"), ENTRY + "\n");
 
     const first = await readCodeIndex(dir);
     const second = await readCodeIndex(dir);
-    // Same array reference — came from cache
-    expect(first).toBe(second);
+    // Returns a shallow clone each time — equal content, different reference
+    expect(first).toEqual(second);
+    expect(first).not.toBe(second);
     expect(first).toHaveLength(1);
     expect(first[0].path).toBe("src/foo.ts");
   });
@@ -360,8 +361,18 @@ describe("readCodeIndex — in-memory cache", () => {
     const first = await readCodeIndex(dir);
     expect(first).toHaveLength(1);
 
-    // Wait a tick, then overwrite with new content (different mtime)
-    await new Promise(res => setTimeout(res, 10));
+    // Wait until the filesystem mtime actually advances before overwriting.
+    // A fixed sleep is flaky on fast machines where two writes land in the same
+    // millisecond.  Instead, poll stat() until mtimeMs increases.
+    const { stat } = await import("node:fs/promises");
+    const beforeMtime = (await stat(indexPath)).mtimeMs;
+    let elapsed = 0;
+    while (elapsed < 2000) {
+      await new Promise(res => setTimeout(res, 5));
+      elapsed += 5;
+      const nowMtime = (await stat(indexPath)).mtimeMs;
+      if (nowMtime > beforeMtime) break;
+    }
     const ENTRY2 = JSON.stringify({
       path: "src/bar.ts",
       hash: "cafebabe",
@@ -388,14 +399,14 @@ describe("readCodeIndex — in-memory cache", () => {
       // Populate both caches
       const r1 = await readCodeIndex(dir);
       const r2 = await readCodeIndex(dir2);
-      expect(r1).toBe(await readCodeIndex(dir));   // hit
-      expect(r2).toBe(await readCodeIndex(dir2));  // hit
+      expect(r1).toEqual(await readCodeIndex(dir));   // hit — equal content
+      expect(r2).toEqual(await readCodeIndex(dir2));  // hit — equal content
 
       // Clear only dir's cache
       clearIndexCache(dir);
 
-      // dir2's cache is still intact (same reference)
-      expect(await readCodeIndex(dir2)).toBe(r2);
+      // dir2's cache is still intact (equal content)
+      expect(await readCodeIndex(dir2)).toEqual(r2);
     } finally {
       await rm(dir2, { recursive: true, force: true });
     }
