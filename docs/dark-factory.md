@@ -79,7 +79,40 @@ Spec saved to .phase2s/specs/bug-clicking-logout-sometimes-doesnt-end.md
 
 The wizard fills in 3-4 placeholders, substitutes them through the template, and writes the spec to `.phase2s/specs/`. The output is a full spec ready to lint and run — no editing needed.
 
-### Option C: Write it yourself
+### Option C: Let Phase2S generate the spec from a goal
+
+If you can describe what you want in a sentence, `phase2s conduct` handles the whole spec-writing step for you:
+
+```bash
+phase2s conduct "add JWT refresh-token rotation with Redis backing"
+```
+
+Phase2S sends your goal to the LLM, which produces a fully role-annotated spec with a Problem Statement, Decomposition (3–6 sub-tasks with roles), Eval Command, and Acceptance Criteria. The spec is validated automatically — if the LLM produces something malformed, it retries once before giving up.
+
+```
+✔ Spec generated: .phase2s/specs/add-jwt-refresh-token-rotation-2026-05-09T14-23-00.md
+Running goal executor...
+[1/4] Running: Architect — implementation blueprint
+...
+```
+
+By default, `phase2s conduct` generates the spec and immediately hands it to the goal executor. Pass `--spec-only` to stop after generation and review the spec yourself before running:
+
+```bash
+phase2s conduct "add JWT refresh-token rotation with Redis backing" --spec-only
+```
+
+```
+✔ Spec saved to .phase2s/specs/add-jwt-refresh-token-rotation-2026-05-09T14-23-00.md
+```
+
+Then inspect it, tweak if needed, and run:
+
+```bash
+phase2s goal .phase2s/specs/add-jwt-refresh-token-rotation-2026-05-09T14-23-00.md
+```
+
+### Option D: Write it yourself
 
 Create a markdown file anywhere. The format:
 

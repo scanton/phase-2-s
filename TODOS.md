@@ -14,6 +14,16 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 86 notes (v1.60.0, 2026-05-09)
+
+Sprint 86 ships the Conductor — `phase2s conduct "<goal>"` generates a role-annotated 5-pillar spec from a natural-language goal via LLM, validates it with `lintSpec()`, and delegates to `runGoal()` with `orchestrator: true`. Sprint also includes `/review` hardening: execSync→async exec, MCP stdout quiet flag, parseInt 0 fix, DRY `streamSpec` helper, and dead export removal. 17 tests; 2137 passing.
+
+- [ ] **Filename collision risk in `conductorGenSpec`** — `slugify(goal.slice(0, 40))` + timestamp suffix does not guarantee uniqueness under rapid successive calls with the same goal. Low priority (requires sub-second repeat calls), but worth a random hex suffix if it becomes an issue. **Priority:** P5
+- [ ] **No goal length cap in `conduct` command** — A 50,000-character goal floods the LLM prompt. A reasonable guard (e.g. 4000 chars with a truncation warning) would prevent runaway token use. **Priority:** P4
+- [ ] **`--model` flag unvalidated in `conduct`** — Any string is accepted; an unknown model silently falls back to provider default. A validation hint or warning would improve UX. **Priority:** P4
+
+---
+
 ## Backlog — Post-Sprint 85 notes (v1.59.0, 2026-05-09)
 
 Sprint 85 ships Task Mode Hardening — all 9 items from the Sprint 85 design doc (Rev 3). Closes all Post-Sprint 84 carry-overs.

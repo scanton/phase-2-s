@@ -3,7 +3,7 @@
 Phase2S is an AI coding tool that runs in your terminal on your ChatGPT subscription — no API key required. It also plugs into Claude Code as a second-opinion engine, and can execute entire specs autonomously.
 
 This guide gets you running in under 5 minutes. After you're set up, see:
-- [Dark factory guide](dark-factory.md) — write a spec, run `phase2s goal`, get a feature
+- [Dark factory guide](dark-factory.md) — write a spec (or use `phase2s conduct` to generate one), run `phase2s goal`, get a feature
 - [Claude Code integration](claude-code.md) — cross-model adversarial review from inside Claude Code
 
 ---
@@ -366,7 +366,7 @@ Everything else (`satori/`, `specs/`, `debug/`, `checkpoints/`) is created on-de
 ## Next steps
 
 **The three main features:**
-- [Dark factory](dark-factory.md) — write a spec, run `phase2s goal`, get a feature built autonomously
+- [Dark factory](dark-factory.md) — generate a spec with `phase2s conduct` or write one yourself, then `phase2s goal` builds it autonomously
 - [Claude Code integration](claude-code.md) — set up cross-model adversarial review in 2 minutes
 - [Skills reference](skills.md) — all 29 built-in skills with examples
 
