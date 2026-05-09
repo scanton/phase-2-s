@@ -869,7 +869,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         await runConduct(goal, {
           dryRun: cmdOpts.dryRun,
           model: cmdOpts.model,
-          workers: cmdOpts.workers ? (parseInt(cmdOpts.workers, 10) || undefined) : undefined,
+          workers: cmdOpts.workers !== undefined ? (() => { const n = parseInt(cmdOpts.workers!, 10); return Number.isNaN(n) ? undefined : n; })() : undefined,
           maxAttempts: cmdOpts.maxAttempts ? (parseInt(cmdOpts.maxAttempts, 10) || undefined) : undefined,
           quiet: cmdOpts.quiet,
           output: cmdOpts.output,

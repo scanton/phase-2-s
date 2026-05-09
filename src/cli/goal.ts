@@ -532,6 +532,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
           satoriModel: effectiveSatoriModel,
           revisedSubtasks,
           subsetToRun,
+          quiet: options.quiet,
         });
       } catch (err: unknown) {
         if (err instanceof RateLimitError) {

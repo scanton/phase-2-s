@@ -129,7 +129,8 @@ async function prompt(question: string): Promise<boolean> {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     rl.question(question, (answer) => {
       rl.close();
-      resolve(answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes");
+      const a = answer.trim().toLowerCase();
+      resolve(a === "y" || a === "yes");
     });
   });
 }

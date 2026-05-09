@@ -12,13 +12,16 @@
  * prompt stays within safe token bounds.
  */
 
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { createProvider } from "../providers/index.js";
-import { loadConfig, type Config } from "../core/config.js";
+import type { Config } from "../core/config.js";
 import { parseSpec } from "../core/spec-parser.js";
 import { lintSpec } from "./lint.js";
+
+const execAsync = promisify(exec);
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -105,27 +108,18 @@ RULES:
  *             the right repo, not the phase2s install location.
  */
 export async function buildConductorContext(cwd?: string): Promise<string> {
-  let branch = "unknown";
-  let gitLog = "";
-  let gitDiff = "";
+  const execCwd = cwd ?? process.cwd();
+  const opts = { cwd: execCwd, timeout: 5000 };
 
-  const execOpts = { encoding: "utf-8" as const, cwd: cwd ?? process.cwd() };
+  const [branchResult, logResult, diffResult] = await Promise.allSettled([
+    execAsync("git branch --show-current", opts),
+    execAsync("git log --oneline -5", opts),
+    execAsync("git diff --stat HEAD", opts),
+  ]);
 
-  try {
-    branch = execSync("git branch --show-current", execOpts).trim();
-  } catch {
-    // not a git repo or git unavailable
-  }
-  try {
-    gitLog = execSync("git log --oneline -5", execOpts).trim();
-  } catch {
-    // not a git repo or no commits
-  }
-  try {
-    gitDiff = execSync("git diff --stat HEAD", execOpts).trim();
-  } catch {
-    // nothing staged or no HEAD
-  }
+  const branch = branchResult.status === "fulfilled" ? branchResult.value.stdout.trim() : "unknown";
+  const gitLog = logResult.status === "fulfilled" ? logResult.value.stdout.trim() : "";
+  const gitDiff = diffResult.status === "fulfilled" ? diffResult.value.stdout.trim() : "";
 
   const raw = [
     `Branch: ${branch}`,
@@ -172,10 +166,17 @@ export interface ConductorGenResult {
 export async function conductorGenSpec(
   goal: string,
   config: Config,
-  options: { model?: string; cwd?: string; _provider?: import("../providers/types.js").Provider } = {},
+  options: {
+    model?: string;
+    cwd?: string;
+    _provider?: import("../providers/types.js").Provider;
+    /** Test-only: inject a synchronously-resolving context builder to avoid
+     *  real subprocess I/O while fake timers are active (avoids macrotask/fake-timer race). */
+    _buildContext?: (cwd: string) => Promise<string>;
+  } = {},
 ): Promise<ConductorGenResult> {
   const baseCwd = options.cwd ?? process.cwd();
-  const codebaseContext = await buildConductorContext(baseCwd);
+  const codebaseContext = await (options._buildContext ?? buildConductorContext)(baseCwd);
 
   // Safe single-pass template substitution — avoids recursive expansion if the
   // goal or codebaseContext happens to contain a placeholder like {codebaseContext}.
@@ -192,25 +193,8 @@ export async function conductorGenSpec(
   const provider = options._provider ?? createProvider(config);
 
   // First LLM call with AbortController timeout (D5)
-  let spec = "";
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
-
-  try {
-    for await (const event of provider.chatStream(
-      [{ role: "user", content: prompt }],
-      [],
-      { model, signal: controller.signal },
-    )) {
-      if (event.type === "text") spec += event.content;
-      else if (event.type === "error") throw new Error(event.error);
-    }
-  } catch {
-    // Timeout, network error, or provider error — return empty sentinel
-    return { specPath: "", specContent: "" };
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  let spec = await streamSpec(provider, [{ role: "user", content: prompt }], model);
+  if (spec === null) return { specPath: "", specContent: "" };
 
   // Validate — retry once on lint failure (D4)
   const firstLint = lintSpec(parseSpec(spec));
@@ -225,24 +209,8 @@ export async function conductorGenSpec(
       `Please regenerate the complete spec fixing all errors.\n\n` +
       prompt;
 
-    let retrySpec = "";
-    const retryController = new AbortController();
-    const retryTimeoutId = setTimeout(() => retryController.abort(), STREAM_TIMEOUT_MS);
-
-    try {
-      for await (const event of provider.chatStream(
-        [{ role: "user", content: retryPrompt }],
-        [],
-        { model, signal: retryController.signal },
-      )) {
-        if (event.type === "text") retrySpec += event.content;
-        else if (event.type === "error") throw new Error(event.error);
-      }
-    } catch {
-      return { specPath: "", specContent: "" };
-    } finally {
-      clearTimeout(retryTimeoutId);
-    }
+    const retrySpec = await streamSpec(provider, [{ role: "user", content: retryPrompt }], model);
+    if (retrySpec === null) return { specPath: "", specContent: "" };
 
     const retryLint = lintSpec(parseSpec(retrySpec));
     if (!retryLint.ok) {
@@ -274,6 +242,35 @@ export async function conductorGenSpec(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Stream a single LLM call with AbortController timeout (D5).
+ *
+ * Returns the accumulated text on success, or null on any error
+ * (timeout, network failure, provider error).  Using null-as-sentinel
+ * means callers never have to catch — the execute-try-catch-contract
+ * stays in one place.
+ */
+async function streamSpec(
+  provider: import("../providers/types.js").Provider,
+  messages: Array<{ role: string; content: string }>,
+  model: string,
+): Promise<string | null> {
+  let text = "";
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
+  try {
+    for await (const event of provider.chatStream(messages, [], { model, signal: controller.signal })) {
+      if (event.type === "text") text += event.content;
+      else if (event.type === "error") throw new Error(event.error);
+    }
+    return text;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /** Slugify a string for use in filenames. */
 function slugify(s: string): string {
   return s
@@ -281,17 +278,4 @@ function slugify(s: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 40) || "conduct";
-}
-
-// ---------------------------------------------------------------------------
-// Convenience loader — loads config then calls conductorGenSpec.
-// Used by the MCP handler which has no pre-loaded config.
-// ---------------------------------------------------------------------------
-
-export async function conductorGenSpecFromGoal(
-  goal: string,
-  options: { model?: string; cwd?: string } = {},
-): Promise<ConductorGenResult> {
-  const config = await loadConfig();
-  return conductorGenSpec(goal, config, options);
 }

@@ -86,6 +86,11 @@ export interface ParallelOptions {
    * without touching any files (no-op). When undefined, all sub-tasks run.
    */
   subsetToRun?: Set<string>;
+  /**
+   * Suppress console.log progress output. Used in MCP mode to avoid
+   * corrupting the JSON-RPC stdout stream with terminal escape sequences.
+   */
+  quiet?: boolean;
 }
 
 export interface WorkerResult {
@@ -150,7 +155,7 @@ export async function executeParallel(
     for (const level of depResult.levels) {
       // Skip completed levels on resume
       if (state.completedLevels?.includes(level.level)) {
-        console.log(chalk.dim(`\n[skip] Level ${level.level} (completed in prior run)`));
+        if (!options.quiet) console.log(chalk.dim(`\n[skip] Level ${level.level} (completed in prior run)`));
         continue;
       }
 
@@ -177,7 +182,7 @@ export async function executeParallel(
         writeState(specDir, specHash, state);
       } else {
         // Level failed — stop parallel execution
-        console.log(chalk.red(`\nLevel ${level.level} failed. Stopping parallel execution.`));
+        if (!options.quiet) console.log(chalk.red(`\nLevel ${level.level} failed. Stopping parallel execution.`));
         break;
       }
     }
@@ -217,7 +222,7 @@ async function executeLevel(
   const levelStart = Date.now();
   const subtasks = level.subtaskIndices.map(i => ({ index: i, subtask: spec.decomposition[i] }));
 
-  console.log(chalk.cyan(`\n[Level ${level.level}] Running ${subtasks.length} subtask${subtasks.length > 1 ? "s" : ""} in parallel (max ${maxWorkers} workers)`));
+  if (!options.quiet) console.log(chalk.cyan(`\n[Level ${level.level}] Running ${subtasks.length} subtask${subtasks.length > 1 ? "s" : ""} in parallel (max ${maxWorkers} workers)`));
 
   logger.log({
     event: "level_started",
@@ -305,7 +310,7 @@ async function executeLevel(
   let mergeResult: LevelMergeResult | null = null;
 
   if (successfulWorkers.length > 0) {
-    console.log(chalk.cyan(`\n[Level ${level.level}] Merging ${successfulWorkers.length} worker${successfulWorkers.length > 1 ? "s" : ""}...`));
+    if (!options.quiet) console.log(chalk.cyan(`\n[Level ${level.level}] Merging ${successfulWorkers.length} worker${successfulWorkers.length > 1 ? "s" : ""}...`));
 
     mergeResult = mergeLevelWorktrees(
       cwd,
@@ -330,13 +335,15 @@ async function executeLevel(
     }
 
     if (mergeResult.success) {
-      console.log(chalk.green(`[Level ${level.level}] All merges successful.`));
+      if (!options.quiet) console.log(chalk.green(`[Level ${level.level}] All merges successful.`));
     } else {
       const failedMerge = mergeResult.results.find(r => r.status !== "success");
-      if (failedMerge?.status === "conflict") {
-        console.log(chalk.red(`[Level ${level.level}] Merge conflict in: ${failedMerge.conflictFiles?.join(", ")}`));
-      } else if (failedMerge) {
-        console.log(chalk.red(`[Level ${level.level}] Merge error: ${failedMerge.error}`));
+      if (!options.quiet) {
+        if (failedMerge?.status === "conflict") {
+          console.log(chalk.red(`[Level ${level.level}] Merge conflict in: ${failedMerge.conflictFiles?.join(", ")}`));
+        } else if (failedMerge) {
+          console.log(chalk.red(`[Level ${level.level}] Merge error: ${failedMerge.error}`));
+        }
       }
     }
   }
@@ -398,7 +405,7 @@ async function executeWorker(
   // and return an immediate no-op success. This lets the retry loop re-run
   // only failing sub-tasks without wasting workers on passing ones.
   if (subsetToRun !== undefined && !subsetToRun.has(subtask.name)) {
-    console.log(chalk.dim(`  [Worker ${index}] Skipping (already passed): ${subtask.name}`));
+    if (!options.quiet) console.log(chalk.dim(`  [Worker ${index}] Skipping (already passed): ${subtask.name}`));
     return {
       index,
       subtaskName: subtask.name,
@@ -408,7 +415,7 @@ async function executeWorker(
     };
   }
 
-  console.log(chalk.yellow(`  [Worker ${index}] Starting: ${subtask.name}`));
+  if (!options.quiet) console.log(chalk.yellow(`  [Worker ${index}] Starting: ${subtask.name}`));
   if (dashboardState) updateWorkerPane(dashboardState, workerIndexInBatch, `[Worker ${index}] ${subtask.name}`);
 
   logger.log({
@@ -442,7 +449,7 @@ async function executeWorker(
   }
 
   if ("error" in wt) {
-    console.log(chalk.red(`  [Worker ${index}] Failed to create worktree: ${wt.error}`));
+    if (!options.quiet) console.log(chalk.red(`  [Worker ${index}] Failed to create worktree: ${wt.error}`));
     return {
       index,
       subtaskName: subtask.name,
@@ -530,7 +537,7 @@ async function executeWorker(
       options.onRateLimitDetected?.();
       throw workerError;
     }
-    console.log(chalk.red(`  [Worker ${index}] Failed (${durationStr}): ${subtask.name}`));
+    if (!options.quiet) console.log(chalk.red(`  [Worker ${index}] Failed (${durationStr}): ${subtask.name}`));
     return {
       index,
       subtaskName: subtask.name,
@@ -567,7 +574,7 @@ async function executeWorker(
     // No changes to commit — that's fine
   }
 
-  console.log(chalk.green(`  [Worker ${index}] Done (${durationStr}): ${subtask.name}`));
+  if (!options.quiet) console.log(chalk.green(`  [Worker ${index}] Done (${durationStr}): ${subtask.name}`));
 
   return {
     index,
