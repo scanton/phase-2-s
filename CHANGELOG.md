@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.59.0 — 2026-05-09
+
+Sprint 85 — Hardening: configurable thresholds, per-write verification, CLI task flags, and observability.
+
+### Added
+
+- **`doomLoopThreshold` config field** — Tune the doom-loop detection threshold per project via `.phase2s.yaml` (`doomLoopThreshold: 2` for aggressive, default `3`). Minimum 2. Previously hardcoded to 3.
+
+- **`verifyOnEveryWrite` config field** — When `true`, runs the verify command after every successful `file_write` tool call (not just once per turn). Results are batched and injected as a single user message after all tool results commit. Truncated at 1000 chars to prevent context blowup. Default `false`.
+
+- **`--quiet`, `--timeout`, `--output`, `--doom-loop-threshold` flags for `phase2s task`** — `--quiet` suppresses per-turn streaming and prints only the final result. `--timeout <seconds>` aborts the task after N seconds. `--output <file>` writes the final result to disk. `--doom-loop-threshold <n>` overrides the config value for one run.
+
+- **`Agent.lastRunStats`** public field (`{ turns: number; fileWrites: number }`) — Exposes turn count and file-write count for the most recent `run()` call. Reset at the start of each `run()`. Accurate even when a task aborts early (doom-loop, max-turns, or abort signal).
+
+- **`isAbortError(err)` helper** — Exported from `agent.ts`. Returns `true` for `AbortError` by name, `ABORT_ERR` code, or `DOMException`. Used in the CLI timeout catch path.
+
+- **`trivialInputMinWords` config field** — Controls the word-count threshold below which a REPL input skips code-RAG embedding. `0` = only empty strings skip; `1` = single-word inputs skip (default); `2` = two-word inputs also skip. Useful when short affirmations like "go ahead" cause unnecessary RAG lookups.
+
+### Changed
+
+- **`_indexCache` FIFO eviction cap** (`code-index.ts`) — Cache is now capped at 50 entries using FIFO eviction. Previously unbounded, which could grow indefinitely in long-running REPL sessions indexing many directories.
+
+- **`isTrivialInput` gains `minWords` parameter** (`rag-utils.ts`) — Second argument (default `1`) controls the trivial-input threshold. Backward-compatible; all existing callers pass nothing and get the previous behavior.
+
+- **`writeEvalResults` is now async** (`eval/reporter.ts`) — Writes are parallelized with `Promise.all`. Directory creation is non-blocking (`mkdir` instead of `mkdirSync`). Any write failure rejects the returned promise.
+
 ## v1.58.0 — 2026-05-09
 
 Sprint 84 — Agentic Tool Loop.
