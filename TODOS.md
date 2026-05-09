@@ -20,7 +20,7 @@ Sprint 83 ships Code-RAG Quality, Eval Parallelization, and Performance improvem
 
 - [ ] **Eval result writer concurrency** — `writeEvalResults()` in `reporter.ts` writes both result files synchronously in a loop. With high concurrency (10+ cases), this could become a bottleneck. Consider making it async and parallelizing writes if benchmark shows impact. **Priority:** P4
 
-- [ ] **`isTrivialInput` tuning** — The 2-word heuristic works well for acks but may skip legitimate 2-word task inputs (e.g. "add tests", "fix typo"). Consider learning from user corrections or exposing a `trivialInputMinWords` config knob if real false-positive rates emerge. **Priority:** P4
+- [ ] **`isTrivialInput` tuning** — Threshold is now 1-word (only empty/single-word acks are trivial; two-word inputs like "add tests" get RAG). If single-word false positives emerge (e.g. "go", "run", "yes"), consider exposing a `trivialInputMinWords` config knob or a per-word allowlist. **Priority:** P4
 
 - [ ] **Cache eviction policy** — `_indexCache` grows unbounded in long-running MCP server sessions with many projects. Add an LRU eviction cap (e.g. 50 entries) when memory pressure is observed. **Priority:** P4
 
@@ -62,7 +62,7 @@ Sprint 78 ships function-level chunking via @ast-grep/napi. Identified during /p
 
 - [x] **Arrow function chunking with parent-walk (Sprint 79)** — `arrow_function` kind was removed from TS/JS CHUNK_KINDS in Sprint 78 because unnamed arrows (top-level module-scope `(e) => {}`) produced meaningless chunks that diluted top-K results. Re-added in Sprint 79 with `variable_declarator` parent-walk: arrow → parent → binding identifier. Anonymous callbacks (parent is `arguments`) and one-liners (below MIN_CHUNK_LINES) are filtered. `ARROW_WALK_LANGS` guard limits pass to TypeScript/TSX/JavaScript. **Completed: v1.53.0 (2026-05-05)**
 
-- [ ] **Verify CHUNK_KINDS node kind names for non-TypeScript languages** — Only the TypeScript kinds (`function_declaration`, `method_definition`) are confirmed. Python, Ruby, Go, Rust, Java, Kotlin, C, C++, C#, Swift kinds are speculative and may be wrong — wrong kind names silently return 0 chunks (whole-file fallback, no error). Verify each using the tree-sitter playground (https://tree-sitter.github.io/tree-sitter/playground): paste a sample function, check the AST node kind name. Fix any mismatches in `CHUNK_KINDS` in `chunker.ts`. A language that consistently returns 0 chunks on a real codebase is the signal.
+- [x] **Verify CHUNK_KINDS node kind names for non-TypeScript languages** — Shipped in Sprint 83: added `// verified via tree-sitter playground` comments for all confirmed kinds; added per-language chunker tests (`test/core/chunker.test.ts`) covering Python (`function_definition`), Ruby (`method`), Go (`function_declaration`), Rust (`function_item`), Java/Kotlin/C/C++/C#/Swift. Wrong kinds produce 0 chunks (whole-file fallback) — tests assert chunk count > 0 for each language. **Completed: v1.57.0 (2026-05-09)**
 
 - [x] **Alpine CI enforcement** — Added `alpine-smoke` job to `.github/workflows/publish.yml` that runs after npm publish using `node:22-alpine` container. Installs phase2s from npm and verifies `phase2s --version` (exercises full CLI startup including all module loading on musl). Uses `defaults: run: shell: sh` since Alpine doesn't include bash. Original sync-based fallback check removed after adversarial review (phase2s sync exits 0 when Ollama unavailable, making it a no-op). **Completed: v1.53.0 (2026-05-05)**
 

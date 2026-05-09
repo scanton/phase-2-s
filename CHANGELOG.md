@@ -10,7 +10,7 @@ Sprint 83 — Code-RAG Quality, Eval Parallelization, and Performance.
 
 - **`DEFAULT_CODE_RAG_MIN_SCORE = 0.25`** — Replaces `MIN_CODE_RAG_SCORE`; same value, clearer name signals it's the fallback when `config.codeRagMinScore` is not set.
 
-- **`isTrivialInput(line)` helper** (`src/core/rag-utils.ts`) — Returns `true` for empty strings, single-word acks ("yes", "no", "ok"), and two-word phrases that don't start with `:`. Colon commands (`:help`, `:search foo`) always return `false` — they dispatch to handlers that may need code context. Avoids unnecessary Ollama round-trips on short UI responses.
+- **`isTrivialInput(line)` helper** (`src/core/rag-utils.ts`) — Returns `true` only for empty strings and single-word acks ("yes", "no", "ok", "sure"). Two-word inputs like "add tests" or "fix typo" return `false` and trigger RAG normally — they carry real task signal. Colon commands (`:help`, `:search foo`) always return `false`. Avoids unnecessary Ollama round-trips on bare UI acks without silently skipping task queries.
 
 - **Trivial turn skip in `refreshAgentContext()`** (`src/cli/index.ts`) — When `isTrivialInput()` returns true, skips `generateEmbedding`, `searchCode`, and `refreshCodeContext` entirely; preserves existing code context. Learnings still refresh via heuristic sort (no embed needed).
 
@@ -38,7 +38,7 @@ Sprint 83 — Code-RAG Quality, Eval Parallelization, and Performance.
 
 - **`test/core/chunker.test.ts`** (+10 per-language tests) — `assertChunkContract()` helper verifies each language grammar produces ≥1 chunk with valid name and line numbers. Covers Python, Ruby, Go, Rust, Java, Kotlin, C, C++, C#, Swift. Skips gracefully when `ast-grep` is unavailable.
 
-- **`test/cli/code-context.test.ts`** (+7 tests) — Trivial skip: `generateEmbedding` not called for "yes"/"ok"/"yes please"; `searchCode` not called; `refreshCodeContext` not re-called; learnings still refresh. `codeRagMinScore` passthrough: correct value passed to `searchCode` for both explicit config and undefined fallback.
+- **`test/cli/code-context.test.ts`** (+7 tests) — Trivial skip: `generateEmbedding` not called for "yes"/"ok" (single-word acks); `searchCode` not called; `refreshCodeContext` not re-called; learnings still refresh. `codeRagMinScore` passthrough: correct value passed to `searchCode` for both explicit config and undefined fallback.
 
 - **`test/eval/runner.test.ts`** (+6 tests) — `runWithConcurrency`: result order preserved, concurrency cap enforced, sequential at limit=1, rejection propagated, empty input, concurrency > task count.
 
