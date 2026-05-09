@@ -34,6 +34,7 @@ Pass the full plan text as `prompt`. Read the structured output:
 - `phase2s__consensus_plan` — three-pass planning (Planner + Architect + Critic)
 - `phase2s__health` — codebase quality check
 - `phase2s__retro` — sprint retrospective
+- `phase2s__task` — autonomous multi-step task execution (plan → chain tools → auto-verify)
 
 ## Sprint workflow — use feature branches
 
