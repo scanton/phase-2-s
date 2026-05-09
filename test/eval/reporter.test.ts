@@ -49,15 +49,15 @@ describe("writeEvalResults", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("creates the output directory if it does not exist", () => {
+  it("creates the output directory if it does not exist", async () => {
     const nested = join(tmpDir, "deep", "nested", "evals");
-    writeEvalResults([makeRunnerResult()], [makeJudgeResult()], nested);
+    await writeEvalResults([makeRunnerResult()], [makeJudgeResult()], nested);
     const files = readdirSync(nested);
     expect(files.length).toBeGreaterThan(0);
   });
 
-  it("writes two files per result: one e2e-run and one llm-judge", () => {
-    writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
+  it("writes two files per result: one e2e-run and one llm-judge", async () => {
+    await writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
     const files = readdirSync(tmpDir);
     const e2eFiles = files.filter(f => f.includes("-e2e-run-"));
     const judgeFiles = files.filter(f => f.includes("-llm-judge-run-"));
@@ -65,14 +65,14 @@ describe("writeEvalResults", () => {
     expect(judgeFiles).toHaveLength(1);
   });
 
-  it("filenames include the skill name", () => {
-    writeEvalResults([makeRunnerResult("adversarial")], [makeJudgeResult()], tmpDir);
+  it("filenames include the skill name", async () => {
+    await writeEvalResults([makeRunnerResult("adversarial")], [makeJudgeResult()], tmpDir);
     const files = readdirSync(tmpDir);
     expect(files.some(f => f.startsWith("adversarial-"))).toBe(true);
   });
 
-  it("e2e filename matches gate glob pattern: *-e2e-*-YYYY-MM-DD*.json", () => {
-    writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
+  it("e2e filename matches gate glob pattern: *-e2e-*-YYYY-MM-DD*.json", async () => {
+    await writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
     const files = readdirSync(tmpDir);
     const e2eFile = files.find(f => f.includes("-e2e-run-"));
     expect(e2eFile).toBeDefined();
@@ -80,16 +80,16 @@ describe("writeEvalResults", () => {
     expect(e2eFile).toMatch(/-e2e-run-\d{4}-\d{2}-\d{2}-\d+\.json$/);
   });
 
-  it("llm-judge filename matches gate glob pattern: *-llm-judge-*-YYYY-MM-DD*.json", () => {
-    writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
+  it("llm-judge filename matches gate glob pattern: *-llm-judge-*-YYYY-MM-DD*.json", async () => {
+    await writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
     const files = readdirSync(tmpDir);
     const judgeFile = files.find(f => f.includes("-llm-judge-run-"));
     expect(judgeFile).toBeDefined();
     expect(judgeFile).toMatch(/-llm-judge-run-\d{4}-\d{2}-\d{2}-\d+\.json$/);
   });
 
-  it("e2e file contains case, output, and elapsed_ms", () => {
-    writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
+  it("e2e file contains case, output, and elapsed_ms", async () => {
+    await writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
     const files = readdirSync(tmpDir);
     const e2eFile = files.find(f => f.includes("-e2e-run-"))!;
     const json = JSON.parse(readFileSync(join(tmpDir, e2eFile), "utf8"));
@@ -98,8 +98,8 @@ describe("writeEvalResults", () => {
     expect(json).toHaveProperty("elapsed_ms");
   });
 
-  it("judge file contains score, verdict, and criteria", () => {
-    writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
+  it("judge file contains score, verdict, and criteria", async () => {
+    await writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
     const files = readdirSync(tmpDir);
     const judgeFile = files.find(f => f.includes("-llm-judge-run-"))!;
     const json = JSON.parse(readFileSync(join(tmpDir, judgeFile), "utf8"));
@@ -108,13 +108,30 @@ describe("writeEvalResults", () => {
     expect(json).toHaveProperty("criteria");
   });
 
-  it("writes files for multiple results", () => {
-    writeEvalResults(
+  it("writes files for multiple results", async () => {
+    await writeEvalResults(
       [makeRunnerResult("adversarial"), makeRunnerResult("review")],
       [makeJudgeResult(8.0), makeJudgeResult(7.0)],
       tmpDir,
     );
     const files = readdirSync(tmpDir);
     expect(files).toHaveLength(4); // 2 e2e + 2 judge
+  });
+
+  it("returns a Promise (async)", () => {
+    const result = writeEvalResults([makeRunnerResult()], [makeJudgeResult()], tmpDir);
+    expect(result).toBeInstanceOf(Promise);
+    return result; // let vitest await it
+  });
+
+  it("rejects when the output directory cannot be created (write failure propagates)", async () => {
+    // Use a path where mkdirSync would fail — writing to a non-existent deep path
+    // is valid (mkdirSync recursive handles it), so we simulate a write failure
+    // by passing a path that is itself a file, preventing directory creation.
+    const { writeFileSync } = await import("node:fs");
+    const blocked = join(tmpDir, "blocked");
+    writeFileSync(blocked, ""); // blocked is now a file, not a dir
+    await expect(writeEvalResults([makeRunnerResult()], [makeJudgeResult()], blocked))
+      .rejects.toThrow();
   });
 });

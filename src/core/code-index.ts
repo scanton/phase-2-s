@@ -52,9 +52,20 @@ interface IndexCacheEntry {
  * Process-level mtime-keyed cache, one entry per cwd.
  * Each entry stores the index file's mtimeMs and the parsed entries.
  * A mtime change on the index file invalidates the entry for that cwd.
- * Unbounded — see TODOS.md (P4) for planned LRU eviction.
+ * Capped at 50 entries using FIFO eviction (Map insertion order).
  */
 const _indexCache = new Map<string, IndexCacheEntry>();
+const INDEX_CACHE_MAX = 50;
+
+/**
+ * Expose the internal cache map for testing. Not part of the public API.
+ * Allows tests to inspect cache size and contents without going through
+ * the full read/write cycle.
+ * @internal
+ */
+export function _getIndexCacheForTest(): Map<string, IndexCacheEntry> {
+  return _indexCache;
+}
 
 /**
  * Clear the in-memory index cache for a specific cwd, or all entries when
@@ -251,6 +262,14 @@ export async function readCodeIndex(cwd: string): Promise<CodeEntry[]> {
         }
       } catch {
         // Skip corrupt lines — entry will be re-embedded on next sync
+      }
+    }
+    // FIFO eviction: if cache is at capacity, remove the oldest-inserted entry
+    // before adding the new one so the map never exceeds INDEX_CACHE_MAX entries.
+    if (_indexCache.size >= INDEX_CACHE_MAX) {
+      const oldest = _indexCache.keys().next().value;
+      if (oldest !== undefined) {
+        _indexCache.delete(oldest);
       }
     }
     _indexCache.set(cwd, { mtime, entries });

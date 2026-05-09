@@ -12,15 +12,22 @@
  * they dispatch to command handlers that may query the index or produce
  * output requiring code context.
  *
- * Heuristic: word count <= 1 AND first token does not start with ':'.
+ * Heuristic: word count <= minWords AND first token does not start with ':'.
  *
- * @example trivial     — "", "yes", "no", "ok", "sure"
- * @example non-trivial — "yes please", "add tests", "go ahead",
- *                        ":help", ":search foo", "fix the auth bug"
+ * @param input    - The raw user input string.
+ * @param minWords - Minimum word count to be considered non-trivial. Default 1
+ *                   (single-word acks are trivial). Set to 0 to skip only empty
+ *                   strings; set to 2 to allow single-word commands through RAG.
+ *
+ * @example trivial     (minWords=1) — "", "yes", "no", "ok", "sure"
+ * @example non-trivial (minWords=1) — "yes please", "add tests", "go ahead",
+ *                                     ":help", ":search foo", "fix the auth bug"
+ * @example trivial     (minWords=0) — "" only
+ * @example non-trivial (minWords=0) — "yes", "ok", "run", "go"
  */
-export function isTrivialInput(line: string): boolean {
-  const parts = line.trim().split(/\s+/).filter(Boolean);
+export function isTrivialInput(input: string, minWords = 1): boolean {
+  const parts = input.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return true;
   if (parts[0].startsWith(":")) return false; // colon commands always run
-  return parts.length <= 1;
+  return parts.length <= minWords;
 }

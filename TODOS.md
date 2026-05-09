@@ -14,15 +14,25 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
-## Backlog — Post-Sprint 84 notes (v1.58.0, 2026-05-09)
+## Backlog — Post-Sprint 85 notes (v1.59.0, 2026-05-09)
+
+Sprint 85 ships Task Mode Hardening — all 9 items from the Sprint 85 design doc (Rev 3). Closes all Post-Sprint 84 carry-overs.
+
+- [ ] **Shell completions for new `task` flags** — Sprint 85 adds `--quiet`, `--timeout`, `--output`, `--doom-loop-threshold` to `phase2s task`. The existing `phase2s completion bash/zsh` script doesn't suggest these. Update completions to include them. **Priority:** P4
+
+- [x] **Document Sprint 85 config fields in README** — Three new `.phase2s.yaml` fields land in v1.59.0: `doomLoopThreshold`, `verifyOnEveryWrite`, `trivialInputMinWords`. Four new `phase2s task` CLI flags: `--quiet`, `--timeout`, `--output`, `--doom-loop-threshold`. **Completed: v1.59.0 (2026-05-09)** — README "Task mode tuning" section added by commit `ebad335`.
+
+---
+
+## Backlog — Post-Sprint 84 notes (v1.58.0, 2026-05-09) — CLOSED in Sprint 85
 
 Sprint 84 ships the Agentic Tool Loop — `phase2s task`, doom-loop guard, auto-verify injection, and `phase2s__task` MCP tool. All 5 items closed with no carry-overs.
 
-- [ ] **Doom-loop threshold tuning** — Current thresholds are 2nd identical call → reflection nudge, 3rd → early return. If real tasks hit false positives (e.g. two legitimate writes of the same content), expose `doomLoopThreshold` as a config knob. **Priority:** P4
+- [x] **Doom-loop threshold tuning** — Implemented in Sprint 85: `doomLoopThreshold` config field (default 3, min 2). **Priority:** P4
 
-- [ ] **Task mode streaming output** — `phase2s task` currently prints delta chunks like the REPL. A `--quiet` flag that suppresses deltas and prints only the final result (+ verify output) would help CI/script usage. **Priority:** P4
+- [x] **Task mode streaming output** — Implemented in Sprint 85: `--quiet` flag suppresses per-turn deltas, prints only final result + verify output. **Priority:** P4
 
-- [ ] **Auto-verify cooldown config** — Verify fires once per LLM tool-call turn. For tasks with many sequential writes, per-write verification might be preferable. Consider `verifyOnEveryWrite: boolean` config option. **Priority:** P4
+- [x] **Auto-verify cooldown config** — Implemented in Sprint 85: `verifyOnEveryWrite: boolean` config option with N+1 guard and 1000-char per-result truncation. **Priority:** P4
 
 ---
 
@@ -30,11 +40,11 @@ Sprint 84 ships the Agentic Tool Loop — `phase2s task`, doom-loop guard, auto-
 
 Sprint 83 ships Code-RAG Quality, Eval Parallelization, and Performance improvements. All 5 items + OV6 judge concurrency closed with no carry-overs.
 
-- [ ] **Eval result writer concurrency** — `writeEvalResults()` in `reporter.ts` writes both result files synchronously in a loop. With high concurrency (10+ cases), this could become a bottleneck. Consider making it async and parallelizing writes if benchmark shows impact. **Priority:** P4
+- [x] **Eval result writer concurrency** — Implemented in Sprint 85: `writeEvalResults()` made async with `Promise.all` for concurrent writes. **Priority:** P4
 
-- [ ] **`isTrivialInput` tuning** — Threshold is now 1-word (only empty/single-word acks are trivial; two-word inputs like "add tests" get RAG). If single-word false positives emerge (e.g. "go", "run", "yes"), consider exposing a `trivialInputMinWords` config knob or a per-word allowlist. **Priority:** P4
+- [x] **`isTrivialInput` tuning** — Implemented in Sprint 85: `trivialInputMinWords` config knob (default 1). **Priority:** P4
 
-- [ ] **Cache eviction policy** — `_indexCache` grows unbounded in long-running MCP server sessions with many projects. Add an LRU eviction cap (e.g. 50 entries) when memory pressure is observed. **Priority:** P4
+- [x] **Cache eviction policy** — Implemented in Sprint 85: `_indexCache` FIFO eviction at 50 entries in `src/core/code-index.ts`. **Priority:** P4
 
 ---
 

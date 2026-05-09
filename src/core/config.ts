@@ -47,6 +47,28 @@ const configSchema = z.object({
   verifyCommand: z.string().default("npm test"),
   requireSpecification: z.boolean().default(false),
   /**
+   * Number of identical tool calls in a row that triggers the doom-loop early-return.
+   * Minimum 2 (one reflection nudge, then abort). Default 3.
+   */
+  doomLoopThreshold: z.number().min(2).default(3),
+  /**
+   * When true, run the verify command after every successful file_write tool call
+   * (not only once per turn). Results are batched into a single user message after
+   * all tool results for the turn are committed. Each result is truncated at 1000 chars
+   * to prevent context blowup.
+   * Default false — opt-in for tasks where intermediate verify feedback is valuable.
+   */
+  verifyOnEveryWrite: z.boolean().default(false),
+  /**
+   * Word-count threshold below which a REPL input is considered trivial and skips
+   * code-RAG embedding. Logic: `parts.length <= trivialInputMinWords` → trivial.
+   *   0 = only empty strings are trivial (all single-word inputs trigger RAG)
+   *   1 = empty and single-word inputs are trivial (default; two-word+ triggers RAG)
+   *   2 = empty, one-word, and two-word inputs are trivial (useful if two-word inputs
+   *       like "yes please" / "go ahead" cause unnecessary RAG lookups)
+   */
+  trivialInputMinWords: z.number().min(0).default(1),
+  /**
    * Allow-list: only the named tools are available to the agent.
    * When omitted, all tools are available. `deny` takes precedence over `tools`.
    */

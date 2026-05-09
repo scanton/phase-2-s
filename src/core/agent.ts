@@ -97,6 +97,13 @@ export class Agent {
    * Set via refreshCodeContext() by the CLI before each agent.run() call.
    */
   private codeContext: string | null | undefined = undefined;
+  /**
+   * Stats from the most recent run() call.
+   * Initialized to { turns: 0, fileWrites: 0 } at the start of each run() call and
+   * updated on every return path in runOnce() so callers always get accurate counts
+   * even when a task aborts early (doom-loop, max-turns, abort signal).
+   */
+  lastRunStats: { turns: number; fileWrites: number } = { turns: 0, fileWrites: 0 };
 
   constructor(opts: AgentOptions) {
     this.config = opts.config;
@@ -293,10 +300,12 @@ export class Agent {
 
     // Doom-loop detection: track (tool_name + sha256(args)) fingerprints for this run.
     // Scoped to this runOnce() invocation — cleared on every new run() call.
-    // "total count" semantics: 3 identical calls in any order within the run triggers exit.
+    // "total count" semantics: doomLoopThreshold identical calls in any order triggers exit.
     const recentCalls = new Map<string, number>();
+    const doomLoopThreshold = this.config.doomLoopThreshold ?? 3;
 
     let turns = 0;
+    let fileWriteCount = 0;
 
     // When taskMode is true, temporarily replace the system message with a task-mode version.
     // We swap it back at the end so REPL sessions sharing this Agent see no change.
@@ -368,6 +377,7 @@ export class Agent {
 
         if (toolCalls.length === 0) {
           this.conversation.addAssistant(text);
+          this.lastRunStats = { turns, fileWrites: fileWriteCount };
           return text;
         }
 
@@ -376,26 +386,30 @@ export class Agent {
         let hadToolError = false;
         let wroteFileThisTurn = false;
 
-        // doomLoopReflect: set when a repeated call (fpCount==2) is detected.
+        // doomLoopReflect: set when a repeated call (fpCount==doomLoopThreshold-1) is detected.
         // Injected as a user message AFTER all tool results for this turn are committed,
         // keeping the OpenAI message protocol valid (no user message mid-tool-result batch).
         let doomLoopReflect = false;
+
+        // Per-write verify results — collected here and flushed as a single user message
+        // after all tool results are committed, keeping the OpenAI protocol intact.
+        const writeVerifyResults: string[] = [];
 
         for (let _dli = 0; _dli < toolCalls.length; _dli++) {
           const call = toolCalls[_dli];
           log.tool(call.name, truncate(call.arguments, 100));
 
           // Doom-loop fingerprinting: sha256(args)[0..7] + tool name.
-          // On 2nd identical call: flag for post-loop reflection injection.
-          // On 3rd+ identical call: fill tool results for this call AND all remaining
+          // On (threshold-1)th identical call: flag for post-loop reflection injection.
+          // On threshold+ identical call: fill tool results for this call AND all remaining
           // calls in the batch before returning — this keeps the conversation in a
           // valid state (every tool_call_id declared by the assistant needs a result).
           const fp = `${call.name}:${createHash("sha256").update(call.arguments).digest("hex").slice(0, 8)}`;
           const fpCount = (recentCalls.get(fp) ?? 0) + 1;
           recentCalls.set(fp, fpCount);
-          if (fpCount === 2) {
+          if (fpCount === doomLoopThreshold - 1) {
             doomLoopReflect = true; // deferred — injected after the tool-result batch
-          } else if (fpCount >= 3) {
+          } else if (fpCount >= doomLoopThreshold) {
             // Emit placeholder tool results for this call and any unprocessed remaining
             // calls so the conversation stays protocol-compliant before early return.
             for (let _dlj = _dli; _dlj < toolCalls.length; _dlj++) {
@@ -404,7 +418,8 @@ export class Agent {
                 "(Stopped: agent stuck in repeated tool call loop)",
               );
             }
-            return "(Agent appears stuck — same tool call repeated 3+ times. Stopping.)";
+            this.lastRunStats = { turns, fileWrites: fileWriteCount };
+            return `(Agent appears stuck — same tool call repeated ${doomLoopThreshold}+ times. Stopping.)`;
           }
 
           let args: unknown;
@@ -422,10 +437,21 @@ export class Agent {
             if (result.success) {
               log.tool(call.name, truncate(result.output, 200));
               resultContent = result.output;
-              // Track file_write successes for auto-verify cooldown.
+              // Track file_write successes for verify cooldown and stats.
               // Only writes that actually succeed count — failed writes don't warrant verification.
               if (call.name === "file_write") {
                 wroteFileThisTurn = true;
+                fileWriteCount++;
+                // Per-write verify: run verify after each successful file_write when enabled.
+                // Results are batched here and injected as a single user message post-loop
+                // so the OpenAI tool-result block is never interrupted by user messages.
+                if (this.config.verifyOnEveryWrite && verifyCommand) {
+                  const { exitCode, output } = await this.runVerify(verifyCommand, verifyFn);
+                  const status = exitCode === 0 ? "PASSED" : "FAILED";
+                  writeVerifyResults.push(
+                    `[verify after ${call.name}] ${status} (exit ${exitCode})\n${output.slice(0, 1000)}`,
+                  );
+                }
               }
             } else {
               log.tool(call.name, `Error: ${result.error}`);
@@ -447,10 +473,18 @@ export class Agent {
           this.conversation.addUser("⚠️ You already tried this exact call. Try a different approach.");
         }
 
-        // Auto-verify: fires once per tool-processing turn that contains at least one
-        // file_write success. Injected as a user message (NOT a synthetic tool result —
-        // the OpenAI tool protocol requires tool results to match declared tool_call_ids).
-        if (wroteFileThisTurn && verifyCommand) {
+        // Per-write verify flush: inject all batched per-write verify results as a single
+        // user message so they appear together after the tool-result block.
+        if (writeVerifyResults.length > 0) {
+          this.conversation.addUser(writeVerifyResults.join("\n\n"));
+          writeVerifyResults.length = 0;
+        }
+
+        // Auto-verify (end-of-turn): fires once per turn that had at least one successful
+        // file_write. Skipped when verifyOnEveryWrite is true — per-write verify already ran.
+        // Injected as a user message (NOT a synthetic tool result — the OpenAI tool protocol
+        // requires tool results to match declared tool_call_ids).
+        if (wroteFileThisTurn && verifyCommand && !this.config.verifyOnEveryWrite) {
           const { exitCode, output } = await this.runVerify(verifyCommand, verifyFn);
           const verifyStatus = exitCode === 0 ? "PASSED" : "FAILED";
           this.conversation.addUser(
@@ -473,6 +507,7 @@ export class Agent {
         }
       }
 
+      this.lastRunStats = { turns, fileWrites: fileWriteCount };
       return "(Agent reached maximum turns without a final response)";
     } finally {
       // Restore the original system message so REPL sessions using this shared Agent
@@ -498,6 +533,9 @@ export class Agent {
     const opts: AgentRunOptions = typeof options === "function"
       ? { onDelta: options }
       : (options ?? {});
+
+    // Reset stats at the start of every run so stale counts from a prior call are never returned.
+    this.lastRunStats = { turns: 0, fileWrites: 0 };
 
     this.conversation.addUser(userMessage);
 
@@ -563,6 +601,22 @@ export class Agent {
       verifyFn: opts.verifyFn,
     });
   }
+}
+
+/**
+ * Returns true when err is any variant of an abort/cancellation error.
+ * Covers:
+ *   - fetch / Web Streams AbortController  → err.name === "AbortError"
+ *   - Node child_process killed by signal   → err.code === "ABORT_ERR"
+ *   - DOMException from the Web Streams API → instanceof DOMException && name === "AbortError"
+ */
+export function isAbortError(err: unknown): boolean {
+  if (err instanceof Error) {
+    if (err.name === "AbortError") return true;
+    if ((err as NodeJS.ErrnoException).code === "ABORT_ERR") return true;
+  }
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  return false;
 }
 
 function truncate(s: string, max: number): string {

@@ -509,6 +509,259 @@ describe("taskMode — no contamination on shared Agent instance", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Section 5: Sprint 85 — doomLoopThreshold config (TC-06–TC-08)
+// ---------------------------------------------------------------------------
+
+describe("Agent doomLoopThreshold config", () => {
+  it("custom threshold=2: agent aborts after 2 identical calls", async () => {
+    // LLM always returns the same tool call → doom-loop should fire on 2nd call
+    const fakeClient = makeStreamingFakeClient(
+      Array.from({ length: 5 }, () => makeToolCallChunks("echo", { text: "stuck" })),
+    );
+    const config2: Config = { ...minimalConfig, doomLoopThreshold: 2 };
+    const provider = new OpenAIProvider(config2, fakeClient);
+    const agent = new Agent({ config: config2, provider, tools: makeRegistryWithFileWrite() });
+
+    const result = await agent.run("echo repeatedly", { taskMode: true });
+
+    // Should have fired the doom-loop (not reached max turns)
+    expect(result).toContain("stuck");
+    // With threshold=2: 1st call normal, 2nd call triggers abort → only 1 API call consumed
+    expect((fakeClient.chat.completions.create as ReturnType<typeof vi.fn>).mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it("threshold=3 (default): agent reflects on 2nd call, aborts on 3rd", async () => {
+    // Same behavior as before — default threshold is 3
+    const fakeClient = makeStreamingFakeClient(
+      Array.from({ length: 5 }, () => makeToolCallChunks("echo", { text: "stuck" })),
+    );
+    const config3: Config = { ...minimalConfig, doomLoopThreshold: 3 };
+    const provider = new OpenAIProvider(config3, fakeClient);
+    const agent = new Agent({ config: config3, provider, tools: makeRegistryWithFileWrite() });
+
+    const result = await agent.run("echo repeatedly", { taskMode: true });
+    expect(result).toContain("stuck");
+  });
+
+  it("agent does NOT abort when tool calls differ between turns", async () => {
+    // First call writes file A, second writes file B — different fingerprints
+    const fakeClient = makeStreamingFakeClient([
+      makeToolCallChunks("file_write", { path: "a.ts", content: "a" }),
+      makeToolCallChunks("file_write", { path: "b.ts", content: "b" }),
+      makeTextChunks("Done — wrote two different files"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({ config: minimalConfig, provider, tools: makeRegistryWithFileWrite() });
+
+    const result = await agent.run("write two files", { taskMode: true });
+    expect(result).toBe("Done — wrote two different files");
+    expect(result).not.toContain("stuck");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 6: Sprint 85 — verifyOnEveryWrite (TC-09–TC-13)
+// ---------------------------------------------------------------------------
+
+describe("Agent verifyOnEveryWrite", () => {
+  const configVerifyEvery: Config = {
+    ...minimalConfig,
+    verifyCommand: "npm test",
+    verifyOnEveryWrite: true,
+  };
+
+  it("verifyOnEveryWrite=true: runVerify called once per file_write", async () => {
+    const twoWriteChunks = makeTwoToolCallsChunks(
+      "file_write", { path: "a.ts", content: "a" },
+      "file_write", { path: "b.ts", content: "b" },
+    );
+    const fakeClient = makeStreamingFakeClient([twoWriteChunks, makeTextChunks("Done")]);
+    const provider = new OpenAIProvider(configVerifyEvery, fakeClient);
+    const verifyFn = vi.fn().mockResolvedValue({ exitCode: 0, output: "PASS" });
+
+    const agent = new Agent({ config: configVerifyEvery, provider, tools: makeRegistryWithFileWrite() });
+    await agent.run("write two files", { taskMode: true, verifyFn });
+
+    // verify called ONCE per successful file_write, not once per turn
+    expect(verifyFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("verifyOnEveryWrite=true: per-write results are batched into a single user message", async () => {
+    const twoWriteChunks = makeTwoToolCallsChunks(
+      "file_write", { path: "a.ts", content: "a" },
+      "file_write", { path: "b.ts", content: "b" },
+    );
+    const fakeClient = makeStreamingFakeClient([twoWriteChunks, makeTextChunks("Done")]);
+    const provider = new OpenAIProvider(configVerifyEvery, fakeClient);
+    const verifyFn = vi.fn().mockResolvedValue({ exitCode: 0, output: "PASS" });
+
+    const agent = new Agent({ config: configVerifyEvery, provider, tools: makeRegistryWithFileWrite() });
+    await agent.run("write two files", { taskMode: true, verifyFn });
+
+    const messages = agent.getConversation().getMessages();
+    const verifyMessages = messages.filter(
+      (m) => m.role === "user" && typeof m.content === "string" &&
+        (m.content as string).includes("[verify after file_write]"),
+    );
+    // Batched into one user message (not two separate messages)
+    expect(verifyMessages).toHaveLength(1);
+    // The single message contains both results
+    expect((verifyMessages[0].content as string).match(/\[verify after file_write\]/g)?.length).toBe(2);
+  });
+
+  it("verifyOnEveryWrite=true: output truncated at 1000 chars per result", async () => {
+    const fakeClient = makeStreamingFakeClient([
+      makeToolCallChunks("file_write", { path: "a.ts", content: "a" }),
+      makeTextChunks("Done"),
+    ]);
+    const provider = new OpenAIProvider(configVerifyEvery, fakeClient);
+    const longOutput = "x".repeat(2000);
+    const verifyFn = vi.fn().mockResolvedValue({ exitCode: 0, output: longOutput });
+
+    const agent = new Agent({ config: configVerifyEvery, provider, tools: makeRegistryWithFileWrite() });
+    await agent.run("write one file", { taskMode: true, verifyFn });
+
+    const messages = agent.getConversation().getMessages();
+    const verifyMsg = messages.find(
+      (m) => m.role === "user" && typeof m.content === "string" &&
+        (m.content as string).includes("[verify after file_write]"),
+    );
+    expect(verifyMsg).toBeDefined();
+    // The 2000-char output should be truncated to 1000 in the message
+    expect((verifyMsg!.content as string)).not.toContain(longOutput);
+    expect((verifyMsg!.content as string).length).toBeLessThan(1200); // header + 1000 chars max
+  });
+
+  it("N+1 guard: end-of-turn verify NOT called when verifyOnEveryWrite=true", async () => {
+    const fakeClient = makeStreamingFakeClient([
+      makeToolCallChunks("file_write", { path: "a.ts", content: "a" }),
+      makeTextChunks("Done"),
+    ]);
+    const provider = new OpenAIProvider(configVerifyEvery, fakeClient);
+    const verifyFn = vi.fn().mockResolvedValue({ exitCode: 0, output: "PASS" });
+
+    const agent = new Agent({ config: configVerifyEvery, provider, tools: makeRegistryWithFileWrite() });
+    await agent.run("write one file", { taskMode: true, verifyFn });
+
+    // With verifyOnEveryWrite=true and 1 file_write: verify should be called exactly once
+    // (per-write), NOT twice (per-write + end-of-turn).
+    expect(verifyFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("verifyOnEveryWrite=false (default): end-of-turn verify runs once per turn", async () => {
+    const twoWriteChunks = makeTwoToolCallsChunks(
+      "file_write", { path: "a.ts", content: "a" },
+      "file_write", { path: "b.ts", content: "b" },
+    );
+    const fakeClient = makeStreamingFakeClient([twoWriteChunks, makeTextChunks("Done")]);
+    const configDefault: Config = { ...minimalConfig, verifyCommand: "npm test", verifyOnEveryWrite: false };
+    const provider = new OpenAIProvider(configDefault, fakeClient);
+    const verifyFn = vi.fn().mockResolvedValue({ exitCode: 0, output: "PASS" });
+
+    const agent = new Agent({ config: configDefault, provider, tools: makeRegistryWithFileWrite() });
+    await agent.run("write two files", { taskMode: true, verifyFn });
+
+    // Two writes in one turn → end-of-turn verify fires ONCE (not twice)
+    expect(verifyFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 7: Sprint 85 — lastRunStats (TC-26–TC-28)
+// ---------------------------------------------------------------------------
+
+describe("Agent lastRunStats", () => {
+  it("initialized to {turns:0, fileWrites:0} before first turn", async () => {
+    // Check initial value before any run
+    const agent = new Agent({ config: minimalConfig, tools: makeRegistryWithFileWrite() });
+    expect(agent.lastRunStats).toEqual({ turns: 0, fileWrites: 0 });
+  });
+
+  it("lastRunStats.turns increments each turn", async () => {
+    // 3 turns: tool call, tool call, then text response
+    const fakeClient = makeStreamingFakeClient([
+      makeToolCallChunks("echo", { text: "turn 1" }),
+      makeToolCallChunks("echo", { text: "turn 2" }),
+      makeTextChunks("Done after 3 turns"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({ config: minimalConfig, provider, tools: makeRegistryWithFileWrite() });
+
+    await agent.run("do three turns");
+    expect(agent.lastRunStats.turns).toBe(3);
+  });
+
+  it("lastRunStats.fileWrites counts successful file_write calls", async () => {
+    const twoWriteChunks = makeTwoToolCallsChunks(
+      "file_write", { path: "a.ts", content: "a" },
+      "file_write", { path: "b.ts", content: "b" },
+    );
+    const fakeClient = makeStreamingFakeClient([twoWriteChunks, makeTextChunks("Done")]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({ config: minimalConfig, provider, tools: makeRegistryWithFileWrite() });
+
+    await agent.run("write two files");
+    expect(agent.lastRunStats.fileWrites).toBe(2);
+  });
+
+  it("lastRunStats resets to {0,0} at the start of each run() call", async () => {
+    const fakeClient = makeStreamingFakeClient([
+      makeToolCallChunks("file_write", { path: "x.ts", content: "x" }),
+      makeTextChunks("Done"),
+      // second run — text only, no writes
+      makeTextChunks("Second run done"),
+    ]);
+    const provider = new OpenAIProvider(minimalConfig, fakeClient);
+    const agent = new Agent({ config: minimalConfig, provider, tools: makeRegistryWithFileWrite() });
+
+    await agent.run("first run with write");
+    expect(agent.lastRunStats.fileWrites).toBe(1);
+
+    await agent.run("second run no writes");
+    // Stats reset — second run had no writes
+    expect(agent.lastRunStats.fileWrites).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 8: Sprint 85 — isAbortError helper (TC-32–TC-35)
+// ---------------------------------------------------------------------------
+
+import { isAbortError } from "../../src/core/agent.js";
+
+describe("isAbortError helper", () => {
+  it("returns true for err.name === 'AbortError'", () => {
+    const err = Object.assign(new Error("aborted"), { name: "AbortError" });
+    expect(isAbortError(err)).toBe(true);
+  });
+
+  it("returns true for err.code === 'ABORT_ERR'", () => {
+    const err = Object.assign(new Error("aborted"), { code: "ABORT_ERR" });
+    expect(isAbortError(err)).toBe(true);
+  });
+
+  it("returns true for DOMException with name 'AbortError'", () => {
+    const err = new DOMException("The operation was aborted", "AbortError");
+    expect(isAbortError(err)).toBe(true);
+  });
+
+  it("returns false for a generic Error", () => {
+    expect(isAbortError(new Error("something else"))).toBe(false);
+  });
+
+  it("returns false for a non-Error value", () => {
+    expect(isAbortError("string error")).toBe(false);
+    expect(isAbortError(null)).toBe(false);
+    expect(isAbortError(42)).toBe(false);
+  });
+
+  it("returns false for DOMException with a different name", () => {
+    const err = new DOMException("timeout", "TimeoutError");
+    expect(isAbortError(err)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Helpers — two tool calls in one LLM turn
 // ---------------------------------------------------------------------------
 

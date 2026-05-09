@@ -61,7 +61,7 @@ async function main(): Promise<void> {
   const judgeResults = await runWithConcurrency(judgeTasks, concurrency);
 
   try {
-    writeEvalResults(runnerResults, judgeResults);
+    await writeEvalResults(runnerResults, judgeResults);
   } catch (err) {
     console.warn(`Warning: could not write eval results — ${err instanceof Error ? err.message : String(err)}`);
   }

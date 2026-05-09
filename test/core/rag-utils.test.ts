@@ -82,3 +82,51 @@ describe("isTrivialInput", () => {
     expect(isTrivialInput(":ls")).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// isTrivialInput — minWords parameter (Sprint 85)
+// ---------------------------------------------------------------------------
+
+// minWords semantics: trivial when parts.length <= minWords
+// - minWords=0 → only empty strings are trivial
+// - minWords=1 → empty and single-word inputs are trivial (default)
+// - minWords=2 → empty, single-word, AND two-word inputs are trivial
+
+describe("isTrivialInput — minWords parameter", () => {
+  it("minWords=1 (default): single word 'help' is trivial", () => {
+    expect(isTrivialInput("help", 1)).toBe(true);
+  });
+
+  it("minWords=1 (default): two-word 'add tests' is NOT trivial", () => {
+    expect(isTrivialInput("add tests", 1)).toBe(false);
+  });
+
+  it("minWords=2: single word 'help' is trivial (still within threshold)", () => {
+    expect(isTrivialInput("help", 2)).toBe(true);
+  });
+
+  it("minWords=2: two-word 'yes please' is trivial (exactly at threshold)", () => {
+    expect(isTrivialInput("yes please", 2)).toBe(true);
+  });
+
+  it("minWords=2: three-word 'fix the bug' is NOT trivial (above threshold)", () => {
+    expect(isTrivialInput("fix the bug", 2)).toBe(false);
+  });
+
+  it("minWords=0: empty string is trivial (zero words <= 0)", () => {
+    expect(isTrivialInput("", 0)).toBe(true);
+  });
+
+  it("minWords=0: single word 'x' is NOT trivial (1 word > 0 threshold)", () => {
+    expect(isTrivialInput("x", 0)).toBe(false);
+  });
+
+  it("minWords=0: colon command ':help' is still NOT trivial (colon rule takes priority)", () => {
+    expect(isTrivialInput(":help", 0)).toBe(false);
+  });
+
+  it("no minWords arg: backward-compatible with existing callers (single word trivial)", () => {
+    expect(isTrivialInput("yes")).toBe(true);
+    expect(isTrivialInput("add tests")).toBe(false);
+  });
+});

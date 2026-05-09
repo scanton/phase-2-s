@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { RunnerResult } from "./runner.js";
@@ -11,16 +11,21 @@ export const DEFAULT_OUTPUT_DIR = join(homedir(), ".gstack-dev", "evals");
  * land-and-deploy readiness gate:
  *   {skill}-e2e-run-{YYYY-MM-DD}-{ts}.json
  *   {skill}-llm-judge-run-{YYYY-MM-DD}-{ts}.json
+ *
+ * Writes are parallelized with Promise.all. A failure in any write rejects
+ * the returned promise — the caller (eval/cli.ts) reports the error.
  */
-export function writeEvalResults(
+export async function writeEvalResults(
   runnerResults: RunnerResult[],
   judgeResults: JudgeResult[],
   outputDir: string = DEFAULT_OUTPUT_DIR,
-): void {
-  mkdirSync(outputDir, { recursive: true });
+): Promise<void> {
+  await mkdir(outputDir, { recursive: true });
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const ts = Date.now();
+
+  const writes: Promise<void>[] = [];
 
   for (let i = 0; i < runnerResults.length; i++) {
     const runnerResult = runnerResults[i];
@@ -32,34 +37,40 @@ export function writeEvalResults(
     const runnerFile = join(outputDir, `${skill}-${safeCase}-e2e-run-${dateStr}-${ts}.json`);
     const judgeFile = join(outputDir, `${skill}-${safeCase}-llm-judge-run-${dateStr}-${ts}.json`);
 
-    writeFileSync(
-      runnerFile,
-      JSON.stringify(
-        {
-          case: runnerResult.case,
-          output: runnerResult.output,
-          elapsed_ms: runnerResult.elapsed_ms,
-          ...(runnerResult.error !== undefined ? { error: runnerResult.error } : {}),
-        },
-        null,
-        2,
+    writes.push(
+      writeFile(
+        runnerFile,
+        JSON.stringify(
+          {
+            case: runnerResult.case,
+            output: runnerResult.output,
+            elapsed_ms: runnerResult.elapsed_ms,
+            ...(runnerResult.error !== undefined ? { error: runnerResult.error } : {}),
+          },
+          null,
+          2,
+        ),
       ),
     );
 
-    writeFileSync(
-      judgeFile,
-      JSON.stringify(
-        {
-          score: judgeResult.score,
-          verdict: judgeResult.verdict,
-          criteria: judgeResult.criteria,
-          ...(judgeResult.responseStats !== undefined
-            ? { responseStats: judgeResult.responseStats }
-            : {}),
-        },
-        null,
-        2,
+    writes.push(
+      writeFile(
+        judgeFile,
+        JSON.stringify(
+          {
+            score: judgeResult.score,
+            verdict: judgeResult.verdict,
+            criteria: judgeResult.criteria,
+            ...(judgeResult.responseStats !== undefined
+              ? { responseStats: judgeResult.responseStats }
+              : {}),
+          },
+          null,
+          2,
+        ),
       ),
     );
   }
+
+  await Promise.all(writes);
 }
