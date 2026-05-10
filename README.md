@@ -459,11 +459,17 @@ After a run, a post-run summary table (Subtask | Role | Status) is printed autom
 **Verify spec generation quality with `conduct-audit`:**
 
 ```bash
-# Run all 10 built-in cases and check structure (subtask count, roles, lint)
+# Run all 15 built-in cases and check structure (subtask count, roles, lint)
 phase2s conduct-audit
 
 # CI mode — exits 1 if any case fails
 phase2s conduct-audit --ci --fast
+
+# Run only the 5 ciGate cases (fast local pre-push gate)
+phase2s conduct-audit --ci-only --ci
+
+# Per-case timeout in seconds (default: no timeout)
+phase2s conduct-audit --timeout 30
 
 # Debug a single case
 phase2s conduct-audit --case add-endpoint
@@ -471,6 +477,8 @@ phase2s conduct-audit --case add-endpoint
 # JSON output for scripting
 phase2s conduct-audit --json
 ```
+
+The `.githooks/pre-push` hook runs `conduct-audit --ci-only --ci --fast` automatically before every `git push`. It's wired via `npm install` (`prepare` script). Bypass with `SKIP_CONDUCT_AUDIT=1 git push`.
 
 **Via MCP** — Claude Code can run the full conductor without leaving a conversation:
 

@@ -123,7 +123,8 @@ export function renderConductSummary(
     ? specPath.slice(process.cwd().length + 1)
     : specPath;
   console.log(chalk.dim(` Spec:     ${displayPath}`));
-  console.log(chalk.dim(` Re-run:   phase2s goal ${displayPath} --orchestrator`));
+  const escaped = displayPath.replace(/'/g, "'\\''");
+  console.log(chalk.dim(` Re-run:   phase2s goal '${escaped}' --orchestrator`));
   console.log(sep);
   console.log();
 }

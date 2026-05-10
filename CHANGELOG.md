@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.63.0 — 2026-05-10
+
+Sprint 89 — Conductor Quality Hardening: 5 prompt-quality constraints (role budget, scope discipline, subtask ceiling), `--ci-only` + `--timeout` flags on `conduct-audit`, a local pre-push hook as a CI-gate stand-in, and a bug fix that populates the subtask result table when the orchestrator crashes mid-run.
+
+### Added
+- `CONDUCTOR_MIN_SUBTASKS` (3) and `CONDUCTOR_MAX_SUBTASKS` (6) constants exported from `conductor-prompt.ts` — `conduct-audit` uses them for consistent bounds checking
+- 5 `ciGate: true` audit cases in `conduct-audit`: `subtask-count-within-bounds`, `architect-role-present`, `tester-role-present`, `reviewer-role-present`, `no-duplicate-roles-in-small-spec`
+- `phase2s conduct-audit --ci-only` flag: runs only the 5 ciGate cases (fast local pre-push gate)
+- `phase2s conduct-audit --timeout N` flag: per-case timeout in seconds via `Promise.race`
+- `.githooks/pre-push` hook: runs `conduct-audit --ci-only --ci --fast` before every push; activate with `git config core.hooksPath .githooks` (auto-wired via `npm install` `prepare` script); bypass with `SKIP_CONDUCT_AUDIT=1`
+- `noDuplicateRoles` AuditCase field: fails when the same role appears more than once in a spec
+
+### Changed
+- `CONDUCTOR_PROMPT` RULES block: added role-budget rule ("each role must be UNIQUE") and scope-discipline rule ("no two subtasks may write to the same file") to tighten spec quality
+- `CONDUCTOR_PROMPT` subtask-count line uses `${CONDUCTOR_MIN_SUBTASKS}`-`${CONDUCTOR_MAX_SUBTASKS}` template variables rather than hardcoded "3-6"
+
+### Fixed
+- `conduct-summary.ts` re-run hint now single-quotes `displayPath` (shlex-style escape) so paths with spaces/special chars produce a valid copy-paste command
+- `goal.ts` orchestrator catch block now populates `subtaskResults` from the checkpoint when `runOrchestrator()` throws mid-run; previously returned `subtaskResults: {}` even when partial progress was checkpointed
+
 ## v1.62.0 — 2026-05-09
 
 Sprint 88 — Conductor Full Finish Line: flag parity, subtask result tracking, rich post-run summary table, `conduct-audit` QA command, and safe exclusive spec writes.

@@ -1,6 +1,6 @@
 {
   "name": "@scanton/phase2s",
-  "version": "1.62.0",
+  "version": "1.63.0",
   "description": "AI coding assistant with 29 built-in skills, ChatGPT subscription support, and autonomous spec execution",
   "author": "Scott Canton",
   "homepage": "https://github.com/scanton/phase-2-s",
@@ -31,7 +31,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:action": "ncc build src/action/index.ts -o dist/action --license licenses.txt",
-    "eval": "tsx src/eval/cli.ts"
+    "eval": "tsx src/eval/cli.ts",
+    "prepare": "git config core.hooksPath .githooks || echo 'note: could not wire .githooks (expected outside a git repo)'"
   },
   "test": {
     "include": [
