@@ -16,6 +16,7 @@ import { parseSpec } from "../core/spec-parser.js";
 import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-graph.js";
 import { runGoal } from "./goal.js";
 import { conductorGenSpec } from "./conductor-prompt.js";
+import { KNOWN_MODEL_PREFIXES } from "./provider-registry.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,6 +58,27 @@ export async function runConduct(
   cwd: string,
 ): Promise<void> {
   const config = await loadConfig();
+
+  // --- B: Warn on unrecognized --model values (best-effort heuristic, not a hard block) ---
+  // Skip validation for Ollama (models use "name:tag" format which doesn't match any prefix),
+  // or when the model string itself contains ":" (Ollama tag format used with other providers),
+  // or when the model is a tier alias ("fast"/"smart" resolved inside conductorGenSpec),
+  // or when the model starts with a known provider prefix.
+  if (options.model) {
+    const m = options.model.toLowerCase();
+    const isOllamaProvider = config.provider === "ollama";
+    const hasColonFormat = m.includes(":"); // e.g. "gemma4:latest", "qwen2.5-coder:7b"
+    const isTierAlias = m === "fast" || m === "smart"; // resolved in conductorGenSpec (D5)
+    const isKnownPrefix = KNOWN_MODEL_PREFIXES.some((p) => m.startsWith(p));
+    if (!isOllamaProvider && !hasColonFormat && !isTierAlias && !isKnownPrefix) {
+      console.log(
+        chalk.yellow(
+          `⚠ Unrecognized model "${options.model}" — passing through. ` +
+          `Check your provider docs if the LLM call fails.`,
+        ),
+      );
+    }
+  }
 
   if (!options.quiet) {
     console.log(chalk.cyan("📋 Generating spec from goal..."));

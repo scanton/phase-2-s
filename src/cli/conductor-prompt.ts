@@ -4,16 +4,26 @@
  * conductorGenSpec() takes a natural-language goal and produces a role-annotated
  * 5-pillar spec that the existing orchestrator can execute.  The spec is
  * validated by lintSpec() and retried once on failure before being written to
- * .phase2s/specs/<slug>-<ts>.md.
+ * .phase2s/specs/<slug>-<ts>-<hex>.md.
  *
  * buildConductorContext() extracts lightweight codebase context (branch, recent
  * commits, diff stat) to help the LLM choose sensible file names and understand
  * the project structure.  Output is capped at 2000 bytes (D9) so the conductor
  * prompt stays within safe token bounds.
+ *
+ * Sprint 87 hardening additions:
+ *   - GOAL_MAX_CHARS (4000): goals longer than this are truncated with a warning
+ *     before the LLM call.  Applied inside conductorGenSpec() so both the CLI
+ *     and MCP entrypoints are protected (D4).
+ *   - Tier alias resolution: "--model fast/smart" is resolved to the configured
+ *     fast_model/smart_model before the provider call (D5).
+ *   - _randomSuffix option: injectable fn for deterministic tests; production
+ *     default is randomBytes(4).toString("hex") (C).
  */
 
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { createProvider } from "../providers/index.js";
@@ -33,6 +43,17 @@ const CONTEXT_MAX_BYTES = 2000;
 
 /** AbortController timeout for LLM spec-generation calls, in ms (D5). */
 const STREAM_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Maximum characters accepted in the goal string (A / D4).
+ *
+ * Goals exceeding this are truncated with a console.warn before being sent to
+ * the LLM.  Applied inside conductorGenSpec() so both the CLI path (runConduct)
+ * and the MCP path (handler.ts) are protected.
+ *
+ * Exported so tests can reference the limit without hardcoding 4000.
+ */
+export const GOAL_MAX_CHARS = 4000;
 
 // ---------------------------------------------------------------------------
 // Conductor prompt template
@@ -152,17 +173,24 @@ export interface ConductorGenResult {
  * Generate a role-annotated 5-pillar spec from a natural-language goal.
  *
  * Flow:
- *   1. Build codebase context snapshot (git log + diff stat, 2000-byte cap)
- *   2. Call LLM with CONDUCTOR_PROMPT via provider.chatStream (5-min timeout)
- *   3. Validate with lintSpec() — retry once on failure (D4)
- *   4. Save to .phase2s/specs/<slug>-<ts>.md
+ *   1. Truncate goal to GOAL_MAX_CHARS if needed (warn; protects CLI + MCP, D4)
+ *   2. Resolve "fast"/"smart" tier aliases to configured model names (D5)
+ *   3. Build codebase context snapshot (git log + diff stat, 2000-byte cap)
+ *   4. Call LLM with CONDUCTOR_PROMPT via provider.chatStream (5-min timeout)
+ *   5. Validate with lintSpec() — retry once on failure (D4-orig)
+ *   6. Save to .phase2s/specs/<slug>-<ts>-<hex>.md (C: 4-byte random suffix)
  *
  * Returns { specPath: '', specContent: '' } on any failure so callers
  * can check specPath === '' without catching (execute-try-catch-contract).
  *
- * @param options._provider  Optional provider override — used in tests to inject
- *                           a mock without module-level mocking. Production callers
- *                           leave this unset and createProvider(config) is used.
+ * @param options._provider      Optional provider override — used in tests to inject
+ *                               a mock without module-level mocking.
+ * @param options._buildContext  Test-only: inject a synchronously-resolving context
+ *                               builder to avoid real subprocess I/O while fake timers
+ *                               are active (avoids macrotask/fake-timer race).
+ * @param options._randomSuffix  Test-only: inject a deterministic suffix fn so tests
+ *                               can assert on specPath without randomness.
+ *                               Production callers leave this unset.
  */
 export async function conductorGenSpec(
   goal: string,
@@ -174,15 +202,28 @@ export async function conductorGenSpec(
     /** Test-only: inject a synchronously-resolving context builder to avoid
      *  real subprocess I/O while fake timers are active (avoids macrotask/fake-timer race). */
     _buildContext?: (cwd: string) => Promise<string>;
+    /** Test-only: inject a deterministic random suffix function.
+     *  Default: () => randomBytes(4).toString("hex")  */
+    _randomSuffix?: () => string;
   } = {},
 ): Promise<ConductorGenResult> {
+  // --- A / D4: Goal length cap — applied here so both CLI and MCP are protected ---
+  let effectiveGoal = goal;
+  if (goal.length > GOAL_MAX_CHARS) {
+    console.warn(
+      `[phase2s] Goal truncated from ${goal.length} to ${GOAL_MAX_CHARS} characters. ` +
+      `Use a shorter goal to avoid this warning.`,
+    );
+    effectiveGoal = goal.slice(0, GOAL_MAX_CHARS);
+  }
+
   const baseCwd = options.cwd ?? process.cwd();
   const codebaseContext = await (options._buildContext ?? buildConductorContext)(baseCwd);
 
   // Safe single-pass template substitution — avoids recursive expansion if the
   // goal or codebaseContext happens to contain a placeholder like {codebaseContext}.
   const substitutions: Record<string, string> = {
-    "{goal}": goal,
+    "{goal}": effectiveGoal,
     "{codebaseContext}": codebaseContext,
   };
   const prompt = CONDUCTOR_PROMPT.replace(
@@ -190,14 +231,20 @@ export async function conductorGenSpec(
     (match) => substitutions[match] ?? match,
   );
 
-  const model = options.model ?? config.smart_model ?? config.model;
+  // --- D5: Resolve tier aliases before passing to provider ---
+  let model = options.model ?? config.smart_model ?? config.model;
+  if (typeof model === "string") {
+    if (model.toLowerCase() === "fast") model = config.fast_model ?? model;
+    else if (model.toLowerCase() === "smart") model = config.smart_model ?? model;
+  }
+
   const provider = options._provider ?? createProvider(config);
 
-  // First LLM call with AbortController timeout (D5)
+  // First LLM call with AbortController timeout (D5-orig)
   let spec = await streamSpec(provider, [{ role: "user", content: prompt }], model);
   if (spec === null) return { specPath: "", specContent: "" };
 
-  // Validate — retry once on lint failure (D4)
+  // Validate — retry once on lint failure (D4-orig)
   const firstLint = lintSpec(parseSpec(spec));
   if (!firstLint.ok) {
     const errorList = firstLint.issues
@@ -215,17 +262,24 @@ export async function conductorGenSpec(
 
     const retryLint = lintSpec(parseSpec(retrySpec));
     if (!retryLint.ok) {
-      // Both attempts produced invalid specs — return empty sentinel (D4)
+      // Both attempts produced invalid specs — return empty sentinel (D4-orig)
       return { specPath: "", specContent: "" };
     }
 
     spec = retrySpec;
   }
 
-  // Save spec to .phase2s/specs/
-  const slug = slugify(goal.slice(0, 40));
+  // --- C: Save spec with 4-byte random hex suffix to reduce filename collision risk ---
+  const slug = slugify(effectiveGoal.slice(0, 40));
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const specPath = join(baseCwd, ".phase2s", "specs", `${slug}-${ts}.md`);
+  const getSuffix = options._randomSuffix ?? (() => randomBytes(4).toString("hex"));
+  let suffix: string;
+  try {
+    suffix = getSuffix();
+  } catch {
+    suffix = randomBytes(4).toString("hex");
+  }
+  const specPath = join(baseCwd, ".phase2s", "specs", `${slug}-${ts}-${suffix}.md`);
 
   try {
     await mkdir(dirname(specPath), { recursive: true });
@@ -244,7 +298,7 @@ export async function conductorGenSpec(
 // ---------------------------------------------------------------------------
 
 /**
- * Stream a single LLM call with AbortController timeout (D5).
+ * Stream a single LLM call with AbortController timeout (D5-orig).
  *
  * Returns the accumulated text on success, or null on any error
  * (timeout, network failure, provider error).  Using null-as-sentinel

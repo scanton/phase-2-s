@@ -1,7 +1,7 @@
 /**
- * Tests for the Sprint 86 conductor: conductorGenSpec() + runConduct().
+ * Tests for the conductor: conductorGenSpec() + runConduct().
  *
- * Coverage:
+ * Coverage — Sprint 86 (tests 1-17):
  *  1. conductorGenSpec — valid spec generated and saved to disk
  *  2. conductorGenSpec — retry: first invalid, second valid
  *  3. conductorGenSpec — provider throws → empty specPath
@@ -19,13 +19,27 @@
  * 15. buildConductorContext — output is capped at CONTEXT_MAX_BYTES
  * 16. runConduct — --output path writes JSON summary file
  * 17. runConduct — TTY + 'n' answer declines run, no runGoal call
+ *
+ * Sprint 87 hardening (tests 18-29):
+ * 18. conductorGenSpec (A/D4) — goal > GOAL_MAX_CHARS → truncated + console.warn
+ * 19. conductorGenSpec (A/D4) — goal ≤ GOAL_MAX_CHARS → passed through unchanged
+ * 20. runConduct (B) — unrecognized model with strict provider → chalk.yellow warn
+ * 21. runConduct (B) — recognized model prefix (gpt-4o) → no warn
+ * 22. runConduct (B) — ollama provider → skip validation, no warn
+ * 23. runConduct (B) — colon-format model (gemma4:latest) → no warn (Ollama tag fix)
+ * 24. conductorGenSpec (C) — _randomSuffix injected → specPath ends with injected suffix
+ * 25. conductorGenSpec (C) — _randomSuffix throws → fallback to randomBytes hex (valid path)
+ * 26. conductorGenSpec (D5) — model='fast' resolves to config.fast_model before LLM call
+ * 27. conductorGenSpec (D5) — model='smart' resolves to config.smart_model before LLM call
+ * 28. runConduct (B) — tier alias 'fast' → no warn (adversarial review fix)
+ * 29. runConduct (B) — tier alias 'smart' → no warn (adversarial review fix)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { conductorGenSpec } from "../../src/cli/conductor-prompt.js";
+import { conductorGenSpec, GOAL_MAX_CHARS } from "../../src/cli/conductor-prompt.js";
 
 // ---------------------------------------------------------------------------
 // Hoisted constants — accessible inside vi.mock() factories
@@ -626,5 +640,268 @@ describe("runConduct() additional coverage", () => {
     mockReadlineAnswer.value = "y"; // reset for other tests
 
     expect(runGoal).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 87: Goal length cap, model validation, filename uniqueness (tests 18-24)
+// ---------------------------------------------------------------------------
+
+describe("conductorGenSpec() — Sprint 87 hardening", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "conduct-s87-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  // ---- 18: Goal truncation ----
+
+  it("18 (A/D4). goal longer than GOAL_MAX_CHARS is truncated and console.warn is called", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const oversizedGoal = "x".repeat(GOAL_MAX_CHARS + 500);
+
+    // Capture what conductorGenSpec actually receives as the goal via the prompt
+    let capturedPrompt = "";
+    const provider = {
+      name: "mock",
+      chatStream: vi.fn().mockImplementation(async function* (messages: Array<{ content: string }>) {
+        capturedPrompt = messages[0]?.content ?? "";
+        yield { type: "text" as const, content: VALID_SPEC };
+        yield { type: "done" as const, stopReason: "end_turn" };
+      }),
+    };
+
+    await conductorGenSpec(oversizedGoal, MOCK_CONFIG, {
+      cwd: tmpDir,
+      _provider: provider,
+      _buildContext: async () => "Branch: main",
+    });
+
+    // Warning was emitted
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(`${GOAL_MAX_CHARS} characters`));
+    // The prompt does NOT contain a run of x's longer than GOAL_MAX_CHARS (goal was truncated)
+    expect(capturedPrompt).not.toContain("x".repeat(GOAL_MAX_CHARS + 1));
+    // The prompt DOES contain exactly GOAL_MAX_CHARS x's (the truncated goal)
+    expect(capturedPrompt).toContain("x".repeat(GOAL_MAX_CHARS));
+  });
+
+  // ---- 19: No truncation ----
+
+  it("19 (A/D4). goal at exactly GOAL_MAX_CHARS is passed through without warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const exactGoal = "y".repeat(GOAL_MAX_CHARS);
+
+    let capturedPrompt = "";
+    const provider = {
+      name: "mock",
+      chatStream: vi.fn().mockImplementation(async function* (messages: Array<{ content: string }>) {
+        capturedPrompt = messages[0]?.content ?? "";
+        yield { type: "text" as const, content: VALID_SPEC };
+        yield { type: "done" as const, stopReason: "end_turn" };
+      }),
+    };
+
+    await conductorGenSpec(exactGoal, MOCK_CONFIG, {
+      cwd: tmpDir,
+      _provider: provider,
+      _buildContext: async () => "Branch: main",
+    });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    // The exact goal appears in the prompt unchanged
+    expect(capturedPrompt).toContain(exactGoal);
+  });
+
+  // ---- 24: Deterministic filename via _randomSuffix ----
+
+  it("24 (C). _randomSuffix injection produces a deterministic specPath", async () => {
+    const provider = {
+      name: "mock",
+      chatStream: vi.fn().mockImplementation(async function* () {
+        yield { type: "text" as const, content: VALID_SPEC };
+        yield { type: "done" as const, stopReason: "end_turn" };
+      }),
+    };
+
+    const result = await conductorGenSpec("add rate limiting", MOCK_CONFIG, {
+      cwd: tmpDir,
+      _provider: provider,
+      _buildContext: async () => "Branch: main",
+      _randomSuffix: () => "deadbeef",
+    });
+
+    expect(result.specPath).not.toBe("");
+    expect(result.specPath).toMatch(/-deadbeef\.md$/);
+  });
+
+  // ---- 25: _randomSuffix throw fallback ----
+
+  it("25 (C). _randomSuffix that throws falls back to randomBytes hex — specPath still valid", async () => {
+    const provider = {
+      name: "mock",
+      chatStream: vi.fn().mockImplementation(async function* () {
+        yield { type: "text" as const, content: VALID_SPEC };
+        yield { type: "done" as const, stopReason: "end_turn" };
+      }),
+    };
+
+    const result = await conductorGenSpec("add rate limiting", MOCK_CONFIG, {
+      cwd: tmpDir,
+      _provider: provider,
+      _buildContext: async () => "Branch: main",
+      // This fn throws — conductorGenSpec should fall back to randomBytes(4).toString("hex")
+      _randomSuffix: () => { throw new Error("entropy source unavailable"); },
+    });
+
+    // Should still succeed (fallback kicks in)
+    expect(result.specPath).not.toBe("");
+    // The fallback produces an 8-char lowercase hex suffix
+    expect(result.specPath).toMatch(/-[0-9a-f]{8}\.md$/);
+  });
+
+  // ---- 26-27: Tier alias resolution (D5) ----
+
+  it("26 (D5). model='fast' resolves to config.fast_model before the LLM call", async () => {
+    let capturedModel = "";
+    const provider = {
+      name: "mock",
+      chatStream: vi.fn().mockImplementation(async function* (
+        _messages: unknown,
+        _tools: unknown,
+        opts: { model: string },
+      ) {
+        capturedModel = opts.model;
+        yield { type: "text" as const, content: VALID_SPEC };
+        yield { type: "done" as const, stopReason: "end_turn" };
+      }),
+    };
+
+    const configWithFastModel = {
+      ...MOCK_CONFIG,
+      fast_model: "gpt-4o-mini",
+      smart_model: "gpt-4o",
+    };
+
+    await conductorGenSpec("add rate limiting", configWithFastModel, {
+      cwd: tmpDir,
+      model: "fast",
+      _provider: provider,
+      _buildContext: async () => "Branch: main",
+    });
+
+    // "fast" should resolve to fast_model, not be passed literally
+    expect(capturedModel).toBe("gpt-4o-mini");
+    expect(capturedModel).not.toBe("fast");
+  });
+
+  it("27 (D5). model='smart' resolves to config.smart_model before the LLM call", async () => {
+    let capturedModel = "";
+    const provider = {
+      name: "mock",
+      chatStream: vi.fn().mockImplementation(async function* (
+        _messages: unknown,
+        _tools: unknown,
+        opts: { model: string },
+      ) {
+        capturedModel = opts.model;
+        yield { type: "text" as const, content: VALID_SPEC };
+        yield { type: "done" as const, stopReason: "end_turn" };
+      }),
+    };
+
+    const configWithSmartModel = {
+      ...MOCK_CONFIG,
+      fast_model: "gpt-4o-mini",
+      smart_model: "gpt-4o",
+    };
+
+    await conductorGenSpec("add rate limiting", configWithSmartModel, {
+      cwd: tmpDir,
+      model: "smart",
+      _provider: provider,
+      _buildContext: async () => "Branch: main",
+    });
+
+    // "smart" should resolve to smart_model, not be passed literally
+    expect(capturedModel).toBe("gpt-4o");
+    expect(capturedModel).not.toBe("smart");
+  });
+});
+
+describe("runConduct() — Sprint 87 model validation (tests 20-23)", () => {
+  let tmpDir: string;
+  let originalIsTTY: boolean | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "conduct-model-"));
+    originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+  });
+
+  afterEach(async () => {
+    Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    vi.resetModules();
+  });
+
+  async function runWithModel(model: string, provider: string = "openai-api") {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    // Mock loadConfig to return the given provider
+    const { loadConfig } = await import("../../src/core/config.js");
+    vi.mocked(loadConfig).mockResolvedValueOnce({ ...MOCK_CONFIG, provider: provider as "openai-api" });
+
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValueOnce({
+      specPath: fakeSpecPath,
+      specContent: VALID_SPEC,
+    });
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    await runConduct("add feature", { model, dryRun: true, quiet: false }, tmpDir);
+
+    return logSpy.mock.calls.flat().join("\n");
+  }
+
+  it("20 (B). unrecognized model with strict provider emits a yellow warning", async () => {
+    const output = await runWithModel("banana-turbo-3.5", "openai-api");
+    expect(output).toContain("Unrecognized model");
+    expect(output).toContain("banana-turbo-3.5");
+  });
+
+  it("21 (B). recognized model prefix (gpt-4o) does not warn", async () => {
+    const output = await runWithModel("gpt-4o", "openai-api");
+    expect(output).not.toContain("Unrecognized model");
+  });
+
+  it("22 (B). ollama provider skips validation — no warn even for unknown model string", async () => {
+    const output = await runWithModel("totally-unknown-model-abc", "ollama");
+    expect(output).not.toContain("Unrecognized model");
+  });
+
+  it("23 (B). colon-format model (gemma4:latest) does not warn regardless of provider", async () => {
+    // This is the key adversarial-review fix: Ollama tag format should never warn
+    const output = await runWithModel("gemma4:latest", "openai-api");
+    expect(output).not.toContain("Unrecognized model");
+  });
+
+  it("28 (B). tier alias --model fast does not warn (resolved downstream in conductorGenSpec)", async () => {
+    // Adversarial review finding #1: 'fast'/'smart' are valid aliases, not typos
+    const output = await runWithModel("fast", "openai-api");
+    expect(output).not.toContain("Unrecognized model");
+  });
+
+  it("29 (B). tier alias --model smart does not warn", async () => {
+    const output = await runWithModel("smart", "openai-api");
+    expect(output).not.toContain("Unrecognized model");
   });
 });
