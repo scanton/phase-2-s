@@ -55,3 +55,23 @@ export const KNOWN_MODEL_PREFIXES = [
   "gemini-", "deepseek-", "minimax",
   "openai/", "anthropic/", "google/",
 ];
+
+/**
+ * Return true if `model` matches any entry in KNOWN_MODEL_PREFIXES.
+ *
+ * Entries ending with "-" or "/" are treated as prefix matches (e.g. "gpt-" matches
+ * "gpt-4o"). All other entries are exact matches or hyphen-bounded prefix matches
+ * (e.g. "o1" matches "o1" and "o1-mini" but NOT "o10-custom" — avoids the
+ * startsWith("o1") false-positive that catches arbitrarily-prefixed strings).
+ *
+ * Case-insensitive (caller should pass already-lowercased string or trust the
+ * internal .toLowerCase() call).
+ */
+export function isKnownModelPrefix(model: string): boolean {
+  const m = model.toLowerCase();
+  return KNOWN_MODEL_PREFIXES.some((p) =>
+    p.endsWith("-") || p.endsWith("/")
+      ? m.startsWith(p)
+      : m === p || m.startsWith(p + "-"),
+  );
+}

@@ -31,6 +31,7 @@ import type { Config } from "../core/config.js";
 import type { Message } from "../providers/types.js";
 import { parseSpec } from "../core/spec-parser.js";
 import { lintSpec } from "./lint.js";
+import { isKnownModelPrefix } from "./provider-registry.js";
 
 const execAsync = promisify(exec);
 
@@ -198,6 +199,14 @@ export async function conductorGenSpec(
   options: {
     model?: string;
     cwd?: string;
+    /** When true, suppress model validation and goal-truncation warnings (respects --quiet flag). */
+    quiet?: boolean;
+    /**
+     * Set by runConduct() to prevent double-warn when the CLI path has already
+     * validated the model.  MCP callers (handler.ts) leave this unset so they
+     * get the full validation.
+     */
+    _skipModelWarn?: boolean;
     _provider?: import("../providers/types.js").Provider;
     /** Test-only: inject a synchronously-resolving context builder to avoid
      *  real subprocess I/O while fake timers are active (avoids macrotask/fake-timer race). */
@@ -210,10 +219,12 @@ export async function conductorGenSpec(
   // --- A / D4: Goal length cap — applied here so both CLI and MCP are protected ---
   let effectiveGoal = goal;
   if (goal.length > GOAL_MAX_CHARS) {
-    console.warn(
-      `[phase2s] Goal truncated from ${goal.length} to ${GOAL_MAX_CHARS} characters. ` +
-      `Use a shorter goal to avoid this warning.`,
-    );
+    if (!options.quiet) {
+      console.warn(
+        `[phase2s] Goal truncated from ${goal.length} to ${GOAL_MAX_CHARS} characters. ` +
+        `Use a shorter goal to avoid this warning.`,
+      );
+    }
     effectiveGoal = goal.slice(0, GOAL_MAX_CHARS);
   }
 
@@ -236,6 +247,30 @@ export async function conductorGenSpec(
   if (typeof model === "string") {
     if (model.toLowerCase() === "fast") model = config.fast_model ?? model;
     else if (model.toLowerCase() === "smart") model = config.smart_model ?? model;
+  }
+
+  // --- B / D5: Model validation — protects CLI path (via _skipModelWarn) AND MCP path ---
+  // runConduct() sets _skipModelWarn=true after its own validation to avoid double-warn.
+  // handler.ts (MCP path) leaves it unset, so this block covers MCP callers too.
+  if (!options._skipModelWarn && typeof model === "string" && !options.quiet) {
+    const m = model.toLowerCase();
+    const isOllamaProvider = config.provider === "ollama";
+    const hasColonFormat = m.includes(":");
+    // Detect unresolved tier aliases — fast_model/smart_model not configured
+    if (m === "fast" || m === "smart") {
+      const configKey = m === "fast" ? "fast_model" : "smart_model";
+      console.warn(
+        `[phase2s] Tier alias "${options.model ?? m}" did not resolve — ` +
+        `${configKey} is not set in .phase2s.yaml. ` +
+        `Configure it or use a literal model name. ` +
+        `Sending "${model}" to the LLM API — this will likely fail.`,
+      );
+    } else if (!isOllamaProvider && !hasColonFormat && !isKnownModelPrefix(m)) {
+      console.warn(
+        `[phase2s] Unrecognized model "${model}" — passing through. ` +
+        `Check your provider docs if the LLM call fails.`,
+      );
+    }
   }
 
   const provider = options._provider ?? createProvider(config);
@@ -270,7 +305,7 @@ export async function conductorGenSpec(
   }
 
   // --- C: Save spec with 4-byte random hex suffix to reduce filename collision risk ---
-  const slug = slugify(effectiveGoal.slice(0, 40));
+  const slug = slugify(goal.slice(0, 40)); // use original goal so slug reflects user intent
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const getSuffix = options._randomSuffix ?? (() => randomBytes(4).toString("hex"));
   let suffix: string;

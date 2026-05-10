@@ -36,7 +36,7 @@ import {
 } from "./merge-strategy.js";
 import { OrchestratorLevelRateLimitError } from '../orchestrator/types.js';
 import type { SubtaskJob, OrchestratorLevelResult } from '../orchestrator/types.js';
-import { KNOWN_MODEL_PREFIXES } from "../cli/provider-registry.js";
+import { isKnownModelPrefix } from "../cli/provider-registry.js";
 
 // ---------------------------------------------------------------------------
 // Worktree mutex — serializes prune+add per repo to prevent concurrent races
@@ -591,7 +591,7 @@ async function executeWorker(
 // Model resolution
 // ---------------------------------------------------------------------------
 
-// KNOWN_MODEL_PREFIXES is imported from "../cli/provider-registry.js" (D1: single source of truth).
+// isKnownModelPrefix is imported from "../cli/provider-registry.js" (D1: single source of truth).
 
 /**
  * Resolve a subtask's model annotation against config.
@@ -611,7 +611,7 @@ export function resolveSubtaskModel(
   if (alias === "fast") return config.fast_model ?? fallback;
   if (alias === "smart") return config.smart_model ?? fallback;
   // Literal model name passthrough — warn if it doesn't look like a known format
-  if (!KNOWN_MODEL_PREFIXES.some(p => alias.startsWith(p))) {
+  if (!isKnownModelPrefix(alias)) {
     console.warn(`[phase2s] Unknown model annotation: "${annotation}". Passing through — check your spec.`);
   }
   return annotation;

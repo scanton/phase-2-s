@@ -33,6 +33,11 @@
  * 27. conductorGenSpec (D5) — model='smart' resolves to config.smart_model before LLM call
  * 28. runConduct (B) — tier alias 'fast' → no warn (adversarial review fix)
  * 29. runConduct (B) — tier alias 'smart' → no warn (adversarial review fix)
+ *
+ * Post-review hardening (tests 30-32):
+ * 30. conductorGenSpec (D5) — uppercase 'FAST' resolves case-insensitively to fast_model
+ * 31. conductorGenSpec (B) — model='fast' with no fast_model in config → unresolved alias warn
+ * 32. conductorGenSpec (A/D4) — goal exactly GOAL_MAX_CHARS+1 → truncation fires at boundary
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
@@ -760,7 +765,7 @@ describe("conductorGenSpec() — Sprint 87 hardening", () => {
 
     // Should still succeed (fallback kicks in)
     expect(result.specPath).not.toBe("");
-    // The fallback produces an 8-char lowercase hex suffix
+    // The fallback (randomBytes(4)) always produces a fixed 8-char hex suffix
     expect(result.specPath).toMatch(/-[0-9a-f]{8}\.md$/);
   });
 
@@ -855,6 +860,7 @@ describe("runConduct() — Sprint 87 model validation (tests 20-23)", () => {
 
   async function runWithModel(model: string, provider: string = "openai-api") {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     // Mock loadConfig to return the given provider
     const { loadConfig } = await import("../../src/core/config.js");
     vi.mocked(loadConfig).mockResolvedValueOnce({ ...MOCK_CONFIG, provider: provider as "openai-api" });
@@ -869,7 +875,8 @@ describe("runConduct() — Sprint 87 model validation (tests 20-23)", () => {
     const { runConduct } = await import("../../src/cli/conduct.js");
     await runConduct("add feature", { model, dryRun: true, quiet: false }, tmpDir);
 
-    return logSpy.mock.calls.flat().join("\n");
+    // Combine log + warn output so assertions work regardless of which channel is used
+    return [...logSpy.mock.calls.flat(), ...warnSpy.mock.calls.flat()].join("\n");
   }
 
   it("20 (B). unrecognized model with strict provider emits a yellow warning", async () => {
@@ -903,5 +910,98 @@ describe("runConduct() — Sprint 87 model validation (tests 20-23)", () => {
   it("29 (B). tier alias --model smart does not warn", async () => {
     const output = await runWithModel("smart", "openai-api");
     expect(output).not.toContain("Unrecognized model");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests 30-32: Post-review hardening — conductorGenSpec validation additions
+// ---------------------------------------------------------------------------
+
+describe("conductorGenSpec() — post-review hardening (tests 30-32)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "conduct-postrev-"));
+  });
+
+  afterEach(async () => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  // Helper: build a minimal streaming provider that yields VALID_SPEC
+  function makeProvider() {
+    return {
+      name: "mock",
+      chatStream: vi.fn().mockImplementation(async function* (
+        _messages: unknown,
+        _tools: unknown,
+        _opts: unknown,
+      ) {
+        yield { type: "text" as const, content: VALID_SPEC };
+        yield { type: "done" as const, stopReason: "end_turn" };
+      }),
+    };
+  }
+
+  it("30 (D5). uppercase 'FAST' resolves case-insensitively to config.fast_model", async () => {
+    let capturedModel = "";
+    const provider = {
+      name: "mock",
+      chatStream: vi.fn().mockImplementation(async function* (
+        _messages: unknown,
+        _tools: unknown,
+        opts: { model: string },
+      ) {
+        capturedModel = opts.model;
+        yield { type: "text" as const, content: VALID_SPEC };
+        yield { type: "done" as const, stopReason: "end_turn" };
+      }),
+    };
+
+    const configWithFastModel = { ...MOCK_CONFIG, fast_model: "gpt-4o-mini" };
+    await conductorGenSpec("build something", configWithFastModel, {
+      cwd: tmpDir,
+      model: "FAST", // uppercase alias — should resolve to fast_model
+      _provider: provider,
+      _buildContext: async () => "Branch: main",
+    });
+
+    // Case-insensitive alias resolution: "FAST".toLowerCase() === "fast" → fast_model
+    expect(capturedModel).toBe("gpt-4o-mini");
+    expect(capturedModel).not.toBe("FAST");
+  });
+
+  it("31 (B). model='fast' with no fast_model in config → unresolved alias console.warn", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // MOCK_CONFIG has no fast_model field — alias resolves to itself ("fast")
+    await conductorGenSpec("build something", MOCK_CONFIG, {
+      cwd: tmpDir,
+      model: "fast",
+      _provider: makeProvider(),
+      _buildContext: async () => "Branch: main",
+    });
+
+    const warnOutput = warnSpy.mock.calls.flat().join("\n");
+    // Should warn that the alias didn't resolve
+    expect(warnOutput).toContain("fast_model");
+    expect(warnOutput).toContain("did not resolve");
+  });
+
+  it("32 (A/D4). goal of exactly GOAL_MAX_CHARS+1 → truncation warn fires at boundary", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Boundary: GOAL_MAX_CHARS+1 should trigger truncation (strict > condition)
+    const boundary = "x".repeat(GOAL_MAX_CHARS + 1);
+    await conductorGenSpec(boundary, MOCK_CONFIG, {
+      cwd: tmpDir,
+      _provider: makeProvider(),
+      _buildContext: async () => "Branch: main",
+    });
+
+    const warnOutput = warnSpy.mock.calls.flat().join("\n");
+    expect(warnOutput).toContain("Goal truncated");
+    expect(warnOutput).toContain(String(GOAL_MAX_CHARS + 1));
   });
 });
