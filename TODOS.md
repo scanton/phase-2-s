@@ -14,6 +14,10 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 89 notes (v1.63.0, 2026-05-10)
+
+Sprint 89 ships Conductor Quality Hardening — 5 prompt-quality constraints, `--ci-only` + `--timeout` flags on `conduct-audit`, 5 ciGate audit cases, a local pre-push hook, and a bug fix for the orchestrator crash path. Post-review hardening adds: `CONDUCTOR_MIN_SUBTASKS` used in ciGate cases (no more hardcoded 3), ciOnly empty-filter guard (silent no-op fixed), `--ci-only + --case` conflict warning, `vi.useRealTimers()` in try/finally, and Promise.race timer leak fix (clearTimeout on the winning leg). 9 new tests (2190 total); all passing.
+
 ## Backlog — Post-Sprint 88 notes (v1.62.0, 2026-05-09)
 
 Sprint 88 ships the Conductor Full Finish Line — 5 parts: flag parity (`--review-before-run`, `--dashboard`, `--resume` on `phase2s conduct`), `OrchestratorSubtaskSummary` + `GoalResult.subtaskResults` with read-after-clear and resume-path bug fixes, `renderConductSummary()` post-run 3-column table, `phase2s conduct-audit` CLI + `phase2s__conduct_audit` MCP tool (10 curated cases, `--fast`/`--case`/`--json`/`--ci`), and exclusive `wx` write flag with EEXIST retry in `conductorGenSpec()`. 30 new tests; 1621 passing (371 pre-existing `merge-strategy.test.ts` failures unrelated to Sprint 88).
