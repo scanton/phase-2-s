@@ -38,3 +38,20 @@ export function getProviderKeyField(provider: ProviderName): string | null {
 export function isValidProvider(name: string): name is ProviderName {
   return (PROVIDERS as readonly string[]).includes(name);
 }
+
+/**
+ * Known model name prefixes used to detect likely typos in user-supplied model strings.
+ *
+ * This is a best-effort heuristic, not an authoritative allowlist — unrecognized values
+ * pass through with a console.warn (they may be valid provider-specific IDs).
+ * Ollama models use "name:tag" format (e.g. "gemma4:latest") and are checked separately
+ * by the presence of ":" rather than via this prefix list.
+ *
+ * Moved from src/goal/parallel-executor.ts (D1: belongs with provider identity code).
+ * Update this list when adding support for new providers.
+ */
+export const KNOWN_MODEL_PREFIXES = [
+  "gpt-", "claude-", "o1", "o3",
+  "gemini-", "deepseek-", "minimax",
+  "openai/", "anthropic/", "google/",
+];
