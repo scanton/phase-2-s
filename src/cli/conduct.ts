@@ -16,6 +16,7 @@ import { parseSpec } from "../core/spec-parser.js";
 import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-graph.js";
 import { runGoal } from "./goal.js";
 import { conductorGenSpec } from "./conductor-prompt.js";
+import { isKnownModelPrefix } from "./provider-registry.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +59,27 @@ export async function runConduct(
 ): Promise<void> {
   const config = await loadConfig();
 
+  // --- B: Warn on unrecognized --model values (best-effort heuristic, not a hard block) ---
+  // Skip validation for Ollama (models use "name:tag" format which doesn't match any prefix),
+  // or when the model string itself contains ":" (Ollama tag format used with other providers),
+  // or when the model is a tier alias ("fast"/"smart" resolved inside conductorGenSpec),
+  // or when the model starts with a known provider prefix.
+  // Gated on !options.quiet so --quiet suppresses this warning.
+  if (options.model && !options.quiet) {
+    const m = options.model.toLowerCase();
+    const isOllamaProvider = config.provider === "ollama";
+    const hasColonFormat = m.includes(":"); // e.g. "gemma4:latest", "qwen2.5-coder:7b"
+    const isTierAlias = m === "fast" || m === "smart"; // resolved in conductorGenSpec (D5)
+    if (!isOllamaProvider && !hasColonFormat && !isTierAlias && !isKnownModelPrefix(m)) {
+      console.warn(
+        chalk.yellow(
+          `⚠ Unrecognized model "${options.model}" — passing through. ` +
+          `Check your provider docs if the LLM call fails.`,
+        ),
+      );
+    }
+  }
+
   if (!options.quiet) {
     console.log(chalk.cyan("📋 Generating spec from goal..."));
   }
@@ -65,6 +87,8 @@ export async function runConduct(
   const { specPath, specContent } = await conductorGenSpec(goal, config, {
     model: options.model,
     cwd,
+    quiet: options.quiet,
+    _skipModelWarn: true, // runConduct already validated above — avoid double-warn
   });
 
   if (!specPath) {

@@ -36,6 +36,7 @@ import {
 } from "./merge-strategy.js";
 import { OrchestratorLevelRateLimitError } from '../orchestrator/types.js';
 import type { SubtaskJob, OrchestratorLevelResult } from '../orchestrator/types.js';
+import { isKnownModelPrefix } from "../cli/provider-registry.js";
 
 // ---------------------------------------------------------------------------
 // Worktree mutex — serializes prune+add per repo to prevent concurrent races
@@ -590,13 +591,7 @@ async function executeWorker(
 // Model resolution
 // ---------------------------------------------------------------------------
 
-/**
- * Known model name prefixes used to detect potential typos in literal `model:` annotations.
- * Intentionally a best-effort heuristic, not an authoritative allowlist — unrecognized
- * values pass through with a console.warn (they may be valid provider-specific IDs).
- * Update this list when adding new provider support to keep warnings accurate.
- */
-const KNOWN_MODEL_PREFIXES = ["gpt-", "claude-", "o1", "o3", "gemini-", "deepseek-", "minimax", "openai/", "anthropic/", "google/"];
+// isKnownModelPrefix is imported from "../cli/provider-registry.js" (D1: single source of truth).
 
 /**
  * Resolve a subtask's model annotation against config.
@@ -616,7 +611,7 @@ export function resolveSubtaskModel(
   if (alias === "fast") return config.fast_model ?? fallback;
   if (alias === "smart") return config.smart_model ?? fallback;
   // Literal model name passthrough — warn if it doesn't look like a known format
-  if (!KNOWN_MODEL_PREFIXES.some(p => alias.startsWith(p))) {
+  if (!isKnownModelPrefix(alias)) {
     console.warn(`[phase2s] Unknown model annotation: "${annotation}". Passing through — check your spec.`);
   }
   return annotation;
