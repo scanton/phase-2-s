@@ -17,6 +17,7 @@ import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-
 import { runGoal } from "./goal.js";
 import { conductorGenSpec } from "./conductor-prompt.js";
 import { isKnownModelPrefix } from "./provider-registry.js";
+import { renderConductSummary } from "./conduct-summary.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,6 +38,12 @@ export interface ConductOptions {
   output?: string;
   /** Skip the "▶ Run? [y/N]" confirmation even in TTY mode (D6). */
   yes?: boolean;
+  /** Run adversarial review before execution; halt on CHALLENGED verdict. */
+  reviewBeforeRun?: boolean;
+  /** Enable tmux dashboard for visual progress during parallel execution. */
+  dashboard?: boolean;
+  /** Resume from a prior failed run using the checkpoint state file. */
+  resume?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,14 +127,21 @@ export async function runConduct(
     if (!confirmed) return;
   }
 
-  // Delegate to the existing goal executor with orchestrator mode always on
+  // Delegate to the existing goal executor with orchestrator mode always on.
+  // Pass the three new parity flags through to GoalOptions.
   const result = await runGoal(specPath, {
     maxAttempts: String(options.maxAttempts ?? 3), // D3: coerce to string
     orchestrator: true,
     workers: options.workers,
-    quiet: options.quiet, // D2: quiet flag now on GoalOptions
-    cwd,                  // D1: cwd now on GoalOptions
+    quiet: options.quiet,       // D2: quiet flag now on GoalOptions
+    cwd,                        // D1: cwd now on GoalOptions
+    reviewBeforeRun: options.reviewBeforeRun,
+    dashboard: options.dashboard,
+    resume: options.resume,
   });
+
+  // Render structured post-run summary (gated on !quiet inside renderConductSummary)
+  renderConductSummary(result, specPath, goal, { quiet: options.quiet });
 
   if (options.output) {
     try {
