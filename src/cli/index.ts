@@ -863,7 +863,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--quiet", "Suppress verbose output from conductor and goal executor")
     .option("--output <path>", "Write final summary JSON to this path")
     .option("-y, --yes", "Skip the Run? confirmation even in interactive mode")
-    .action(async (goal: string, cmdOpts: { dryRun?: boolean; model?: string; workers?: string; maxAttempts?: string; quiet?: boolean; output?: string; yes?: boolean }) => {
+    .option("--review-before-run", "Run adversarial review before execution; halt on CHALLENGED verdict")
+    .option("--dashboard", "Enable tmux split-pane dashboard for visual progress during execution")
+    .option("--resume", "Resume from a prior failed run using the checkpoint state file")
+    .action(async (goal: string, cmdOpts: { dryRun?: boolean; model?: string; workers?: string; maxAttempts?: string; quiet?: boolean; output?: string; yes?: boolean; reviewBeforeRun?: boolean; dashboard?: boolean; resume?: boolean }) => {
       const { runConduct } = await import("./conduct.js");
       try {
         await runConduct(goal, {
@@ -874,9 +877,43 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           quiet: cmdOpts.quiet,
           output: cmdOpts.output,
           yes: cmdOpts.yes,
+          reviewBeforeRun: cmdOpts.reviewBeforeRun,
+          dashboard: cmdOpts.dashboard,
+          resume: cmdOpts.resume,
         }, process.cwd());
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
+  // Conductor audit — structural quality gate for spec generation (Sprint 88)
+  program
+    .command("conduct-audit")
+    .description("Run built-in conductor audit cases to verify spec generation quality")
+    .option("--ci", "Exit 1 if any case fails (suitable for GitHub Actions)")
+    .option("--fast", "Use fast_model instead of smart_model (cheaper for CI)")
+    .option("--case <id>", "Run a single case by ID (for debugging)")
+    .option("--json", "Output results as JSON to stdout instead of a table")
+    .action(async (cmdOpts: { ci?: boolean; fast?: boolean; case?: string; json?: boolean }) => {
+      const { runConductAudit, formatAuditResult } = await import("./conduct-audit.js");
+      if (!cmdOpts.json) {
+        console.log(chalk.cyan("Running conductor audit cases..."));
+        console.log();
+      }
+      try {
+        const result = await runConductAudit({
+          ci: cmdOpts.ci,
+          fast: cmdOpts.fast,
+          caseId: cmdOpts.case,
+          json: cmdOpts.json,
+        });
+        formatAuditResult(result, { json: cmdOpts.json });
+        if (cmdOpts.ci && result.passed < result.total) {
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
         process.exit(1);
       }
     });
@@ -917,7 +954,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct conduct-audit" -- "\$cur"))
     return
   fi
 
@@ -937,7 +974,10 @@ _phase2s_complete() {
       COMPREPLY=($(compgen -W "--quiet --timeout --output --doom-loop-threshold" -- "\$cur"))
       ;;
     conduct)
-      COMPREPLY=($(compgen -W "--dry-run --model --workers --max-attempts --quiet --output --yes" -- "\$cur"))
+      COMPREPLY=($(compgen -W "--dry-run --model --workers --max-attempts --quiet --output --yes --review-before-run --dashboard --resume" -- "\$cur"))
+      ;;
+    conduct-audit)
+      COMPREPLY=($(compgen -W "--ci --fast --case --json" -- "\$cur"))
       ;;
     completion)
       COMPREPLY=($(compgen -W "bash zsh" -- "\$cur"))
@@ -966,6 +1006,7 @@ _phase2s() {
     'mcp:Start as an MCP server for Claude Code'
     'goal:Run a spec file autonomously (dark factory)'
     'conduct:Generate a spec from a natural language goal and run the orchestrator'
+    'conduct-audit:Run built-in conductor audit cases to verify spec generation quality'
     'report:Display a human-readable summary of a run log'
     'init:Interactive setup wizard — configure .phase2s.yaml'
     'upgrade:Check for a newer version and offer to install it'
@@ -1024,7 +1065,17 @@ _phase2s() {
         '--max-attempts[Max retry loops]:n' \
         '--quiet[Suppress verbose output]' \
         '--output[Write summary JSON to file]:path:_files' \
-        '--yes[Skip confirmation prompt]'
+        '--yes[Skip confirmation prompt]' \
+        '--review-before-run[Adversarial review before execution; halt on CHALLENGED]' \
+        '--dashboard[Enable tmux dashboard for visual progress]' \
+        '--resume[Resume from a prior failed run checkpoint]'
+      ;;
+    conduct-audit)
+      _arguments \
+        '--ci[Exit 1 if any case fails]' \
+        '--fast[Use fast_model instead of smart_model]' \
+        '--case[Run a single case by ID]:id' \
+        '--json[Output results as JSON]'
       ;;
     completion)
       local -a shells

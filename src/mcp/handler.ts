@@ -16,7 +16,7 @@ import { parseRunLog, buildRunReport, formatRunReport } from "../cli/report.js";
 import { parseSpec } from "../core/spec-parser.js";
 import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-graph.js";
 import type { Skill } from "../skills/types.js";
-import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, REPORT_TOOL, TASK_TOOL, MCP_SERVER_VERSION } from "./tools.js";
+import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_AUDIT_TOOL, REPORT_TOOL, TASK_TOOL, MCP_SERVER_VERSION } from "./tools.js";
 
 // ---------------------------------------------------------------------------
 // Types (re-exported for handler consumers)
@@ -91,7 +91,7 @@ export async function handleRequest(
     return {
       jsonrpc: "2.0",
       id: request.id,
-      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, REPORT_TOOL, TASK_TOOL] },
+      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_AUDIT_TOOL, REPORT_TOOL, TASK_TOOL] },
     };
   }
 
@@ -249,6 +249,45 @@ export async function handleRequest(
               ].join("\n"),
             }],
           },
+        };
+      } catch (err) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32603,
+            message: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Conduct audit tool — structural quality gate for spec generation (Sprint 88).
+    // -----------------------------------------------------------------------
+    if (toolName === "phase2s__conduct_audit") {
+      const fast = typeof args["fast"] === "boolean" ? args["fast"] : true; // default true in MCP (cost)
+      const caseId = typeof args["caseId"] === "string" ? args["caseId"] : undefined;
+
+      try {
+        const { runConductAudit } = await import("../cli/conduct-audit.js");
+        const result = await runConductAudit({ fast, caseId, json: false });
+        const lines: string[] = [
+          `Conductor audit: ${result.passed}/${result.total} passed`,
+          `Avg duration: ${(result.avgDurationMs / 1000).toFixed(1)}s/case`,
+          ``,
+        ];
+        for (const c of result.cases) {
+          const icon = c.passed ? "✓" : "✗";
+          const detail = c.passed
+            ? `${c.subtaskCount} subtasks, roles: ${(c.roles ?? []).join(" ")}`
+            : `FAIL: ${c.error}`;
+          lines.push(`  ${icon} ${c.id}: ${detail}`);
+        }
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: { content: [{ type: "text", text: lines.join("\n") }] },
         };
       } catch (err) {
         return {

@@ -278,6 +278,28 @@ export const CONDUCT_TOOL: MCPTool = {
   },
 };
 
+export const CONDUCT_AUDIT_TOOL: MCPTool = {
+  name: "phase2s__conduct_audit",
+  description:
+    "Run the built-in conductor audit cases to verify spec generation quality. " +
+    "Generates specs for 10 curated goals and validates structure (subtask count, " +
+    "role presence, lint). Note: dashboard mode is not supported in MCP context.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      fast: {
+        type: "boolean",
+        description: "Use fast_model instead of smart_model (cheaper; recommended for CI).",
+      },
+      caseId: {
+        type: "string",
+        description: "Run a single case by ID for debugging (e.g. 'add-endpoint').",
+      },
+    },
+    required: [],
+  },
+};
+
 export const REPORT_TOOL: MCPTool = {
   name: "phase2s__report",
   description:
