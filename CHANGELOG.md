@@ -2,7 +2,7 @@
 
 ## v1.61.0 — 2026-05-09
 
-Sprint 87 — Conduct Quality Hardening: three P4/P5 carry-overs from Sprint 86 now closed.
+Sprint 87 — Conduct Quality Hardening: three P4/P5 carry-overs from Sprint 86 now closed. Post-review hardening: model validation coverage, quiet gating, and prefix matching precision.
 
 ### Added
 
@@ -15,6 +15,14 @@ Sprint 87 — Conduct Quality Hardening: three P4/P5 carry-overs from Sprint 86 
 - **Spec filenames now include a 4-byte random hex suffix** — `.phase2s/specs/<slug>-<ts>-<hex>.md` instead of `<slug>-<ts>.md`. Reduces filename collision risk from rapid successive calls with the same goal.
 - **`KNOWN_MODEL_PREFIXES` moved to `provider-registry.ts`** — Single source of truth for model prefix detection. Imported by both `conduct.ts` and `parallel-executor.ts` (previously duplicated inline in `parallel-executor.ts`).
 - **`--model` validation in `conduct` skips tier aliases** — `--model fast` and `--model smart` no longer trigger the "Unrecognized model" warning. Also skips: Ollama provider, colon-format models (e.g. `gemma4:latest`), and recognized prefixes.
+
+### Fixed (post-review hardening)
+
+- **`isKnownModelPrefix()` hybrid matcher** — Replaces bare `startsWith("o1")` which falsely matched `"o10-custom"`, `"o1iver"` etc. Entries ending in `"-"` or `"/"` use prefix matching; bare entries (`"o1"`, `"o3"`, `"minimax"`) require exact match or hyphen-bounded prefix (`"o1-mini"` ✓, `"o10-custom"` ✗).
+- **Model validation now covers MCP callers** — `conductorGenSpec()` gained `_skipModelWarn` option; validation block moved inside the function so `handler.ts` (MCP path) is protected. `runConduct()` passes `_skipModelWarn: true` to avoid double-warn on the CLI path.
+- **Unresolved tier alias warn** — When `model='fast'` but `fast_model` is absent from config, the alias resolves to itself (`"fast"`). `conductorGenSpec()` now emits a specific `console.warn` naming the missing config key instead of silently sending `"fast"` to the LLM (which produced a misleading timeout error).
+- **Quiet gating on warnings** — Goal-truncation warn and model validation warn are now gated on `!options.quiet`. Previously both fired even with `--quiet`.
+- **`console.log` → `console.warn`** for unrecognized model message in `conduct.ts`.
 
 ---
 
