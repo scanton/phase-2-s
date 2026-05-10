@@ -892,21 +892,30 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .command("conduct-audit")
     .description("Run built-in conductor audit cases to verify spec generation quality")
     .option("--ci", "Exit 1 if any case fails (suitable for GitHub Actions)")
+    .option("--ci-only", "Run only ciGate:true cases (local pre-push gate, no API key needed)")
     .option("--fast", "Use fast_model instead of smart_model (cheaper for CI)")
     .option("--case <id>", "Run a single case by ID (for debugging)")
     .option("--json", "Output results as JSON to stdout instead of a table")
-    .action(async (cmdOpts: { ci?: boolean; fast?: boolean; case?: string; json?: boolean }) => {
+    .option("--timeout <seconds>", "Per-case timeout in seconds; cases that exceed it are marked failed")
+    .action(async (cmdOpts: { ci?: boolean; ciOnly?: boolean; fast?: boolean; case?: string; json?: boolean; timeout?: string }) => {
       const { runConductAudit, formatAuditResult } = await import("./conduct-audit.js");
       if (!cmdOpts.json) {
         console.log(chalk.cyan("Running conductor audit cases..."));
         console.log();
       }
+      const timeoutSec = cmdOpts.timeout !== undefined ? Number(cmdOpts.timeout) : undefined;
+      if (timeoutSec !== undefined && (!Number.isFinite(timeoutSec) || timeoutSec <= 0)) {
+        console.error(chalk.red(`--timeout must be a positive number, got: ${cmdOpts.timeout}`));
+        process.exit(1);
+      }
       try {
         const result = await runConductAudit({
           ci: cmdOpts.ci,
+          ciOnly: cmdOpts.ciOnly,
           fast: cmdOpts.fast,
           caseId: cmdOpts.case,
           json: cmdOpts.json,
+          timeout: timeoutSec,
         });
         formatAuditResult(result, { json: cmdOpts.json });
         if (cmdOpts.ci && result.passed < result.total) {
@@ -977,7 +986,7 @@ _phase2s_complete() {
       COMPREPLY=($(compgen -W "--dry-run --model --workers --max-attempts --quiet --output --yes --review-before-run --dashboard --resume" -- "\$cur"))
       ;;
     conduct-audit)
-      COMPREPLY=($(compgen -W "--ci --fast --case --json" -- "\$cur"))
+      COMPREPLY=($(compgen -W "--ci --ci-only --fast --case --json --timeout" -- "\$cur"))
       ;;
     completion)
       COMPREPLY=($(compgen -W "bash zsh" -- "\$cur"))
@@ -1073,9 +1082,11 @@ _phase2s() {
     conduct-audit)
       _arguments \
         '--ci[Exit 1 if any case fails]' \
+        '--ci-only[Run only ciGate cases (pre-push gate)]' \
         '--fast[Use fast_model instead of smart_model]' \
         '--case[Run a single case by ID]:id' \
-        '--json[Output results as JSON]'
+        '--json[Output results as JSON]' \
+        '--timeout[Per-case timeout in seconds]:seconds'
       ;;
     completion)
       local -a shells
