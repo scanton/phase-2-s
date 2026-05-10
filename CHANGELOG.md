@@ -8,7 +8,7 @@ Sprint 87 — Conduct Quality Hardening: three P4/P5 carry-overs from Sprint 86 
 
 - **`GOAL_MAX_CHARS = 4000` guard in `conductorGenSpec()`** — Goals longer than 4000 characters are truncated with a `console.warn` before reaching the LLM. Guard lives inside `conductorGenSpec()` (not `runConduct()`), so both the CLI and MCP entrypoints are protected.
 - **Tier alias resolution for `--model fast` / `--model smart`** — Passing `fast` or `smart` to `phase2s conduct --model` now resolves to `config.fast_model` / `config.smart_model` before the provider call. Previously "fast" was sent verbatim to the LLM API, causing a model-not-found error.
-- **`_randomSuffix` injectable option on `conductorGenSpec()`** — Test seam for deterministic spec filenames. Production path uses `randomBytes(4).toString("hex")`.
+- **Deterministic spec filenames in tests** — Test seam for injecting a fixed random suffix into `conductorGenSpec()`, so spec path assertions don't need to match against random hex. Production path continues to use `randomBytes(4).toString("hex")`.
 
 ### Changed
 
@@ -18,11 +18,10 @@ Sprint 87 — Conduct Quality Hardening: three P4/P5 carry-overs from Sprint 86 
 
 ### Fixed (post-review hardening)
 
-- **`isKnownModelPrefix()` hybrid matcher** — Replaces bare `startsWith("o1")` which falsely matched `"o10-custom"`, `"o1iver"` etc. Entries ending in `"-"` or `"/"` use prefix matching; bare entries (`"o1"`, `"o3"`, `"minimax"`) require exact match or hyphen-bounded prefix (`"o1-mini"` ✓, `"o10-custom"` ✗).
-- **Model validation now covers MCP callers** — `conductorGenSpec()` gained `_skipModelWarn` option; validation block moved inside the function so `handler.ts` (MCP path) is protected. `runConduct()` passes `_skipModelWarn: true` to avoid double-warn on the CLI path.
-- **Unresolved tier alias warn** — When `model='fast'` but `fast_model` is absent from config, the alias resolves to itself (`"fast"`). `conductorGenSpec()` now emits a specific `console.warn` naming the missing config key instead of silently sending `"fast"` to the LLM (which produced a misleading timeout error).
-- **Quiet gating on warnings** — Goal-truncation warn and model validation warn are now gated on `!options.quiet`. Previously both fired even with `--quiet`.
-- **`console.log` → `console.warn`** for unrecognized model message in `conduct.ts`.
+- **No more false "unrecognized model" warnings for `o1`-family models** — Previously, `--model o1-mini` would sometimes match the bare string `"o1"` with a too-broad prefix check, causing spurious warnings for legitimate models. The check is now hyphen-bounded: `"o1-mini"` matches, `"o10-custom"` doesn't.
+- **MCP callers now get model validation warnings** — Invoking `phase2s conduct` via Claude Code (MCP) previously skipped model name validation entirely; only the CLI path warned. Both paths now warn consistently on unknown model names or unconfigured tier aliases.
+- **Clearer error when `--model fast` has no `fast_model` configured** — Instead of a cryptic LLM timeout, you get an actionable warning: exactly which config key (`fast_model` or `smart_model`) is missing and what to set. The fix: add `fast_model: <model-name>` to `.phase2s.yaml`.
+- **`--quiet` now suppresses model and goal warnings** — Goal-truncation and model validation warnings were firing even with `--quiet`. They're gated correctly now.
 
 ---
 

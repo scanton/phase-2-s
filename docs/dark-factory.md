@@ -96,10 +96,10 @@ Running goal executor...
 ...
 ```
 
-By default, `phase2s conduct` generates the spec and immediately hands it to the goal executor. Pass `--spec-only` to stop after generation and review the spec yourself before running:
+By default, `phase2s conduct` generates the spec and immediately hands it to the goal executor. Pass `--dry-run` to stop after generation and review the spec yourself before running:
 
 ```bash
-phase2s conduct "add JWT refresh-token rotation with Redis backing" --spec-only
+phase2s conduct "add JWT refresh-token rotation with Redis backing" --dry-run
 ```
 
 ```
