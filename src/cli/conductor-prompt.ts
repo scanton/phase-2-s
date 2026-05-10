@@ -314,15 +314,31 @@ export async function conductorGenSpec(
   } catch {
     suffix = randomBytes(4).toString("hex");
   }
-  const specPath = join(baseCwd, ".phase2s", "specs", `${slug}-${ts}-${suffix}.md`);
+  const specDir = join(baseCwd, ".phase2s", "specs");
+  let specPath = join(specDir, `${slug}-${ts}-${suffix}.md`);
+
+  // mkdir before the try block so it covers both initial and retry write paths
+  await mkdir(specDir, { recursive: true });
 
   try {
-    await mkdir(dirname(specPath), { recursive: true });
-    await writeFile(specPath, spec, "utf8");
-  } catch (err) {
-    // Log the specific error so disk-full or permission issues aren't mislabeled as LLM failures
-    console.error(`[conductorGenSpec] Failed to write spec file: ${(err as Error).message}`);
-    return { specPath: "", specContent: "" };
+    await writeFile(specPath, spec, { encoding: "utf8", flag: "wx" });
+  } catch (err: unknown) {
+    const nodeErr = err as NodeJS.ErrnoException;
+    if (nodeErr.code === "EEXIST") {
+      // Astronomically rare collision (same millisecond + same suffix). Retry once.
+      const retrySuffix = randomBytes(4).toString("hex");
+      specPath = join(specDir, `${slug}-${ts}-${retrySuffix}.md`);
+      try {
+        await writeFile(specPath, spec, { encoding: "utf8", flag: "wx" });
+      } catch (retryErr) {
+        console.error(`[conductorGenSpec] Failed to write spec file (retry): ${(retryErr as Error).message}`);
+        return { specPath: "", specContent: "" };
+      }
+    } else {
+      // Log the specific error so disk-full or permission issues aren't mislabeled as LLM failures
+      console.error(`[conductorGenSpec] Failed to write spec file: ${nodeErr.message}`);
+      return { specPath: "", specContent: "" };
+    }
   }
 
   return { specPath, specContent: spec };

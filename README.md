@@ -448,14 +448,36 @@ phase2s conduct "add search indexing" --output .phase2s/runs/search-summary.json
 | `--quiet` | Suppress verbose progress output |
 | `--output <path>` | Write final summary JSON to this path |
 | `-y, --yes` | Skip the "▶ Run? [y/N]" confirmation |
+| `--review-before-run` | Run adversarial review on the generated spec before executing |
+| `--dashboard` | Enable tmux split-pane dashboard for visual progress |
+| `--resume` | Continue from the last completed sub-task checkpoint |
 
 The generated spec is saved to `.phase2s/specs/` so you can review, edit, or reuse it with `phase2s goal`.
+
+After a run, a post-run summary table (Subtask | Role | Status) is printed automatically — showing which sub-tasks passed, failed, or were skipped and the total run duration.
+
+**Verify spec generation quality with `conduct-audit`:**
+
+```bash
+# Run all 10 built-in cases and check structure (subtask count, roles, lint)
+phase2s conduct-audit
+
+# CI mode — exits 1 if any case fails
+phase2s conduct-audit --ci --fast
+
+# Debug a single case
+phase2s conduct-audit --case add-endpoint
+
+# JSON output for scripting
+phase2s conduct-audit --json
+```
 
 **Via MCP** — Claude Code can run the full conductor without leaving a conversation:
 
 ```
 phase2s__conduct({ goal: "add rate limiting to the API" })
 phase2s__conduct({ goal: "refactor the auth module", dryRun: true })
+phase2s__conduct_audit({ fast: true })   // verify spec generation quality
 ```
 
 ### MCP Integration

@@ -14,11 +14,19 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 88 notes (v1.62.0, 2026-05-09)
+
+Sprint 88 ships the Conductor Full Finish Line — 5 parts: flag parity (`--review-before-run`, `--dashboard`, `--resume` on `phase2s conduct`), `OrchestratorSubtaskSummary` + `GoalResult.subtaskResults` with read-after-clear and resume-path bug fixes, `renderConductSummary()` post-run 3-column table, `phase2s conduct-audit` CLI + `phase2s__conduct_audit` MCP tool (10 curated cases, `--fast`/`--case`/`--json`/`--ci`), and exclusive `wx` write flag with EEXIST retry in `conductorGenSpec()`. 30 new tests; 1621 passing (371 pre-existing `merge-strategy.test.ts` failures unrelated to Sprint 88).
+
+- [ ] **Error path `subtaskResults` is empty when orchestrator crashes mid-run** — When `runOrchestrator()` throws after checkpointing partial progress, `goal.ts` returns `subtaskResults: {}` instead of reading the checkpoint. The 3-column summary table is unavailable exactly when operators need it most. Fix: read `state.orchestrator` in the catch block and populate from the checkpoint before clearing. **Priority:** P4
+- [ ] **Re-run hint in `conduct-summary.ts` footer is not shell-safe** — `phase2s goal ${displayPath} --orchestrator` is emitted without quoting. A path with spaces produces a broken copy-paste command. Paths are currently slugified so spaces are impossible, but this is fragile. Fix: single-quote `displayPath`. **Priority:** P5
+- [ ] **`maxSubtasks: 8` in `AUDIT_CASES` contradicts `CONDUCTOR_PROMPT` "3-6 sub-tasks"** — The audit accepts specs the generator's own prompt calls too large. Extract a shared `CONDUCTOR_MAX_SUBTASKS` constant or change the prompt ceiling to 8. **Priority:** P4
+
 ## Backlog — Post-Sprint 87 notes (v1.61.0, 2026-05-09)
 
 Sprint 87 ships Conduct Quality Hardening — three P4/P5 carry-overs from Sprint 86. A: `GOAL_MAX_CHARS = 4000` guard inside `conductorGenSpec()` protects both CLI and MCP entrypoints (D4 cross-model finding). B: `KNOWN_MODEL_PREFIXES` moved to `provider-registry.ts`; model validation warn in `runConduct()` skips Ollama provider, colon-format models, tier aliases (`fast`/`smart`), and known prefixes (D5: `--model fast/smart` tier aliases now resolved inside `conductorGenSpec()`). C: `_randomSuffix` injectable option + `randomBytes(4)` hex suffix in filenames. 12 new tests (18-29, including adversarial-review fix for tier alias warning); 2149 passing. Post-review hardening commit adds: `isKnownModelPrefix()` hybrid matcher (no more o1/o10-custom false positives), model validation inside `conductorGenSpec()` to cover MCP callers, unresolved tier alias warn, quiet gating on all warns, console.log→console.warn. 3 additional tests (30-32); 2152 passing.
 
-- [ ] **writeFile exclusive flag for `conductorGenSpec` collision** — Current fix (randomBytes(4) hex suffix) makes collision astronomically unlikely but `writeFile` without `{ flag: 'wx' }` still overwrites on hash collision. True guard: `{ flag: 'wx' }` + retry with new suffix on EEXIST. **Priority:** P5
+- [x] **writeFile exclusive flag for `conductorGenSpec` collision** — Current fix (randomBytes(4) hex suffix) makes collision astronomically unlikely but `writeFile` without `{ flag: 'wx' }` still overwrites on hash collision. True guard: `{ flag: 'wx' }` + retry with new suffix on EEXIST. **Priority:** P5 **Completed: v1.62.0 (2026-05-09)** — `{ flag: "wx" }` + EEXIST retry with fresh random suffix; `mkdir` moved before `try` block to cover both write paths.
 
 ## Backlog — Post-Sprint 86 notes (v1.60.0, 2026-05-09)
 

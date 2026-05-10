@@ -127,6 +127,13 @@ export interface GoalOptions {
   throwOnRateLimit?: boolean;
 }
 
+/** Per-subtask result summary for orchestrator runs. Keyed by SubtaskJob.id. */
+export interface OrchestratorSubtaskSummary {
+  title: string;   // SubtaskJob.title — human-readable
+  role: string;    // SubtaskJob.role ('architect' | 'implementer' | 'tester' | 'reviewer')
+  status: 'passed' | 'failed' | 'skipped';
+}
+
 export interface GoalResult {
   success: boolean;
   attempts: number;
@@ -143,6 +150,8 @@ export interface GoalResult {
   challengeResponse?: string;
   /** true if this was a dry run — no LLM calls were made. */
   dryRun?: boolean;
+  /** Per-subtask results for orchestrator runs. Keyed by SubtaskJob.id. Empty for non-orchestrator runs. */
+  subtaskResults?: Record<string, OrchestratorSubtaskSummary>;
 }
 
 export async function runGoal(specFile: string, options: GoalOptions = {}): Promise<GoalResult> {
@@ -372,6 +381,11 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
       const { runOrchestrator } = await import('../orchestrator/orchestrator.js');
       const { executeOrchestratorLevel } = await import('../goal/parallel-executor.js');
 
+      // Full canonical job list from the spec — used for subtaskResults mapping.
+      // Always built from compile() regardless of resume so we capture every job,
+      // including those completed in a prior run (which aren't in pendingJobs).
+      const allJobs = compile(spec.decomposition).jobs;
+
       // If resuming from an orchestrator checkpoint, use the pending jobs from checkpoint;
       // otherwise compile fresh from the spec.
       const orchCheckpoint: OrchestratorCheckpoint | undefined = state.orchestrator;
@@ -409,6 +423,29 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
       const orchSuccess = orchResult.totalFailed === 0 && orchResult.totalSkipped === 0;
 
+      // Build subtaskResults BEFORE clearing state.orchestrator (it gets cleared below on success).
+      // state.orchestrator may be undefined on a fresh (non-resume) success run — handle both cases.
+      const subtaskResultsMap: Record<string, OrchestratorSubtaskSummary> = {};
+      const finalCp = state.orchestrator;
+      if (finalCp) {
+        const failedSet = new Set(finalCp.failedJobIds);
+        const skippedSet = new Set(finalCp.skippedJobIds);
+        for (const job of allJobs) {
+          subtaskResultsMap[job.id] = {
+            title: job.title,
+            role: job.role,
+            status: failedSet.has(job.id) ? 'failed'
+                  : skippedSet.has(job.id) ? 'skipped'
+                  : 'passed',
+          };
+        }
+      } else if (orchSuccess) {
+        // Fresh success path: no checkpoint (never rate-limited), all jobs passed
+        for (const job of allJobs) {
+          subtaskResultsMap[job.id] = { title: job.title, role: job.role, status: 'passed' };
+        }
+      }
+
       // Clear orchestrator checkpoint on success so future --resume starts fresh
       if (orchSuccess && state.orchestrator !== undefined) {
         state.orchestrator = undefined;
@@ -430,6 +467,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
           ? `Orchestrator completed: ${orchResult.totalCompleted} jobs.`
           : `Orchestrator: ${orchResult.totalFailed} failed, ${orchResult.totalSkipped} skipped.`,
         durationMs: Date.now() - startMs,
+        subtaskResults: subtaskResultsMap,
       };
 
       await maybeNotify(options, config, orchGoalResult, basename(specPath));
@@ -450,6 +488,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
         runLogPath: logger.close(),
         summary: `Orchestrator failed: ${message}`,
         durationMs: Date.now() - startMs,
+        subtaskResults: {},
       };
       await maybeNotify(options, config, orchErrResult, basename(specPath));
       return orchErrResult;

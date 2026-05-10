@@ -38,6 +38,11 @@
  * 30. conductorGenSpec (D5) — uppercase 'FAST' resolves case-insensitively to fast_model
  * 31. conductorGenSpec (B) — model='fast' with no fast_model in config → unresolved alias warn
  * 32. conductorGenSpec (A/D4) — goal exactly GOAL_MAX_CHARS+1 → truncation fires at boundary
+ *
+ * Sprint 88 flag parity (tests 33-35):
+ * 33. runConduct — --review-before-run passed through to runGoal
+ * 34. runConduct — --dashboard passed through to runGoal
+ * 35. runConduct — --resume passed through to runGoal
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
@@ -142,6 +147,11 @@ const mockRunGoalResult = {
 
 vi.mock("../../src/cli/goal.js", () => ({
   runGoal: vi.fn().mockResolvedValue(mockRunGoalResult),
+}));
+
+// Mock renderConductSummary so existing runConduct tests aren't polluted with summary output
+vi.mock("../../src/cli/conduct-summary.js", () => ({
+  renderConductSummary: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -400,6 +410,72 @@ describe("runConduct()", () => {
     expect(process.exitCode).toBe(1);
 
     process.exitCode = originalExitCode;
+  });
+
+  it("33 (Sprint 88). --review-before-run is passed through to runGoal options", async () => {
+    const { runGoal } = await import("../../src/cli/goal.js");
+    vi.mocked(runGoal).mockClear();
+
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValueOnce({
+      specPath: fakeSpecPath,
+      specContent: VALID_SPEC,
+    });
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add rate limiting", { reviewBeforeRun: true }, tmpDir);
+    Object.defineProperty(process.stdin, "isTTY", { value: undefined, configurable: true });
+
+    expect(runGoal).toHaveBeenCalledWith(
+      fakeSpecPath,
+      expect.objectContaining({ reviewBeforeRun: true }),
+    );
+  });
+
+  it("34 (Sprint 88). --dashboard is passed through to runGoal options", async () => {
+    const { runGoal } = await import("../../src/cli/goal.js");
+    vi.mocked(runGoal).mockClear();
+
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValueOnce({
+      specPath: fakeSpecPath,
+      specContent: VALID_SPEC,
+    });
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add rate limiting", { dashboard: true }, tmpDir);
+    Object.defineProperty(process.stdin, "isTTY", { value: undefined, configurable: true });
+
+    expect(runGoal).toHaveBeenCalledWith(
+      fakeSpecPath,
+      expect.objectContaining({ dashboard: true }),
+    );
+  });
+
+  it("35 (Sprint 88). --resume is passed through to runGoal options", async () => {
+    const { runGoal } = await import("../../src/cli/goal.js");
+    vi.mocked(runGoal).mockClear();
+
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValueOnce({
+      specPath: fakeSpecPath,
+      specContent: VALID_SPEC,
+    });
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add rate limiting", { resume: true }, tmpDir);
+    Object.defineProperty(process.stdin, "isTTY", { value: undefined, configurable: true });
+
+    expect(runGoal).toHaveBeenCalledWith(
+      fakeSpecPath,
+      expect.objectContaining({ resume: true }),
+    );
   });
 });
 
