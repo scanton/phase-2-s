@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.61.0 — 2026-05-09
+
+Sprint 87 — Conduct Quality Hardening: three P4/P5 carry-overs from Sprint 86 now closed.
+
+### Added
+
+- **`GOAL_MAX_CHARS = 4000` guard in `conductorGenSpec()`** — Goals longer than 4000 characters are truncated with a `console.warn` before reaching the LLM. Guard lives inside `conductorGenSpec()` (not `runConduct()`), so both the CLI and MCP entrypoints are protected.
+- **Tier alias resolution for `--model fast` / `--model smart`** — Passing `fast` or `smart` to `phase2s conduct --model` now resolves to `config.fast_model` / `config.smart_model` before the provider call. Previously "fast" was sent verbatim to the LLM API, causing a model-not-found error.
+- **`_randomSuffix` injectable option on `conductorGenSpec()`** — Test seam for deterministic spec filenames. Production path uses `randomBytes(4).toString("hex")`.
+
+### Changed
+
+- **Spec filenames now include a 4-byte random hex suffix** — `.phase2s/specs/<slug>-<ts>-<hex>.md` instead of `<slug>-<ts>.md`. Reduces filename collision risk from rapid successive calls with the same goal.
+- **`KNOWN_MODEL_PREFIXES` moved to `provider-registry.ts`** — Single source of truth for model prefix detection. Imported by both `conduct.ts` and `parallel-executor.ts` (previously duplicated inline in `parallel-executor.ts`).
+- **`--model` validation in `conduct` skips tier aliases** — `--model fast` and `--model smart` no longer trigger the "Unrecognized model" warning. Also skips: Ollama provider, colon-format models (e.g. `gemma4:latest`), and recognized prefixes.
+
+---
+
 ## v1.60.0 — 2026-05-09
 
 Sprint 86 — Conductor: `phase2s conduct "<goal>"` collapses spec-writing into a single command.

@@ -14,13 +14,19 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 87 notes (v1.61.0, 2026-05-09)
+
+Sprint 87 ships Conduct Quality Hardening — three P4/P5 carry-overs from Sprint 86. A: `GOAL_MAX_CHARS = 4000` guard inside `conductorGenSpec()` protects both CLI and MCP entrypoints (D4 cross-model finding). B: `KNOWN_MODEL_PREFIXES` moved to `provider-registry.ts`; model validation warn in `runConduct()` skips Ollama provider, colon-format models, tier aliases (`fast`/`smart`), and known prefixes (D5: `--model fast/smart` tier aliases now resolved inside `conductorGenSpec()`). C: `_randomSuffix` injectable option + `randomBytes(4)` hex suffix in filenames. 12 new tests (18-29, including adversarial-review fix for tier alias warning); 2149 passing.
+
+- [ ] **writeFile exclusive flag for `conductorGenSpec` collision** — Current fix (randomBytes(4) hex suffix) makes collision astronomically unlikely but `writeFile` without `{ flag: 'wx' }` still overwrites on hash collision. True guard: `{ flag: 'wx' }` + retry with new suffix on EEXIST. **Priority:** P5
+
 ## Backlog — Post-Sprint 86 notes (v1.60.0, 2026-05-09)
 
 Sprint 86 ships the Conductor — `phase2s conduct "<goal>"` generates a role-annotated 5-pillar spec from a natural-language goal via LLM, validates it with `lintSpec()`, and delegates to `runGoal()` with `orchestrator: true`. Sprint also includes `/review` hardening: execSync→async exec, MCP stdout quiet flag, parseInt 0 fix, DRY `streamSpec` helper, and dead export removal. 17 tests; 2137 passing.
 
-- [ ] **Filename collision risk in `conductorGenSpec`** — `slugify(goal.slice(0, 40))` + timestamp suffix does not guarantee uniqueness under rapid successive calls with the same goal. Low priority (requires sub-second repeat calls), but worth a random hex suffix if it becomes an issue. **Priority:** P5
-- [ ] **No goal length cap in `conduct` command** — A 50,000-character goal floods the LLM prompt. A reasonable guard (e.g. 4000 chars with a truncation warning) would prevent runaway token use. **Priority:** P4
-- [ ] **`--model` flag unvalidated in `conduct`** — Any string is accepted; an unknown model silently falls back to provider default. A validation hint or warning would improve UX. **Priority:** P4
+- [x] **Filename collision risk in `conductorGenSpec`** — `slugify(goal.slice(0, 40))` + timestamp suffix does not guarantee uniqueness under rapid successive calls with the same goal. **Completed: v1.61.0 (2026-05-09)** — Added `randomBytes(4)` hex suffix to spec filenames. True collision exclusivity (`wx` flag) tracked as new P5 item above.
+- [x] **No goal length cap in `conduct` command** — A 50,000-character goal floods the LLM prompt. **Completed: v1.61.0 (2026-05-09)** — `GOAL_MAX_CHARS = 4000` guard in `conductorGenSpec()` protects CLI + MCP.
+- [x] **`--model` flag unvalidated in `conduct`** — Any string is accepted; an unknown model silently falls back to provider default. **Completed: v1.61.0 (2026-05-09)** — Provider-aware validation warn in `runConduct()`; Ollama and colon-format models skip validation.
 
 ---
 
