@@ -287,9 +287,12 @@ export async function runConductAudit(options: AuditOptions = {}): Promise<Audit
         warnings: [],
         error: `timed out after ${options.timeout}s`,
       };
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
       caseResult = await Promise.race([
-        runOneCase(auditCase, config, modelOverride),
-        new Promise<CaseResult>(resolve => setTimeout(() => resolve(timeoutResult), timeoutMs)),
+        runOneCase(auditCase, config, modelOverride).finally(() => clearTimeout(timeoutHandle)),
+        new Promise<CaseResult>(resolve => {
+          timeoutHandle = setTimeout(() => resolve(timeoutResult), timeoutMs);
+        }),
       ]);
     } else {
       caseResult = await runOneCase(auditCase, config, modelOverride);
