@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.62.0 — 2026-05-09
+
+Sprint 88 — Conductor Full Finish Line: flag parity, subtask result tracking, rich post-run summary table, `conduct-audit` QA command, and safe exclusive spec writes.
+
+### Added
+
+- **`--review-before-run`, `--dashboard`, `--resume` flags on `phase2s conduct`** — Parity with `phase2s goal`. Pass `--review-before-run` to run adversarial review on the generated spec before execution, `--dashboard` for tmux visual progress, and `--resume` to continue from the last completed sub-task checkpoint.
+- **`OrchestratorSubtaskSummary` + `GoalResult.subtaskResults`** — Orchestrator runs now capture per-sub-task outcome (title, role, status: passed/failed/skipped) and attach it to the `GoalResult` struct. Fixes a read-after-clear bug where `state.orchestrator` was cleared before being read; uses a canonical job list built from the spec to ensure resume paths also report all sub-tasks.
+- **`renderConductSummary()` post-run summary table** — After `phase2s conduct` finishes, a 3-column table (Subtask | Role | Status) is printed with colour-coded pass/fail/skip indicators. Quiet-gated. Falls back to a one-liner when no subtask data is available. Written in `src/cli/conduct-summary.ts` with 11 unit tests.
+- **`phase2s conduct-audit` CLI command + `phase2s__conduct_audit` MCP tool** — Runs 10 curated spec-generation cases and validates structure (sub-task count, role presence, lint). Supports `--fast`, `--case <id>`, `--json`, and `--ci` flags. MCP variant defaults to `fast: true` for cost efficiency. 18 unit tests, all passing.
+
+### Changed
+
+- **Spec files now use exclusive `wx` write flag** — `conductorGenSpec()` now writes specs with `{ flag: "wx" }` (fail-if-exists) instead of the default overwrite mode. On the astronomically-rare EEXIST collision, it retries once with a fresh random suffix. `mkdir` is called before the `try` block so it covers both the first write and the retry path. Existing tests are unaffected via the `_randomSuffix` test seam.
+
+### Fixed
+
+- **`subtaskResults` no longer always empty on success** — The orchestrator block cleared `state.orchestrator` before reading it to build subtask summaries. Fixed by capturing `const finalCp = state.orchestrator` before the clear, with a fallback `else if (orchSuccess)` branch for fresh (non-resume) runs where the checkpoint was never set.
+- **Resume path now reports all sub-tasks, not just pending ones** — On `--resume`, `jobs` was set to `orchCheckpoint.pendingJobs` (remaining work only), so completed sub-tasks were missing from `subtaskResults`. Fixed by always building `const allJobs = compile(spec.decomposition).jobs` from the spec as the canonical full list.
+
+---
+
 ## v1.61.0 — 2026-05-09
 
 Sprint 87 — Conduct Quality Hardening: three P4/P5 carry-overs from Sprint 86 now closed. Post-review hardening: model validation coverage, quiet gating, and prefix matching precision.
