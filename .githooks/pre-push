@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# phase2s conduct-audit pre-push gate
+#
+# Runs CI-gated conductor audit cases locally before push.
+# Replaces a GitHub Actions LLM gate (no API key available in GH Actions).
+#
+# Activate with: git config core.hooksPath .githooks
+# (run once per clone; `npm install` runs this via the prepare script)
+
+set -euo pipefail
+
+# Skip if SKIP_CONDUCT_AUDIT=1 is set (e.g. for emergency hotfix pushes)
+if [ "${SKIP_CONDUCT_AUDIT:-0}" = "1" ]; then
+  echo "ℹ phase2s conduct-audit: skipped (SKIP_CONDUCT_AUDIT=1)"
+  exit 0
+fi
+
+# Check phase2s is available
+if ! command -v phase2s >/dev/null 2>&1; then
+  echo "⚠ phase2s not found in PATH — skipping conduct-audit pre-push gate"
+  echo "  Install with: npm install -g @scanton/phase2s"
+  exit 0
+fi
+
+echo "⚡ phase2s conduct-audit --ci-only (pre-push gate)..."
+if phase2s conduct-audit --ci-only --ci --fast; then
+  echo "✅ Conduct audit passed."
+  exit 0
+else
+  echo ""
+  echo "❌ Conduct audit CI gate failed."
+  echo "   Fix the prompt quality issues before pushing, or bypass with:"
+  echo "   SKIP_CONDUCT_AUDIT=1 git push"
+  exit 1
+fi

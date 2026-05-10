@@ -26,7 +26,7 @@ import chalk from "chalk";
 import { loadConfig } from "../core/config.js";
 import { parseSpec } from "../core/spec-parser.js";
 import { lintSpec } from "./lint.js";
-import { conductorGenSpec } from "./conductor-prompt.js";
+import { conductorGenSpec, CONDUCTOR_MAX_SUBTASKS } from "./conductor-prompt.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,6 +41,17 @@ export interface AuditCase {
   expectedKeywords: string[]; // words that should appear in a subtask name (WARN, not fail)
   /** When true, the goal is expected to fail gracefully (empty sentinel), not produce a spec. */
   expectFailure?: boolean;
+  /**
+   * When true, this case validates a prompt-quality constraint enforced by CONDUCTOR_PROMPT
+   * (e.g. subtask count within CONDUCTOR_MAX_SUBTASKS, no duplicate roles).
+   * --ci-only runs only these cases (local pre-push gate, no GitHub Actions LLM key needed).
+   */
+  ciGate?: boolean;
+  /**
+   * When true, validates that no role appears more than once in the generated spec.
+   * Enforces the "each role must be UNIQUE" rule added to CONDUCTOR_PROMPT in Sprint 89.
+   */
+  noDuplicateRoles?: boolean;
 }
 
 export interface AuditOptions {
@@ -52,6 +63,16 @@ export interface AuditOptions {
   ci?: boolean;
   /** Output results as JSON to stdout instead of a table. */
   json?: boolean;
+  /**
+   * Run only ciGate:true cases (local pre-push gate).
+   * Filters to the 5 prompt-quality validation cases that enforce CONDUCTOR_PROMPT constraints.
+   */
+  ciOnly?: boolean;
+  /**
+   * Per-case timeout in seconds. Cases that exceed this limit are marked as failed
+   * with a "timed out after Ns" error rather than waiting indefinitely.
+   */
+  timeout?: number;
 }
 
 export interface CaseResult {
@@ -162,6 +183,58 @@ export const AUDIT_CASES: AuditCase[] = [
     expectedKeywords: [],
     expectFailure: true, // expects graceful sentinel, not a valid spec
   },
+
+  // ---------------------------------------------------------------------------
+  // CI-gate cases — validate CONDUCTOR_PROMPT quality constraints (Sprint 89)
+  // Run locally via `.githooks/pre-push` with `phase2s conduct-audit --ci-only`.
+  // TODO: CI gate (deferred) — add GH Actions step once a model API key is available
+  // ---------------------------------------------------------------------------
+  {
+    id: "subtask-count-within-bounds",
+    goal: "add a configuration file parser that reads TOML settings from disk",
+    minSubtasks: 3,
+    maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
+    requiredRoles: ["architect"],
+    expectedKeywords: ["config", "toml"],
+    ciGate: true,
+  },
+  {
+    id: "architect-role-present",
+    goal: "implement a publish-subscribe event bus for inter-module communication",
+    minSubtasks: 3,
+    maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
+    requiredRoles: ["architect"],
+    expectedKeywords: ["event", "publish"],
+    ciGate: true,
+  },
+  {
+    id: "tester-role-present",
+    goal: "write comprehensive unit and integration tests for the user authentication service",
+    minSubtasks: 3,
+    maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
+    requiredRoles: ["architect", "tester"],
+    expectedKeywords: ["test", "auth"],
+    ciGate: true,
+  },
+  {
+    id: "reviewer-role-present",
+    goal: "add end-to-end encryption for user messages with automatic key rotation",
+    minSubtasks: 3,
+    maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
+    requiredRoles: ["architect", "reviewer"],
+    expectedKeywords: ["encrypt", "key"],
+    ciGate: true,
+  },
+  {
+    id: "no-duplicate-roles-in-small-spec",
+    goal: "add input validation to the user registration form fields",
+    minSubtasks: 3,
+    maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
+    requiredRoles: ["architect"],
+    expectedKeywords: ["validation", "form"],
+    ciGate: true,
+    noDuplicateRoles: true,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -174,15 +247,19 @@ export async function runConductAudit(options: AuditOptions = {}): Promise<Audit
   // Resolve model override: fast flag switches to fast_model for CI cost savings
   const modelOverride = options.fast ? "fast" : undefined;
 
-  // Filter to single case if --case was passed
-  const cases = options.caseId
-    ? AUDIT_CASES.filter(c => c.id === options.caseId)
-    : AUDIT_CASES;
-
-  if (cases.length === 0) {
-    throw new Error(
-      `Unknown case id: "${options.caseId}". Available: ${AUDIT_CASES.map(c => c.id).join(", ")}`,
-    );
+  // Filter to single case if --case was passed, or to ciGate cases if --ci-only
+  let cases: AuditCase[];
+  if (options.caseId) {
+    cases = AUDIT_CASES.filter(c => c.id === options.caseId);
+    if (cases.length === 0) {
+      throw new Error(
+        `Unknown case id: "${options.caseId}". Available: ${AUDIT_CASES.map(c => c.id).join(", ")}`,
+      );
+    }
+  } else if (options.ciOnly) {
+    cases = AUDIT_CASES.filter(c => c.ciGate === true);
+  } else {
+    cases = AUDIT_CASES;
   }
 
   const results: CaseResult[] = [];
@@ -194,7 +271,24 @@ export async function runConductAudit(options: AuditOptions = {}): Promise<Audit
       process.stdout.write(`  running ${chalk.dim(auditCase.id)}...`);
     }
 
-    const caseResult = await runOneCase(auditCase, config, modelOverride);
+    let caseResult: CaseResult;
+    if (options.timeout !== undefined) {
+      const timeoutMs = options.timeout * 1000;
+      const timeoutResult: CaseResult = {
+        id: auditCase.id,
+        goal: auditCase.goal,
+        passed: false,
+        durationMs: timeoutMs,
+        warnings: [],
+        error: `timed out after ${options.timeout}s`,
+      };
+      caseResult = await Promise.race([
+        runOneCase(auditCase, config, modelOverride),
+        new Promise<CaseResult>(resolve => setTimeout(() => resolve(timeoutResult), timeoutMs)),
+      ]);
+    } else {
+      caseResult = await runOneCase(auditCase, config, modelOverride);
+    }
     caseResult.durationMs = Date.now() - start;
 
     results.push(caseResult);
@@ -329,6 +423,22 @@ async function runOneCase(
         roles: [...presentRoles],
         specPath,
         error: `required role "${required}" not found in spec (found: ${[...presentRoles].join(", ") || "none"})`,
+      };
+    }
+  }
+
+  // Duplicate-role check (optional — validates CONDUCTOR_PROMPT uniqueness rule)
+  if (auditCase.noDuplicateRoles) {
+    const roleCounts: Record<string, number> = {};
+    for (const st of spec.decomposition) {
+      if (st.role) roleCounts[st.role] = (roleCounts[st.role] ?? 0) + 1;
+    }
+    const dupes = Object.entries(roleCounts).filter(([, n]) => n > 1).map(([r]) => r);
+    if (dupes.length > 0) {
+      return {
+        id: auditCase.id, goal: auditCase.goal, passed: false, durationMs: 0, warnings,
+        subtaskCount: count, roles: [...presentRoles], specPath,
+        error: `duplicate roles found: ${dupes.join(", ")} — each role must be unique in a small spec`,
       };
     }
   }
