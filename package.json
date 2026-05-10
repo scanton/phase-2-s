@@ -32,7 +32,7 @@
     "test:watch": "vitest",
     "build:action": "ncc build src/action/index.ts -o dist/action --license licenses.txt",
     "eval": "tsx src/eval/cli.ts",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "prepare": "git config core.hooksPath .githooks || echo 'note: could not wire .githooks (expected outside a git repo)'"
   },
   "test": {
     "include": [

@@ -908,6 +908,9 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         console.error(chalk.red(`--timeout must be a positive number, got: ${cmdOpts.timeout}`));
         process.exit(1);
       }
+      if (cmdOpts.ciOnly && cmdOpts.case) {
+        console.warn(chalk.yellow("Warning: --ci-only is ignored when --case is specified (--case takes precedence)"));
+      }
       try {
         const result = await runConductAudit({
           ci: cmdOpts.ci,

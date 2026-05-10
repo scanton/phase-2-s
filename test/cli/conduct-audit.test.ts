@@ -260,6 +260,8 @@ describe("runConductAudit", () => {
     }
     // Non-ciGate cases like "add-endpoint" must not appear
     expect(result.cases.some(c => c.id === "add-endpoint")).toBe(false);
+    // Exactly 5 LLM calls — not all 15
+    expect(mockConductorGenSpec).toHaveBeenCalledTimes(ciGateIds.length);
   });
 
   it("timeout: case exceeding the timeout limit is marked as failed", async () => {
@@ -269,15 +271,21 @@ describe("runConductAudit", () => {
     mockParseSpec.mockReturnValue(makeSpec([]));
     mockLintSpec.mockReturnValue({ ok: true, issues: [] });
 
-    const auditPromise = runConductAudit({ caseId: "add-endpoint", timeout: 5 });
-    // Advance time past the 5s timeout
-    await vi.advanceTimersByTimeAsync(6000);
-    const result = await auditPromise;
-    vi.useRealTimers();
+    let result: Awaited<ReturnType<typeof runConductAudit>>;
+    try {
+      const auditPromise = runConductAudit({ caseId: "add-endpoint", timeout: 5 });
+      // Advance time past the 5s timeout
+      await vi.advanceTimersByTimeAsync(6000);
+      result = await auditPromise;
+    } finally {
+      // Restore real timers even if the promise rejects, so fake timers don't
+      // bleed into subsequent tests.
+      vi.useRealTimers();
+    }
 
-    expect(result.passed).toBe(0);
-    expect(result.cases[0].passed).toBe(false);
-    expect(result.cases[0].error).toMatch(/timed out after 5s/);
+    expect(result!.passed).toBe(0);
+    expect(result!.cases[0].passed).toBe(false);
+    expect(result!.cases[0].error).toMatch(/timed out after 5s/);
   });
 
   it("noDuplicateRoles: fails when same role appears more than once", async () => {
@@ -295,6 +303,22 @@ describe("runConductAudit", () => {
     expect(result.passed).toBe(0);
     expect(result.cases[0].passed).toBe(false);
     expect(result.cases[0].error).toMatch(/duplicate roles found: implementer/);
+  });
+
+  it("noDuplicateRoles: passes when all roles are unique", async () => {
+    // Verify that a spec with unique roles is NOT rejected by the noDuplicateRoles check
+    mockConductorGenSpec.mockResolvedValue({ specPath: "/tmp/spec.md", specContent: "# spec" });
+    mockParseSpec.mockReturnValue(makeSpec([
+      { name: "Design validation", role: "architect" },
+      { name: "Implement form fields", role: "implementer" },
+      { name: "Write tests", role: "tester" },
+    ]));
+    mockLintSpec.mockReturnValue({ ok: true, issues: [] });
+
+    const result = await runConductAudit({ caseId: "no-duplicate-roles-in-small-spec" });
+    expect(result.passed).toBe(1);
+    expect(result.cases[0].passed).toBe(true);
+    expect(result.cases[0].error).toBeUndefined();
   });
 });
 

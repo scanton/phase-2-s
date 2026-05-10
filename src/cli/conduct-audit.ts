@@ -26,7 +26,7 @@ import chalk from "chalk";
 import { loadConfig } from "../core/config.js";
 import { parseSpec } from "../core/spec-parser.js";
 import { lintSpec } from "./lint.js";
-import { conductorGenSpec, CONDUCTOR_MAX_SUBTASKS } from "./conductor-prompt.js";
+import { conductorGenSpec, CONDUCTOR_MIN_SUBTASKS, CONDUCTOR_MAX_SUBTASKS } from "./conductor-prompt.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,7 +36,7 @@ export interface AuditCase {
   id: string;                // short slug, e.g. "add-endpoint"
   goal: string;              // the input goal string
   minSubtasks: number;       // minimum acceptable subtask count
-  maxSubtasks: number;       // maximum acceptable subtask count (use 8 for most — LLM varies)
+  maxSubtasks: number;       // maximum acceptable subtask count — baseline cases use 8 (LLM variance headroom); ciGate cases use CONDUCTOR_MAX_SUBTASKS (strict prompt-quality enforcement)
   requiredRoles: string[];   // roles that must appear in at least one subtask
   expectedKeywords: string[]; // words that should appear in a subtask name (WARN, not fail)
   /** When true, the goal is expected to fail gracefully (empty sentinel), not produce a spec. */
@@ -192,7 +192,7 @@ export const AUDIT_CASES: AuditCase[] = [
   {
     id: "subtask-count-within-bounds",
     goal: "add a configuration file parser that reads TOML settings from disk",
-    minSubtasks: 3,
+    minSubtasks: CONDUCTOR_MIN_SUBTASKS,
     maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
     requiredRoles: ["architect"],
     expectedKeywords: ["config", "toml"],
@@ -201,7 +201,7 @@ export const AUDIT_CASES: AuditCase[] = [
   {
     id: "architect-role-present",
     goal: "implement a publish-subscribe event bus for inter-module communication",
-    minSubtasks: 3,
+    minSubtasks: CONDUCTOR_MIN_SUBTASKS,
     maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
     requiredRoles: ["architect"],
     expectedKeywords: ["event", "publish"],
@@ -210,7 +210,7 @@ export const AUDIT_CASES: AuditCase[] = [
   {
     id: "tester-role-present",
     goal: "write comprehensive unit and integration tests for the user authentication service",
-    minSubtasks: 3,
+    minSubtasks: CONDUCTOR_MIN_SUBTASKS,
     maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
     requiredRoles: ["architect", "tester"],
     expectedKeywords: ["test", "auth"],
@@ -219,7 +219,7 @@ export const AUDIT_CASES: AuditCase[] = [
   {
     id: "reviewer-role-present",
     goal: "add end-to-end encryption for user messages with automatic key rotation",
-    minSubtasks: 3,
+    minSubtasks: CONDUCTOR_MIN_SUBTASKS,
     maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
     requiredRoles: ["architect", "reviewer"],
     expectedKeywords: ["encrypt", "key"],
@@ -228,7 +228,7 @@ export const AUDIT_CASES: AuditCase[] = [
   {
     id: "no-duplicate-roles-in-small-spec",
     goal: "add input validation to the user registration form fields",
-    minSubtasks: 3,
+    minSubtasks: CONDUCTOR_MIN_SUBTASKS,
     maxSubtasks: CONDUCTOR_MAX_SUBTASKS,
     requiredRoles: ["architect"],
     expectedKeywords: ["validation", "form"],
@@ -258,6 +258,11 @@ export async function runConductAudit(options: AuditOptions = {}): Promise<Audit
     }
   } else if (options.ciOnly) {
     cases = AUDIT_CASES.filter(c => c.ciGate === true);
+    if (cases.length === 0) {
+      throw new Error(
+        "No ciGate cases defined — add at least one case with ciGate: true to AUDIT_CASES before using --ci-only",
+      );
+    }
   } else {
     cases = AUDIT_CASES;
   }
