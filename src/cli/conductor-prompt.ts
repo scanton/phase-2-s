@@ -56,6 +56,18 @@ const STREAM_TIMEOUT_MS = 5 * 60 * 1000;
  */
 export const GOAL_MAX_CHARS = 4000;
 
+/**
+ * Minimum subtask count the conductor MUST generate (Step B).
+ * Exported so conduct-audit.ts can use the same value for validation.
+ */
+export const CONDUCTOR_MIN_SUBTASKS = 3;
+
+/**
+ * Maximum subtask count the conductor MUST generate (Step B).
+ * Exported so conduct-audit.ts can use the same value for validation.
+ */
+export const CONDUCTOR_MAX_SUBTASKS = 6;
+
 // ---------------------------------------------------------------------------
 // Conductor prompt template
 // ---------------------------------------------------------------------------
@@ -110,7 +122,9 @@ RULES:
 - **Role:** must be one of: architect, implementer, tester, reviewer
 - Architect sub-task must come FIRST (others depend on arch-plan.md)
 - Tester and reviewer sub-tasks come LAST
-- 3-6 sub-tasks total — scale to goal complexity, don't pad
+- ${CONDUCTOR_MIN_SUBTASKS}-${CONDUCTOR_MAX_SUBTASKS} sub-tasks total — scale to goal complexity, don't pad
+- Each role must be UNIQUE — do not assign the same role to two subtasks unless goal complexity clearly warrants it (e.g. two distinct implementer scopes with non-overlapping file sets)
+- No two subtasks may write to the same file — if a file needs multiple changes, combine them in one subtask or chain them with explicit Input/Output dependencies
 - File names in **Files:** must be real relative paths or planning artifacts
 - Do not invent sub-tasks for work that is already done or clearly out of scope
 `;
