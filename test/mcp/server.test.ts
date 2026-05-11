@@ -10,6 +10,9 @@ import {
   MCP_SERVER_VERSION,
   STATE_TOOLS,
   GOAL_TOOL,
+  CONDUCT_TOOL,
+  CONDUCT_STATUS_TOOL,
+  CONDUCT_LOG_TOOL,
   REPORT_TOOL,
   TASK_TOOL,
   TASK_COMPAT_TOOL,
@@ -54,6 +57,19 @@ vi.mock("../../src/cli/goal.js", () => ({
     runLogPath: "/tmp/phase2s-test/.phase2s/runs/2026-04-05T12-00-00-abc12345.jsonl",
     summary: "All criteria passed after 1 attempt(s).",
     durationMs: 1234,
+  }),
+}));
+
+// Mock runConductAudit so CONDUCT_STATUS_TOOL tests don't spin up a real audit run.
+vi.mock("../../src/cli/conduct-audit.js", () => ({
+  runConductAudit: vi.fn().mockResolvedValue({
+    passed: 8,
+    total: 10,
+    avgDurationMs: 1200,
+    cases: [
+      { id: "add-endpoint", passed: true, subtaskCount: 3, roles: ["planner", "coder"], error: undefined },
+      { id: "refactor-auth", passed: false, subtaskCount: 2, roles: [], error: "subtask count too low" },
+    ],
   }),
 }));
 
@@ -1038,6 +1054,73 @@ describe("TASK_TOOL descriptor (Sprint 84/93)", () => {
     const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
     expect(response.error).toBeUndefined();
     expect(response.result).toBeDefined();
+    const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content[0].type).toBe("text");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 93: CONDUCT_STATUS_TOOL descriptor + phase2s__conduct_status handler
+// ---------------------------------------------------------------------------
+
+describe("CONDUCT_STATUS_TOOL descriptor + handler (Sprint 93)", () => {
+  it("CONDUCT_STATUS_TOOL (phase2s__conduct_status) appears in tools/list", async () => {
+    const request = { jsonrpc: "2.0" as const, id: 1, method: "tools/list", params: {} };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    const toolNames = (response.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name);
+    expect(toolNames).toContain("phase2s__conduct_status");
+  });
+
+  it("CONDUCT_STATUS_TOOL has name phase2s__conduct_status", () => {
+    expect(CONDUCT_STATUS_TOOL.name).toBe("phase2s__conduct_status");
+  });
+
+  it("phase2s__conduct_status call returns a text result (not an error)", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 1,
+      method: "tools/call",
+      params: { name: "phase2s__conduct_status", arguments: {} },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+    expect(response.result).toBeDefined();
+    const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content[0].type).toBe("text");
+  });
+
+  it("phase2s__conduct_status defaults fast to true when argument omitted", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 2,
+      method: "tools/call",
+      params: { name: "phase2s__conduct_status", arguments: {} },
+    };
+    // Verify no error — handler defaults fast to true when omitted
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+  });
+
+  it("phase2s__conduct_status accepts explicit fast: false", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 3,
+      method: "tools/call",
+      params: { name: "phase2s__conduct_status", arguments: { fast: false } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+  });
+
+  it("phase2s__conduct_status accepts caseId string", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 4,
+      method: "tools/call",
+      params: { name: "phase2s__conduct_status", arguments: { caseId: "add-endpoint" } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
     const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
     expect(content[0].type).toBe("text");
   });

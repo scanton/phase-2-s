@@ -2,10 +2,10 @@
 
 ## v1.67.0 — 2026-05-11
 
-Sprint 93 — Clarity Pass: command renames for discoverability, agent ID de-branding, `/satori` skill retirement, and a new workflow reference doc. `phase2s task` → `phase2s go` (shorter, more natural). `phase2s conduct-audit` → `phase2s conduct-status`. `phase2s conduct-log` → `phase2s runs`. Agent IDs renamed: `apollo` → `ask`, `athena` → `plan`, `ares` → `build`, with a session-migration shim for existing state files. `:go <task>` REPL colon command added. `phase2s__task` MCP compat alias kept for existing MCP clients. 2335 tests.
+Sprint 93 — Clarity Pass: command renames for discoverability, agent ID de-branding, `/satori` skill retirement, and a new workflow reference doc. `phase2s task` → `phase2s go` (shorter, more natural). `phase2s conduct-audit` → `phase2s conduct-status`. `phase2s conduct-log` → `phase2s runs`. Agent IDs renamed: `apollo` → `ask`, `athena` → `plan`, `ares` → `build`, with a session-migration shim for existing state files. `:go <task>` REPL colon command added. `phase2s__task` MCP compat alias kept for existing MCP clients. 2351 tests.
 
 ### Changed
-- **`phase2s task` → `phase2s go`** — Shorter, imperative command. `phase2s go "fix the null pointer"` dispatches the autonomous task executor. Old name `phase2s task` still works (deprecated, will be removed in a future major).
+- **`phase2s task` → `phase2s go`** — Shorter, imperative command. `phase2s go "fix the null pointer"` dispatches the autonomous task executor. The CLI `phase2s task` command has been removed; the MCP tool alias `phase2s__task` is preserved for existing MCP client configs.
 - **`phase2s conduct-audit` → `phase2s conduct-status`** — Clearer intent. MCP tool `phase2s__conduct_status` retained.
 - **`phase2s conduct-log` → `phase2s runs`** — Matches the mental model: "show me my runs". MCP tool `phase2s__runs` retained.
 - **Agent ID de-branding** — Agent identifiers renamed from Greek mythology to function names: `apollo` → `ask`, `athena` → `plan`, `ares` → `build`. Existing state files migrate automatically on first read via `readReplState()` shim.

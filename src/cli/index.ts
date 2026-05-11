@@ -1747,12 +1747,11 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           console.log(chalk.dim(`Running task: ${action.task.slice(0, 80)}${action.task.length > 80 ? "..." : ""}`));
           console.log();
           try {
-            const result = await agent.run(action.task, {
+            await agent.run(action.task, {
               taskMode: true,
               verifyCommand: config.verifyCommand,
               onDelta: (chunk) => process.stdout.write(chunk),
             });
-            process.stdout.write(result ? "" : "");
           } catch (err) {
             log.error(err instanceof Error ? err.message : String(err));
           }

@@ -267,7 +267,7 @@ export async function handleRequest(
     }
 
     // -----------------------------------------------------------------------
-    // Conduct audit tool — structural quality gate for spec generation (Sprint 88).
+    // Conduct status tool — structural quality gate for spec generation (Sprint 88).
     // -----------------------------------------------------------------------
     if (toolName === "phase2s__conduct_status") {
       const fast = typeof args["fast"] === "boolean" ? args["fast"] : true; // default true in MCP (cost)

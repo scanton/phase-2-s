@@ -143,4 +143,5 @@ This override inherits ask mode's tool list (`glob`, `grep`, `file_read`, `brows
 :build               — switch to build mode
 :agent <id>          — switch to any agent by id
 :agent <unknown>     — shows "Agent not found. Try :agents to list available."
+:go <task>           — run a task in task mode (same as `phase2s go "<task>"`)
 ```

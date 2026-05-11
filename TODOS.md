@@ -16,7 +16,7 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ## Backlog — Post-Sprint 93 notes (v1.67.0, 2026-05-11)
 
-Sprint 93 ships the Clarity Pass — command renames, agent de-branding, satori retirement, and workflow docs. A: `phase2s task` → `phase2s go` (CLI + MCP); `phase2s__task` → `phase2s__go`; `:go <task>` REPL command added. B: `phase2s conduct-audit` → `phase2s conduct-status`; `phase2s conduct-log` → `phase2s runs`. C: Agent persona names removed — `id: apollo/athena/ares` → `id: ask/plan/build`; system prompts rewritten; session migration shim in `readReplState()` maps old IDs on load. D: `/satori` skill deprecated with notice pointing to `phase2s go`; internal satori loop untouched. E: `docs/workflow.md` new reference page; `docs/agents.md` updated. 0 new tests (all 2325 existing tests updated and passing).
+Sprint 93 ships the Clarity Pass — command renames, agent de-branding, satori retirement, and workflow docs. A: `phase2s task` → `phase2s go` (CLI + MCP); `phase2s__task` → `phase2s__go`; `:go <task>` REPL command added. B: `phase2s conduct-audit` → `phase2s conduct-status`; `phase2s conduct-log` → `phase2s runs`. C: Agent persona names removed — `id: apollo/athena/ares` → `id: ask/plan/build`; system prompts rewritten; session migration shim in `readReplState()` maps old IDs on load. D: `/satori` skill deprecated with notice pointing to `phase2s go`; internal satori loop untouched. E: `docs/workflow.md` new reference page; `docs/agents.md` updated. 16 new tests added in post-review pass (session migration shim, :go colon command, conduct_status handler). 2351 passing.
 
 ## Backlog — Post-Sprint 92 notes (v1.66.0, 2026-05-11)
 

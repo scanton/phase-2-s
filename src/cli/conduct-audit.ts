@@ -15,11 +15,11 @@
  * sentinel { specPath: "", specContent: "" } without throwing.
  *
  * Usage:
- *   phase2s conduct-audit                 run all 10 cases
- *   phase2s conduct-audit --ci            exit 1 on any failure
- *   phase2s conduct-audit --fast          use config.fast_model (cheaper for CI)
- *   phase2s conduct-audit --case add-endpoint   run a single case
- *   phase2s conduct-audit --json          emit JSON result to stdout
+ *   phase2s conduct-status                 run all 10 cases
+ *   phase2s conduct-status --ci            exit 1 on any failure
+ *   phase2s conduct-status --fast          use config.fast_model (cheaper for CI)
+ *   phase2s conduct-status --case add-endpoint   run a single case
+ *   phase2s conduct-status --json          emit JSON result to stdout
  */
 
 import chalk from "chalk";

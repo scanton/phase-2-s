@@ -205,6 +205,25 @@ export const GOAL_TOOL: MCPTool = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Shared inputSchema for TASK_TOOL and TASK_COMPAT_TOOL.
+ * Single source of truth — both tools expose identical parameters.
+ */
+const TASK_INPUT_SCHEMA: MCPTool["inputSchema"] = {
+  type: "object",
+  properties: {
+    task: {
+      type: "string",
+      description: "The task to execute (e.g. 'fix the null pointer in auth.ts').",
+    },
+    verify_command: {
+      type: "string",
+      description: "Shell command to run after file writes to verify changes (e.g. 'npm test'). Overrides config.verifyCommand.",
+    },
+  },
+  required: ["task"],
+};
+
+/**
  * MCP tool descriptor for the autonomous task executor.
  *
  * Activates task mode: injects the task-mode system prompt preamble, enables
@@ -218,20 +237,7 @@ export const TASK_TOOL: MCPTool = {
     "auto-verify after file writes, and doom-loop prevention. " +
     "Use for tasks like 'fix the null pointer in auth.ts' or 'add tests for the parser module'. " +
     "The agent will plan, execute, verify, and report — no hand-holding required.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      task: {
-        type: "string",
-        description: "The task to execute (e.g. 'fix the null pointer in auth.ts').",
-      },
-      verify_command: {
-        type: "string",
-        description: "Shell command to run after file writes to verify changes (e.g. 'npm test'). Overrides config.verifyCommand.",
-      },
-    },
-    required: ["task"],
-  },
+  inputSchema: TASK_INPUT_SCHEMA,
 };
 
 /**
@@ -245,20 +251,7 @@ export const TASK_COMPAT_TOOL: MCPTool = {
     "[Deprecated — use phase2s__go] Alias kept for backward compatibility. " +
     "Execute a multi-step autonomous task with aggressive tool chaining, " +
     "auto-verify after file writes, and doom-loop prevention.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      task: {
-        type: "string",
-        description: "The task to execute (e.g. 'fix the null pointer in auth.ts').",
-      },
-      verify_command: {
-        type: "string",
-        description: "Shell command to run after file writes to verify changes (e.g. 'npm test'). Overrides config.verifyCommand.",
-      },
-    },
-    required: ["task"],
-  },
+  inputSchema: TASK_INPUT_SCHEMA,
 };
 
 // ---------------------------------------------------------------------------

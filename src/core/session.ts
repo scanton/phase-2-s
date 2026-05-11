@@ -219,6 +219,8 @@ export function readReplState(cwd: string): ReplState | null {
     const legacyMap: Record<string, string> = { ares: "build", apollo: "ask", athena: "plan" };
     if (state.activeAgentId && legacyMap[state.activeAgentId]) {
       state.activeAgentId = legacyMap[state.activeAgentId];
+      // Write back so subsequent startups skip this migration (fire-and-forget).
+      void writeReplState(cwd, state);
     }
     return state;
   } catch {

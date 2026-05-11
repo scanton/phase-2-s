@@ -339,3 +339,37 @@ describe(":search — semantic codebase search", () => {
     expect(result.type).toBe("error");
   });
 });
+
+// ---------------------------------------------------------------------------
+// :go — autonomous task dispatch (Sprint 93)
+// ---------------------------------------------------------------------------
+
+describe(":go — autonomous task dispatch", () => {
+  it(":go <task> returns run_task with the task string", () => {
+    const result = handleColonCommand(":go fix the null pointer in auth.ts", makeCtx());
+    expect(result).toEqual({ type: "run_task", task: "fix the null pointer in auth.ts" });
+  });
+
+  it(":go with extra leading/trailing whitespace trims the task", () => {
+    const result = handleColonCommand(":go   add tests for config loader  ", makeCtx());
+    expect(result).toEqual({ type: "run_task", task: "add tests for config loader" });
+  });
+
+  it(":go bare (no task) returns error with usage hint", () => {
+    const result = handleColonCommand(":go", makeCtx());
+    expect(result.type).toBe("error");
+    if (result.type === "error") {
+      expect(result.message).toContain(":go");
+    }
+  });
+
+  it(":go with only spaces returns error", () => {
+    const result = handleColonCommand(":go   ", makeCtx());
+    expect(result.type).toBe("error");
+  });
+
+  it(":gobbledygook is NOT treated as :go (no space boundary match)", () => {
+    const result = handleColonCommand(":gobbledygook", makeCtx());
+    expect(result.type).toBe("unknown_command");
+  });
+});
