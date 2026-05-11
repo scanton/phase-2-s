@@ -37,6 +37,7 @@ import {
 import { OrchestratorLevelRateLimitError } from '../orchestrator/types.js';
 import type { SubtaskJob, OrchestratorLevelResult } from '../orchestrator/types.js';
 import { isKnownModelPrefix } from "../cli/provider-registry.js";
+import type { ProgressRenderer } from './progress-renderer.js';
 
 // ---------------------------------------------------------------------------
 // Worktree mutex — serializes prune+add per repo to prevent concurrent races
@@ -92,6 +93,8 @@ export interface ParallelOptions {
    * corrupting the JSON-RPC stdout stream with terminal escape sequences.
    */
   quiet?: boolean;
+  /** Optional progress renderer for live conductor panel (Sprint 92). */
+  progressRenderer?: ProgressRenderer;
 }
 
 export interface WorkerResult {
@@ -213,6 +216,7 @@ interface LevelOptions extends ParallelOptions {
   cwd: string;
   baseCommit: string;
   dashboardState: DashboardState | null;
+  // progressRenderer is inherited from ParallelOptions
 }
 
 async function executeLevel(
@@ -294,6 +298,13 @@ async function executeLevel(
       status: w.status === "passed" ? "passed" : "failed",
       durationMs: w.durationMs,
     });
+
+    // Emit progress events for the conductor panel
+    if (w.status === 'passed') {
+      options.progressRenderer?.emit({ type: 'job_complete', jobId: String(w.index), durationMs: w.durationMs });
+    } else {
+      options.progressRenderer?.emit({ type: 'job_failed', jobId: String(w.index), durationMs: w.durationMs, error: w.error ?? '' });
+    }
 
     // Update subtask result in state
     const indexKey = String(w.index);
@@ -418,6 +429,7 @@ async function executeWorker(
 
   if (!options.quiet) console.log(chalk.yellow(`  [Worker ${index}] Starting: ${subtask.name}`));
   if (dashboardState) updateWorkerPane(dashboardState, workerIndexInBatch, `[Worker ${index}] ${subtask.name}`);
+  if (options.progressRenderer) options.progressRenderer.emit({ type: 'job_start', jobId: String(index) });
 
   logger.log({
     event: "worker_started",
