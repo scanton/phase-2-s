@@ -1,7 +1,7 @@
 /**
- * Sprint 84 — CLI task subcommand tests.
+ * Sprint 84/93 — CLI go subcommand tests.
  *
- * Tests that `phase2s task "..."` routes to agent.run() with taskMode=true,
+ * Tests that `phase2s go "..."` routes to agent.run() with taskMode=true,
  * that --verify overrides verifyCommand, and that the subcommand appears in
  * help/completion output.
  */
@@ -99,7 +99,7 @@ describe("phase2s task — CLI subcommand", () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {
-      await main(["node", "phase2s", "task", "fix the null pointer in auth.ts"]);
+      await main(["node", "phase2s", "go", "fix the null pointer in auth.ts"]);
     } catch {
       // process.exit calls are expected
     }
@@ -118,7 +118,7 @@ describe("phase2s task — CLI subcommand", () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {
-      await main(["node", "phase2s", "task", "--verify", "bun test", "refactor config.ts"]);
+      await main(["node", "phase2s", "go", "--verify", "bun test", "refactor config.ts"]);
     } catch {
       // process.exit calls are expected
     }
@@ -130,14 +130,14 @@ describe("phase2s task — CLI subcommand", () => {
     consoleSpy.mockRestore();
   });
 
-  it("task subcommand without --verify uses config.verifyCommand", async () => {
+  it("go subcommand without --verify uses config.verifyCommand", async () => {
     const { main } = await import("../../src/cli/index.js");
 
     const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {
-      await main(["node", "phase2s", "task", "add tests for the parser"]);
+      await main(["node", "phase2s", "go", "add tests for the parser"]);
     } catch {
       // process.exit calls are expected
     }
@@ -151,7 +151,7 @@ describe("phase2s task — CLI subcommand", () => {
     consoleSpy.mockRestore();
   });
 
-  it("task subcommand appears in shell completion list", async () => {
+  it("go subcommand appears in shell completion list", async () => {
     // Import the ZSH_COMPLETION string from the CLI module
     // It's not exported directly, but we can test by running `phase2s completion zsh`
     const { main } = await import("../../src/cli/index.js");
@@ -168,11 +168,11 @@ describe("phase2s task — CLI subcommand", () => {
       // expected
     }
 
-    expect(output).toContain("task");
+    expect(output).toContain("go");
     writeSpy.mockRestore();
   });
 
-  it("task with empty prompt exits cleanly with an error message", async () => {
+  it("go with empty prompt exits cleanly with an error message", async () => {
     const { main } = await import("../../src/cli/index.js");
 
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -185,7 +185,7 @@ describe("phase2s task — CLI subcommand", () => {
     });
 
     try {
-      await main(["node", "phase2s", "task"]);
+      await main(["node", "phase2s", "go"]);
     } catch {
       // expected from process.exit mock
     }

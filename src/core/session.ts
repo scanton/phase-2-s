@@ -59,7 +59,7 @@ export interface SessionV2 {
 /** Repl-level state: which session is currently active. */
 export interface ReplState {
   currentSessionId: string;
-  /** Active agent persona id (e.g. "apollo", "athena", "ares"). Absent = default Ares. */
+  /** Active agent id (e.g. "build", "ask", "plan"). Absent = default build mode. */
   activeAgentId?: string;
 }
 
@@ -213,7 +213,14 @@ export function readReplState(cwd: string): ReplState | null {
   const path = replStatePath(cwd);
   try {
     const raw = readFileSync(path, "utf-8");
-    return JSON.parse(raw) as ReplState;
+    const state = JSON.parse(raw) as ReplState;
+    // Sprint 93 migration: remap legacy persona IDs to functional IDs.
+    // Users with state.json written before v1.67.0 may have "ares"/"apollo"/"athena".
+    const legacyMap: Record<string, string> = { ares: "build", apollo: "ask", athena: "plan" };
+    if (state.activeAgentId && legacyMap[state.activeAgentId]) {
+      state.activeAgentId = legacyMap[state.activeAgentId];
+    }
+    return state;
   } catch {
     return null;
   }

@@ -447,8 +447,8 @@ describe("loadAgents() alias collision guard", () => {
     expect(hijacker).toBeDefined();
     expect(hijacker!.id).toBe("hijacker");
 
-    // IF built-ins loaded (ares owns ":build"), then:
-    //   1. ":build" must point to ares (not hijacker)
+    // IF built-ins loaded (build mode owns ":build"), then:
+    //   1. ":build" must point to build (not hijacker)
     //   2. warning was emitted
     // IF built-ins didn't load (test-env path), no built-in ":build" exists,
     // hijacker gets it. Either way, the agent is still loadable by id.
@@ -457,8 +457,8 @@ describe("loadAgents() alias collision guard", () => {
       // Built-ins didn't load — no collision to block. Skip assertion.
       // The important thing is no crash.
     } else if (buildTarget) {
-      // Built-ins loaded — ":build" must belong to ares
-      expect(buildTarget.id).toBe("ares");
+      // Built-ins loaded — ":build" must belong to build
+      expect(buildTarget.id).toBe("build");
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(":build"));
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("reserved by a built-in"));
     }
@@ -564,7 +564,7 @@ describe("formatAgentsList()", () => {
   it("shows 'all tools' for agents with undefined tools", () => {
     const map = makeAgentMap([
       {
-        id: "ares",
+        id: "build",
         title: "Implement and build",
         model: "smart",
         tools: undefined,
@@ -618,22 +618,22 @@ describe("formatAgentsList()", () => {
     expect(apolloCount).toBe(1);
   });
 
-  it("sorts built-ins first in order: ares, apollo, athena", () => {
+  it("sorts built-ins first in order: build, ask, plan", () => {
     const map = makeAgentMap([
-      { id: "athena", title: "Athena", model: "smart", tools: ["glob"], aliases: [":plan"], systemPrompt: "", isBuiltIn: true },
-      { id: "apollo", title: "Apollo", model: "fast", tools: ["glob"], aliases: [":ask"], systemPrompt: "", isBuiltIn: true },
-      { id: "ares", title: "Ares", model: "smart", tools: undefined, aliases: [":build"], systemPrompt: "", isBuiltIn: true },
+      { id: "plan", title: "Create implementation plans", model: "smart", tools: ["glob"], aliases: [":plan"], systemPrompt: "", isBuiltIn: true },
+      { id: "ask", title: "Research and explain codebases", model: "fast", tools: ["glob"], aliases: [":ask"], systemPrompt: "", isBuiltIn: true },
+      { id: "build", title: "Implement, fix, and build", model: "smart", tools: undefined, aliases: [":build"], systemPrompt: "", isBuiltIn: true },
       { id: "zcustom", title: "ZCustom", model: "fast", tools: ["glob"], aliases: [], systemPrompt: "", isBuiltIn: false },
     ]);
 
     const output = formatAgentsList(map);
-    const aresPos = output.indexOf("ares");
-    const apolloPos = output.indexOf("apollo");
-    const athenaPos = output.indexOf("athena");
+    const buildPos = output.indexOf("build");
+    const askPos = output.indexOf("ask");
+    const planPos = output.indexOf("plan");
     const zcustomPos = output.indexOf("zcustom");
 
-    expect(aresPos).toBeLessThan(apolloPos);
-    expect(apolloPos).toBeLessThan(athenaPos);
-    expect(athenaPos).toBeLessThan(zcustomPos);
+    expect(buildPos).toBeLessThan(askPos);
+    expect(askPos).toBeLessThan(planPos);
+    expect(planPos).toBeLessThan(zcustomPos);
   });
 });

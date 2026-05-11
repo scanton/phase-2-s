@@ -39,7 +39,9 @@ export type ColonAction =
   /** :re <invalid tier> */
   | { type: "error"; message: string }
   /** :search <query> — semantic search over the code index */
-  | { type: "search_codebase"; query: string };
+  | { type: "search_codebase"; query: string }
+  /** :go <task> — run an autonomous task without leaving the REPL */
+  | { type: "run_task"; task: string };
 
 // ---------------------------------------------------------------------------
 // COMMAND_REGISTRY — static list of documented REPL commands for :help
@@ -54,6 +56,7 @@ export const COMMAND_REGISTRY: Array<{ command: string; description: string }> =
   { command: ":commit [message]",     description: "AI-generated commit message and commit" },
   { command: ":compact",              description: "Compact the current session context" },
   { command: ":dump [html]",          description: "Export conversation as markdown (or HTML)" },
+  { command: ":go <task>",            description: "Run an autonomous task and return to the REPL when done" },
   { command: ":search <query>",       description: "Semantic search over the indexed codebase (requires phase2s sync)" },
   { command: ":help",                 description: "Show this command reference" },
 ];
@@ -139,6 +142,15 @@ export function handleColonCommand(trimmed: string, ctx: ColonCommandCtx): Colon
   // :help
   if (trimmed === ":help") return { type: "show_help" };
 
+  // :go <task> — run an autonomous task from within the REPL
+  if (trimmed === ":go" || trimmed.startsWith(":go ")) {
+    const task = trimmed.slice(":go".length).trim();
+    if (!task) {
+      return { type: "error", message: "Usage: :go <task>\nExample: :go fix the null pointer in auth.ts" };
+    }
+    return { type: "run_task", task };
+  }
+
   // :search <query> — semantic search over the indexed codebase
   if (trimmed === ":search" || trimmed.startsWith(":search ")) {
     const query = trimmed.slice(":search".length).trim();
@@ -149,8 +161,8 @@ export function handleColonCommand(trimmed: string, ctx: ColonCommandCtx): Colon
   }
 
   // Agent switching — handles:
-  //   bare ids:          "ares" (caught above, but :ares handled here via strip)
-  //   colon-prefixed:    ":ares", ":apollo", ":athena"
+  //   bare ids:          "build" (caught above, but :build handled here via strip)
+  //   colon-prefixed:    ":build", ":ask", ":plan"
   //   aliases:           ":build", ":ask", ":plan"
   //   explicit command:  ":agent <id>"
   {

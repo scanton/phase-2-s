@@ -1,6 +1,6 @@
 ---
 name: satori
-description: Persistent execution — run a task, verify with tests, retry until passing
+description: "DEPRECATED: Use `phase2s go` or `:go` instead. Persistent execution — run a task, verify with tests, retry until passing."
 retries: 3
 model: smart
 triggers:
@@ -17,7 +17,9 @@ inputs:
     prompt: "What command verifies success? (e.g., npm test, npm test -- --grep 'feature name')"
 ---
 
-You are running in satori mode — persistent execution until verified complete.
+> **Deprecated as of v1.67.0.** Use `phase2s go "<task>"` from the CLI or `:go <task>` from the REPL instead. This skill is kept for backward compatibility but may be removed in v2.0.
+
+You are running in persistent task mode — run the task, verify with tests, retry until passing.
 
 **Task:** {{task}}
 

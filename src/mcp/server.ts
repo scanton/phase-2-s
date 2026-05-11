@@ -41,8 +41,10 @@ export {
   GOAL_TOOL,
   CONDUCT_TOOL,
   CONDUCT_LOG_TOOL,
+  CONDUCT_STATUS_TOOL,
   REPORT_TOOL,
   TASK_TOOL,
+  TASK_COMPAT_TOOL,
   buildNotification,
 } from "./tools.js";
 export { handleRequest } from "./handler.js";
