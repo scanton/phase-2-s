@@ -14,6 +14,12 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 90 notes (v1.64.0, 2026-05-10)
+
+Sprint 90 ships Conductor Real-World Hardening — 5 parts: conduct-log.jsonl observability (appendConductLog in finally block, ConductLogEntry schema), `phase2s conduct-log` CLI command (CLI-only; not yet an MCP tool), `--validate` 4-check structural pre-flight, spec refinement loop (tri-mode prompt, max 3 rounds, feedback → LLM regen), and `conduct-audit` CI gate job in `publish.yml`. 28 new tests (36–64); 2218 total, all passing.
+
+- [x] **Future: CI gate for conduct-audit (deferred — needs LLM API key in CI)** — **Completed: v1.64.0 (2026-05-10)** — `conduct-audit` job added to `publish.yml` after `alpine-smoke`. No-op when `OPENAI_API_KEY` secret is absent; full gate when the secret is configured.
+
 ## Backlog — Post-Sprint 89 notes (v1.63.0, 2026-05-10)
 
 Sprint 89 ships Conductor Quality Hardening — 5 prompt-quality constraints, `--ci-only` + `--timeout` flags on `conduct-audit`, 5 ciGate audit cases, a local pre-push hook, and a bug fix for the orchestrator crash path. Post-review hardening adds: `CONDUCTOR_MIN_SUBTASKS` used in ciGate cases (no more hardcoded 3), ciOnly empty-filter guard (silent no-op fixed), `--ci-only + --case` conflict warning, `vi.useRealTimers()` in try/finally, and Promise.race timer leak fix (clearTimeout on the winning leg). 9 new tests (2190 total); all passing.
@@ -25,7 +31,7 @@ Sprint 88 ships the Conductor Full Finish Line — 5 parts: flag parity (`--revi
 - [x] **Error path `subtaskResults` is empty when orchestrator crashes mid-run** — Fixed in v1.63.0 (Sprint 89): `goal.ts` catch block reads `state.orchestrator` checkpoint and populates `subtaskResults` from `completedJobs`, `failedJobIds`, `skippedJobIds`. **Completed:** v1.63.0 (2026-05-10)
 - [x] **Re-run hint in `conduct-summary.ts` footer is not shell-safe** — Fixed in v1.63.0 (Sprint 89): single-quote `displayPath` with shlex-style escape. **Completed:** v1.63.0 (2026-05-10)
 - [x] **`maxSubtasks: 8` in `AUDIT_CASES` contradicts `CONDUCTOR_PROMPT` "3-6 sub-tasks"** — Fixed in v1.63.0 (Sprint 89): `CONDUCTOR_MAX_SUBTASKS = 6` exported from `conductor-prompt.ts`; ciGate cases use it for bounds. **Completed:** v1.63.0 (2026-05-10)
-- [ ] **Future: CI gate for conduct-audit (deferred — needs LLM API key in CI)** — Sprint 89 ships a local pre-push hook instead. Once an LLM API key is available as a GitHub Actions secret, wire `phase2s conduct-audit --ci --ci-only` as a job in `publish.yml` (after `alpine-smoke`, using the installed npm package). The `--ci-only` flag filters to cases tagged `ciGate: true`. Note: this is post-publish observability, not a publish blocker. **Priority:** P4
+- [x] **Future: CI gate for conduct-audit (deferred — needs LLM API key in CI)** — Sprint 89 ships a local pre-push hook instead. Once an LLM API key is available as a GitHub Actions secret, wire `phase2s conduct-audit --ci --ci-only` as a job in `publish.yml` (after `alpine-smoke`, using the installed npm package). The `--ci-only` flag filters to cases tagged `ciGate: true`. Note: this is post-publish observability, not a publish blocker. **Priority:** P4 **Completed: v1.64.0 (2026-05-10)**
 
 ## Backlog — Post-Sprint 87 notes (v1.61.0, 2026-05-09)
 
