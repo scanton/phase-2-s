@@ -40,6 +40,7 @@ import { cleanAllWorktrees, getHeadSha, getDiff } from "../goal/merge-strategy.j
 import { judgeRun } from "../eval/judge.js";
 import { resolveReasoningModel } from "./model-resolver.js";
 import type { SubtaskJob } from "../orchestrator/types.js";
+import { createProgressRenderer, type ProgressRenderer } from "../goal/progress-renderer.js";
 
 /** Cap on bytes stored for failureContext per sub-task. */
 const FAILURE_CONTEXT_MAX_BYTES = 4096;
@@ -126,6 +127,11 @@ export interface GoalOptions {
    * than killing the entire REPL process.
    */
   throwOnRateLimit?: boolean;
+  /**
+   * Optional pre-built ProgressRenderer for injection (testing / conductor path).
+   * When absent, one is created based on TTY detection and quiet flag.
+   */
+  progressRenderer?: ProgressRenderer;
 }
 
 /** Per-subtask result summary for orchestrator runs. Keyed by SubtaskJob.id. */
@@ -233,6 +239,23 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
 
   // Load config early so it's available for all return paths (including early exits).
   const config = await loadConfig();
+
+  // Create progress renderer (Sprint 92). Created here so it spans the full run
+  // and is disposed in the finally block regardless of how the run ends.
+  const rendererMode = options.quiet ? 'quiet'
+    : process.stdout.isTTY ? 'ansi'
+    : 'plain';
+  const renderer: ProgressRenderer = options.progressRenderer
+    ?? createProgressRenderer({ mode: rendererMode, goal: spec.title });
+
+  // F3: Register an 'exit' handler so renderer.dispose() runs even when the
+  // process is terminated via process.exit() (e.g. SIGINT from conduct.ts).
+  // process.exit() fires the 'exit' event synchronously before terminating,
+  // so this guarantees cursor restoration on all exit paths.
+  const onExit = (): void => { try { renderer.dispose(); } catch { /* swallow */ } };
+  process.once('exit', onExit);
+
+  try {
 
   // -------------------------------------------------------------------------
   // State: load existing state when resuming, otherwise start fresh.
@@ -417,7 +440,10 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
           state!.orchestrator = cp;
           writeState(specDir, specHash, state!);
         },
+        progressRenderer: renderer,
       });
+
+      renderer.emit({ type: 'done', totalDurationMs: Date.now() - startMs });
 
       logger.log({
         event: 'goal_completed',
@@ -596,6 +622,7 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
           revisedSubtasks,
           subsetToRun,
           quiet: options.quiet,
+          progressRenderer: renderer,
         });
       } catch (err: unknown) {
         if (err instanceof RateLimitError) {
@@ -893,6 +920,13 @@ export async function runGoal(specFile: string, options: GoalOptions = {}): Prom
   };
   await maybeNotify(options, config, failResult, basename(specPath));
   return failResult;
+
+  } finally {
+    // Remove the exit handler before disposing — we're about to dispose normally,
+    // so the exit handler must not double-dispose.
+    process.removeListener('exit', onExit);
+    renderer.dispose();
+  }
 }
 
 // ---------------------------------------------------------------------------

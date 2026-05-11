@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.66.0 — 2026-05-11
+
+Sprint 92 — Conductor Live Progress Panel: inline ANSI in-place progress panel for `phase2s conduct` runs. Three renderer modes (`ansi` / `plain` / `quiet`). Per-job rows update in-place with elapsed time, ✓/✗/⊘ state indicators, and a footer counter. Adaptive tick rate (100ms local, 250ms SSH). Graceful SIGINT teardown with cursor restoration. `conduct-index.json` size cap at 1000 entries with sort-before-evict.
+
+### Added
+- **Conductor Live Progress Panel** — `phase2s conduct "<goal>"` now shows a live ANSI in-place panel during execution. Each subtask row displays its state (pending/running/done/failed/skipped) and elapsed time. The panel redraws in-place at 100ms (250ms over SSH) without scrolling the terminal.
+- **Three renderer modes** — `'ansi'` for TTY sessions (cursor-up redraws), `'plain'` for CI / non-TTY (prefixed log lines), `'quiet'` for `--quiet` flag and `--dashboard` flag (no-op, zero output). Mode auto-detected from `process.stdout.isTTY`.
+- **`ProgressRenderer` interface + `createProgressRenderer()`** — `src/goal/progress-renderer.ts`. Injectable `out` stream for tests. Dispatches `ProgressEvent` union: `level_start | job_start | job_complete | job_failed | job_skipped | level_complete | done`.
+- **Orchestrator event wiring** — `runOrchestrator()` in `orchestrator.ts` emits all six event types at job lifecycle transitions. `totalLevels` passed live from `mutableLevels.length` (accurate after replan splices).
+- **Satori path event wiring** — `executeParallel()` in `parallel-executor.ts` emits `job_start / job_complete / job_failed` events alongside existing `updateWorkerPane()` calls.
+- **ANSI renderer internals** — Header with goal string + level progress bar + elapsed. Job rows capped at `min(jobCount, terminal_rows - 4)` with overflow indicator. Title truncated to `max(1, cols - 12)` chars to prevent line wrapping from corrupting cursor-up positioning (D9). SSH detection via `SSH_TTY`, `SSH_CLIENT`, `SSH_CONNECTION`.
+- **`conduct-index.json` size cap** — `CONDUCT_INDEX_MAX_ENTRIES = 1000`. After each upsert: sort entries by ISO 8601 `id` then `slice(-max)` to keep newest. Sort is required because upsert preserves insertion position for existing entries.
+
+### Fixed
+- **SIGINT cursor restoration** — `conduct.ts` SIGINT handler uses `process.exit(1)` (fires `'exit'` event) instead of `process.kill(SIGINT)` (bypasses `finally`). `goal.ts` registers a `process.once('exit', ...)` handler that calls `renderer.dispose()`, ensuring the terminal cursor is always restored on Ctrl+C.
+- **Resize → degraded mode** — `process.stdout.on('resize', onResize)` degrades the ANSI renderer to plain flow mode for the remainder of the run. Named handler captured as `const onResize` so `dispose()` can call `removeListener` and prevent listener accumulation on repeated calls.
+- **Tiny terminal floor** — `getCapN()` now `Math.max(0, ...)` to prevent negative slice args when `terminal_rows < 4`.
+
 ## v1.65.0 — 2026-05-10
 
 Sprint 91 — Conductor Insights + Pattern Loop: `phase2s conduct-insights` analytics command with success-rate, subtask distribution, role histogram, and recent-goals display. `--json` flag for machine-readable output. `--rebuild-index` for Ollama embedding sidecar rebuild. `phase2s__conduct_log` MCP tool (list/stats/search with Ollama cosine similarity). Spec quality hints via cosine similarity search against past goals. Pattern Loop (`PATTERN_LOOP_ENABLED`). Security: `cwd` path-traversal vector removed from MCP conduct-log tool; `isValidEntry()` validation in `readConductIndex`. Performance: N+1 → O(1) I/O in `rebuildConductIndex`. Reliability: atomic index writes (tmp + rename) prevent corrupt sidecar on crash.

@@ -118,6 +118,19 @@ export async function runConduct(
   let currentSpecHash = "";
   let rounds = 0;
 
+  // D10: Use process.once (not process.on) to avoid listener accumulation on
+  // repeated programmatic calls (e.g. MCP, tests). Removed in finally.
+  // When SIGINT fires, set exitCode and re-raise so default termination runs.
+  const onSigint = (): void => {
+    process.exitCode = 1;
+    process.removeListener('SIGINT', onSigint);
+    // Use process.exit(1) instead of process.kill so the 'exit' event fires
+    // synchronously, allowing registered 'exit' handlers (e.g. renderer.dispose)
+    // to run and restore the cursor before the process terminates. (F3)
+    process.exit(1);
+  };
+  process.once('SIGINT', onSigint);
+
   try {
     // --- Initial spec generation ---
     const genResult = await conductorGenSpec(goal, config, {
@@ -258,6 +271,9 @@ export async function runConduct(
 
     process.exitCode = result.success ? 0 : 1;
   } finally {
+    // Remove SIGINT listener if it hasn't fired (normal completion path).
+    process.removeListener('SIGINT', onSigint);
+
     // Sprint 90/91: Append conduct log entry when spec generation was attempted.
     // Guard on currentSpecPath so we don't log entries from config-load failures
     // that exit before conductorGenSpec() is ever called.

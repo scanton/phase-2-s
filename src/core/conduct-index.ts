@@ -22,6 +22,9 @@
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 
+/** Maximum entries in the conduct index before oldest are evicted. */
+export const CONDUCT_INDEX_MAX_ENTRIES = 1000;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -136,6 +139,13 @@ export async function upsertConductIndexEntry(cwd: string, entry: ConductIndexEn
   } else {
     index.entries.push(entry);
   }
+
+  // Sort by id (ISO 8601 timestamp — lexicographically ordered) then evict oldest
+  index.entries.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  if (index.entries.length > CONDUCT_INDEX_MAX_ENTRIES) {
+    index.entries = index.entries.slice(-CONDUCT_INDEX_MAX_ENTRIES); // keep newest
+  }
+
   await writeConductIndex(cwd, index);
 }
 

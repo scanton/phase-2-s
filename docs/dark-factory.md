@@ -96,6 +96,8 @@ Running goal executor...
 ...
 ```
 
+On a TTY, `phase2s conduct` shows a live in-place ANSI progress panel during execution: each subtask row updates in real time with a state indicator (●/✓/✗/⊘) and elapsed time, and a footer counter shows how many tasks are done, running, queued, and failed. In CI or non-TTY environments the panel automatically degrades to plain prefixed log lines (`[conduct] → subtask name`). Pass `--quiet` to suppress all progress output.
+
 By default, `phase2s conduct` generates the spec and immediately hands it to the goal executor. Pass `--dry-run` to stop after generation and review the spec yourself before running:
 
 ```bash
