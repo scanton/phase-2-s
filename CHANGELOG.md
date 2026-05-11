@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.67.0 — 2026-05-11
+
+Sprint 93 — Clarity Pass: command renames for discoverability, agent ID de-branding, `/satori` skill retirement, and a new workflow reference doc. `phase2s task` → `phase2s go` (shorter, more natural). `phase2s conduct-audit` → `phase2s conduct-status`. `phase2s conduct-log` → `phase2s runs`. Agent IDs renamed: `apollo` → `ask`, `athena` → `plan`, `ares` → `build`, with a session-migration shim for existing state files. `:go <task>` REPL colon command added. `phase2s__task` MCP compat alias kept for existing MCP clients. 2351 tests.
+
+### Changed
+- **`phase2s task` → `phase2s go`** — Shorter, imperative command. `phase2s go "fix the null pointer"` dispatches the autonomous task executor. The CLI `phase2s task` command has been removed; the MCP tool alias `phase2s__task` is preserved for existing MCP client configs.
+- **`phase2s conduct-audit` → `phase2s conduct-status`** — Clearer intent. MCP tool `phase2s__conduct_status` retained.
+- **`phase2s conduct-log` → `phase2s runs`** — Matches the mental model: "show me my runs". MCP tool `phase2s__runs` retained.
+- **Agent ID de-branding** — Agent identifiers renamed from Greek mythology to function names: `apollo` → `ask`, `athena` → `plan`, `ares` → `build`. Existing state files migrate automatically on first read via `readReplState()` shim.
+- **README updated** — All `phase2s task` examples updated to `phase2s go`. Satori references removed.
+- **Agent docs updated** — `docs/agents.md` reflects new IDs and their roles.
+
+### Added
+- **`:go <task>` REPL colon command** — Inline task dispatch from the REPL without leaving interactive mode. `:go fix the type errors in auth.ts` invokes task mode and streams the result.
+- **`docs/workflow.md`** — Reference page covering the full Phase2S workflow: REPL → task mode → conductor pipeline. Explains when to use each mode and how they compose.
+- **`phase2s__task` MCP compat alias** — `TASK_COMPAT_TOOL` exposes `phase2s__task` in the MCP tools list and routes to the same handler as `phase2s__go`. Existing MCP client configs continue to work without changes.
+
+### Deprecated
+- **`/satori` skill** — `.phase2s/skills/satori/SKILL.md` now points users to `phase2s go`. Skill still runs but outputs a migration notice. Will be removed in v2.0.
+
 ## v1.66.0 — 2026-05-11
 
 Sprint 92 — Conductor Live Progress Panel: inline ANSI in-place progress panel for `phase2s conduct` runs. Three renderer modes (`ansi` / `plain` / `quiet`). Per-job rows update in-place with elapsed time, ✓/✗/⊘ state indicators, and a footer counter. Adaptive tick rate (100ms local, 250ms SSH). Graceful SIGINT teardown with cursor restoration. `conduct-index.json` size cap at 1000 entries with sort-before-evict.

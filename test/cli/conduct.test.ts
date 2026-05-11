@@ -1614,4 +1614,58 @@ describe("Sprint 91 — conduct-index upsert in finally + spec quality hint", ()
     const [entry] = vi.mocked(appendConductLog).mock.calls[0];
     expect(entry.dryRun).toBe(true);
   });
+
+  it("71. maybeShowSpecQualityHint warning fires when successRate < hintThreshold", async () => {
+    // Configure Ollama + hintEnabled
+    const configModule = await import("../../src/core/config.js");
+    vi.mocked(configModule.loadConfig).mockResolvedValue({
+      ...MOCK_CONFIG,
+      ollamaBaseUrl: "http://localhost:11434",
+      ollamaEmbedModel: "nomic-embed-text",
+      conductInsights: { hintEnabled: true, hintThreshold: 0.5, hintTopK: 3 },
+    } as Awaited<ReturnType<typeof configModule.loadConfig>>);
+
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    writeFileSync(fakeSpecPath, VALID_SPEC, "utf8");
+    await mockGenSpec(fakeSpecPath);
+
+    // Mock generateEmbedding to return a valid vector (hint path + index upsert)
+    const embeddingsModule = await import("../../src/core/embeddings.js");
+    vi.spyOn(embeddingsModule, "generateEmbedding").mockResolvedValue([0.1, 0.2, 0.3]);
+
+    // Mock readConductIndex to return 3 embeddable entries
+    const conductIndexModule = await import("../../src/core/conduct-index.js");
+    const fakeEntries = [
+      { id: "a", goalSnippet: "add pagination", success: false, durationMs: 5000, embedding: [0.1, 0.2, 0.3] },
+      { id: "b", goalSnippet: "add search", success: false, durationMs: 6000, embedding: [0.1, 0.2, 0.3] },
+      { id: "c", goalSnippet: "add filtering", success: false, durationMs: 4000, embedding: [0.1, 0.2, 0.3] },
+    ];
+    vi.spyOn(conductIndexModule, "readConductIndex").mockResolvedValue({
+      version: 1,
+      entries: fakeEntries as Parameters<typeof conductIndexModule.readConductIndex>[0] extends never ? never : Awaited<ReturnType<typeof conductIndexModule.readConductIndex>>["entries"],
+    });
+    // searchConductIndex returns all 3 with similarity, all failures → successRate = 0/3 < 0.5
+    vi.spyOn(conductIndexModule, "searchConductIndex").mockReturnValue(
+      fakeEntries.map((e) => ({ ...e, similarity: 0.9 }))
+    );
+    vi.spyOn(conductIndexModule, "upsertConductIndexEntry").mockResolvedValue(undefined);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add pagination feature", {}, tmpDir);
+
+    // The warning should have been emitted
+    const warnCalls = warnSpy.mock.calls.map((c) => String(c[0]));
+    const hintWarning = warnCalls.find((msg) => msg.includes("Similar goals succeeded only"));
+    expect(hintWarning).toBeTruthy();
+
+    warnSpy.mockRestore();
+
+    // Restore default config
+    vi.mocked(configModule.loadConfig).mockResolvedValue(
+      MOCK_CONFIG as Awaited<ReturnType<typeof configModule.loadConfig>>
+    );
+  });
 });

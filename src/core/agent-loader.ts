@@ -10,7 +10,7 @@
  * Custom agents (new ids not in built-ins) are unrestricted.
  *
  * The returned Map is keyed by both agent id and all aliases, so callers can look
- * up ":ask" or "apollo" and get the same AgentDef.
+ * up ":ask" or "ask" and get the same AgentDef.
  */
 
 import { readFile, readdir } from "node:fs/promises";
@@ -224,7 +224,7 @@ export function buildRegistryForAgent(def: AgentDef, opts: RegistryOptions = {})
  * Load all agents: bundled built-ins + project-local overrides.
  *
  * Returns a Map keyed by both agent id and all aliases.
- * Example: get("apollo") and get(":ask") both return the Apollo AgentDef.
+ * Example: get("ask") and get(":ask") both return the same AgentDef.
  *
  * If a project-local agent has the same id as a built-in, the override-restrict
  * policy is applied. Custom agents (new ids) are loaded unrestricted.
@@ -300,8 +300,8 @@ export function formatAgentsList(agents: Map<string, AgentDef>): string {
     }
   }
 
-  // Sort: built-ins first (ares, apollo, athena), then custom
-  const builtInOrder = ["ares", "apollo", "athena"];
+  // Sort: built-ins first (build, ask, plan), then custom
+  const builtInOrder = ["build", "ask", "plan"];
   unique.sort((a, b) => {
     const ai = builtInOrder.indexOf(a.id);
     const bi = builtInOrder.indexOf(b.id);

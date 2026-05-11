@@ -10,8 +10,12 @@ import {
   MCP_SERVER_VERSION,
   STATE_TOOLS,
   GOAL_TOOL,
+  CONDUCT_TOOL,
+  CONDUCT_STATUS_TOOL,
+  CONDUCT_LOG_TOOL,
   REPORT_TOOL,
   TASK_TOOL,
+  TASK_COMPAT_TOOL,
 } from "../../src/mcp/server.js";
 import { Conversation } from "../../src/core/conversation.js";
 import type { Skill } from "../../src/skills/types.js";
@@ -53,6 +57,19 @@ vi.mock("../../src/cli/goal.js", () => ({
     runLogPath: "/tmp/phase2s-test/.phase2s/runs/2026-04-05T12-00-00-abc12345.jsonl",
     summary: "All criteria passed after 1 attempt(s).",
     durationMs: 1234,
+  }),
+}));
+
+// Mock runConductAudit so CONDUCT_STATUS_TOOL tests don't spin up a real audit run.
+vi.mock("../../src/cli/conduct-audit.js", () => ({
+  runConductAudit: vi.fn().mockResolvedValue({
+    passed: 8,
+    total: 10,
+    avgDurationMs: 1200,
+    cases: [
+      { id: "add-endpoint", passed: true, subtaskCount: 3, roles: ["planner", "coder"], error: undefined },
+      { id: "refactor-auth", passed: false, subtaskCount: 2, roles: [], error: "subtask count too low" },
+    ],
   }),
 }));
 
@@ -152,8 +169,8 @@ describe("MCP server — protocol compliance", () => {
 
     expect(response.error).toBeUndefined();
     const result = response.result as { tools: unknown[] };
-    // tools/list now includes skill tools + 3 state tools + 1 goal tool + 1 conduct tool + 1 conduct-audit tool + 1 conduct-log tool + 1 report tool + 1 task tool
-    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length + 9);
+    // tools/list now includes skill tools + 3 state tools + 1 goal tool + 1 conduct tool + 1 conduct-status tool + 1 conduct-log tool + 1 report tool + 1 task tool + 1 task-compat tool
+    expect(result.tools).toHaveLength(FIXTURE_SKILLS.length + 10);
   });
 
   it("tools/list: tool names use phase2s__ prefix and underscore convention", async () => {
@@ -946,36 +963,36 @@ describe("handleRequest — agentsMdBlock injection (Sprint 56)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests — Sprint 84: TASK_TOOL descriptor + phase2s__task handler
+// Tests — Sprint 84: TASK_TOOL descriptor + phase2s__go handler
 // ---------------------------------------------------------------------------
 
-describe("TASK_TOOL descriptor (Sprint 84)", () => {
+describe("TASK_TOOL descriptor (Sprint 84/93)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("TASK_TOOL appears in tools/list", async () => {
+  it("TASK_TOOL (phase2s__go) appears in tools/list", async () => {
     const request = { jsonrpc: "2.0" as const, id: 1, method: "tools/list" };
     const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
     const tools = (response.result as { tools: Array<{ name: string }> }).tools;
     const toolNames = tools.map((t) => t.name);
-    expect(toolNames).toContain("phase2s__task");
+    expect(toolNames).toContain("phase2s__go");
   });
 
-  it("TASK_TOOL inputSchema requires task, verify_command is optional", () => {
-    expect(TASK_TOOL.name).toBe("phase2s__task");
+  it("TASK_TOOL (phase2s__go) inputSchema requires task, verify_command is optional", () => {
+    expect(TASK_TOOL.name).toBe("phase2s__go");
     expect(TASK_TOOL.inputSchema.required).toContain("task");
     expect(TASK_TOOL.inputSchema.required).not.toContain("verify_command");
     expect(TASK_TOOL.inputSchema.properties.task).toBeDefined();
     expect(TASK_TOOL.inputSchema.properties.verify_command).toBeDefined();
   });
 
-  it("phase2s__task with missing task returns an error response (not throws)", async () => {
+  it("phase2s__go with missing task returns an error response (not throws)", async () => {
     const request = {
       jsonrpc: "2.0" as const,
       id: 1,
       method: "tools/call",
-      params: { name: "phase2s__task", arguments: { task: "" } },
+      params: { name: "phase2s__go", arguments: { task: "" } },
     };
     const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
     expect(response.result).toBeUndefined();
@@ -983,12 +1000,12 @@ describe("TASK_TOOL descriptor (Sprint 84)", () => {
     expect(response.error?.message).toContain("task");
   });
 
-  it("phase2s__task calls agent.run with taskMode: true", async () => {
+  it("phase2s__go calls agent.run with taskMode: true", async () => {
     const request = {
       jsonrpc: "2.0" as const,
       id: 1,
       method: "tools/call",
-      params: { name: "phase2s__task", arguments: { task: "fix the null pointer in auth.ts" } },
+      params: { name: "phase2s__go", arguments: { task: "fix the null pointer in auth.ts" } },
     };
     const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
     expect(response.error).toBeUndefined();
@@ -998,18 +1015,113 @@ describe("TASK_TOOL descriptor (Sprint 84)", () => {
     expect(typeof content[0].text).toBe("string");
   });
 
-  it("phase2s__task with verify_command passes it through to agent.run", async () => {
+  it("phase2s__go with verify_command passes it through to agent.run", async () => {
     const request = {
       jsonrpc: "2.0" as const,
       id: 2,
       method: "tools/call",
       params: {
-        name: "phase2s__task",
+        name: "phase2s__go",
         arguments: { task: "refactor the config loader", verify_command: "bun test" },
       },
     };
     const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
     expect(response.error).toBeUndefined();
     expect(response.result).toBeDefined();
+  });
+
+  it("TASK_COMPAT_TOOL (phase2s__task) appears in tools/list alongside phase2s__go", async () => {
+    const request = { jsonrpc: "2.0" as const, id: 1, method: "tools/list", params: {} };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    const toolNames = (response.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name);
+    expect(toolNames).toContain("phase2s__task");
+    expect(toolNames).toContain("phase2s__go");
+  });
+
+  it("TASK_COMPAT_TOOL descriptor has name phase2s__task and same inputSchema as TASK_TOOL", () => {
+    expect(TASK_COMPAT_TOOL.name).toBe("phase2s__task");
+    expect(TASK_COMPAT_TOOL.inputSchema.required).toContain("task");
+    expect(TASK_COMPAT_TOOL.inputSchema.properties.task).toBeDefined();
+  });
+
+  it("phase2s__task (compat alias) routes to the same handler and returns a result", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 3,
+      method: "tools/call",
+      params: { name: "phase2s__task", arguments: { task: "fix the null pointer" } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+    expect(response.result).toBeDefined();
+    const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content[0].type).toBe("text");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Sprint 93: CONDUCT_STATUS_TOOL descriptor + phase2s__conduct_status handler
+// ---------------------------------------------------------------------------
+
+describe("CONDUCT_STATUS_TOOL descriptor + handler (Sprint 93)", () => {
+  it("CONDUCT_STATUS_TOOL (phase2s__conduct_status) appears in tools/list", async () => {
+    const request = { jsonrpc: "2.0" as const, id: 1, method: "tools/list", params: {} };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    const toolNames = (response.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name);
+    expect(toolNames).toContain("phase2s__conduct_status");
+  });
+
+  it("CONDUCT_STATUS_TOOL has name phase2s__conduct_status", () => {
+    expect(CONDUCT_STATUS_TOOL.name).toBe("phase2s__conduct_status");
+  });
+
+  it("phase2s__conduct_status call returns a text result (not an error)", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 1,
+      method: "tools/call",
+      params: { name: "phase2s__conduct_status", arguments: {} },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+    expect(response.result).toBeDefined();
+    const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content[0].type).toBe("text");
+  });
+
+  it("phase2s__conduct_status defaults fast to true when argument omitted", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 2,
+      method: "tools/call",
+      params: { name: "phase2s__conduct_status", arguments: {} },
+    };
+    // Verify no error — handler defaults fast to true when omitted
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+  });
+
+  it("phase2s__conduct_status accepts explicit fast: false", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 3,
+      method: "tools/call",
+      params: { name: "phase2s__conduct_status", arguments: { fast: false } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+  });
+
+  it("phase2s__conduct_status accepts caseId string", async () => {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 4,
+      method: "tools/call",
+      params: { name: "phase2s__conduct_status", arguments: { caseId: "add-endpoint" } },
+    };
+    const response = await handleRequest(request, FIXTURE_SKILLS, process.cwd());
+    expect(response.error).toBeUndefined();
+    const content = (response.result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content[0].type).toBe("text");
   });
 });

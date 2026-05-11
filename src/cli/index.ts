@@ -285,7 +285,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   // Autonomous task mode — chains tools aggressively, auto-verifies after writes
   program
-    .command("task <prompt>")
+    .command("go <prompt>")
     .description("Execute an autonomous multi-step task: plan, chain tools, auto-verify, stop on doom-loop")
     .option("--verify <command>", "Shell command to run after file writes to verify changes (overrides config.verifyCommand)")
     .option("--quiet", "Suppress per-turn streaming output; print only the final result (useful for CI/script usage)")
@@ -349,7 +349,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const expandedPrompt = preamble ? preamble + "\n" + cleanLine : cleanLine;
 
       if (!cmdOpts.quiet) {
-        console.log(chalk.dim(`Running task: ${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}`));
+        console.log(chalk.dim(`Running task: ${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}`));  // go subcommand
         console.log();
       }
 
@@ -889,9 +889,9 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       }
     });
 
-  // Conductor audit — structural quality gate for spec generation (Sprint 88)
+  // Conductor status/audit — structural quality gate for spec generation (Sprint 88)
   program
-    .command("conduct-audit")
+    .command("conduct-status")
     .description("Run built-in conductor audit cases to verify spec generation quality")
     .option("--ci", "Exit 1 if any case fails (suitable for GitHub Actions)")
     .option("--ci-only", "Run only ciGate:true cases (local pre-push gate, no API key needed)")
@@ -902,7 +902,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .action(async (cmdOpts: { ci?: boolean; ciOnly?: boolean; fast?: boolean; case?: string; json?: boolean; timeout?: string }) => {
       const { runConductAudit, formatAuditResult } = await import("./conduct-audit.js");
       if (!cmdOpts.json) {
-        console.log(chalk.cyan("Running conductor audit cases..."));
+        console.log(chalk.cyan("Running conductor status check..."));
         console.log();
       }
       const timeoutSec = cmdOpts.timeout !== undefined ? Number(cmdOpts.timeout) : undefined;
@@ -932,9 +932,9 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       }
     });
 
-  // Conduct log — view past conductor run history (Sprint 90)
+  // Runs — view past conductor run history (Sprint 90)
   program
-    .command("conduct-log")
+    .command("runs")
     .description("View past conductor run history from .phase2s/conduct-log.jsonl")
     .option("--last", "Show most recent entry only; exits with code 1 if no runs logged")
     .option("--limit <n>", "Number of most recent entries to show (default: 10)", "10")
@@ -1022,7 +1022,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct conduct-audit conduct-log conduct-insights" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run go skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct conduct-status runs conduct-insights" -- "\$cur"))
     return
   fi
 
@@ -1038,16 +1038,16 @@ _phase2s_complete() {
     goal)
       COMPREPLY=($(compgen -W "--max-attempts --resume --review-before-run --dry-run --parallel --sequential --orchestrator --workers --dashboard --clean --judge --reasoning-effort --quiet" -- "\$cur"))
       ;;
-    task)
+    go)
       COMPREPLY=($(compgen -W "--quiet --timeout --output --doom-loop-threshold" -- "\$cur"))
       ;;
     conduct)
       COMPREPLY=($(compgen -W "--dry-run --model --workers --max-attempts --quiet --output --yes --review-before-run --dashboard --resume --validate" -- "\$cur"))
       ;;
-    conduct-audit)
+    conduct-status)
       COMPREPLY=($(compgen -W "--ci --ci-only --fast --case --json --timeout" -- "\$cur"))
       ;;
-    conduct-log)
+    runs)
       COMPREPLY=($(compgen -W "--last --limit --json" -- "\$cur"))
       ;;
     conduct-insights)
@@ -1075,13 +1075,13 @@ _phase2s() {
   subcommands=(
     'chat:Start an interactive REPL session'
     'run:Run a single prompt and exit'
-    'task:Execute an autonomous multi-step task with tool chaining and auto-verify'
+    'go:Execute an autonomous multi-step task with tool chaining and auto-verify'
     'skills:List available skills'
     'mcp:Start as an MCP server for Claude Code'
     'goal:Run a spec file autonomously (dark factory)'
     'conduct:Generate a spec from a natural language goal and run the orchestrator'
-    'conduct-audit:Run built-in conductor audit cases to verify spec generation quality'
-    'conduct-log:View past conductor run history'
+    'conduct-status:Run built-in conductor audit cases to verify spec generation quality'
+    'runs:View past conductor run history'
     'conduct-insights:Analytics for past conductor runs (success rate, top roles, recent goals)'
     'report:Display a human-readable summary of a run log'
     'init:Interactive setup wizard — configure .phase2s.yaml'
@@ -1126,7 +1126,7 @@ _phase2s() {
         '--reasoning-effort[Override reasoning effort]:level:(high low default)' \
         '--quiet[Suppress verbose output]'
       ;;
-    task)
+    go)
       _arguments \
         '--quiet[Suppress verbose output]' \
         '--timeout[Task timeout in ms]:ms' \
@@ -1147,7 +1147,7 @@ _phase2s() {
         '--resume[Resume from a prior failed run checkpoint]' \
         '--validate[Run 4 inline structural checks before DAG preview]'
       ;;
-    conduct-audit)
+    conduct-status)
       _arguments \
         '--ci[Exit 1 if any case fails]' \
         '--ci-only[Run only ciGate cases (pre-push gate)]' \
@@ -1156,7 +1156,7 @@ _phase2s() {
         '--json[Output results as JSON]' \
         '--timeout[Per-case timeout in seconds]:seconds'
       ;;
-    conduct-log)
+    runs)
       _arguments \
         '--last[Show most recent entry only]' \
         '--limit[Number of entries to show]:n' \
@@ -1378,7 +1378,7 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
       if (agentDefs.has(savedId)) {
         activeAgentId = savedId;
       } else {
-        console.log(chalk.yellow(`Warning: saved agent '${savedId}' no longer exists — reverting to default (ares)\n`));
+        console.log(chalk.yellow(`Warning: saved agent '${savedId}' no longer exists — reverting to build mode\n`));
       }
     }
   }
@@ -1739,6 +1739,23 @@ export async function interactiveMode(config: Config, opts: { resume?: boolean }
           } catch (err) {
             log.error(err instanceof Error ? err.message : String(err));
           }
+          continue;
+        }
+
+        case "run_task": {
+          // :go <task> — run an autonomous task from within the REPL
+          console.log(chalk.dim(`Running task: ${action.task.slice(0, 80)}${action.task.length > 80 ? "..." : ""}`));
+          console.log();
+          try {
+            await agent.run(action.task, {
+              taskMode: true,
+              verifyCommand: config.verifyCommand,
+              onDelta: (chunk) => process.stdout.write(chunk),
+            });
+          } catch (err) {
+            log.error(err instanceof Error ? err.message : String(err));
+          }
+          console.log();
           continue;
         }
 

@@ -110,7 +110,7 @@ you > /review src/core/auth.ts
 ```
 
 ```
-you > /satori add rate limiting to the API
+you > :go add rate limiting to the API
 
 -- Attempt 1 --
 [creates src/utils/rate-limiter.ts]
@@ -162,7 +162,7 @@ Claude gets specific, falsifiable objections from a model that wasn't involved i
 
 Write a spec. Run one command. Come back when it's done.
 
-`phase2s goal` reads your spec, breaks it into sub-tasks, implements each one through the `/satori` skill (which runs implement → test → retry until green), runs your eval command, checks whether your acceptance criteria actually passed, and if they didn't — analyzes what broke, figures out which sub-tasks need to be re-run, and tries again with that failure context.
+`phase2s goal` reads your spec, breaks it into sub-tasks, implements each one autonomously (`phase2s go` — implement → test → retry until green), runs your eval command, checks whether your acceptance criteria actually passed, and if they didn't — analyzes what broke, figures out which sub-tasks need to be re-run, and tries again with that failure context.
 
 It keeps going until all criteria pass or it runs out of attempts.
 
@@ -183,13 +183,13 @@ Sub-tasks: 3 | Eval: npm test | Max attempts: 3
 
 === Attempt 1/3 ===
 Running sub-task: Cursor-based pagination logic
-[satori: implement → test → retry until green]
+[go: implement → test → retry until green]
 
 Running sub-task: API response format update
-[satori: implement → test → retry until green]
+[go: implement → test → retry until green]
 
 Running sub-task: Frontend page controls
-[satori: implement → test → retry until green]
+[go: implement → test → retry until green]
 
 Running evaluation: npm test
 
@@ -202,7 +202,7 @@ Retrying 1 sub-task(s): Cursor-based pagination logic
 
 === Attempt 2/3 ===
 Running sub-task: Cursor-based pagination logic
-[satori: implement → test → retry until green]
+[go: implement → test → retry until green]
 
 Running evaluation: npm test
 
@@ -220,40 +220,41 @@ This uses your ChatGPT subscription for all the implementation work. No API key 
 
 ---
 
-## Meet the A-team: Apollo, Athena, Ares
+## Agent modes: ask, plan, build
 
-Phase2S ships three named agent personas, each with a distinct job and a hard-wired tool set. Switch mid-session without losing your conversation history.
+Phase2S ships three agent modes, each with a distinct job and a hard-wired tool set. Switch mid-session without losing your conversation history.
 
 ```
-you > :ask  (or: apollo)     — Switch to Apollo: read-only Q&A, fast model
-you > :plan (or: athena)     — Switch to Athena: planning assistant, writes to plans/
-you > :build (or: ares)      — Switch to Ares: full access, default agent
-you > :agents                — List all available agents with aliases and tool counts
-you > :compact               — Compact conversation history into an LLM summary (frees context)
-you > :goal specs/auth.md    — Run a goal spec from inside the REPL (no session exit)
-you > :dump                  — Export this session as a markdown transcript
-you > :dump html             — Export as a self-contained HTML page (dark mode included)
-you > :help                  — Show all REPL commands with descriptions
+you > :ask      — read-only Q&A, fast model
+you > :plan     — planning assistant, writes to plans/ only
+you > :build    — full read-write access (default)
+you > :go fix the null pointer in auth.ts — run a task without leaving the REPL
+you > :agents   — list all available modes with tool counts
+you > :compact  — compact conversation history into an LLM summary (frees context)
+you > :goal specs/auth.md    — run a goal spec from inside the REPL (no session exit)
+you > :dump                  — export this session as a markdown transcript
+you > :dump html             — export as a self-contained HTML page (dark mode included)
+you > :help                  — show all REPL commands with descriptions
 ```
 
-| Agent | Alias | Model | Tools | Best for |
-|-------|-------|-------|-------|----------|
-| **Apollo** | `:ask` | fast | glob, grep, file_read, browser | Questions, code exploration, "how does X work?" |
-| **Athena** | `:plan` | smart | read tools + `plans_write` | Design docs, implementation plans, architecture notes |
-| **Ares** | `:build` | smart | all tools | Writing code, running tests, shipping features |
+| Mode | Command | Model | Tools | Best for |
+|------|---------|-------|-------|----------|
+| **ask** | `:ask` | fast | glob, grep, file_read, browser | Questions, code exploration, "how does X work?" |
+| **plan** | `:plan` | smart | read tools + `plans_write` | Design docs, implementation plans, architecture notes |
+| **build** | `:build` | smart | all tools | Writing code, running tests, shipping features (default) |
 
-Tool enforcement is hard. Apollo cannot write files — not because the system prompt says so, but because `file_write` is literally not in its registry. Athena can only write inside `plans/`. Project overrides in `.phase2s/agents/` can narrow a built-in's tool list but never expand it.
+Tool enforcement is hard. `ask` mode cannot write files — not because the system prompt says so, but because `file_write` is literally not in its registry. `plan` mode can only write inside `plans/`. Project overrides in `.phase2s/agents/` can narrow a built-in's tool list but never expand it.
 
 ```bash
-# Apollo answers a question about your codebase
+# ask mode: answer a question about your codebase
 you > :ask
 you > how does the session locking work?
 
-# Athena writes a plan (saved to plans/ automatically)
+# plan mode: write a plan (saved to plans/ automatically)
 you > :plan
 you > design the rate limiting system before we build it
 
-# Ares ships it
+# build mode: implement it
 you > :build
 you > implement the plan in plans/rate-limiting.md
 
@@ -261,7 +262,9 @@ you > implement the plan in plans/rate-limiting.md
 you > :agent scout
 ```
 
-Active agent is saved on `--resume` — pick up where you left off with the same persona active.
+Active mode is saved on `--resume` — pick up where you left off with the same mode active.
+
+> **Upgrading from v1.66.0 or earlier?** The modes were previously named Apollo (ask), Athena (plan), and Ares (build). The old names still work as REPL commands (`:apollo`, `:athena`, `:ares`) — existing sessions and config files migrate automatically.
 
 ---
 
@@ -304,7 +307,7 @@ you > @src/core/agent.ts @https://platform.openai.com/docs/api-reference does ou
 ```
 you > /review src/auth.ts        — code review: CRIT / WARN / NIT
 you > /diff                      — review all uncommitted changes
-you > /satori add pagination     — implement + test + retry until green
+you > /satori add pagination     — implement + test + retry until green (deprecated → use `phase2s go`)
 you > /deep-specify add OAuth    — spec interview → 5-pillar spec file
 you > /consensus-plan add OAuth  — planner + architect + critic passes
 you > /debug logout fails        — reproduce, isolate, fix, verify
@@ -329,7 +332,8 @@ phase2s skills --json # machine-readable for scripts
 ## Docs
 
 - [Getting started](docs/getting-started.md) — first install, first session, all four provider options
-- [Named agents](docs/agents.md) — Apollo, Athena, Ares, custom agents, override-restrict policy
+- [Agent modes](docs/agents.md) — ask, plan, build, custom agents, override-restrict policy
+- [Workflow guide](docs/workflow.md) — choosing the right command: REPL vs task vs conductor
 - [Dark factory](docs/dark-factory.md) — write a spec, run `phase2s goal`, get a feature
 - [Claude Code integration](docs/claude-code.md) — MCP setup, adversarial review, CLAUDE.md routing rules
 - [Skills reference](docs/skills.md) — all 29 skills with examples
@@ -474,40 +478,40 @@ The confirmation prompt accepts freeform feedback — type what you'd like chang
 
 ```bash
 # Show all runs (newest first)
-phase2s conduct-log
+phase2s runs
 
 # Show the last 5 runs
-phase2s conduct-log --limit 5
+phase2s runs --limit 5
 
 # Machine-readable JSON output
-phase2s conduct-log --json
+phase2s runs --json
 ```
 
 Each entry records the goal, spec hash, subtask count, roles used, pass/fail result, duration, and how many refinement rounds were needed.
 
-**Verify spec generation quality with `conduct-audit`:**
+**Verify spec generation quality with `conduct-status`:**
 
 ```bash
 # Run all 15 built-in cases and check structure (subtask count, roles, lint)
-phase2s conduct-audit
+phase2s conduct-status
 
 # CI mode — exits 1 if any case fails
-phase2s conduct-audit --ci --fast
+phase2s conduct-status --ci --fast
 
 # Run only the 5 ciGate cases (fast local pre-push gate)
-phase2s conduct-audit --ci-only --ci
+phase2s conduct-status --ci-only --ci
 
 # Per-case timeout in seconds (default: no timeout)
-phase2s conduct-audit --timeout 30
+phase2s conduct-status --timeout 30
 
 # Debug a single case
-phase2s conduct-audit --case add-endpoint
+phase2s conduct-status --case add-endpoint
 
 # JSON output for scripting
-phase2s conduct-audit --json
+phase2s conduct-status --json
 ```
 
-The `.githooks/pre-push` hook runs `conduct-audit --ci-only --ci --fast` automatically before every `git push`. It's wired via `npm install` (`prepare` script). Bypass with `SKIP_CONDUCT_AUDIT=1 git push`.
+The `.githooks/pre-push` hook runs `conduct-status --ci-only --ci --fast` automatically before every `git push`. It's wired via `npm install` (`prepare` script). Bypass with `SKIP_CONDUCT_AUDIT=1 git push`.
 
 **Analyze your conduct history with `conduct-insights`:**
 
@@ -540,9 +544,9 @@ The hint is silent when Ollama is not available. See [Ollama setup](#ollama-setu
 ```
 phase2s__conduct({ goal: "add rate limiting to the API" })
 phase2s__conduct({ goal: "refactor the auth module", dryRun: true, validate: true })
-phase2s__conduct_audit({ fast: true })   // verify spec generation quality
-phase2s__conduct_log({ action: "stats" })           // aggregated run analytics
-phase2s__conduct_log({ action: "list", limit: 5 })  // last 5 runs
+phase2s__conduct_status({ fast: true })   // verify spec generation quality
+phase2s__conduct_log({ action: "stats" })            // aggregated run analytics
+phase2s__conduct_log({ action: "list", limit: 5 })   // last 5 runs
 phase2s__conduct_log({ action: "search", query: "refactor auth" })  // semantic search (Ollama)
 ```
 
@@ -836,14 +840,14 @@ Never commit directly to main.
 phase2s --system "Always prefer Python for scripting tasks"
 ```
 
-**Custom verification command** — configure what `/satori` and `phase2s task` run to check your work:
+**Custom verification command** — configure what `phase2s go` runs to check your work:
 
 ```yaml
 # .phase2s.yaml
 verifyCommand: pytest tests/ -x  # or: go test ./... or: npm test
 ```
 
-Override per-run with `phase2s task --verify "bun test" "your task here"`.
+Override per-run with `phase2s go --verify "bun test" "your task here"`.
 
 **Task mode tuning** — control the autonomous task runner's behavior:
 
@@ -857,10 +861,10 @@ trivialInputMinWords: 2     # skip RAG for 1- and 2-word REPL inputs (default: 1
 Task flags for one-off overrides:
 
 ```bash
-phase2s task --quiet "fix the type errors"           # suppress streaming, print result only
-phase2s task --timeout 120 "refactor auth.ts"        # abort after 120 seconds
-phase2s task --output result.md "write a plan"       # save output to file
-phase2s task --doom-loop-threshold 2 "fix the bug"   # tighter doom-loop for this run
+phase2s go --quiet "fix the type errors"           # suppress streaming, print result only
+phase2s go --timeout 120 "refactor auth.ts"        # abort after 120 seconds
+phase2s go --output result.md "write a plan"       # save output to file
+phase2s go --doom-loop-threshold 2 "fix the bug"   # tighter doom-loop for this run
 ```
 
 **Headless browser** — enable for the `/qa` skill to test web apps:
@@ -874,7 +878,7 @@ browser: true  # requires playwright installed
 
 ## Roadmap
 
-Phase2S ships fast — most sprints close in a day. The full history of shipped features, from the initial Codex CLI provider through the current v1.66.0 Conductor Live Progress Panel release, lives in one place:
+Phase2S ships fast — most sprints close in a day. The full history of shipped features, from the initial Codex CLI provider through the current v1.67.0 Clarity Pass, lives in one place:
 
 [View the full roadmap →](ROADMAP.md)
 

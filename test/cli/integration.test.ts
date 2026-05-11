@@ -189,30 +189,30 @@ describe("writeReplState on agent switch", () => {
 
     await writeReplState(tmpDir, {
       currentSessionId: "session-abc-123",
-      activeAgentId: "ares",
+      activeAgentId: "build",
     });
 
     const after = readReplState(tmpDir);
-    expect(after?.activeAgentId).toBe("ares");
+    expect(after?.activeAgentId).toBe("build");
     expect(after?.currentSessionId).toBe("session-abc-123");
   });
 
   it("switching agents preserves currentSessionId", async () => {
-    // Write initial state with apollo
+    // Write initial state with ask mode
     await writeReplState(tmpDir, {
       currentSessionId: "session-abc-123",
-      activeAgentId: "apollo",
+      activeAgentId: "ask",
     });
 
-    // Simulate switch to ares — preserves session id
+    // Simulate switch to build — preserves session id
     const state = readReplState(tmpDir);
     await writeReplState(tmpDir, {
       currentSessionId: state?.currentSessionId ?? "session-abc-123",
-      activeAgentId: "ares",
+      activeAgentId: "build",
     });
 
     const final = readReplState(tmpDir);
-    expect(final?.activeAgentId).toBe("ares");
+    expect(final?.activeAgentId).toBe("build");
     expect(final?.currentSessionId).toBe("session-abc-123"); // session unchanged
   });
 });

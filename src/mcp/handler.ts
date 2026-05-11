@@ -16,7 +16,7 @@ import { parseRunLog, buildRunReport, formatRunReport } from "../cli/report.js";
 import { parseSpec } from "../core/spec-parser.js";
 import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-graph.js";
 import type { Skill } from "../skills/types.js";
-import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_AUDIT_TOOL, CONDUCT_LOG_TOOL, REPORT_TOOL, TASK_TOOL, MCP_SERVER_VERSION } from "./tools.js";
+import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_STATUS_TOOL, CONDUCT_LOG_TOOL, REPORT_TOOL, TASK_TOOL, TASK_COMPAT_TOOL, MCP_SERVER_VERSION } from "./tools.js";
 import { readConductLog } from "../cli/conduct-log.js";
 import { computeConductStats } from "../cli/conduct-insights.js";
 import { readConductIndex, searchConductIndex } from "../core/conduct-index.js";
@@ -95,7 +95,7 @@ export async function handleRequest(
     return {
       jsonrpc: "2.0",
       id: request.id,
-      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_AUDIT_TOOL, CONDUCT_LOG_TOOL, REPORT_TOOL, TASK_TOOL] },
+      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_STATUS_TOOL, CONDUCT_LOG_TOOL, REPORT_TOOL, TASK_TOOL, TASK_COMPAT_TOOL] },
     };
   }
 
@@ -267,9 +267,9 @@ export async function handleRequest(
     }
 
     // -----------------------------------------------------------------------
-    // Conduct audit tool — structural quality gate for spec generation (Sprint 88).
+    // Conduct status tool — structural quality gate for spec generation (Sprint 88).
     // -----------------------------------------------------------------------
-    if (toolName === "phase2s__conduct_audit") {
+    if (toolName === "phase2s__conduct_status") {
       const fast = typeof args["fast"] === "boolean" ? args["fast"] : true; // default true in MCP (cost)
       const caseId = typeof args["caseId"] === "string" ? args["caseId"] : undefined;
 
@@ -482,14 +482,15 @@ export async function handleRequest(
 
     // -----------------------------------------------------------------------
     // Task tool — autonomous task executor (Sprint 84).
+    // phase2s__task is a backward-compat alias (Sprint 93).
     // -----------------------------------------------------------------------
-    if (toolName === "phase2s__task") {
+    if (toolName === "phase2s__go" || toolName === "phase2s__task") {
       const task = typeof args["task"] === "string" ? args["task"] : "";
       if (!task) {
         return {
           jsonrpc: "2.0",
           id: request.id,
-          error: { code: -32602, message: "phase2s__task: task is required" },
+          error: { code: -32602, message: "phase2s__go: task is required" },
         };
       }
       const verifyCommand = typeof args["verify_command"] === "string" ? args["verify_command"] : undefined;

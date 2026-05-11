@@ -205,6 +205,25 @@ export const GOAL_TOOL: MCPTool = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Shared inputSchema for TASK_TOOL and TASK_COMPAT_TOOL.
+ * Single source of truth — both tools expose identical parameters.
+ */
+const TASK_INPUT_SCHEMA: MCPTool["inputSchema"] = {
+  type: "object",
+  properties: {
+    task: {
+      type: "string",
+      description: "The task to execute (e.g. 'fix the null pointer in auth.ts').",
+    },
+    verify_command: {
+      type: "string",
+      description: "Shell command to run after file writes to verify changes (e.g. 'npm test'). Overrides config.verifyCommand.",
+    },
+  },
+  required: ["task"],
+};
+
+/**
  * MCP tool descriptor for the autonomous task executor.
  *
  * Activates task mode: injects the task-mode system prompt preamble, enables
@@ -212,26 +231,27 @@ export const GOAL_TOOL: MCPTool = {
  * injection (file_write success → run verifyCommand → inject result as user msg).
  */
 export const TASK_TOOL: MCPTool = {
-  name: "phase2s__task",
+  name: "phase2s__go",
   description:
     "Execute a multi-step autonomous task with aggressive tool chaining, " +
     "auto-verify after file writes, and doom-loop prevention. " +
     "Use for tasks like 'fix the null pointer in auth.ts' or 'add tests for the parser module'. " +
     "The agent will plan, execute, verify, and report — no hand-holding required.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      task: {
-        type: "string",
-        description: "The task to execute (e.g. 'fix the null pointer in auth.ts').",
-      },
-      verify_command: {
-        type: "string",
-        description: "Shell command to run after file writes to verify changes (e.g. 'npm test'). Overrides config.verifyCommand.",
-      },
-    },
-    required: ["task"],
-  },
+  inputSchema: TASK_INPUT_SCHEMA,
+};
+
+/**
+ * Backward-compatibility alias: `phase2s__task` → identical to `phase2s__go`.
+ * MCP clients that cached the old tool name continue to work without error.
+ * @deprecated Use phase2s__go instead.
+ */
+export const TASK_COMPAT_TOOL: MCPTool = {
+  name: "phase2s__task",
+  description:
+    "[Deprecated — use phase2s__go] Alias kept for backward compatibility. " +
+    "Execute a multi-step autonomous task with aggressive tool chaining, " +
+    "auto-verify after file writes, and doom-loop prevention.",
+  inputSchema: TASK_INPUT_SCHEMA,
 };
 
 // ---------------------------------------------------------------------------
@@ -278,8 +298,8 @@ export const CONDUCT_TOOL: MCPTool = {
   },
 };
 
-export const CONDUCT_AUDIT_TOOL: MCPTool = {
-  name: "phase2s__conduct_audit",
+export const CONDUCT_STATUS_TOOL: MCPTool = {
+  name: "phase2s__conduct_status",
   description:
     "Run the built-in conductor audit cases to verify spec generation quality. " +
     "Generates specs for 10 curated goals and validates structure (subtask count, " +

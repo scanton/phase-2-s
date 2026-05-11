@@ -456,6 +456,42 @@ describe("readReplState() / writeReplState()", () => {
     await writeReplState(tmpDir, { currentSessionId: "second" });
     expect(readReplState(tmpDir)?.currentSessionId).toBe("second");
   });
+
+  // Sprint 93 migration shim: legacy persona IDs → functional IDs
+  it("migration shim: remaps 'ares' → 'build'", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "s1", activeAgentId: "ares" });
+    const state = readReplState(tmpDir);
+    expect(state?.activeAgentId).toBe("build");
+  });
+
+  it("migration shim: remaps 'apollo' → 'ask'", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "s1", activeAgentId: "apollo" });
+    const state = readReplState(tmpDir);
+    expect(state?.activeAgentId).toBe("ask");
+  });
+
+  it("migration shim: remaps 'athena' → 'plan'", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "s1", activeAgentId: "athena" });
+    const state = readReplState(tmpDir);
+    expect(state?.activeAgentId).toBe("plan");
+  });
+
+  it("migration shim: leaves non-legacy IDs unchanged", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "s1", activeAgentId: "build" });
+    const state = readReplState(tmpDir);
+    expect(state?.activeAgentId).toBe("build");
+  });
+
+  it("migration shim: writes back migrated ID to disk (no re-migration on next read)", async () => {
+    await writeReplState(tmpDir, { currentSessionId: "s1", activeAgentId: "ares" });
+    // First read triggers the migration + write-back (fire-and-forget)
+    readReplState(tmpDir);
+    // Give the async write-back a tick to complete
+    await new Promise((resolve) => setImmediate(resolve));
+    // Second read should see the migrated ID on disk — no re-migration needed
+    const state = readReplState(tmpDir);
+    expect(state?.activeAgentId).toBe("build");
+  });
 });
 
 // ---------------------------------------------------------------------------
