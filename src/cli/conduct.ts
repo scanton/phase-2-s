@@ -320,6 +320,8 @@ export async function runConduct(
 
 // ---------------------------------------------------------------------------
 // maybeShowSpecQualityHint — Sprint 91: Ollama similarity hint
+// Skipped when: dryRun, quiet, Ollama unconfigured, hintEnabled=false,
+//               or index has fewer than hintTopK embeddable entries.
 // ---------------------------------------------------------------------------
 
 /**

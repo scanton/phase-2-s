@@ -353,10 +353,6 @@ export const CONDUCT_LOG_TOOL: MCPTool = {
         type: "number",
         description: "Max entries to return for 'list' (default: 10). Ignored for 'stats'.",
       },
-      cwd: {
-        type: "string",
-        description: "Project working directory. Defaults to server cwd.",
-      },
     },
     required: ["action"],
   },

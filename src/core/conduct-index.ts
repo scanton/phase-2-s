@@ -56,15 +56,32 @@ export interface ConductIndex {
  * Returns an empty index (version 1, entries: []) when the file is missing or
  * cannot be parsed — never throws.
  */
+/** Validate a single index entry to prevent malformed data from flowing into search. */
+function isValidEntry(e: unknown): e is ConductIndexEntry {
+  if (!e || typeof e !== "object") return false;
+  const entry = e as Record<string, unknown>;
+  return (
+    typeof entry["id"] === "string" &&
+    typeof entry["goalSnippet"] === "string" &&
+    Array.isArray(entry["embedding"]) &&
+    (entry["embedding"] as unknown[]).every((v) => typeof v === "number" && isFinite(v)) &&
+    typeof entry["success"] === "boolean" &&
+    typeof entry["durationMs"] === "number" && isFinite(entry["durationMs"] as number) &&
+    typeof entry["subtaskCount"] === "number" && isFinite(entry["subtaskCount"] as number)
+  );
+}
+
 export async function readConductIndex(cwd: string): Promise<ConductIndex> {
   const indexPath = join(cwd, ".phase2s", "conduct-index.json");
   try {
     const raw = await readFile(indexPath, "utf8");
-    const parsed = JSON.parse(raw) as ConductIndex;
-    if (parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || parsed.version !== 1 || !Array.isArray(parsed.entries)) {
       return { version: 1, entries: [] };
     }
-    return parsed;
+    // Validate each entry — skip malformed ones rather than casting blindly.
+    const validEntries = (parsed.entries as unknown[]).filter(isValidEntry);
+    return { version: 1, entries: validEntries };
   } catch {
     return { version: 1, entries: [] };
   }
@@ -80,11 +97,12 @@ export async function readConductIndex(cwd: string): Promise<ConductIndex> {
  *
  * @throws on unexpected I/O errors (caller should wrap in try/catch).
  */
-async function writeConductIndex(cwd: string, index: ConductIndex): Promise<void> {
+export async function writeConductIndex(cwd: string, index: ConductIndex): Promise<void> {
   const phase2sDir = join(cwd, ".phase2s");
   await mkdir(phase2sDir, { recursive: true });
   const indexPath = join(phase2sDir, "conduct-index.json");
-  await writeFile(indexPath, JSON.stringify(index, null, 2), "utf8");
+  // Compact serialization — this is a machine-read sidecar, pretty-printing wastes I/O.
+  await writeFile(indexPath, JSON.stringify(index), "utf8");
 }
 
 // ---------------------------------------------------------------------------

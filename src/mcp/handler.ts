@@ -310,7 +310,9 @@ export async function handleRequest(
     // -----------------------------------------------------------------------
     if (toolName === "phase2s__conduct_log") {
       const action = typeof args["action"] === "string" ? args["action"] : "list";
-      const queryCwd = typeof args["cwd"] === "string" ? args["cwd"] : cwd;
+      // Always use the server's trusted cwd — never accept cwd from the caller
+      // to prevent path traversal (reading arbitrary .phase2s/ directories).
+      const queryCwd = cwd;
       const limit = typeof args["limit"] === "number" && args["limit"] > 0
         ? Math.floor(args["limit"])
         : 10;
@@ -346,8 +348,7 @@ export async function handleRequest(
             const queryVec = await generateEmbedding(query, model, baseUrl);
             if (queryVec.length > 0) {
               const index = await readConductIndex(queryCwd);
-              const topK = limit;
-              const results = searchConductIndex(index, queryVec, topK);
+              const results = searchConductIndex(index, queryVec, limit);
               text = results.length > 0
                 ? JSON.stringify(results.map((r) => ({
                     id: r.id,

@@ -15,7 +15,11 @@
 
 import chalk from "chalk";
 import { readConductLog, type ConductLogEntry } from "./conduct-log.js";
-import { upsertConductIndexEntry, type ConductIndexEntry } from "../core/conduct-index.js";
+import {
+  readConductIndex,
+  writeConductIndex,
+  type ConductIndexEntry,
+} from "../core/conduct-index.js";
 import { generateEmbedding } from "../core/embeddings.js";
 import { loadConfig } from "../core/config.js";
 
@@ -232,6 +236,9 @@ async function rebuildConductIndex(
   let indexed = 0;
   let skipped = 0;
 
+  // Read once, apply all upserts in memory, write once — avoids O(N²) file I/O.
+  const index = await readConductIndex(cwd);
+
   for (const entry of runs) {
     const embedding = await generateEmbedding(entry.goal, model, baseUrl);
     const indexEntry: ConductIndexEntry = {
@@ -242,15 +249,24 @@ async function rebuildConductIndex(
       durationMs: entry.durationMs,
       subtaskCount: entry.subtaskCount,
     };
-    try {
-      await upsertConductIndexEntry(cwd, indexEntry);
-      indexed++;
-      if (!quiet && indexed % 10 === 0) {
-        process.stdout.write(`\r  ${chalk.cyan(indexed)}/${runs.length} entries indexed...`);
-      }
-    } catch {
-      skipped++;
+    const pos = index.entries.findIndex((e) => e.id === indexEntry.id);
+    if (pos >= 0) {
+      index.entries[pos] = indexEntry;
+    } else {
+      index.entries.push(indexEntry);
     }
+    indexed++;
+    if (!quiet && indexed % 10 === 0) {
+      process.stdout.write(`\r  ${chalk.cyan(indexed)}/${runs.length} entries indexed...`);
+    }
+  }
+
+  // Single write after all in-memory upserts are done.
+  try {
+    await writeConductIndex(cwd, index);
+  } catch {
+    skipped = indexed;
+    indexed = 0;
   }
 
   if (!quiet) {

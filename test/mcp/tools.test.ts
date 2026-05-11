@@ -215,11 +215,13 @@ describe("CONDUCT_LOG_TOOL", () => {
     expect(actionProp.enum).toContain("search");
   });
 
-  it("exposes optional query, limit, cwd properties", () => {
+  it("exposes optional query and limit properties (no cwd — server uses trusted process cwd)", () => {
     const props = CONDUCT_LOG_TOOL.inputSchema.properties;
     expect(props).toHaveProperty("query");
     expect(props).toHaveProperty("limit");
-    expect(props).toHaveProperty("cwd");
+    // cwd is intentionally removed from the schema — callers cannot override it
+    // (path traversal prevention: server always uses its own trusted cwd).
+    expect(props).not.toHaveProperty("cwd");
   });
 
   it("description mentions semantic search and Ollama", () => {
