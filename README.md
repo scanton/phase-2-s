@@ -399,13 +399,24 @@ Shows the parsed spec title, sub-task list, acceptance criteria, and eval comman
 
 **Live progress during execution:**
 
+`phase2s conduct` shows a live ANSI panel during execution — each subtask row updates in-place with its state (pending / running / done / failed / skipped) and elapsed time. The panel redraws at 100ms in a TTY, 250ms over SSH, without scrolling your terminal. Three modes are auto-detected:
+
+- **`ansi`** — cursor-up redraws for interactive TTY sessions
+- **`plain`** — prefixed log lines for CI / non-TTY environments
+- **`quiet`** — no output (activated by `--quiet` or `--dashboard`)
+
 ```
-[1/3] Running: Cursor-based pagination logic (42s)
-[2/3] Running: API response format update (18s)
-[3/3] Running: Frontend page controls (31s)
+phase2s conduct "add per-user rate limiting to the API"
+
+Conductor Live Progress  [level 1/2] — add per-user rate limiting  (12s)
+  ✓ AuthMiddleware        done    (8s)
+  ✓ RateLimiter logic     done    (11s)
+  ⊘ API integration       skipped
+  ◌ Tests                 running (3s)
+  3/4 complete
 ```
 
-Real-time subtask progress with elapsed time per sub-task, so you know where the agent is.
+Use `--quiet` to suppress the panel entirely (useful in scripts), or `--dashboard` to route to a tmux split-pane instead.
 
 **Review completed runs:**
 
@@ -863,7 +874,7 @@ browser: true  # requires playwright installed
 
 ## Roadmap
 
-Phase2S ships fast — most sprints close in a day. The full history of shipped features, from the initial Codex CLI provider through the current v1.59.0 task hardening release, lives in one place:
+Phase2S ships fast — most sprints close in a day. The full history of shipped features, from the initial Codex CLI provider through the current v1.66.0 Conductor Live Progress Panel release, lives in one place:
 
 [View the full roadmap →](ROADMAP.md)
 
