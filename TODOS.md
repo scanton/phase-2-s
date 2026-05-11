@@ -16,7 +16,7 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ## Backlog — Post-Sprint 90 notes (v1.64.0, 2026-05-10)
 
-Sprint 90 ships Conductor Real-World Hardening — 5 parts: conduct-log.jsonl observability (appendConductLog in finally block, ConductLogEntry schema), `phase2s conduct-log` CLI + MCP tool, `--validate` 4-check structural pre-flight, spec refinement loop (tri-mode prompt, max 3 rounds, feedback → LLM regen), and `conduct-audit` CI gate job in `publish.yml`. 28 new tests (36–64); 2218 total, all passing.
+Sprint 90 ships Conductor Real-World Hardening — 5 parts: conduct-log.jsonl observability (appendConductLog in finally block, ConductLogEntry schema), `phase2s conduct-log` CLI command (CLI-only; not yet an MCP tool), `--validate` 4-check structural pre-flight, spec refinement loop (tri-mode prompt, max 3 rounds, feedback → LLM regen), and `conduct-audit` CI gate job in `publish.yml`. 28 new tests (36–64); 2218 total, all passing.
 
 - [x] **Future: CI gate for conduct-audit (deferred — needs LLM API key in CI)** — **Completed: v1.64.0 (2026-05-10)** — `conduct-audit` job added to `publish.yml` after `alpine-smoke`. No-op when `OPENAI_API_KEY` secret is absent; full gate when the secret is configured.
 
