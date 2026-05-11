@@ -56,6 +56,8 @@ export interface OrchestratorOptions {
   checkpoint?: OrchestratorCheckpoint;
   /** Called after every level and every replan splice so goal.ts can persist state. */
   persistCheckpoint?: (checkpoint: OrchestratorCheckpoint) => void;
+  /** Optional progress renderer for live conductor panel (Sprint 92). */
+  progressRenderer?: import('../goal/progress-renderer.js').ProgressRenderer;
 }
 
 export interface OrchestratorResult {
@@ -411,6 +413,9 @@ export async function runOrchestrator(
     }
   }
 
+  // Per-job start timestamps for durationMs calculation in progress events
+  const jobStartMs = new Map<string, number>();
+
   // Mutable levels copy for mid-loop splice after re-leveling
   const mutableLevels = [...levels];
 
@@ -452,6 +457,14 @@ export async function runOrchestrator(
         continue;
       }
 
+      // Emit level_start before any job processing
+      options.progressRenderer?.emit({
+        type: 'level_start',
+        levelIndex: levelIdx,
+        totalLevels: mutableLevels.length,
+        jobs: activeJobs.map(j => ({ id: j.id, title: j.title })),
+      });
+
       // Pre-level: inject upstream context into systemPromptPrefix
       for (const job of activeJobs) {
         let prefix = ROLE_PROMPTS[job.role] + '\n\n';
@@ -492,6 +505,8 @@ export async function runOrchestrator(
       // Mark jobs as running
       for (const job of activeJobs) {
         jobStatus.set(job.id, 'running');
+        jobStartMs.set(job.id, Date.now());
+        options.progressRenderer?.emit({ type: 'job_start', jobId: job.id });
       }
 
       // Execute the level — catch 429 mid-level to checkpoint partial results
@@ -532,6 +547,11 @@ export async function runOrchestrator(
       for (const result of results) {
         if (result.status === 'completed') {
           jobStatus.set(result.subtaskId, 'completed');
+          options.progressRenderer?.emit({
+            type: 'job_complete',
+            jobId: result.subtaskId,
+            durationMs: Date.now() - (jobStartMs.get(result.subtaskId) ?? Date.now()),
+          });
 
           const job = jobById.get(result.subtaskId);
 
@@ -565,6 +585,12 @@ export async function runOrchestrator(
         } else {
           // Failed job — DFS transitive skip then replanOnFailure
           jobStatus.set(result.subtaskId, 'failed');
+          options.progressRenderer?.emit({
+            type: 'job_failed',
+            jobId: result.subtaskId,
+            durationMs: Date.now() - (jobStartMs.get(result.subtaskId) ?? Date.now()),
+            error: result.error ?? 'unknown',
+          });
 
           // Use jobById (not allJobs) so delta-added jobs are included in DFS and remaining
           const allKnownJobs = [...jobById.values()];
@@ -572,6 +598,7 @@ export async function runOrchestrator(
           const skippedIds = computeSkippedIds(result.subtaskId, allKnownJobs);
           for (const sid of skippedIds) {
             jobStatus.set(sid, 'skipped');
+            options.progressRenderer?.emit({ type: 'job_skipped', jobId: sid });
           }
 
           const job = jobById.get(result.subtaskId);
@@ -647,6 +674,9 @@ export async function runOrchestrator(
           options.persistCheckpoint?.(buildCheckpoint(levelIdx));
         }
       }
+
+      // Emit level_complete after all results processed
+      options.progressRenderer?.emit({ type: 'level_complete', levelIndex: levelIdx });
 
       // Persist checkpoint after each fully-processed level
       options.persistCheckpoint?.(buildCheckpoint(levelIdx));

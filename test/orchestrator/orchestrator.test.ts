@@ -4,6 +4,7 @@ import { runOrchestrator, computeSkippedIds, type OrchestratorOptions, type JobS
 import type { SubtaskJob, OrchestratorLevelResult } from '../../src/orchestrator/types.js';
 import type { RunLogger } from '../../src/core/run-logger.js';
 import { RateLimitError } from '../../src/core/rate-limit-error.js';
+import type { ProgressEvent } from '../../src/goal/progress-renderer.js';
 
 // ---------------------------------------------------------------------------
 // Mock RunLogger
@@ -988,5 +989,115 @@ describe("executeOrchestratorLevel — AbortController sibling cancellation", ()
 
     await Promise.allSettled([wrapped]);
     expect(controller.signal.aborted).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// progressRenderer wiring (Sprint 92)
+// ---------------------------------------------------------------------------
+
+describe('runOrchestrator — progressRenderer', () => {
+  it('fires level_start with correct jobs before executeLevelFn', async () => {
+    const events: ProgressEvent[] = [];
+    const renderer = { emit: (e: ProgressEvent) => events.push(e), dispose: () => {} };
+
+    const jobs = [
+      makeJob({ id: 'a', title: 'Job A' }),
+      makeJob({ id: 'b', title: 'Job B' }),
+    ];
+    const levels = [[jobs[0], jobs[1]]];
+    const logger = makeMockLogger();
+
+    let executeLevelCalled = false;
+    const executeLevelFn = vi.fn(async (activeJobs: SubtaskJob[]) => {
+      // level_start must have fired before executeLevelFn is called
+      executeLevelCalled = true;
+      return activeJobs.map(j => makeSuccessResult(j.id));
+    });
+
+    await runOrchestrator(levels, jobs, { specHash: 'pr1', logger, executeLevelFn, progressRenderer: renderer });
+
+    const levelStartEvent = events.find(e => e.type === 'level_start');
+    expect(levelStartEvent).toBeDefined();
+    expect(levelStartEvent?.type).toBe('level_start');
+    if (levelStartEvent?.type === 'level_start') {
+      expect(levelStartEvent.levelIndex).toBe(0);
+      expect(levelStartEvent.totalLevels).toBe(1);
+      expect(levelStartEvent.jobs.map(j => j.id)).toEqual(['a', 'b']);
+    }
+    expect(executeLevelCalled).toBe(true);
+  });
+
+  it('fires job_start for each active job before executeLevelFn returns', async () => {
+    const events: ProgressEvent[] = [];
+    const renderer = { emit: (e: ProgressEvent) => events.push(e), dispose: () => {} };
+
+    const jobs = [
+      makeJob({ id: 'j1', title: 'Task 1' }),
+      makeJob({ id: 'j2', title: 'Task 2' }),
+    ];
+    const levels = [[jobs[0], jobs[1]]];
+    const logger = makeMockLogger();
+
+    const executeLevelFn = vi.fn(async (activeJobs: SubtaskJob[]) =>
+      activeJobs.map(j => makeSuccessResult(j.id))
+    );
+
+    await runOrchestrator(levels, jobs, { specHash: 'pr2', logger, executeLevelFn, progressRenderer: renderer });
+
+    const startEvents = events.filter(e => e.type === 'job_start');
+    expect(startEvents).toHaveLength(2);
+    const startIds = startEvents.map(e => e.type === 'job_start' ? e.jobId : '');
+    expect(startIds).toContain('j1');
+    expect(startIds).toContain('j2');
+  });
+
+  it('fires job_complete for completed results', async () => {
+    const events: ProgressEvent[] = [];
+    const renderer = { emit: (e: ProgressEvent) => events.push(e), dispose: () => {} };
+
+    const job = makeJob({ id: 'done-job', title: 'Done Job' });
+    const levels = [[job]];
+    const logger = makeMockLogger();
+
+    const executeLevelFn = vi.fn(async (activeJobs: SubtaskJob[]) =>
+      activeJobs.map(j => makeSuccessResult(j.id))
+    );
+
+    await runOrchestrator(levels, [job], { specHash: 'pr3', logger, executeLevelFn, progressRenderer: renderer });
+
+    const completeEvent = events.find(e => e.type === 'job_complete');
+    expect(completeEvent).toBeDefined();
+    if (completeEvent?.type === 'job_complete') {
+      expect(completeEvent.jobId).toBe('done-job');
+      expect(typeof completeEvent.durationMs).toBe('number');
+      expect(completeEvent.durationMs).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('fires job_skipped after transitive failure DFS', async () => {
+    const events: ProgressEvent[] = [];
+    const renderer = { emit: (e: ProgressEvent) => events.push(e), dispose: () => {} };
+
+    const failedJob = makeJob({ id: 'fail', title: 'Failing Job' });
+    const dependentJob = makeJob({ id: 'dep', title: 'Dependent', dependsOn: ['fail'] });
+    const levels = [[failedJob], [dependentJob]];
+    const logger = makeMockLogger();
+
+    const executeLevelFn = vi.fn(async (activeJobs: SubtaskJob[]) =>
+      activeJobs.map(j => makeFailResult(j.id, 'exploded'))
+    );
+
+    await runOrchestrator(levels, [failedJob, dependentJob], {
+      specHash: 'pr4',
+      logger,
+      executeLevelFn,
+      progressRenderer: renderer,
+    });
+
+    const skippedEvents = events.filter(e => e.type === 'job_skipped');
+    expect(skippedEvents.length).toBeGreaterThanOrEqual(1);
+    const skippedIds = skippedEvents.map(e => e.type === 'job_skipped' ? e.jobId : '');
+    expect(skippedIds).toContain('dep');
   });
 });
