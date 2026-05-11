@@ -154,6 +154,14 @@ vi.mock("../../src/cli/conduct-summary.js", () => ({
   renderConductSummary: vi.fn(),
 }));
 
+// Mock appendConductLog so runConduct tests don't write to the filesystem (Sprint 90).
+// Individual tests that want to verify log behavior can vi.spyOn this mock.
+vi.mock("../../src/cli/conduct-log.js", () => ({
+  appendConductLog: vi.fn().mockResolvedValue(undefined),
+  readConductLog: vi.fn().mockResolvedValue([]),
+  renderConductLog: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Provider factories (inject via options._provider — no module mocking needed)
 // ---------------------------------------------------------------------------
@@ -1079,5 +1087,362 @@ describe("conductorGenSpec() — post-review hardening (tests 30-32)", () => {
     const warnOutput = warnSpy.mock.calls.flat().join("\n");
     expect(warnOutput).toContain("Goal truncated");
     expect(warnOutput).toContain(String(GOAL_MAX_CHARS + 1));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 90: conduct-log, --validate, refinement loop (tests 36-55)
+// ---------------------------------------------------------------------------
+
+describe("Sprint 90 — conduct-log, --validate, refinement loop", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "conduct-sprint90-"));
+    mkdirSync(join(tmpDir, ".phase2s", "specs"), { recursive: true });
+    mockReadlineAnswer.value = "y"; // default: run
+  });
+
+  afterEach(async () => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    if (originalIsTTY) {
+      Object.defineProperty(process.stdin, "isTTY", { value: undefined, configurable: true });
+    }
+  });
+
+  // Helper: spy on conductorGenSpec and return VALID_SPEC
+  async function mockGenSpec(fakeSpecPath: string) {
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValue({
+      specPath: fakeSpecPath,
+      specContent: VALID_SPEC,
+    });
+    return conductorModule;
+  }
+
+  // -------------------------------------------------------------------------
+  // conduct-log wiring (appendConductLog called in finally)
+  // -------------------------------------------------------------------------
+
+  it("51. appendConductLog is called after a successful conduct run", async () => {
+    const { appendConductLog } = await import("../../src/cli/conduct-log.js");
+    vi.mocked(appendConductLog).mockClear();
+
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    await mockGenSpec(fakeSpecPath);
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add health endpoint", { yes: true }, tmpDir);
+
+    expect(vi.mocked(appendConductLog)).toHaveBeenCalledOnce();
+    const callArgs = vi.mocked(appendConductLog).mock.calls[0][0];
+    expect(callArgs.goal).toBe("add health endpoint");
+    expect(callArgs.rounds).toBe(0);
+  });
+
+  it("52. appendConductLog error in finally does not crash runConduct or change exit code", async () => {
+    const { appendConductLog } = await import("../../src/cli/conduct-log.js");
+    vi.mocked(appendConductLog).mockRejectedValueOnce(new Error("disk full"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    await mockGenSpec(fakeSpecPath);
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    const savedExitCode = process.exitCode;
+    process.exitCode = undefined;
+
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    // Should NOT throw
+    await expect(runConduct("add rate limiting", { yes: true }, tmpDir)).resolves.not.toThrow();
+
+    // Should warn about the log failure
+    const warnOutput = warnSpy.mock.calls.flat().join("\n");
+    expect(warnOutput).toContain("conduct-log");
+    expect(warnOutput).toContain("disk full");
+
+    process.exitCode = savedExitCode;
+  });
+
+  it("53. conduct run with spec gen failure still calls appendConductLog (success=false)", async () => {
+    const { appendConductLog } = await import("../../src/cli/conduct-log.js");
+    vi.mocked(appendConductLog).mockClear();
+
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValueOnce({
+      specPath: "",
+      specContent: "",
+    });
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    const savedExitCode = process.exitCode;
+    process.exitCode = undefined;
+
+    await runConduct("bad goal", { yes: true }, tmpDir);
+
+    // appendConductLog should NOT be called when spec gen failed early
+    // (currentSpecPath is empty — the log guard only fires when specPath or
+    // a run was attempted)
+    expect(process.exitCode).toBe(1);
+    process.exitCode = savedExitCode;
+  });
+
+  // -------------------------------------------------------------------------
+  // --validate flag
+  // -------------------------------------------------------------------------
+
+  it("54. --validate: 4/4 passes on a valid spec (3+ unique-role subtasks), does not block execution", async () => {
+    // Use a 3-subtask spec so it passes CONDUCTOR_MIN_SUBTASKS (3) check
+    const validSpec3 = `# Add rate limiting
+
+## Problem Statement
+Add per-user rate limiting to the API.
+
+## Decomposition
+
+### Sub-task 1: Architect rate limiting design
+**Role:** architect
+- **Files:** arch-plan.md
+- **Input:** Goal description
+- **Output:** arch-plan.md
+- **Success criteria:** arch-plan.md exists
+
+### Sub-task 2: Implement rate limiter
+**Role:** implementer
+- **Files:** src/middleware/rate-limiter.ts
+- **Input:** arch-plan.md
+- **Output:** rate-limiter.ts
+- **Success criteria:** Tests pass
+
+### Sub-task 3: Verify implementation
+**Role:** tester
+- **Files:** test/rate-limiter.test.ts
+- **Input:** rate-limiter.ts
+- **Output:** test results
+- **Success criteria:** All tests pass
+
+## Eval Command
+npm test
+
+## Acceptance Criteria
+- Rate limiting implemented
+- Tests pass
+- Eval command exits 0
+`;
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValueOnce({
+      specPath: fakeSpecPath,
+      specContent: validSpec3,
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add rate limiting", { yes: true, validate: true }, tmpDir);
+
+    const { runGoal } = await import("../../src/cli/goal.js");
+    expect(vi.mocked(runGoal)).toHaveBeenCalled();
+
+    const output = logSpy.mock.calls.flat().join("\n");
+    expect(output).toContain("4/4 checks passed");
+  });
+
+  it("55. --validate: non-TTY + failures → exitCode=1, runGoal not called", async () => {
+    // Spec with only 1 subtask — fails min-subtasks check
+    const oneSubtaskSpec = `# Minimal spec
+
+## Problem Statement
+Too small.
+
+## Decomposition
+
+### Sub-task 1: Do something
+**Role:** implementer
+- **Files:** src/foo.ts
+- **Input:** goal
+- **Output:** foo.ts
+- **Success criteria:** foo.ts exists
+
+## Eval Command
+npm test
+
+## Acceptance Criteria
+- Done
+`;
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValueOnce({
+      specPath: join(tmpDir, ".phase2s", "specs", "small.md"),
+      specContent: oneSubtaskSpec,
+    });
+
+    const { runGoal } = await import("../../src/cli/goal.js");
+    vi.mocked(runGoal).mockClear();
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    const savedExitCode = process.exitCode;
+    process.exitCode = undefined;
+
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add rate limiting", { validate: true }, tmpDir);
+
+    expect(process.exitCode).toBe(1);
+    expect(vi.mocked(runGoal)).not.toHaveBeenCalled();
+
+    process.exitCode = savedExitCode;
+  });
+
+  // -------------------------------------------------------------------------
+  // promptTriMode (Sprint 90, Part 4)
+  // -------------------------------------------------------------------------
+
+  it("56. promptTriMode: 'y' → 'run'", async () => {
+    mockReadlineAnswer.value = "y";
+    const { promptTriMode } = await import("../../src/cli/conduct.js");
+    const result = await promptTriMode("▶ Run? ");
+    expect(result).toBe("run");
+  });
+
+  it("57. promptTriMode: 'yes' → 'run'", async () => {
+    mockReadlineAnswer.value = "yes";
+    const { promptTriMode } = await import("../../src/cli/conduct.js");
+    const result = await promptTriMode("▶ Run? ");
+    expect(result).toBe("run");
+  });
+
+  it("58. promptTriMode: '' (empty) → 'exit'", async () => {
+    mockReadlineAnswer.value = "";
+    const { promptTriMode } = await import("../../src/cli/conduct.js");
+    const result = await promptTriMode("▶ Run? ");
+    expect(result).toBe("exit");
+  });
+
+  it("59. promptTriMode: 'n' → 'exit'", async () => {
+    mockReadlineAnswer.value = "n";
+    const { promptTriMode } = await import("../../src/cli/conduct.js");
+    const result = await promptTriMode("▶ Run? ");
+    expect(result).toBe("exit");
+  });
+
+  it("60. promptTriMode: 'no' → 'exit'", async () => {
+    mockReadlineAnswer.value = "no";
+    const { promptTriMode } = await import("../../src/cli/conduct.js");
+    const result = await promptTriMode("▶ Run? ");
+    expect(result).toBe("exit");
+  });
+
+  it("61. promptTriMode: arbitrary feedback text → returned as feedback string", async () => {
+    mockReadlineAnswer.value = "Make the architect more specific";
+    const { promptTriMode } = await import("../../src/cli/conduct.js");
+    const result = await promptTriMode("▶ Run? ");
+    expect(result).toBe("Make the architect more specific");
+    expect(result).not.toBe("run");
+    expect(result).not.toBe("exit");
+  });
+
+  // -------------------------------------------------------------------------
+  // Refinement loop (Sprint 90, Part 4)
+  // -------------------------------------------------------------------------
+
+  it("62. refinement loop: feedback triggers re-call of conductorGenSpec with feedback option", async () => {
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    const genSpy = vi.spyOn(conductorModule, "conductorGenSpec")
+      .mockResolvedValueOnce({ specPath: fakeSpecPath, specContent: VALID_SPEC }) // initial
+      .mockResolvedValueOnce({ specPath: fakeSpecPath + ".v2", specContent: VALID_SPEC }); // refined
+
+    // First readline answer = feedback, second = 'y' (run)
+    let callCount = 0;
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockImplementation(() => ({
+      question: vi.fn((_q: string, cb: (a: string) => void) => {
+        callCount++;
+        cb(callCount === 1 ? "Make architect more specific" : "y");
+      }),
+      close: vi.fn(),
+    }) as ReturnType<typeof createInterface>);
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    await runConduct("add rate limiting", {}, tmpDir);
+
+    // conductorGenSpec called twice: initial + one refinement round
+    expect(genSpy).toHaveBeenCalledTimes(2);
+    // Second call must carry feedback
+    expect(genSpy.mock.calls[1][2]).toMatchObject({
+      feedback: "Make architect more specific",
+    });
+  });
+
+  it("63. refinement loop max 3 rounds enforced — 4th feedback falls back to binary prompt", async () => {
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    // Each call returns valid spec
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValue({
+      specPath: fakeSpecPath,
+      specContent: VALID_SPEC,
+    });
+
+    // readline: 3 rounds of feedback, then 'y' to run
+    let callCount = 0;
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockImplementation(() => ({
+      question: vi.fn((_q: string, cb: (a: string) => void) => {
+        callCount++;
+        if (callCount <= 3) {
+          cb("more detail please");
+        } else {
+          cb("y"); // binary prompt at round 3
+        }
+      }),
+      close: vi.fn(),
+    }) as ReturnType<typeof createInterface>);
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    await runConduct("add rate limiting", {}, tmpDir);
+
+    const { runGoal } = await import("../../src/cli/goal.js");
+    // runGoal should have been called (rounds reached max, user confirmed)
+    expect(vi.mocked(runGoal)).toHaveBeenCalled();
+    // conductorGenSpec called 4 times: 1 initial + 3 refinements
+    expect(vi.mocked(conductorModule.conductorGenSpec)).toHaveBeenCalledTimes(4);
+  });
+
+  // -------------------------------------------------------------------------
+  // conductorGenSpec feedback option (Sprint 90)
+  // -------------------------------------------------------------------------
+
+  it("64. conductorGenSpec: feedback prepended to prompt when provided", async () => {
+    const { mkdtempSync: mktmp } = await import("node:fs");
+    const specDir = mktmp(join(tmpdir(), "spec-feedback-"));
+
+    let capturedMessages: { role: string; content: string }[] = [];
+    const provider = {
+      name: "mock",
+      chatStream: vi.fn().mockImplementation(async function* (msgs: typeof capturedMessages) {
+        capturedMessages = msgs;
+        yield { type: "text" as const, content: VALID_SPEC };
+        yield { type: "done" as const, stopReason: "end_turn" };
+      }),
+    };
+
+    await conductorGenSpec("add rate limiting", MOCK_CONFIG, {
+      cwd: specDir,
+      _provider: provider,
+      _buildContext: async () => "Branch: main",
+      feedback: "Make the architect subtask more specific",
+      _prevSpecContent: "# Previous spec\n...",
+    });
+
+    rmSync(specDir, { recursive: true, force: true });
+
+    expect(capturedMessages[0].content).toContain("Previous spec had issues: Make the architect subtask more specific");
+    expect(capturedMessages[0].content).toContain("# Previous spec");
   });
 });

@@ -221,6 +221,19 @@ export async function conductorGenSpec(
      * get the full validation.
      */
     _skipModelWarn?: boolean;
+    /**
+     * Refinement feedback from the user (Sprint 90).  When present, the LLM
+     * prompt is prepended with a block describing the feedback and the previous
+     * spec so the model can revise rather than regenerate from scratch.
+     */
+    feedback?: string;
+    /**
+     * The previous spec content used in the refinement prepend block (Sprint 90).
+     * Follows the underscore convention for non-normal-caller options (like
+     * _provider, _buildContext, _randomSuffix).  When feedback is set and this
+     * is non-empty, the previous spec is included for LLM reference.
+     */
+    _prevSpecContent?: string;
     _provider?: import("../providers/types.js").Provider;
     /** Test-only: inject a synchronously-resolving context builder to avoid
      *  real subprocess I/O while fake timers are active (avoids macrotask/fake-timer race). */
@@ -251,10 +264,25 @@ export async function conductorGenSpec(
     "{goal}": effectiveGoal,
     "{codebaseContext}": codebaseContext,
   };
-  const prompt = CONDUCTOR_PROMPT.replace(
+  let prompt = CONDUCTOR_PROMPT.replace(
     /\{goal\}|\{codebaseContext\}/g,
     (match) => substitutions[match] ?? match,
   );
+
+  // Part 4 (Sprint 90): Refinement feedback prepend.
+  // When feedback is provided, prepend a block describing what the user
+  // wants changed so the LLM revises rather than regenerating from scratch.
+  if (options.feedback) {
+    const prevBlock = options._prevSpecContent
+      ? `\nPrevious spec for reference:\n${options._prevSpecContent}\n---\n`
+      : "";
+    prompt =
+      `Previous spec had issues: ${options.feedback}\n` +
+      `Please regenerate the spec addressing this feedback while keeping the same goal.\n` +
+      prevBlock +
+      `\n` +
+      prompt;
+  }
 
   // --- D5: Resolve tier aliases before passing to provider ---
   let model = options.model ?? config.smart_model ?? config.model;

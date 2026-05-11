@@ -866,7 +866,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--review-before-run", "Run adversarial review before execution; halt on CHALLENGED verdict")
     .option("--dashboard", "Enable tmux split-pane dashboard for visual progress during execution")
     .option("--resume", "Resume from a prior failed run using the checkpoint state file")
-    .action(async (goal: string, cmdOpts: { dryRun?: boolean; model?: string; workers?: string; maxAttempts?: string; quiet?: boolean; output?: string; yes?: boolean; reviewBeforeRun?: boolean; dashboard?: boolean; resume?: boolean }) => {
+    .option("--validate", "Run 4 inline structural checks on the spec before DAG preview")
+    .action(async (goal: string, cmdOpts: { dryRun?: boolean; model?: string; workers?: string; maxAttempts?: string; quiet?: boolean; output?: string; yes?: boolean; reviewBeforeRun?: boolean; dashboard?: boolean; resume?: boolean; validate?: boolean }) => {
       const { runConduct } = await import("./conduct.js");
       try {
         await runConduct(goal, {
@@ -880,6 +881,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           reviewBeforeRun: cmdOpts.reviewBeforeRun,
           dashboard: cmdOpts.dashboard,
           resume: cmdOpts.resume,
+          validate: cmdOpts.validate,
         }, process.cwd());
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err));
@@ -930,6 +932,40 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       }
     });
 
+  // Conduct log — view past conductor run history (Sprint 90)
+  program
+    .command("conduct-log")
+    .description("View past conductor run history from .phase2s/conduct-log.jsonl")
+    .option("--last", "Show most recent entry only; exits with code 1 if no runs logged")
+    .option("--limit <n>", "Number of most recent entries to show (default: 10)", "10")
+    .option("--json", "Output raw JSONL to stdout (one entry per line, newest first)")
+    .action(async (cmdOpts: { last?: boolean; limit?: string; json?: boolean }) => {
+      const { readConductLog, renderConductLog } = await import("./conduct-log.js");
+      const cwd = process.cwd();
+      if (cmdOpts.last) {
+        const entries = await readConductLog(cwd, 1);
+        if (entries.length === 0) {
+          console.error(chalk.red("No conduct runs logged yet."));
+          process.exit(1);
+        }
+        if (cmdOpts.json) {
+          console.log(JSON.stringify(entries[0]));
+        } else {
+          renderConductLog(entries);
+        }
+        return;
+      }
+      const limit = parseInt(cmdOpts.limit, 10);
+      const entries = await readConductLog(cwd, Number.isNaN(limit) ? 10 : limit);
+      if (cmdOpts.json) {
+        for (const e of entries) {
+          console.log(JSON.stringify(e));
+        }
+        return;
+      }
+      renderConductLog(entries);
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")
@@ -966,7 +1002,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct conduct-audit" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct conduct-audit conduct-log" -- "\$cur"))
     return
   fi
 
@@ -986,10 +1022,13 @@ _phase2s_complete() {
       COMPREPLY=($(compgen -W "--quiet --timeout --output --doom-loop-threshold" -- "\$cur"))
       ;;
     conduct)
-      COMPREPLY=($(compgen -W "--dry-run --model --workers --max-attempts --quiet --output --yes --review-before-run --dashboard --resume" -- "\$cur"))
+      COMPREPLY=($(compgen -W "--dry-run --model --workers --max-attempts --quiet --output --yes --review-before-run --dashboard --resume --validate" -- "\$cur"))
       ;;
     conduct-audit)
       COMPREPLY=($(compgen -W "--ci --ci-only --fast --case --json --timeout" -- "\$cur"))
+      ;;
+    conduct-log)
+      COMPREPLY=($(compgen -W "--last --limit --json" -- "\$cur"))
       ;;
     completion)
       COMPREPLY=($(compgen -W "bash zsh" -- "\$cur"))
@@ -1019,6 +1058,7 @@ _phase2s() {
     'goal:Run a spec file autonomously (dark factory)'
     'conduct:Generate a spec from a natural language goal and run the orchestrator'
     'conduct-audit:Run built-in conductor audit cases to verify spec generation quality'
+    'conduct-log:View past conductor run history'
     'report:Display a human-readable summary of a run log'
     'init:Interactive setup wizard — configure .phase2s.yaml'
     'upgrade:Check for a newer version and offer to install it'
@@ -1080,7 +1120,8 @@ _phase2s() {
         '--yes[Skip confirmation prompt]' \
         '--review-before-run[Adversarial review before execution; halt on CHALLENGED]' \
         '--dashboard[Enable tmux dashboard for visual progress]' \
-        '--resume[Resume from a prior failed run checkpoint]'
+        '--resume[Resume from a prior failed run checkpoint]' \
+        '--validate[Run 4 inline structural checks before DAG preview]'
       ;;
     conduct-audit)
       _arguments \
@@ -1090,6 +1131,12 @@ _phase2s() {
         '--case[Run a single case by ID]:id' \
         '--json[Output results as JSON]' \
         '--timeout[Per-case timeout in seconds]:seconds'
+      ;;
+    conduct-log)
+      _arguments \
+        '--last[Show most recent entry only]' \
+        '--limit[Number of entries to show]:n' \
+        '--json[Output raw JSONL to stdout]'
       ;;
     completion)
       local -a shells
