@@ -448,6 +448,7 @@ phase2s conduct "add search indexing" --output .phase2s/runs/search-summary.json
 | `--quiet` | Suppress verbose progress output |
 | `--output <path>` | Write final summary JSON to this path |
 | `-y, --yes` | Skip the "▶ Run? [y/N]" confirmation |
+| `--validate` | Run 4 structural checks before DAG preview (count bounds, lint, no duplicate roles) |
 | `--review-before-run` | Run adversarial review on the generated spec before executing |
 | `--dashboard` | Enable tmux split-pane dashboard for visual progress |
 | `--resume` | Continue from the last completed sub-task checkpoint |
@@ -455,6 +456,23 @@ phase2s conduct "add search indexing" --output .phase2s/runs/search-summary.json
 The generated spec is saved to `.phase2s/specs/` so you can review, edit, or reuse it with `phase2s goal`.
 
 After a run, a post-run summary table (Subtask | Role | Status) is printed automatically — showing which sub-tasks passed, failed, or were skipped and the total run duration.
+
+The confirmation prompt accepts freeform feedback — type what you'd like changed and phase2s regenerates the spec up to 3 times before falling back to a binary run/exit choice.
+
+**View your conduct run history:**
+
+```bash
+# Show all runs (newest first)
+phase2s conduct-log
+
+# Show the last 5 runs
+phase2s conduct-log --last 5
+
+# Machine-readable JSON output
+phase2s conduct-log --json
+```
+
+Each entry records the goal, spec hash, subtask count, roles used, pass/fail result, duration, and how many refinement rounds were needed.
 
 **Verify spec generation quality with `conduct-audit`:**
 
@@ -484,8 +502,9 @@ The `.githooks/pre-push` hook runs `conduct-audit --ci-only --ci --fast` automat
 
 ```
 phase2s__conduct({ goal: "add rate limiting to the API" })
-phase2s__conduct({ goal: "refactor the auth module", dryRun: true })
+phase2s__conduct({ goal: "refactor the auth module", dryRun: true, validate: true })
 phase2s__conduct_audit({ fast: true })   // verify spec generation quality
+phase2s__conduct_log({ limit: 5 })       // read the last 5 conduct run entries
 ```
 
 ### MCP Integration

@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.64.0 — 2026-05-10
+
+Sprint 90 — Conductor Real-World Hardening: conduct-log observability, `phase2s conduct-log` command, `--validate` structural pre-flight checks, a spec refinement loop, and a CI gate in `publish.yml`.
+
+### Added
+- **`conduct-log.jsonl` observability** — Every `phase2s conduct` run (success or failure) appends a structured entry to `.phase2s/conduct-log.jsonl` in the `finally` block. Fields: `ts`, `goal`, `specPath`, `specHash` (8-hex sha256), `subtaskCount`, `roles`, `success`, `durationMs`, `runLogPath`, `rounds`. Failures in the log writer never mask the real exit code (wrapped in try/catch).
+- **`phase2s conduct-log` CLI command** — Read and display the run history table (Date | Goal | Tasks | Roles | Result | Duration | Rounds). Flags: `--last N` / `--limit N` (newest N entries), `--json` (raw JSONL to stdout). Available as `phase2s__conduct_log` MCP tool.
+- **`conduct --validate` flag** — Runs 4 inline structural checks before DAG preview: subtask count ≥ `CONDUCTOR_MIN_SUBTASKS`, subtask count ≤ `CONDUCTOR_MAX_SUBTASKS`, `lintSpec` passes (no error-severity issues), no duplicate roles. On TTY with failures, prompts "Proceed anyway? [y/N]". On non-TTY: exits 1. With `--yes`: warns to stderr and continues.
+- **Spec refinement loop** — After DAG preview, the confirmation prompt accepts freeform feedback instead of just y/N. Typing your concern regenerates the spec using the feedback + previous spec as context (max 3 rounds). Round 3 falls back to a binary run/exit prompt. `conductorGenSpec()` accepts new `feedback?` and `_prevSpecContent?` options to thread the refinement context to the LLM.
+- **`conduct-audit` CI gate in `publish.yml`** — New `conduct-audit` job after `alpine-smoke`. Installs phase2s from npm and runs `phase2s conduct-audit --ci --ci-only`. No-op when `OPENAI_API_KEY` secret is absent (prints a skip message), so existing CI keeps working without configuration changes.
+- **`promptTriMode()` exported** — The tri-mode confirmation helper is exported from `conduct.ts` for unit testing and reuse.
+- 28 new tests (tests 36–64): 14 for `conduct-log.ts` (appendConductLog, readConductLog, renderConductLog) and 14 for Sprint 90 `conduct.ts` behaviour; 2218 total, all passing.
+
+### Changed
+- `conductorGenSpec()` options interface extended with `feedback?: string` and `_prevSpecContent?: string` — when `feedback` is set, the prompt is prepended with the feedback text and the previous spec for reference before regenerating.
+
 ## v1.63.0 — 2026-05-10
 
 Sprint 89 — Conductor Quality Hardening: 5 prompt-quality constraints (role budget, scope discipline, subtask ceiling), `--ci-only` + `--timeout` flags on `conduct-audit`, a local pre-push hook as a CI-gate stand-in, and a bug fix that populates the subtask result table when the orchestrator crashes mid-run.
