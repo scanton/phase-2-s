@@ -47,6 +47,12 @@ export interface ConductLogEntry {
   runLogPath: string;
   /** Number of refinement rounds taken (0 = no refinement). */
   rounds: number;
+  /**
+   * Whether the run was a dry-run (--dry-run flag). Dry-run entries have
+   * success: false and no runLogPath because the orchestrator was never executed.
+   * Excluded from success-rate calculations in conduct-insights and conduct-index.
+   */
+  dryRun?: boolean;
 }
 
 // ---------------------------------------------------------------------------

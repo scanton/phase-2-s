@@ -151,6 +151,24 @@ const configSchema = z.object({
    * Example: codeRagMinScore: 0.4
    */
   codeRagMinScore: z.number().min(0).max(1).optional(),
+  /**
+   * Settings for `phase2s conduct-insights` and the spec quality hint in `runConduct()`.
+   * The hint uses Ollama embeddings to find past goals similar to the current one and
+   * warns when those similar runs had a poor success rate.
+   * Requires ollamaBaseUrl + ollamaEmbedModel to be configured. Falls back gracefully
+   * (hint skipped silently) when Ollama is not available.
+   */
+  conductInsights: z.object({
+    /** Whether to show spec quality hints before the DAG preview. Default: true. */
+    hintEnabled: z.boolean().default(true),
+    /**
+     * Success rate threshold (0–1). If the top-K similar past goals have a success
+     * rate below this value, a warning is emitted. Default: 0.5 (50%).
+     */
+    hintThreshold: z.number().min(0).max(1).default(0.5),
+    /** Number of similar past goals to consider when computing success rate. Default: 3. */
+    hintTopK: z.number().int().min(1).default(3),
+  }).default({}),
 });
 
 export type Config = z.infer<typeof configSchema> & { model: string };

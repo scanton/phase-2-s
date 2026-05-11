@@ -967,6 +967,25 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       renderConductLog(entries);
     });
 
+  // Conduct insights — analytics for past conductor runs (Sprint 91)
+  program
+    .command("conduct-insights")
+    .description("Analytics for past conductor runs: success rate, avg duration, top roles, recent goals")
+    .option("--limit <n>", "Analyze only the last N log entries (default: all)")
+    .option("--json", "Emit stats as JSON to stdout (machine-readable)")
+    .option("--rebuild-index", "Rebuild .phase2s/conduct-index.json from all logged entries (requires Ollama)")
+    .option("--quiet", "Suppress progress output (for --rebuild-index)")
+    .action(async (cmdOpts: { limit?: string; json?: boolean; rebuildIndex?: boolean; quiet?: boolean }) => {
+      const { runConductInsights } = await import("./conduct-insights.js");
+      const cwd = process.cwd();
+      const limit = cmdOpts.limit !== undefined ? parseInt(cmdOpts.limit, 10) : undefined;
+      const safeLimit = limit !== undefined && !Number.isNaN(limit) && limit > 0 ? limit : undefined;
+      await runConductInsights(
+        { limit: safeLimit, json: cmdOpts.json, rebuildIndex: cmdOpts.rebuildIndex, quiet: cmdOpts.quiet },
+        cwd,
+      );
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")
@@ -1003,7 +1022,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct conduct-audit conduct-log" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run task skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct conduct-audit conduct-log conduct-insights" -- "\$cur"))
     return
   fi
 
@@ -1030,6 +1049,9 @@ _phase2s_complete() {
       ;;
     conduct-log)
       COMPREPLY=($(compgen -W "--last --limit --json" -- "\$cur"))
+      ;;
+    conduct-insights)
+      COMPREPLY=($(compgen -W "--limit --json --rebuild-index --quiet" -- "\$cur"))
       ;;
     completion)
       COMPREPLY=($(compgen -W "bash zsh" -- "\$cur"))
@@ -1060,6 +1082,7 @@ _phase2s() {
     'conduct:Generate a spec from a natural language goal and run the orchestrator'
     'conduct-audit:Run built-in conductor audit cases to verify spec generation quality'
     'conduct-log:View past conductor run history'
+    'conduct-insights:Analytics for past conductor runs (success rate, top roles, recent goals)'
     'report:Display a human-readable summary of a run log'
     'init:Interactive setup wizard — configure .phase2s.yaml'
     'upgrade:Check for a newer version and offer to install it'
@@ -1138,6 +1161,13 @@ _phase2s() {
         '--last[Show most recent entry only]' \
         '--limit[Number of entries to show]:n' \
         '--json[Output raw JSONL to stdout]'
+      ;;
+    conduct-insights)
+      _arguments \
+        '--limit[Analyze only the last N log entries]:n' \
+        '--json[Emit stats as JSON to stdout]' \
+        '--rebuild-index[Rebuild conduct-index.json from all logged entries]' \
+        '--quiet[Suppress progress output]'
       ;;
     completion)
       local -a shells

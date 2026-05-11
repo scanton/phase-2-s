@@ -11,7 +11,7 @@ import type { Skill } from "../skills/types.js";
 // Version
 // ---------------------------------------------------------------------------
 
-export const MCP_SERVER_VERSION = "0.18.0";
+export const MCP_SERVER_VERSION = "0.19.0";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -315,6 +315,50 @@ export const REPORT_TOOL: MCPTool = {
       },
     },
     required: ["logFile"],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Conduct-log tool descriptor (Sprint 91)
+// ---------------------------------------------------------------------------
+
+/**
+ * MCP tool descriptor for querying conduct-log history and embeddings.
+ *
+ * Exposes three actions:
+ *   - list: return the last N ConductLogEntry objects (newest first)
+ *   - stats: return aggregated ConductStats (same as conduct-insights --json)
+ *   - search: find top-K similar past goals using Ollama cosine similarity;
+ *             falls back to recency list if Ollama is not configured
+ */
+export const CONDUCT_LOG_TOOL: MCPTool = {
+  name: "phase2s__conduct_log",
+  description:
+    "Query conductor run history from .phase2s/conduct-log.jsonl. " +
+    "Use 'list' to browse recent runs, 'stats' for aggregated analytics, " +
+    "or 'search' to find past runs with similar goals (Ollama required for semantic search).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        enum: ["list", "stats", "search"],
+        description: "Action to perform: 'list' returns recent entries, 'stats' returns aggregated analytics, 'search' finds similar past goals.",
+      },
+      query: {
+        type: "string",
+        description: "Goal text to search for similar past runs. Required when action='search'.",
+      },
+      limit: {
+        type: "number",
+        description: "Max entries to return for 'list' (default: 10). Ignored for 'stats'.",
+      },
+      cwd: {
+        type: "string",
+        description: "Project working directory. Defaults to server cwd.",
+      },
+    },
+    required: ["action"],
   },
 };
 

@@ -12,6 +12,12 @@
  *   - conduct-log.jsonl: every run appended via appendConductLog() in finally
  *   - --validate flag: 4 inline structural checks before DAG preview
  *   - Spec refinement loop: tri-mode prompt allows feedback → regen (max 3 rounds)
+ *
+ * Sprint 91 additions:
+ *   - Spec quality hint: after conductorGenSpec(), embed goal via Ollama, cosine-search
+ *     conduct-index.json, warn if similar past goals had poor success rate.
+ *   - conduct-index.json upsert in finally block (non-dry-run entries only).
+ *   - dryRun flag propagated to ConductLogEntry so dry-runs are excluded from success stats.
  */
 
 import { createHash } from "node:crypto";
@@ -26,6 +32,9 @@ import { isKnownModelPrefix } from "./provider-registry.js";
 import { renderConductSummary } from "./conduct-summary.js";
 import { lintSpec } from "./lint.js";
 import { appendConductLog } from "./conduct-log.js";
+import { readConductIndex, upsertConductIndexEntry, searchConductIndex } from "../core/conduct-index.js";
+import type { ConductIndexEntry } from "../core/conduct-index.js";
+import { generateEmbedding } from "../core/embeddings.js";
 import type { GoalResult } from "./goal.js";
 
 /** Maximum refinement rounds before falling back to a binary run/exit prompt. */
@@ -129,6 +138,13 @@ export async function runConduct(
 
     // Compute spec hash (first 8 hex chars of sha256).
     currentSpecHash = createHash("sha256").update(currentSpecContent).digest("hex").slice(0, 8);
+
+    // --- Sprint 91: Spec quality hint (Ollama similarity search) ---
+    // Show hint once before the first DAG preview (not on refinement re-renders).
+    // Skipped when: dry-run, quiet mode, Ollama not configured, fewer than 3 indexed entries.
+    if (!options.dryRun && !options.quiet) {
+      await maybeShowSpecQualityHint(goal, config, cwd);
+    }
 
     // --- Refinement loop (max MAX_REFINEMENT_ROUNDS) ---
     while (true) {
@@ -242,16 +258,18 @@ export async function runConduct(
 
     process.exitCode = result.success ? 0 : 1;
   } finally {
-    // Part 1: Append conduct log entry when spec generation was attempted.
+    // Sprint 90/91: Append conduct log entry when spec generation was attempted.
     // Guard on currentSpecPath so we don't log entries from config-load failures
     // that exit before conductorGenSpec() is ever called.
     // Wrapped in try/catch so log write failures never mask the real exit code.
     if (currentSpecPath) {
+      const logTs = new Date().toISOString();
+      const logDurationMs = Date.now() - startMs;
       try {
         const spec = currentSpecContent ? parseSpec(currentSpecContent) : null;
         await appendConductLog(
           {
-            ts: new Date().toISOString(),
+            ts: logTs,
             goal: goal.slice(0, 200),
             specPath: currentSpecPath,
             specHash: currentSpecHash,
@@ -260,16 +278,103 @@ export async function runConduct(
               ? [...new Set(spec.decomposition.flatMap((s) => (s.role ? [s.role] : [])))]
               : [],
             success,
-            durationMs: Date.now() - startMs,
+            durationMs: logDurationMs,
             runLogPath: result?.runLogPath ?? "",
             rounds,
+            // Sprint 91: mark dry-runs so they are excluded from success-rate stats.
+            ...(options.dryRun ? { dryRun: true } : {}),
           },
           cwd,
         );
       } catch (err) {
         console.warn(`[conduct-log] Failed to write log entry: ${(err as Error).message}`);
       }
+
+      // Sprint 91: Upsert into conduct-index.json for future similarity hints.
+      // Only index non-dry-run entries that have actual orchestration outcomes.
+      // Skipped when Ollama is not configured (generateEmbedding returns [] gracefully).
+      if (!options.dryRun && currentSpecContent) {
+        try {
+          const baseUrl = config.ollamaBaseUrl ?? "";
+          const model = config.ollamaEmbedModel ?? "";
+          const embedding = baseUrl && model
+            ? await generateEmbedding(goal, model, baseUrl)
+            : [];
+          const spec = currentSpecContent ? parseSpec(currentSpecContent) : null;
+          const indexEntry: ConductIndexEntry = {
+            id: logTs,
+            goalSnippet: goal.slice(0, 120),
+            embedding,
+            success,
+            durationMs: logDurationMs,
+            subtaskCount: spec?.decomposition.length ?? 0,
+          };
+          await upsertConductIndexEntry(cwd, indexEntry);
+        } catch {
+          // Index write failure is best-effort — never block or warn the user.
+        }
+      }
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// maybeShowSpecQualityHint — Sprint 91: Ollama similarity hint
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if the current goal is similar to past goals that had poor outcomes.
+ * Emits a warning (non-fatal) before the DAG preview when:
+ *   - Ollama is configured (ollamaBaseUrl + ollamaEmbedModel)
+ *   - conductInsights.hintEnabled is true (default)
+ *   - The index has ≥ 3 entries
+ *   - The top-K similar past goals' success rate is below hintThreshold
+ *
+ * Always resolves — never throws, never blocks execution.
+ */
+async function maybeShowSpecQualityHint(
+  goal: string,
+  config: Awaited<ReturnType<typeof loadConfig>>,
+  cwd: string,
+): Promise<void> {
+  try {
+    const hintEnabled = config.conductInsights?.hintEnabled ?? true;
+    if (!hintEnabled) return;
+
+    const baseUrl = config.ollamaBaseUrl ?? "";
+    const model = config.ollamaEmbedModel ?? "";
+    if (!baseUrl || !model) return;
+
+    const index = await readConductIndex(cwd);
+    const embeddableCount = index.entries.filter((e) => e.embedding.length > 0).length;
+    const topK = config.conductInsights?.hintTopK ?? 3;
+    if (embeddableCount < topK) return;
+
+    const queryVec = await generateEmbedding(goal, model, baseUrl);
+    if (queryVec.length === 0) return;
+
+    const similar = searchConductIndex(index, queryVec, topK);
+    if (similar.length < topK) return;
+
+    const successRate = similar.filter((e) => e.success).length / similar.length;
+    const threshold = config.conductInsights?.hintThreshold ?? 0.5;
+    if (successRate >= threshold) return;
+
+    // Emit warning — show most similar entry as context
+    const worst = similar[0];
+    const successCount = similar.filter((e) => e.success).length;
+    console.warn(
+      chalk.yellow(
+        `  ⚠ Similar goals succeeded only ${successCount}/${similar.length} times — consider refining the spec.`,
+      ),
+    );
+    console.warn(
+      chalk.dim(
+        `    Most similar: "${worst.goalSnippet}" (${worst.success ? "✓ succeeded" : "✗ failed"}, ${Math.round(worst.durationMs / 1000)}s)`,
+      ),
+    );
+  } catch {
+    // Hint failure is always silent — never block conduct execution.
   }
 }
 
