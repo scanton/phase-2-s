@@ -259,4 +259,100 @@ describe("runConductInsights()", () => {
     await runConductInsights({}, tmpDir);
     expect(logs.some((l) => l.includes("No conduct runs logged"))).toBe(true);
   });
+
+  it("I4: rebuildIndex=true, Ollama configured, entries exist → logs indexed count", async () => {
+    writeConductLog([makeEntry({ success: true }), makeEntry({ success: false })]);
+
+    // Mock loadConfig to provide Ollama settings
+    const configModule = await import("../../src/core/config.js");
+    const originalLoadConfig = configModule.loadConfig;
+    vi.spyOn(configModule, "loadConfig").mockResolvedValue({
+      provider: "openai-api",
+      model: "gpt-4o",
+      smart_model: "gpt-4o",
+      maxTurns: 50,
+      timeout: 120_000,
+      ollamaBaseUrl: "http://localhost:11434",
+      ollamaEmbedModel: "nomic-embed-text",
+    } as Awaited<ReturnType<typeof configModule.loadConfig>>);
+
+    // Mock generateEmbedding to return a valid vector
+    const embeddingsModule = await import("../../src/core/embeddings.js");
+    vi.spyOn(embeddingsModule, "generateEmbedding").mockResolvedValue([0.1, 0.2, 0.3]);
+
+    // Mock conduct-index write/read
+    const conductIndexModule = await import("../../src/core/conduct-index.js");
+    vi.spyOn(conductIndexModule, "readConductIndex").mockResolvedValue({ version: 1, entries: [] });
+    vi.spyOn(conductIndexModule, "writeConductIndex").mockResolvedValue(undefined);
+
+    await runConductInsights({ rebuildIndex: true }, tmpDir);
+
+    // Should log success with indexed count
+    expect(logs.some((l) => l.includes("Conduct index rebuilt"))).toBe(true);
+    expect(logs.some((l) => l.includes("2 entries indexed"))).toBe(true);
+
+    vi.restoreAllMocks();
+  });
+
+  it("I5: rebuildIndex=true, quiet=true → no progress output", async () => {
+    writeConductLog([makeEntry({ success: true })]);
+
+    const configModule = await import("../../src/core/config.js");
+    vi.spyOn(configModule, "loadConfig").mockResolvedValue({
+      provider: "openai-api",
+      model: "gpt-4o",
+      smart_model: "gpt-4o",
+      maxTurns: 50,
+      timeout: 120_000,
+      ollamaBaseUrl: "http://localhost:11434",
+      ollamaEmbedModel: "nomic-embed-text",
+    } as Awaited<ReturnType<typeof configModule.loadConfig>>);
+
+    const embeddingsModule = await import("../../src/core/embeddings.js");
+    vi.spyOn(embeddingsModule, "generateEmbedding").mockResolvedValue([0.1, 0.2, 0.3]);
+
+    const conductIndexModule = await import("../../src/core/conduct-index.js");
+    vi.spyOn(conductIndexModule, "readConductIndex").mockResolvedValue({ version: 1, entries: [] });
+    vi.spyOn(conductIndexModule, "writeConductIndex").mockResolvedValue(undefined);
+
+    const logsBefore = [...logs];
+    await runConductInsights({ rebuildIndex: true, quiet: true }, tmpDir);
+
+    // In quiet mode, no progress/success messages should be logged
+    const newLogs = logs.filter((l) => !logsBefore.includes(l));
+    expect(newLogs).toHaveLength(0);
+
+    vi.restoreAllMocks();
+  });
+
+  it("I4-fail: rebuildIndex write failure → error logged, does not throw", async () => {
+    writeConductLog([makeEntry({ success: true })]);
+
+    const configModule = await import("../../src/core/config.js");
+    vi.spyOn(configModule, "loadConfig").mockResolvedValue({
+      provider: "openai-api",
+      model: "gpt-4o",
+      smart_model: "gpt-4o",
+      maxTurns: 50,
+      timeout: 120_000,
+      ollamaBaseUrl: "http://localhost:11434",
+      ollamaEmbedModel: "nomic-embed-text",
+    } as Awaited<ReturnType<typeof configModule.loadConfig>>);
+
+    const embeddingsModule = await import("../../src/core/embeddings.js");
+    vi.spyOn(embeddingsModule, "generateEmbedding").mockResolvedValue([0.1, 0.2, 0.3]);
+
+    const conductIndexModule = await import("../../src/core/conduct-index.js");
+    vi.spyOn(conductIndexModule, "readConductIndex").mockResolvedValue({ version: 1, entries: [] });
+    // Simulate disk write failure
+    vi.spyOn(conductIndexModule, "writeConductIndex").mockRejectedValue(new Error("No space left on device"));
+
+    // Should NOT throw — write failure is caught and reported
+    await expect(runConductInsights({ rebuildIndex: true }, tmpDir)).resolves.not.toThrow();
+
+    // Error message should appear in output
+    expect(errors.some((e) => e.includes("Conduct index write failed"))).toBe(true);
+
+    vi.restoreAllMocks();
+  });
 });

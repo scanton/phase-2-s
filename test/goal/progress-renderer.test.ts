@@ -388,4 +388,63 @@ describe('createProgressRenderer — ansi mode', () => {
       process.env.SSH_TTY = origSSH;
     }
   });
+
+  // -------------------------------------------------------------------------
+  // Gap coverage: degraded resize branch
+  // -------------------------------------------------------------------------
+
+  it('resize event on process.stdout sets degraded=true — next redraw flows without cursor-up', () => {
+    const { mockOut, chunks } = makeMockOut();
+    const renderer = createProgressRenderer({ mode: 'ansi', goal: 'resize test', out: mockOut });
+
+    renderer.emit({
+      type: 'level_start',
+      levelIndex: 0,
+      totalLevels: 1,
+      jobs: [{ id: 'j1', title: 'Resize Task' }],
+    });
+    renderer.emit({ type: 'job_start', jobId: 'j1' });
+    chunks.length = 0;
+
+    // Trigger resize — the handler is registered on process.stdout
+    process.stdout.emit('resize');
+
+    // Advance timer to trigger redraw in degraded mode
+    vi.advanceTimersByTime(200);
+
+    const output = chunks.join('');
+    // Degraded mode still writes the panel content, just without cursor-up
+    expect(output).toContain('Resize Task');
+    // In degraded mode, the output should NOT contain cursor-up escape sequences (\x1b[NF or \x1b[NA)
+    expect(output).not.toMatch(/\x1b\[\d+[FA]/);
+
+    renderer.dispose();
+  });
+
+  // -------------------------------------------------------------------------
+  // Gap coverage: formatDuration >60s (the "1m Xs" branch)
+  // -------------------------------------------------------------------------
+
+  it('job_complete with durationMs > 60000 shows minutes in "Xm Ys" format', () => {
+    const { mockOut, chunks } = makeMockOut();
+    const renderer = createProgressRenderer({ mode: 'ansi', goal: 'long job', out: mockOut });
+
+    renderer.emit({
+      type: 'level_start',
+      levelIndex: 0,
+      totalLevels: 1,
+      jobs: [{ id: 'j1', title: 'Long Task' }],
+    });
+    renderer.emit({ type: 'job_start', jobId: 'j1' });
+    chunks.length = 0;
+
+    // 65 seconds = 1m 5s
+    renderer.emit({ type: 'job_complete', jobId: 'j1', durationMs: 65000 });
+    vi.advanceTimersByTime(200);
+
+    const output = chunks.join('');
+    expect(output).toContain('1m 5s');
+
+    renderer.dispose();
+  });
 });

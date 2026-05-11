@@ -836,14 +836,14 @@ Never commit directly to main.
 phase2s --system "Always prefer Python for scripting tasks"
 ```
 
-**Custom verification command** — configure what `/satori` and `phase2s task` run to check your work:
+**Custom verification command** — configure what `phase2s go` runs to check your work:
 
 ```yaml
 # .phase2s.yaml
 verifyCommand: pytest tests/ -x  # or: go test ./... or: npm test
 ```
 
-Override per-run with `phase2s task --verify "bun test" "your task here"`.
+Override per-run with `phase2s go --verify "bun test" "your task here"`.
 
 **Task mode tuning** — control the autonomous task runner's behavior:
 
@@ -857,10 +857,10 @@ trivialInputMinWords: 2     # skip RAG for 1- and 2-word REPL inputs (default: 1
 Task flags for one-off overrides:
 
 ```bash
-phase2s task --quiet "fix the type errors"           # suppress streaming, print result only
-phase2s task --timeout 120 "refactor auth.ts"        # abort after 120 seconds
-phase2s task --output result.md "write a plan"       # save output to file
-phase2s task --doom-loop-threshold 2 "fix the bug"   # tighter doom-loop for this run
+phase2s go --quiet "fix the type errors"           # suppress streaming, print result only
+phase2s go --timeout 120 "refactor auth.ts"        # abort after 120 seconds
+phase2s go --output result.md "write a plan"       # save output to file
+phase2s go --doom-loop-threshold 2 "fix the bug"   # tighter doom-loop for this run
 ```
 
 **Headless browser** — enable for the `/qa` skill to test web apps:

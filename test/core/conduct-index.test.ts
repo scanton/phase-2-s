@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { rm } from "node:fs/promises";
-import { mkdtempSync } from "node:fs";
+import { rm, readFile } from "node:fs/promises";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   readConductIndex,
+  writeConductIndex,
   upsertConductIndexEntry,
   searchConductIndex,
   cosineSimilarity,
@@ -191,6 +192,25 @@ describe("conduct-index", () => {
     }
     const index = await readConductIndex(tmpDir);
     expect(index.entries.length).toBe(CONDUCT_INDEX_MAX_ENTRIES);
+  });
+
+  it("writeConductIndex atomic write — tmp file removed, final file contains valid JSON", async () => {
+    const index = { version: 1 as const, entries: [makeEntry({ id: "ts-write-test" })] };
+    await writeConductIndex(tmpDir, index);
+
+    // Final index file exists and is valid JSON
+    const indexPath = join(tmpDir, ".phase2s", "conduct-index.json");
+    expect(existsSync(indexPath)).toBe(true);
+
+    const raw = await readFile(indexPath, "utf8");
+    const parsed = JSON.parse(raw) as { version: number; entries: ConductIndexEntry[] };
+    expect(parsed.version).toBe(1);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].id).toBe("ts-write-test");
+
+    // Tmp file should NOT be left behind after atomic rename
+    const tmpPath = `${indexPath}.tmp`;
+    expect(existsSync(tmpPath)).toBe(false);
   });
 
   it("eviction keeps newest entries (sort by id before evicting)", async () => {
