@@ -270,4 +270,27 @@ describe("phase2s__conduct_log MCP tool", () => {
     const parsed = JSON.parse(res.result!.content[0].text);
     expect(Array.isArray(parsed)).toBe(true);
   });
+
+  // ---- unknown action ----
+
+  it("returns -32602 for unknown action values", async () => {
+    const res = await callTool(tmpDir, { action: "bogus", cwd: tmpDir });
+    expect(res.error).toBeDefined();
+    expect(res.error!.code).toBe(-32602);
+    expect(res.error!.message).toMatch(/unknown action/i);
+    expect(res.error!.message).toContain("bogus");
+  });
+
+  // ---- stats respects limit ----
+
+  it("stats: respects the limit parameter (does not read unbounded log)", async () => {
+    // Write 20 entries; ask for stats with limit 5 — only those 5 should be counted.
+    const entries = Array.from({ length: 20 }, (_, i) => ({ ...SAMPLE_ENTRY, success: i % 2 === 0 }));
+    writeConductLog(tmpDir, entries);
+    const res = await callTool(tmpDir, { action: "stats", limit: 5, cwd: tmpDir });
+    expect(res.error).toBeUndefined();
+    const stats = JSON.parse(res.result!.content[0].text);
+    // Only 5 entries read, so totalRuns must be 5 not 20.
+    expect(stats.totalRuns).toBe(5);
+  });
 });

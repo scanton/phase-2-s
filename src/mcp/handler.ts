@@ -317,9 +317,17 @@ export async function handleRequest(
         ? Math.min(Math.floor(args["limit"]), 1000)
         : 10;
 
+      if (action !== "list" && action !== "stats" && action !== "search") {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: { code: -32602, message: `phase2s__conduct_log: unknown action '${action}'. Valid values: list, stats, search` },
+        };
+      }
+
       try {
         if (action === "stats") {
-          const entries = await readConductLog(queryCwd);
+          const entries = await readConductLog(queryCwd, limit);
           const stats = computeConductStats(entries);
           return {
             jsonrpc: "2.0",

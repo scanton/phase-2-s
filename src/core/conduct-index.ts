@@ -19,7 +19,7 @@
  * Index file: .phase2s/conduct-index.json
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -64,6 +64,7 @@ function isValidEntry(e: unknown): e is ConductIndexEntry {
     typeof entry["id"] === "string" &&
     typeof entry["goalSnippet"] === "string" &&
     Array.isArray(entry["embedding"]) &&
+    (entry["embedding"] as unknown[]).length <= 8192 &&
     (entry["embedding"] as unknown[]).every((v) => typeof v === "number" && isFinite(v)) &&
     typeof entry["success"] === "boolean" &&
     typeof entry["durationMs"] === "number" && isFinite(entry["durationMs"] as number) &&
@@ -108,7 +109,6 @@ export async function writeConductIndex(cwd: string, index: ConductIndex): Promi
   // (each reads stale index before the other writes). The index is a best-effort cache —
   // the authoritative data lives in conduct-log.jsonl; run --rebuild-index to recover.
   await writeFile(tmpPath, JSON.stringify(index), "utf8");
-  const { rename } = await import("node:fs/promises");
   await rename(tmpPath, indexPath);
 }
 
@@ -159,7 +159,9 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   }
   const denom = Math.sqrt(magA) * Math.sqrt(magB);
   if (denom === 0) return 0;
-  return dot / denom;
+  const result = dot / denom;
+  // Guard against NaN/Infinity from degenerate vectors (e.g. Ollama returns Infinity floats).
+  return isFinite(result) ? result : 0;
 }
 
 export interface ScoredIndexEntry extends ConductIndexEntry {

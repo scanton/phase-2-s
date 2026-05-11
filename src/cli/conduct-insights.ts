@@ -178,12 +178,15 @@ export async function runConductInsights(
   options: ConductInsightsOptions,
   cwd: string,
 ): Promise<void> {
-  const entries = await readConductLog(cwd, options.limit);
-
   if (options.rebuildIndex) {
-    await rebuildConductIndex(entries, cwd, options.quiet);
+    // Rebuild always reads the full log — --limit is ignored so we don't silently
+    // omit older entries from the index. Pass undefined to read all entries.
+    const allEntries = await readConductLog(cwd);
+    await rebuildConductIndex(allEntries, cwd, options.quiet);
     return;
   }
+
+  const entries = await readConductLog(cwd, options.limit);
 
   const stats = computeConductStats(entries);
 
@@ -234,13 +237,17 @@ async function rebuildConductIndex(
   }
 
   let indexed = 0;
-  let skipped = 0;
+  /** Entries that came back from Ollama with an empty embedding vector. */
+  let emptyEmbedCount = 0;
 
   // Read once, apply all upserts in memory, write once — avoids O(N²) file I/O.
   const index = await readConductIndex(cwd);
 
   for (const entry of runs) {
     const embedding = await generateEmbedding(entry.goal, model, baseUrl);
+    if (embedding.length === 0) {
+      emptyEmbedCount++;
+    }
     const indexEntry: ConductIndexEntry = {
       id: entry.ts,
       goalSnippet: entry.goal.slice(0, 120),
@@ -267,8 +274,6 @@ async function rebuildConductIndex(
     await writeConductIndex(cwd, index);
   } catch (err) {
     writeError = err instanceof Error ? err.message : String(err);
-    skipped = indexed;
-    indexed = 0;
   }
 
   if (!quiet) {
@@ -278,9 +283,9 @@ async function rebuildConductIndex(
       console.error(chalk.red(`  ✗ Conduct index write failed: ${writeError}`));
       console.warn(chalk.yellow("  ⚠ Check disk space and permissions for .phase2s/conduct-index.json"));
     } else {
-      const skipNote = skipped > 0 ? chalk.yellow(` (${skipped} skipped — no embedding)`) : "";
+      const skipNote = emptyEmbedCount > 0 ? chalk.yellow(` (${emptyEmbedCount} skipped — empty embedding from Ollama)`) : "";
       console.log(chalk.green(`  ✓ Conduct index rebuilt: ${indexed} entries indexed${skipNote}`));
-      if (indexed === 0 && skipped === 0) {
+      if (indexed === 0) {
         console.warn(chalk.yellow("  ⚠ No entries were indexed. Is Ollama running? Try: ollama serve"));
       }
     }

@@ -265,8 +265,9 @@ export async function runConduct(
     if (currentSpecPath) {
       const logTs = new Date().toISOString();
       const logDurationMs = Date.now() - startMs;
+      // Parse spec once — shared by both appendConductLog and the index upsert below.
+      const spec = currentSpecContent ? parseSpec(currentSpecContent) : null;
       try {
-        const spec = currentSpecContent ? parseSpec(currentSpecContent) : null;
         await appendConductLog(
           {
             ts: logTs,
@@ -300,7 +301,6 @@ export async function runConduct(
           const embedding = baseUrl && model
             ? await generateEmbedding(goal, model, baseUrl)
             : [];
-          const spec = currentSpecContent ? parseSpec(currentSpecContent) : null;
           const indexEntry: ConductIndexEntry = {
             id: logTs,
             goalSnippet: goal.slice(0, 120),
