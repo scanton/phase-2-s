@@ -466,7 +466,7 @@ The confirmation prompt accepts freeform feedback — type what you'd like chang
 phase2s conduct-log
 
 # Show the last 5 runs
-phase2s conduct-log --last 5
+phase2s conduct-log --limit 5
 
 # Machine-readable JSON output
 phase2s conduct-log --json
@@ -504,7 +504,7 @@ The `.githooks/pre-push` hook runs `conduct-audit --ci-only --ci --fast` automat
 phase2s__conduct({ goal: "add rate limiting to the API" })
 phase2s__conduct({ goal: "refactor the auth module", dryRun: true, validate: true })
 phase2s__conduct_audit({ fast: true })   // verify spec generation quality
-phase2s__conduct_log({ limit: 5 })       // read the last 5 conduct run entries
+// phase2s__conduct_log — not yet an MCP tool; use CLI: phase2s conduct-log --limit 5
 ```
 
 ### MCP Integration

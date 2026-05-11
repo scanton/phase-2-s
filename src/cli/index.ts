@@ -955,8 +955,9 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         }
         return;
       }
-      const limit = parseInt(cmdOpts.limit, 10);
-      const entries = await readConductLog(cwd, Number.isNaN(limit) ? 10 : limit);
+      const limit = parseInt(cmdOpts.limit ?? "10", 10);
+      const safeLimit = !Number.isNaN(limit) && limit > 0 ? limit : 10;
+      const entries = await readConductLog(cwd, safeLimit);
       if (cmdOpts.json) {
         for (const e of entries) {
           console.log(JSON.stringify(e));

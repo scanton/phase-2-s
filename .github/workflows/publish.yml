@@ -68,6 +68,7 @@ jobs:
     name: Conduct Audit (CI gate)
     runs-on: ubuntu-latest
     needs: alpine-smoke
+    timeout-minutes: 10
     steps:
       - name: Install phase2s from npm
         run: npm install -g @scanton/phase2s@${GITHUB_REF_NAME#v}

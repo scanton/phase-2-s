@@ -1091,7 +1091,7 @@ describe("conductorGenSpec() — post-review hardening (tests 30-32)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Sprint 90: conduct-log, --validate, refinement loop (tests 36-55)
+// Sprint 90: conduct-log, --validate, refinement loop (tests 36-64)
 // ---------------------------------------------------------------------------
 
 describe("Sprint 90 — conduct-log, --validate, refinement loop", () => {
@@ -1168,7 +1168,7 @@ describe("Sprint 90 — conduct-log, --validate, refinement loop", () => {
     process.exitCode = savedExitCode;
   });
 
-  it("53. conduct run with spec gen failure still calls appendConductLog (success=false)", async () => {
+  it("53. conduct run with spec gen failure (specPath='') does NOT call appendConductLog; exits 1", async () => {
     const { appendConductLog } = await import("../../src/cli/conduct-log.js");
     vi.mocked(appendConductLog).mockClear();
 
@@ -1184,9 +1184,8 @@ describe("Sprint 90 — conduct-log, --validate, refinement loop", () => {
 
     await runConduct("bad goal", { yes: true }, tmpDir);
 
-    // appendConductLog should NOT be called when spec gen failed early
-    // (currentSpecPath is empty — the log guard only fires when specPath or
-    // a run was attempted)
+    // currentSpecPath remains "" (falsy) so the finally-block guard skips logging.
+    expect(vi.mocked(appendConductLog)).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
     process.exitCode = savedExitCode;
   });

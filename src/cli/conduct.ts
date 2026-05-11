@@ -139,7 +139,7 @@ export async function runConduct(
         console.warn(chalk.yellow("  ⚠ --validate is skipped in --dry-run mode."));
       }
       if (options.validate && !options.dryRun) {
-        const shouldContinue = await runValidate(spec, options, cwd);
+        const shouldContinue = await runValidate(spec, options);
         if (!shouldContinue) return;
       }
 
@@ -295,7 +295,6 @@ export async function runConduct(
 async function runValidate(
   spec: ReturnType<typeof parseSpec>,
   options: ConductOptions,
-  _cwd: string,
 ): Promise<boolean> {
   const failures: string[] = [];
   let passed = 0;
