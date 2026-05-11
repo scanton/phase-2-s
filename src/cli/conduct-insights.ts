@@ -262,19 +262,27 @@ async function rebuildConductIndex(
   }
 
   // Single write after all in-memory upserts are done.
+  let writeError: string | undefined;
   try {
     await writeConductIndex(cwd, index);
-  } catch {
+  } catch (err) {
+    writeError = err instanceof Error ? err.message : String(err);
     skipped = indexed;
     indexed = 0;
   }
 
   if (!quiet) {
     process.stdout.write("\r");
-    const skipNote = skipped > 0 ? chalk.yellow(` (${skipped} write errors)`) : "";
-    console.log(chalk.green(`  ✓ Conduct index rebuilt: ${indexed} entries indexed${skipNote}`));
-    if (indexed === 0) {
-      console.warn(chalk.yellow("  ⚠ No entries were indexed. Is Ollama running? Try: ollama serve"));
+    if (writeError) {
+      // Write failed — embeddings succeeded but index could not be persisted.
+      console.error(chalk.red(`  ✗ Conduct index write failed: ${writeError}`));
+      console.warn(chalk.yellow("  ⚠ Check disk space and permissions for .phase2s/conduct-index.json"));
+    } else {
+      const skipNote = skipped > 0 ? chalk.yellow(` (${skipped} skipped — no embedding)`) : "";
+      console.log(chalk.green(`  ✓ Conduct index rebuilt: ${indexed} entries indexed${skipNote}`));
+      if (indexed === 0 && skipped === 0) {
+        console.warn(chalk.yellow("  ⚠ No entries were indexed. Is Ollama running? Try: ollama serve"));
+      }
     }
   }
 }

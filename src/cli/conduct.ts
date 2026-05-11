@@ -363,7 +363,7 @@ async function maybeShowSpecQualityHint(
     if (successRate >= threshold) return;
 
     // Emit warning — show most similar entry as context
-    const worst = similar[0];
+    const mostSimilar = similar[0];
     const successCount = similar.filter((e) => e.success).length;
     console.warn(
       chalk.yellow(
@@ -372,7 +372,7 @@ async function maybeShowSpecQualityHint(
     );
     console.warn(
       chalk.dim(
-        `    Most similar: "${worst.goalSnippet}" (${worst.success ? "✓ succeeded" : "✗ failed"}, ${Math.round(worst.durationMs / 1000)}s)`,
+        `    Most similar: "${mostSimilar.goalSnippet}" (${mostSimilar.success ? "✓ succeeded" : "✗ failed"}, ${Math.round(mostSimilar.durationMs / 1000)}s)`,
       ),
     );
   } catch {

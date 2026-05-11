@@ -314,7 +314,7 @@ export async function handleRequest(
       // to prevent path traversal (reading arbitrary .phase2s/ directories).
       const queryCwd = cwd;
       const limit = typeof args["limit"] === "number" && args["limit"] > 0
-        ? Math.floor(args["limit"])
+        ? Math.min(Math.floor(args["limit"]), 1000)
         : 10;
 
       try {

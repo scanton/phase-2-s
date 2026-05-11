@@ -101,8 +101,15 @@ export async function writeConductIndex(cwd: string, index: ConductIndex): Promi
   const phase2sDir = join(cwd, ".phase2s");
   await mkdir(phase2sDir, { recursive: true });
   const indexPath = join(phase2sDir, "conduct-index.json");
+  const tmpPath = `${indexPath}.tmp`;
   // Compact serialization — this is a machine-read sidecar, pretty-printing wastes I/O.
-  await writeFile(indexPath, JSON.stringify(index), "utf8");
+  // Write to .tmp then rename to make the update atomic (prevents corrupt index on crash).
+  // Note: concurrent upsertConductIndexEntry calls on separate processes can still race
+  // (each reads stale index before the other writes). The index is a best-effort cache —
+  // the authoritative data lives in conduct-log.jsonl; run --rebuild-index to recover.
+  await writeFile(tmpPath, JSON.stringify(index), "utf8");
+  const { rename } = await import("node:fs/promises");
+  await rename(tmpPath, indexPath);
 }
 
 // ---------------------------------------------------------------------------
