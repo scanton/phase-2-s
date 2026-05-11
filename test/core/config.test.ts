@@ -349,4 +349,43 @@ describe("normalizeConfigError() — Sprint 73 (Item B)", () => {
     const msg = normalizeConfigError("raw string error");
     expect(msg).toBe("raw string error");
   });
+
+  // --- conductInsights schema (Sprint 91) ---
+
+  it("conductInsights: defaults hintEnabled to true", async () => {
+    const config = await loadConfig({});
+    expect(config.conductInsights.hintEnabled).toBe(true);
+  });
+
+  it("conductInsights: defaults hintThreshold to 0.5", async () => {
+    const config = await loadConfig({});
+    expect(config.conductInsights.hintThreshold).toBe(0.5);
+  });
+
+  it("conductInsights: defaults hintTopK to 3", async () => {
+    const config = await loadConfig({});
+    expect(config.conductInsights.hintTopK).toBe(3);
+  });
+
+  it("conductInsights: accepts hintEnabled=false override", async () => {
+    const config = await loadConfig({ conductInsights: { hintEnabled: false } } as never);
+    expect(config.conductInsights.hintEnabled).toBe(false);
+  });
+
+  it("conductInsights: accepts custom hintThreshold", async () => {
+    const config = await loadConfig({ conductInsights: { hintThreshold: 0.7 } } as never);
+    expect(config.conductInsights.hintThreshold).toBe(0.7);
+  });
+
+  it("conductInsights: rejects hintThreshold > 1 (out of range)", async () => {
+    await expect(
+      loadConfig({ conductInsights: { hintThreshold: 1.5 } } as never),
+    ).rejects.toThrow();
+  });
+
+  it("conductInsights: rejects hintTopK = 0 (must be >= 1)", async () => {
+    await expect(
+      loadConfig({ conductInsights: { hintTopK: 0 } } as never),
+    ).rejects.toThrow();
+  });
 });

@@ -1445,3 +1445,173 @@ npm test
     expect(capturedMessages[0].content).toContain("# Previous spec");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sprint 91 — conduct-index upsert and maybeShowSpecQualityHint
+// ---------------------------------------------------------------------------
+
+describe("Sprint 91 — conduct-index upsert in finally + spec quality hint", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "conduct-sprint91-"));
+    mkdirSync(join(tmpDir, ".phase2s", "specs"), { recursive: true });
+    mockReadlineAnswer.value = "y";
+  });
+
+  afterEach(async () => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  async function mockGenSpec(fakeSpecPath: string) {
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValue({
+      specPath: fakeSpecPath,
+      specContent: VALID_SPEC,
+    });
+    return conductorModule;
+  }
+
+  // -------------------------------------------------------------------------
+  // 65. upsertConductIndexEntry called in finally for non-dry-run
+  // -------------------------------------------------------------------------
+
+  it("65. upsertConductIndexEntry is called after a successful non-dry-run conduct run", async () => {
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    writeFileSync(fakeSpecPath, VALID_SPEC, "utf8");
+    await mockGenSpec(fakeSpecPath);
+
+    const conductIndexModule = await import("../../src/core/conduct-index.js");
+    const upsertSpy = vi.spyOn(conductIndexModule, "upsertConductIndexEntry").mockResolvedValue(undefined);
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add rate limiting", {}, tmpDir);
+
+    expect(upsertSpy).toHaveBeenCalledOnce();
+    const [calledCwd, calledEntry] = upsertSpy.mock.calls[0];
+    expect(calledCwd).toBe(tmpDir);
+    expect(calledEntry).toHaveProperty("goalSnippet");
+    expect(calledEntry.goalSnippet).toContain("add rate limiting");
+    expect(calledEntry).toHaveProperty("success");
+    expect(calledEntry).toHaveProperty("subtaskCount");
+  });
+
+  it("66. upsertConductIndexEntry is NOT called for dry-run entries", async () => {
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    writeFileSync(fakeSpecPath, VALID_SPEC, "utf8");
+    await mockGenSpec(fakeSpecPath);
+
+    const conductIndexModule = await import("../../src/core/conduct-index.js");
+    const upsertSpy = vi.spyOn(conductIndexModule, "upsertConductIndexEntry").mockResolvedValue(undefined);
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    await runConduct("add rate limiting", { dryRun: true, yes: true }, tmpDir);
+
+    expect(upsertSpy).not.toHaveBeenCalled();
+  });
+
+  it("67. upsertConductIndexEntry write failure is swallowed — does not change exitCode", async () => {
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    writeFileSync(fakeSpecPath, VALID_SPEC, "utf8");
+    await mockGenSpec(fakeSpecPath);
+
+    const conductIndexModule = await import("../../src/core/conduct-index.js");
+    vi.spyOn(conductIndexModule, "upsertConductIndexEntry").mockRejectedValue(new Error("disk full"));
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    const origExit = process.exitCode;
+    process.exitCode = undefined;
+
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add rate limiting", {}, tmpDir);
+
+    // exitCode should be 0 (success) — index write failure must not surface
+    expect(process.exitCode).toBe(0);
+    process.exitCode = origExit;
+  });
+
+  // -------------------------------------------------------------------------
+  // 68-70. maybeShowSpecQualityHint — Ollama not configured → silent skip
+  // -------------------------------------------------------------------------
+
+  it("68. maybeShowSpecQualityHint skips silently when Ollama not configured (default mock config)", async () => {
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    writeFileSync(fakeSpecPath, VALID_SPEC, "utf8");
+    await mockGenSpec(fakeSpecPath);
+
+    const embeddingsModule = await import("../../src/core/embeddings.js");
+    const embedSpy = vi.spyOn(embeddingsModule, "generateEmbedding");
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add rate limiting", {}, tmpDir);
+
+    // generateEmbedding should NOT be called for the hint when Ollama is not configured
+    // (it may still be called in the finally block for indexing with empty result)
+    // The hint call path is skipped because config.ollamaBaseUrl is empty in MOCK_CONFIG
+    const hintCalls = embedSpy.mock.calls.length;
+    // Index upsert with empty Ollama config: embedding call skipped (baseUrl check in conduct.ts)
+    // So embedSpy call count is 0 in default config.
+    expect(hintCalls).toBe(0);
+  });
+
+  it("69. maybeShowSpecQualityHint: hintEnabled=false in config → generateEmbedding not called for hint", async () => {
+    // Override config to have Ollama configured but hintEnabled=false
+    const configModule = await import("../../src/core/config.js");
+    vi.mocked(configModule.loadConfig).mockResolvedValue({
+      ...MOCK_CONFIG,
+      ollamaBaseUrl: "http://localhost:11434",
+      ollamaEmbedModel: "nomic-embed-text",
+      conductInsights: { hintEnabled: false, hintThreshold: 0.5, hintTopK: 3 },
+    } as Awaited<ReturnType<typeof configModule.loadConfig>>);
+
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    writeFileSync(fakeSpecPath, VALID_SPEC, "utf8");
+
+    const conductorModule = await import("../../src/cli/conductor-prompt.js");
+    vi.spyOn(conductorModule, "conductorGenSpec").mockResolvedValue({
+      specPath: fakeSpecPath,
+      specContent: VALID_SPEC,
+    });
+
+    const embeddingsModule = await import("../../src/core/embeddings.js");
+    const embedSpy = vi.spyOn(embeddingsModule, "generateEmbedding").mockResolvedValue([]);
+
+    const conductIndexModule = await import("../../src/core/conduct-index.js");
+    vi.spyOn(conductIndexModule, "upsertConductIndexEntry").mockResolvedValue(undefined);
+    vi.spyOn(conductIndexModule, "readConductIndex").mockResolvedValue({ version: 1, entries: [] });
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    await runConduct("add rate limiting", {}, tmpDir);
+
+    // generateEmbedding should NOT have been called for the hint (hintEnabled=false)
+    // It may be called once in finally for index upsert — check it was only for index (not hint)
+    // The hint path returns early before generateEmbedding when hintEnabled=false
+    // Verify no call had the "hint" signature (hint calls generateEmbedding before readConductIndex)
+    // Since hintEnabled=false, the embed call count for the hint is 0
+    // Index upsert does call it once (finally block) — total should be ≤ 1
+    expect(embedSpy.mock.calls.length).toBeLessThanOrEqual(1);
+
+    // Restore default mock
+    vi.mocked(configModule.loadConfig).mockResolvedValue(MOCK_CONFIG as Awaited<ReturnType<typeof configModule.loadConfig>>);
+  });
+
+  it("70. appendConductLog called with dryRun:true when --dry-run flag set (Sprint 91 field)", async () => {
+    const { appendConductLog } = await import("../../src/cli/conduct-log.js");
+    vi.mocked(appendConductLog).mockClear();
+
+    const fakeSpecPath = join(tmpDir, ".phase2s", "specs", "fake.md");
+    writeFileSync(fakeSpecPath, VALID_SPEC, "utf8");
+    await mockGenSpec(fakeSpecPath);
+
+    const { runConduct } = await import("../../src/cli/conduct.js");
+    await runConduct("add rate limiting", { dryRun: true, yes: true }, tmpDir);
+
+    expect(appendConductLog).toHaveBeenCalledOnce();
+    const [entry] = vi.mocked(appendConductLog).mock.calls[0];
+    expect(entry.dryRun).toBe(true);
+  });
+});

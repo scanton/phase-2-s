@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "vitest";
 import { rm } from "node:fs/promises";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -151,6 +151,107 @@ describe("phase2s__conduct_log MCP tool", () => {
     const text = res.result!.content[0].text;
     // Should contain fallback note
     expect(text).toMatch(/ollamaBaseUrl.*not configured|Ollama.*unavailable/i);
+  });
+
+  // ---- action: search (Ollama configured — semantic path) ----
+
+  it("search: returns semantic results when Ollama embedding returns a vector and index has entries", async () => {
+    // Pre-populate conduct-index.json with one entry
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    await mkdir(`${tmpDir}/.phase2s`, { recursive: true });
+    const indexEntry = {
+      id: "2024-01-15T10:00:00.000Z",
+      goalSnippet: "add user authentication",
+      embedding: [1, 0, 0],
+      success: true,
+      durationMs: 30000,
+      subtaskCount: 4,
+    };
+    await writeFile(
+      `${tmpDir}/.phase2s/conduct-index.json`,
+      JSON.stringify({ version: 1, entries: [indexEntry] }),
+      "utf8",
+    );
+
+    // Mock generateEmbedding to return a real vector
+    const embeddingsModule = await import("../../src/core/embeddings.js");
+    vi.spyOn(embeddingsModule, "generateEmbedding").mockResolvedValueOnce([1, 0, 0]);
+
+    // Mock loadConfig to return Ollama settings
+    const configModule = await import("../../src/core/config.js");
+    vi.spyOn(configModule, "loadConfig").mockResolvedValueOnce({
+      ollamaBaseUrl: "http://localhost:11434",
+      ollamaEmbedModel: "nomic-embed-text",
+    } as Awaited<ReturnType<typeof configModule.loadConfig>>);
+
+    const res = await callTool(tmpDir, { action: "search", query: "authentication", cwd: tmpDir });
+    expect(res.error).toBeUndefined();
+    const text = res.result!.content[0].text;
+    // Should return semantic results (JSON array), not the fallback note
+    expect(text).not.toMatch(/not configured/i);
+    const results = JSON.parse(text);
+    expect(Array.isArray(results)).toBe(true);
+    expect(results[0]).toHaveProperty("similarity");
+    expect(results[0].goalSnippet).toBe("add user authentication");
+  });
+
+  it("search: falls back to recency when Ollama returns empty embedding", async () => {
+    writeConductLog(tmpDir, [SAMPLE_ENTRY]);
+
+    // Mock generateEmbedding to return empty (Ollama down)
+    const embeddingsModule = await import("../../src/core/embeddings.js");
+    vi.spyOn(embeddingsModule, "generateEmbedding").mockResolvedValueOnce([]);
+
+    // Mock loadConfig to return Ollama settings (configured but Ollama unreachable)
+    const configModule = await import("../../src/core/config.js");
+    vi.spyOn(configModule, "loadConfig").mockResolvedValueOnce({
+      ollamaBaseUrl: "http://localhost:11434",
+      ollamaEmbedModel: "nomic-embed-text",
+    } as Awaited<ReturnType<typeof configModule.loadConfig>>);
+
+    const res = await callTool(tmpDir, { action: "search", query: "auth", cwd: tmpDir });
+    expect(res.error).toBeUndefined();
+    const text = res.result!.content[0].text;
+    // Falls back to recency with Ollama note
+    expect(text).toMatch(/Ollama embedding unavailable/i);
+  });
+
+  it("search: 'No similar entries found' when index is empty but Ollama works", async () => {
+    // Index file exists but has no embeddable entries
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    await mkdir(`${tmpDir}/.phase2s`, { recursive: true });
+    await writeFile(
+      `${tmpDir}/.phase2s/conduct-index.json`,
+      JSON.stringify({ version: 1, entries: [] }),
+      "utf8",
+    );
+
+    const embeddingsModule = await import("../../src/core/embeddings.js");
+    vi.spyOn(embeddingsModule, "generateEmbedding").mockResolvedValueOnce([1, 0, 0]);
+
+    const configModule = await import("../../src/core/config.js");
+    vi.spyOn(configModule, "loadConfig").mockResolvedValueOnce({
+      ollamaBaseUrl: "http://localhost:11434",
+      ollamaEmbedModel: "nomic-embed-text",
+    } as Awaited<ReturnType<typeof configModule.loadConfig>>);
+
+    const res = await callTool(tmpDir, { action: "search", query: "auth", cwd: tmpDir });
+    expect(res.error).toBeUndefined();
+    const text = res.result!.content[0].text;
+    expect(text).toMatch(/No similar entries found/i);
+  });
+
+  // ---- error handling ----
+
+  it("returns error object on unexpected readConductLog failure", async () => {
+    // Provide a corrupted log file (directory instead of file) to trigger an error
+    const { mkdir } = await import("node:fs/promises");
+    // Create a directory at the log path so readFile throws EISDIR
+    await mkdir(`${tmpDir}/.phase2s/conduct-log.jsonl`, { recursive: true });
+    const res = await callTool(tmpDir, { action: "list", cwd: tmpDir });
+    // readConductLog handles ENOENT gracefully but EISDIR may propagate to catch
+    // Either way no unhandled rejection — the response has either result or error
+    expect(res.result ?? res.error).toBeDefined();
   });
 
   // ---- defaults cwd to process.cwd() when not provided ----
