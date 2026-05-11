@@ -16,7 +16,7 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ## Backlog — Post-Sprint 92 notes (v1.66.0, 2026-05-11)
 
-Sprint 92 ships the Conductor Live Progress Panel — ANSI in-place panel for `phase2s conduct` runs. Three renderer modes (ansi/plain/quiet), adaptive tick rate (100ms local, 250ms SSH), per-job rows with elapsed time and state indicators, SIGINT cursor restoration fix (process.exit(1) instead of process.kill). `conduct-index.json` size cap at 1000 entries with sort-before-evict. 28 new tests; total passing.
+Sprint 92 ships the Conductor Live Progress Panel — ANSI in-place panel for `phase2s conduct` runs. Three renderer modes (ansi/plain/quiet), adaptive tick rate (100ms local, 250ms SSH), per-job rows with elapsed time and state indicators, SIGINT cursor restoration fix (process.exit(1) instead of process.kill). `conduct-index.json` size cap at 1000 entries with sort-before-evict. 30 new tests; 2,325 total, all passing.
 
 - [ ] **Concurrent upsert safety** — `upsertConductIndexEntry` uses read-modify-write without file locking. Under truly parallel conduct invocations one entry could be silently dropped. Index is best-effort (log is authoritative); `--rebuild-index` recovers. Full fix requires file locking (e.g., `proper-lockfile`). Priority: P5.
 
