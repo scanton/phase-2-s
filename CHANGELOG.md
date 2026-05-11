@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.65.0 — 2026-05-10
+
+Sprint 91 — Conductor Insights + Pattern Loop: `phase2s conduct-insights` analytics command with success-rate, subtask distribution, role histogram, and recent-goals display. `--json` flag for machine-readable output. `--rebuild-index` for Ollama embedding sidecar rebuild. `phase2s__conduct_log` MCP tool (list/stats/search with Ollama cosine similarity). Spec quality hints via cosine similarity search against past goals. Pattern Loop (`PATTERN_LOOP_ENABLED`). Security: `cwd` path-traversal vector removed from MCP conduct-log tool; `isValidEntry()` validation in `readConductIndex`. Performance: N+1 → O(1) I/O in `rebuildConductIndex`. Reliability: atomic index writes (tmp + rename) prevent corrupt sidecar on crash.
+
+### Added
+- **`phase2s conduct-insights`** — Analytics command reading `.phase2s/conduct-log.jsonl`. Reports: total runs, success rate, avg duration, subtask min/median/max, refinement round histogram, top 5 roles, last 5 goal snippets. `--json` flag emits raw stats for MCP reuse. `--rebuild-index` re-embeds all entries into `conduct-index.json` via Ollama.
+- **`phase2s__conduct_log` MCP tool** — Three actions: `list` (newest-N entries), `stats` (same JSON as `conduct-insights --json`), `search` (cosine similarity via Ollama; falls back to recency list if Ollama not configured). `limit` capped at 1000.
+- **Spec quality hints** — Before the DAG preview, `runConduct` embeds the current goal and cosine-searches past runs. If top-K similar goals' success rate is below `conductInsights.hintThreshold` (default 0.5), emits a yellow warning with the most similar past goal.
+- **`conduct-index.json` sidecar** — Persistent Ollama embedding index at `.phase2s/conduct-index.json`. Read/write/upsert functions in `src/core/conduct-index.ts`. Atomic writes (tmp + rename) prevent corruption on crash. Entries validated via `isValidEntry()` on read.
+
+### Security
+- **Path traversal removed** — `phase2s__conduct_log` no longer accepts a `cwd` argument; server always uses its own trusted working directory.
+- **Index entry validation** — `readConductIndex` now validates each entry's field types and rejects malformed data instead of blind casting.
+
+### Fixed
+- **N+1 I/O in `--rebuild-index`** — Previously called `upsertConductIndexEntry` (read+write) per entry. Now reads index once, updates in memory, writes once.
+- **Atomic index write** — `writeConductIndex` writes to `.tmp` then renames, preventing a corrupt sidecar if the process is killed mid-write.
+- **Error reporting in `--rebuild-index`** — Write failures now show the actual I/O error instead of the misleading "Is Ollama running?" hint.
+- **`limit` bound in MCP handler** — `phase2s__conduct_log` limit is capped at 1000 to prevent pathological allocations.
+
 ## v1.64.0 — 2026-05-10
 
 Sprint 90 — Conductor Real-World Hardening: conduct-log observability, `phase2s conduct-log` command, `--validate` structural pre-flight checks, a spec refinement loop, and a CI gate in `publish.yml`.

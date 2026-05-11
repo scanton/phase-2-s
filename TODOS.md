@@ -14,6 +14,13 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 91 notes (v1.65.0, 2026-05-10)
+
+Sprint 91 ships Conductor Insights + Pattern Loop — `phase2s conduct-insights` analytics (success rate, subtask stats, role histogram, recent goals, `--json`/`--rebuild-index`), `phase2s__conduct_log` MCP tool (list/stats/search with Ollama cosine similarity), spec quality hints via cosine similarity search, Pattern Loop (`PATTERN_LOOP_ENABLED`). Security: path-traversal `cwd` removed from MCP tool, `isValidEntry()` validation added. Performance: N+1→O(1) I/O in rebuild. Reliability: atomic writes. 77 new tests; 2295 total, all passing.
+
+- [ ] **conduct-index.json size bound** — Index grows without bound as conduct runs accumulate. Consider a configurable `maxIndexEntries` (default 1000) that evicts oldest entries on write. Priority: P4.
+- [ ] **Concurrent upsert safety** — `upsertConductIndexEntry` uses read-modify-write without file locking. Under truly parallel conduct invocations one entry could be silently dropped. Index is best-effort (log is authoritative); `--rebuild-index` recovers. Full fix requires file locking (e.g., `proper-lockfile`). Priority: P5.
+
 ## Backlog — Post-Sprint 90 notes (v1.64.0, 2026-05-10)
 
 Sprint 90 ships Conductor Real-World Hardening — 5 parts: conduct-log.jsonl observability (appendConductLog in finally block, ConductLogEntry schema), `phase2s conduct-log` CLI command (CLI-only; not yet an MCP tool), `--validate` 4-check structural pre-flight, spec refinement loop (tri-mode prompt, max 3 rounds, feedback → LLM regen), and `conduct-audit` CI gate job in `publish.yml`. 28 new tests (36–64); 2218 total, all passing.
