@@ -63,3 +63,22 @@ jobs:
 
       - name: Verify version (exercises full CLI startup including all module loading)
         run: phase2s --version
+
+  conduct-audit:
+    name: Conduct Audit (CI gate)
+    runs-on: ubuntu-latest
+    needs: alpine-smoke
+    steps:
+      - name: Install phase2s from npm
+        run: npm install -g @scanton/phase2s@${GITHUB_REF_NAME#v}
+
+      - name: Run conduct-audit ciGate (no-op if secret absent)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            phase2s conduct-audit --ci --ci-only
+          else
+            echo "OPENAI_API_KEY not configured — conduct-audit CI gate skipped"
+            echo "To enable: add OPENAI_API_KEY to repo Settings → Secrets → Actions"
+          fi
