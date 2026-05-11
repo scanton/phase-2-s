@@ -11,6 +11,7 @@ import {
   STATE_TOOLS,
   GOAL_TOOL,
   REPORT_TOOL,
+  CONDUCT_LOG_TOOL,
   buildNotification,
 } from "../../src/mcp/tools.js";
 import type { Skill } from "../../src/skills/types.js";
@@ -188,6 +189,43 @@ describe("REPORT_TOOL", () => {
 
   it("requires logFile", () => {
     expect(REPORT_TOOL.inputSchema.required).toContain("logFile");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONDUCT_LOG_TOOL descriptor (Sprint 91)
+// ---------------------------------------------------------------------------
+
+describe("CONDUCT_LOG_TOOL", () => {
+  it("has name phase2s__conduct_log", () => {
+    expect(CONDUCT_LOG_TOOL.name).toBe("phase2s__conduct_log");
+  });
+
+  it("requires action field", () => {
+    expect(CONDUCT_LOG_TOOL.inputSchema.required).toContain("action");
+  });
+
+  it("action enum contains list, stats, search", () => {
+    const actionProp = CONDUCT_LOG_TOOL.inputSchema.properties["action"] as {
+      type: string;
+      enum: string[];
+    };
+    expect(actionProp.enum).toContain("list");
+    expect(actionProp.enum).toContain("stats");
+    expect(actionProp.enum).toContain("search");
+  });
+
+  it("exposes optional query and limit properties (no cwd — server uses trusted process cwd)", () => {
+    const props = CONDUCT_LOG_TOOL.inputSchema.properties;
+    expect(props).toHaveProperty("query");
+    expect(props).toHaveProperty("limit");
+    // cwd is intentionally removed from the schema — callers cannot override it
+    // (path traversal prevention: server always uses its own trusted cwd).
+    expect(props).not.toHaveProperty("cwd");
+  });
+
+  it("description mentions semantic search and Ollama", () => {
+    expect(CONDUCT_LOG_TOOL.description).toMatch(/Ollama/i);
   });
 });
 

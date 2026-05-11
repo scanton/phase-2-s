@@ -35,6 +35,8 @@ Pass the full plan text as `prompt`. Read the structured output:
 - `phase2s__health` — codebase quality check
 - `phase2s__retro` — sprint retrospective
 - `phase2s__task` — autonomous multi-step task execution (plan → chain tools → auto-verify)
+- `phase2s__conduct_audit` — run spec-generation QA cases (use `fast: true` for a quick gate)
+- `phase2s__conduct_log` — query conduct run history: `action: "list"`, `"stats"`, or `"search"` (semantic via Ollama)
 
 ## Sprint workflow — use feature branches
 

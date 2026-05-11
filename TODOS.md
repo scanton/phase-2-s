@@ -14,6 +14,13 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Backlog — Post-Sprint 91 notes (v1.65.0, 2026-05-10)
+
+Sprint 91 ships Conductor Insights + Pattern Loop — `phase2s conduct-insights` analytics (success rate, subtask stats, role histogram, recent goals, `--json`/`--rebuild-index`), `phase2s__conduct_log` MCP tool (list/stats/search with Ollama cosine similarity), spec quality hints via cosine similarity search, Pattern Loop (`PATTERN_LOOP_ENABLED`). Security: path-traversal `cwd` removed from MCP tool, `isValidEntry()` validation added. Performance: N+1→O(1) I/O in rebuild. Reliability: atomic writes. 77 new tests; 2295 total, all passing.
+
+- [ ] **conduct-index.json size bound** — Index grows without bound as conduct runs accumulate. Consider a configurable `maxIndexEntries` (default 1000) that evicts oldest entries on write. Priority: P4.
+- [ ] **Concurrent upsert safety** — `upsertConductIndexEntry` uses read-modify-write without file locking. Under truly parallel conduct invocations one entry could be silently dropped. Index is best-effort (log is authoritative); `--rebuild-index` recovers. Full fix requires file locking (e.g., `proper-lockfile`). Priority: P5.
+
 ## Backlog — Post-Sprint 90 notes (v1.64.0, 2026-05-10)
 
 Sprint 90 ships Conductor Real-World Hardening — 5 parts: conduct-log.jsonl observability (appendConductLog in finally block, ConductLogEntry schema), `phase2s conduct-log` CLI command (CLI-only; not yet an MCP tool), `--validate` 4-check structural pre-flight, spec refinement loop (tri-mode prompt, max 3 rounds, feedback → LLM regen), and `conduct-audit` CI gate job in `publish.yml`. 28 new tests (36–64); 2218 total, all passing.
@@ -376,7 +383,7 @@ Sourced from recon on [antinomyhq/forgecode](https://github.com/antinomyhq/forge
 
 - [x] **`@file` fuzzy attachment in REPL** — Type `@` in a prompt then Tab to fuzzy-search and attach files as `@[filename]`. Forge uses this to give the AI specific context without the user having to type full paths. Would integrate naturally with Phase2S's existing REPL. **Completed: v1.38.0 (2026-04-22)** — `makeCompleter()` wired into readline interface; Tab expands `@fragment` via recursive basename substring search across project files. Sprint 67 (v1.41.0) added path traversal guard and dotfile exclusion.
 
-- [ ] **Semantic search / codebase indexing** — `:sync` indexes the codebase; subsequent prompts can search by meaning rather than exact text. Forge sends to `api.forgecode.dev` by default, self-hostable via `FORGE_WORKSPACE_SERVER_URL`. Phase2S has no semantic search. This is table stakes for large codebases. Could integrate with a local embeddings model (Ollama) for offline use.
+- [x] **Semantic search / codebase indexing** — `:sync` indexes the codebase; subsequent prompts can search by meaning rather than exact text. Forge sends to `api.forgecode.dev` by default, self-hostable via `FORGE_WORKSPACE_SERVER_URL`. Phase2S has no semantic search. This is table stakes for large codebases. Could integrate with a local embeddings model (Ollama) for offline use. **Completed: v1.51.0 (2026-05-02)** — `phase2s sync` indexes all git-tracked files via Ollama embeddings into `.phase2s/code-index.jsonl`; `phase2s search <query>` returns top-K files by cosine similarity. Sprint 78 (v1.52.0) added function-level chunking via `@ast-grep/napi`. Sprint 91 (v1.65.0) extended the pattern to conduct-log history via `conduct-index.json` + `phase2s__conduct_log` semantic search action.
 
 - [x] **Doom-loop prevention template** — Forge has `forge-doom-loop-reminder.md`, a system prompt fragment that explicitly reminds the AI not to get stuck retrying the same failing operation. We have `max_tool_failure_per_turn` equivalents but no explicit anti-doom-loop prompt engineering. Worth adding to satori's retry prompt. **Completed:** v1.22.3 — structured reflection protocol in `buildSatoriContext()` (Sprint 48, 2026-04-09)
 

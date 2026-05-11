@@ -40,6 +40,7 @@ export {
   STATE_TOOLS,
   GOAL_TOOL,
   CONDUCT_TOOL,
+  CONDUCT_LOG_TOOL,
   REPORT_TOOL,
   TASK_TOOL,
   buildNotification,

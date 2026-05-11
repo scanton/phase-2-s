@@ -47,7 +47,7 @@ describe(":clone command — cloneSession()", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    await rm(tmpDir, { recursive: true, force: true });
+    await rm(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   });
 
   it("creates a new session file (UUID-named)", async () => {

@@ -16,7 +16,11 @@ import { parseRunLog, buildRunReport, formatRunReport } from "../cli/report.js";
 import { parseSpec } from "../core/spec-parser.js";
 import { buildDependencyGraph, formatExecutionLevels } from "../goal/dependency-graph.js";
 import type { Skill } from "../skills/types.js";
-import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_AUDIT_TOOL, REPORT_TOOL, TASK_TOOL, MCP_SERVER_VERSION } from "./tools.js";
+import { skillToTool, toolNameToSkillName, STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_AUDIT_TOOL, CONDUCT_LOG_TOOL, REPORT_TOOL, TASK_TOOL, MCP_SERVER_VERSION } from "./tools.js";
+import { readConductLog } from "../cli/conduct-log.js";
+import { computeConductStats } from "../cli/conduct-insights.js";
+import { readConductIndex, searchConductIndex } from "../core/conduct-index.js";
+import { generateEmbedding } from "../core/embeddings.js";
 
 // ---------------------------------------------------------------------------
 // Types (re-exported for handler consumers)
@@ -91,7 +95,7 @@ export async function handleRequest(
     return {
       jsonrpc: "2.0",
       id: request.id,
-      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_AUDIT_TOOL, REPORT_TOOL, TASK_TOOL] },
+      result: { tools: [...skills.map(skillToTool), ...STATE_TOOLS, GOAL_TOOL, CONDUCT_TOOL, CONDUCT_AUDIT_TOOL, CONDUCT_LOG_TOOL, REPORT_TOOL, TASK_TOOL] },
     };
   }
 
@@ -288,6 +292,105 @@ export async function handleRequest(
           jsonrpc: "2.0",
           id: request.id,
           result: { content: [{ type: "text", text: lines.join("\n") }] },
+        };
+      } catch (err) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32603,
+            message: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Conduct-log tool — query conduct history (Sprint 91).
+    // -----------------------------------------------------------------------
+    if (toolName === "phase2s__conduct_log") {
+      const action = typeof args["action"] === "string" ? args["action"] : "list";
+      // Always use the server's trusted cwd — never accept cwd from the caller
+      // to prevent path traversal (reading arbitrary .phase2s/ directories).
+      const queryCwd = cwd;
+      const limit = typeof args["limit"] === "number" && args["limit"] > 0
+        ? Math.min(Math.floor(args["limit"]), 1000)
+        : 10;
+
+      if (action !== "list" && action !== "stats" && action !== "search") {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: { code: -32602, message: `phase2s__conduct_log: unknown action '${action}'. Valid values: list, stats, search` },
+        };
+      }
+
+      try {
+        if (action === "stats") {
+          const entries = await readConductLog(queryCwd, limit);
+          const stats = computeConductStats(entries);
+          return {
+            jsonrpc: "2.0",
+            id: request.id,
+            result: { content: [{ type: "text", text: JSON.stringify(stats, null, 2) }] },
+          };
+        }
+
+        if (action === "search") {
+          const query = typeof args["query"] === "string" ? args["query"] : "";
+          if (!query) {
+            return {
+              jsonrpc: "2.0",
+              id: request.id,
+              error: { code: -32602, message: "phase2s__conduct_log: query is required for action='search'" },
+            };
+          }
+
+          // Try Ollama semantic search; fall back to recency list if unavailable.
+          const cfg = preloadedConfig ?? (await loadConfig().catch(() => undefined));
+          const baseUrl = cfg?.ollamaBaseUrl ?? "";
+          const model = cfg?.ollamaEmbedModel ?? "";
+          let text: string;
+
+          if (baseUrl && model) {
+            const queryVec = await generateEmbedding(query, model, baseUrl);
+            if (queryVec.length > 0) {
+              const index = await readConductIndex(queryCwd);
+              const results = searchConductIndex(index, queryVec, limit);
+              text = results.length > 0
+                ? JSON.stringify(results.map((r) => ({
+                    id: r.id,
+                    goalSnippet: r.goalSnippet,
+                    success: r.success,
+                    durationMs: r.durationMs,
+                    subtaskCount: r.subtaskCount,
+                    similarity: Math.round(r.similarity * 1000) / 1000,
+                  })), null, 2)
+                : "No similar entries found in conduct index. Run `phase2s conduct-insights --rebuild-index` to populate it.";
+            } else {
+              // Ollama returned empty — fall back to recency
+              const entries = await readConductLog(queryCwd, limit);
+              text = JSON.stringify(entries, null, 2) + "\n\n(Note: Ollama embedding unavailable — showing recent entries instead of semantic search results)";
+            }
+          } else {
+            // Ollama not configured — fall back to recency
+            const entries = await readConductLog(queryCwd, limit);
+            text = JSON.stringify(entries, null, 2) + "\n\n(Note: ollamaBaseUrl/ollamaEmbedModel not configured — showing recent entries instead of semantic search results)";
+          }
+
+          return {
+            jsonrpc: "2.0",
+            id: request.id,
+            result: { content: [{ type: "text", text }] },
+          };
+        }
+
+        // Default: action === "list"
+        const entries = await readConductLog(queryCwd, limit);
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: { content: [{ type: "text", text: JSON.stringify(entries, null, 2) }] },
         };
       } catch (err) {
         return {

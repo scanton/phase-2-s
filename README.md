@@ -498,14 +498,109 @@ phase2s conduct-audit --json
 
 The `.githooks/pre-push` hook runs `conduct-audit --ci-only --ci --fast` automatically before every `git push`. It's wired via `npm install` (`prepare` script). Bypass with `SKIP_CONDUCT_AUDIT=1 git push`.
 
+**Analyze your conduct history with `conduct-insights`:**
+
+```bash
+# Print success rate, avg duration, top roles, recent goals
+phase2s conduct-insights
+
+# Analyze only the last 20 runs
+phase2s conduct-insights --limit 20
+
+# Machine-readable JSON (same structure as phase2s__conduct_log stats)
+phase2s conduct-insights --json
+
+# Rebuild the embedding index for spec quality hints (requires Ollama)
+phase2s conduct-insights --rebuild-index
+```
+
+**Spec quality hints** — when Ollama is configured, `phase2s conduct` automatically
+warns before showing the DAG preview if similar past goals had a poor success rate:
+
+```
+  ⚠ Similar goals succeeded only 1/3 times — consider refining the spec.
+    Most similar: "refactor auth module to use JWT" (✗ failed, 45s)
+```
+
+The hint is silent when Ollama is not available. See [Ollama setup](#ollama-setup-spec-quality-hints) below.
+
 **Via MCP** — Claude Code can run the full conductor without leaving a conversation:
 
 ```
 phase2s__conduct({ goal: "add rate limiting to the API" })
 phase2s__conduct({ goal: "refactor the auth module", dryRun: true, validate: true })
 phase2s__conduct_audit({ fast: true })   // verify spec generation quality
-// phase2s__conduct_log — not yet an MCP tool; use CLI: phase2s conduct-log --limit 5
+phase2s__conduct_log({ action: "stats" })           // aggregated run analytics
+phase2s__conduct_log({ action: "list", limit: 5 })  // last 5 runs
+phase2s__conduct_log({ action: "search", query: "refactor auth" })  // semantic search (Ollama)
 ```
+
+### Ollama setup (spec quality hints)
+
+`phase2s conduct` can warn you before running a spec if similar past goals have had a low success rate. This hint uses [Ollama](https://ollama.com) for local embeddings — no cloud API key required.
+
+**1. Install Ollama**
+
+Download and install from https://ollama.com/download (macOS, Linux, Windows).
+
+**2. Pull the embedding model**
+
+```sh
+ollama pull nomic-embed-text
+```
+
+This downloads the `nomic-embed-text` model (~274 MB). It runs entirely locally.
+
+**3. Start Ollama**
+
+Ollama typically auto-starts on install. If not:
+
+```sh
+ollama serve
+```
+
+**4. Configure phase2s**
+
+In your project's `.phase2s.yaml` (or global `~/.phase2s.yaml`):
+
+```yaml
+ollamaBaseUrl: http://localhost:11434/v1
+ollamaEmbedModel: nomic-embed-text
+```
+
+These fields are also used by the code-RAG and session search features.
+If they're already set, the conduct hint activates automatically.
+
+**5. Build the initial index**
+
+Run this once to embed your existing conduct history:
+
+```sh
+phase2s conduct-insights --rebuild-index
+```
+
+After that, every `phase2s conduct` run adds its entry automatically.
+
+**6. Verify**
+
+Run a conduct command and look for the hint before the DAG preview:
+
+```sh
+phase2s conduct "add user authentication"
+```
+
+If Ollama isn't running, the hint is skipped silently — conduct works normally.
+
+**Configure hint sensitivity** in `.phase2s.yaml`:
+
+```yaml
+conductInsights:
+  hintEnabled: true       # set false to disable entirely
+  hintThreshold: 0.5      # warn when success_rate < 50% (default)
+  hintTopK: 3             # similar goals to check (default)
+```
+
+---
 
 ### MCP Integration
 
