@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as sessionModule from "../../src/core/session.js";
@@ -44,9 +45,9 @@ describe(":clone command — cloneSession()", () => {
     vi.spyOn(sessionModule, "upsertSessionIndex").mockResolvedValue(undefined);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
-    rmSync(tmpDir, { recursive: true, force: true });
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   it("creates a new session file (UUID-named)", async () => {
