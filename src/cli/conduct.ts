@@ -196,9 +196,9 @@ export async function runConduct(
         });
 
         if (!refined.specPath) {
-          console.error(chalk.red("✗ Spec refinement failed. Proceeding with previous spec."));
+          console.error(chalk.red("✗ Spec refinement failed. Showing previous spec — refine again or run/exit."));
           rounds--; // don't count the failed round
-          break;
+          continue; // re-show DAG + tri-mode prompt; user decides whether to run old spec
         }
 
         currentSpecPath = refined.specPath;

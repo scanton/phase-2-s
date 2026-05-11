@@ -78,7 +78,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           if [ -n "$OPENAI_API_KEY" ]; then
-            phase2s conduct-audit --ci --ci-only
+            phase2s conduct-audit --ci --ci-only --provider openai
           else
             echo "OPENAI_API_KEY not configured — conduct-audit CI gate skipped"
             echo "To enable: add OPENAI_API_KEY to repo Settings → Secrets → Actions"
