@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base: theme('colors.zinc.900');
+  --bg-surface: theme('colors.zinc.800');
+  --accent: theme('colors.indigo.500');
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #18181b; /* zinc-900 */
+  color: #f4f4f5; /* zinc-100 */
+  margin: 0;
+  font-family: "Geist", system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* Skip to content link */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #6366f1;
+  color: white;
+  padding: 8px;
+  z-index: 100;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
