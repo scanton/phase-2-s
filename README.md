@@ -489,6 +489,24 @@ phase2s runs --json
 
 Each entry records the goal, spec hash, subtask count, roles used, pass/fail result, duration, and how many refinement rounds were needed.
 
+**Browse past runs in your browser:**
+
+```bash
+# Start the web dashboard at http://localhost:3010
+phase2s serve
+
+# Pick a different port
+phase2s serve --port 3011
+
+# Open the browser automatically after starting
+phase2s serve --open
+
+# Point at a different project directory
+phase2s serve --cwd /path/to/other/project
+```
+
+`phase2s serve` starts a local Express + React dashboard that reads your conduct-log history and presents it as a web UI. The **Runs list** shows every past conductor run with goal text, pass/fail badge, duration, subtask count, and relative timestamp. Click any row to open the **Run detail** page: full goal text, the generated spec (expandable), per-subtask results table, and a copy-pasteable `phase2s conduct "<goal>"` re-run command. Served entirely from localhost — nothing leaves your machine.
+
 **Verify spec generation quality with `conduct-status`:**
 
 ```bash
@@ -878,7 +896,7 @@ browser: true  # requires playwright installed
 
 ## Roadmap
 
-Phase2S ships fast — most sprints close in a day. The full history of shipped features, from the initial Codex CLI provider through the current v1.67.0 Clarity Pass, lives in one place:
+Phase2S ships fast — most sprints close in a day. The full history of shipped features, from the initial Codex CLI provider through the current v1.68.0 Web Dashboard, lives in one place:
 
 [View the full roadmap →](ROADMAP.md)
 
