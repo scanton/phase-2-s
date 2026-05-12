@@ -14,6 +14,67 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Sprint 95 — Web Dashboard Live View (v1.69.0, 2026-05-11)
+
+**Design doc:** `~/.gstack/projects/scanton-phase-2-s/scanton-main-design-20260512-011834.md`
+**Multi-sprint plan:** `temp/v2-web-ui-plan.md` in repo root
+
+Sprint 95 ships live view — real-time conduct run supervision in the browser. The
+dashboard detects active runs via SSE file-tail (RunLogger already writes
+appendFileSync; no conductor changes needed). Approach C: Maximal (SSE + LIVE badge
+on list + elapsed timer + browser notifications + tab title).
+
+**Design system:** `DESIGN.md` — dark mode only this sprint; LIVE badge = indigo-500 pulse.
+
+### Server
+- [x] `src/web/api/stream.ts` — `GET /api/runs/:id/stream` SSE endpoint (catch-up + tail + close on terminal event) **Completed: v1.69.0 (2026-05-11)**
+- [x] `src/web/api/active.ts` — `GET /api/runs/active` (mtime <30min + no terminal event heuristic) **Completed: v1.69.0 (2026-05-11)**
+- [x] Register both routes in `src/web/server.ts` — **⚠️ register `GET /api/runs/active` BEFORE `GET /api/runs/:id`** (Express matches in order; "active" is silently treated as a specHash otherwise); add `isActive: boolean` to `RunDetail` response **Completed: v1.69.0 (2026-05-11)**
+- [x] Path traversal guard on both new endpoints **Completed: v1.69.0 (2026-05-11)**
+- [x] Export `TERMINAL_EVENTS` Set from `src/core/run-logger.ts`; import in `active.ts` + `stream.ts` (don't redefine locally — prevents drift) **Completed: v1.69.0 (2026-05-11)**
+
+### Frontend — types + API layer
+- [x] `web/src/types.ts` — add `ActiveRun` type, extend `RunDetail` with `isActive` **Completed: v1.69.0 (2026-05-11)**
+- [x] `web/src/api.ts` — add `fetchActiveRuns()`, `createRunStream(id, onEvent, onClose)` **Completed: v1.69.0 (2026-05-11)**
+
+### Frontend — RunDetailPage
+- [x] Live mode detection on load: `isActive` from RunDetail response → open SSE **Completed: v1.69.0 (2026-05-11)**
+- [x] "LIVE ●" pulsing badge in header (indigo-500, CSS animate-pulse) **Completed: v1.69.0 (2026-05-11)**
+- [x] Elapsed time counter (from `entry.ts`, tick every 1s, Geist Mono #a1a1aa) **Completed: v1.69.0 (2026-05-11)**
+- [x] Subtask row append: `worker_completed` / `subtask_completed` SSE events → new rows **Completed: v1.69.0 (2026-05-11)**
+- [x] On terminal event: badge → complete state, timer stops, final fetch for accuracy **Completed: v1.69.0 (2026-05-11)**
+- [x] `document.title` = `↺ N/M — Phase2S` during live; reset on completion/unmount **Completed: v1.69.0 (2026-05-11)**
+- [x] Browser notification opt-in prompt (first live view per session, toast-style bottom-right) **Completed: v1.69.0 (2026-05-11)**
+- [x] Notification fire on run completion (Notifications API, localStorage preference) **Completed: v1.69.0 (2026-05-11)**
+
+### Frontend — RunsPage
+- [x] Poll `GET /api/runs/active` every 5s when page is visible (`document.visibilityState`) **Completed: v1.69.0 (2026-05-11)**
+- [x] "LIVE ●" pulse badge on active run rows in table **Completed: v1.69.0 (2026-05-11)**
+- [x] Active row click → navigate to `/runs/:id` **Completed: v1.69.0 (2026-05-11)**
+
+### Frontend — Sidebar
+- [x] Unlock "Live" nav item (remove 40% opacity + "Coming soon" tooltip) **Completed: v1.69.0 (2026-05-11)**
+- [x] Link to first active run's detail page; "no active run" tooltip if idle **Completed: v1.69.0 (2026-05-11)**
+
+### Tests (target: 15+ new)
+- [x] `stream.test.ts` — SSE catch-up, new-line push, terminal-event close, disconnect cleanup **Completed: v1.69.0 (2026-05-11)**
+- [x] `active.test.ts` — mtime window, terminal event detection, multiple active runs, stale run **Completed: v1.69.0 (2026-05-11)**
+- [x] RunDetailPage live mode: SSE open/close, elapsed timer, row append, badge state transitions **Completed: v1.69.0 (2026-05-11)**
+- [x] Notification permission mock (`window.Notification`) **Completed: v1.69.0 (2026-05-11)**
+- [x] Tab title updates **Completed: v1.69.0 (2026-05-11)**
+
+### Docs
+- [x] Update `docs/web-dashboard.md` — add "Live view" section (SSE endpoint, UX) **Completed: v1.69.0 (2026-05-11)**
+- [x] `temp/v2-web-ui-plan.md` — ✅ created by Sprint 95 planning **Completed: v1.69.0 (2026-05-11)**
+
+### Deferred to Sprint 96+ (from Sprint 94 + Sprint 95)
+- Light mode / theme toggle (CSS variable system ready)
+- Full screen reader audit
+- Phone/mobile viewport (<768px)
+- `prefers-reduced-motion` (disable pulse + timer when motion reduced)
+
+---
+
 ## Sprint 94 — Web Dashboard Phase 1 (v1.68.0, planning 2026-05-11)
 
 **Design doc:** `~/.gstack/projects/scanton-phase-2-s/scanton-main-design-20260511-231812.md`
@@ -41,8 +102,8 @@ Stack: React + Vite (Node/Express server, pre-built assets in npm package). Port
 - [x] 19 new tests: API handlers, CLI command parsing, HTTP integration (supertest), symlink path traversal guard **Completed: v1.68.0**
 - [x] ~~Sprint 94 gate for Sprint 95: /plan-design-review~~ ✅ DONE (2026-05-11, score 3→9/10, 14 decisions) **Completed: v1.68.0**
 
-**Deferred to Sprint 95+:**
-- Light mode / theme toggle (CSS variable system ready, add toggle in Sprint 95)
+**Deferred to Sprint 96+ (Sprint 95 is Live View, Sprint 96 is the Polish Pass):**
+- Light mode / theme toggle (CSS variable system ready)
 - Full screen reader audit
 - Phone/mobile viewport (<768px)
 - `prefers-reduced-motion` support
