@@ -4,6 +4,7 @@ Phase2S is an AI coding tool that runs in your terminal on your ChatGPT subscrip
 
 This guide gets you running in under 5 minutes. After you're set up, see:
 - [Dark factory guide](dark-factory.md) — write a spec (or use `phase2s conduct` to generate one), run `phase2s goal`, get a feature
+- [Web dashboard](web-dashboard.md) — `phase2s serve` opens a browser UI to browse your run history
 - [Claude Code integration](claude-code.md) — cross-model adversarial review from inside Claude Code
 
 ---

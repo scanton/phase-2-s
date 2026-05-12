@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.68.0 — 2026-05-11
+
+Sprint 94 — Web Dashboard Phase 1: `phase2s serve` opens a local browser dashboard showing your run history. See past conduct runs, click into any run to view its spec and subtask results, and get a copy-pasteable re-run command. Built on Express + React + Vite, served from `localhost:3010`. 2375 tests.
+
+### Added
+- **`phase2s serve`** — Start the Phase2S web dashboard at `http://localhost:3010`. Reads conduct-log history from the current project directory. `--port <n>` to pick a different port, `--open` to launch the browser automatically, `--cwd <path>` to point at a different project.
+- **Runs list page** — Table of all past conductor runs showing goal (truncated with full tooltip), status badge, duration, subtask count, and relative timestamp. Summary bar above the table: total runs, last run time, average duration. Skeleton loading state and error banner for API failures.
+- **Run detail page** — Click any run to see full goal text, spec accordion (collapsed by default, expand to read the full spec markdown), subtask results table, and a copy-pasteable `phase2s conduct "<goal>"` re-run command. 4px colored left border indicates pass/fail/running.
+- **Navigation sidebar** — 220px desktop sidebar with Runs, Live, Config, and Help items. Live/Config/Help are marked "Coming soon" at reduced opacity. Collapses to 48px icon-only on tablet.
+- **REST API** — `GET /api/runs`, `GET /api/runs/:id`, `GET /api/spec?path=` endpoints. Path traversal guarded with `fs.realpath` (symlink-safe).
+- **DESIGN.md** — Locked design system for the web dashboard: Geist UI + Geist Mono fonts, zinc-900 dark palette, indigo-500 accent, WCAG 2.1 AA accessibility essentials.
+- **CI: web build step** — `publish.yml` now runs `cd web && npm install && npx vite build` before packaging. `dist/web/index.html` verified before publish.
+
 ## v1.67.0 — 2026-05-11
 
 Sprint 93 — Clarity Pass: command renames for discoverability, agent ID de-branding, `/satori` skill retirement, and a new workflow reference doc. `phase2s task` → `phase2s go` (shorter, more natural). `phase2s conduct-audit` → `phase2s conduct-status`. `phase2s conduct-log` → `phase2s runs`. Agent IDs renamed: `apollo` → `ask`, `athena` → `plan`, `ares` → `build`, with a session-migration shim for existing state files. `:go <task>` REPL colon command added. `phase2s__task` MCP compat alias kept for existing MCP clients. 2351 tests.
