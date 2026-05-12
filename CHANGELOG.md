@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.69.0 — 2026-05-11
+
+Sprint 95 — Web Dashboard Live View: the dashboard now detects in-progress conductor runs and shows them in real time. Open `phase2s serve` while `phase2s conduct` is running — active runs show a pulsing **LIVE** badge in the runs list, the run detail page streams subtask results as workers complete, an elapsed timer counts up while the run is active, and a desktop notification fires when the run finishes. No WebSockets, no changes to the conductor process — the filesystem is the message bus. 2402 tests.
+
+### Added
+- **Live runs list** — Active runs show a pulsing indigo `LIVE ●` badge instead of a pass/fail pill. The row has a subtle indigo tint. The sidebar "Live" item lights up and navigates directly to the active run. The UI polls every 5 seconds (visibility-aware).
+- **Live run detail page** — While a run is in progress: header badge shows `LIVE ●`, elapsed timer counts up in real time, subtask rows fill in as each worker completes, in-progress workers show a "running" badge until they finish. When the run ends, the badge transitions to pass/fail and the timer stops.
+- **Browser notifications (opt-in)** — First time you open a live run detail page, a toast asks if you want desktop notifications. If allowed: `Phase2S: ✓ your goal text` fires on completion. Preference saved for the session.
+- **Tab title progress** — While watching a live run, the browser tab updates to `↺ 3/5 — Phase2S` showing completed/total subtasks. Switch away and still know when to check back.
+- **`GET /api/runs/active`** — Returns runs currently in progress (recent mtime + no terminal event in last 2 KB of log). Scans `.phase2s/runs/*.jsonl` directly.
+- **`GET /api/runs/:id/stream`** — Server-Sent Events endpoint that tails a run's JSONL file. Replays all existing events on connect (catch-up), streams new events as they arrive, sends `event: close` when the run ends. Works for active runs not yet in the conduct log.
+- **Active run in detail page before conduct log entry** — `GET /api/runs/:id` now falls back to `.phase2s/runs/` for runs that are still in progress (conduct log is written at end of run). Returns a synthetic entry with goal extracted from the spec file.
+- **Input validation** — `specHash` parameter validated as 8-character hex before any filesystem operations (defense-in-depth).
+- **Spec file path guard in synthetic entry** — `buildSyntheticEntry` asserts spec file is inside the project directory before reading, preventing a crafted log file from triggering reads outside the project.
+
 ## v1.68.0 — 2026-05-11
 
 Sprint 94 — Web Dashboard Phase 1: `phase2s serve` opens a local browser dashboard showing your run history. See past conduct runs, click into any run to view its spec and subtask results, and get a copy-pasteable re-run command. Built on Express + React + Vite, served from `localhost:3010`. 2375 tests.

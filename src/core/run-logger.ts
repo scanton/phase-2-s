@@ -55,6 +55,17 @@ export type RunEvent =
     };
 
 // ---------------------------------------------------------------------------
+// Terminal event set — exported so active.ts and stream.ts can import it
+// rather than re-defining it locally (prevents drift when new events are added)
+// ---------------------------------------------------------------------------
+
+export const TERMINAL_EVENTS = new Set([
+  "orchestrator_completed",
+  "goal_completed",
+  "goal_error",
+]);
+
+// ---------------------------------------------------------------------------
 // RunLogger
 // ---------------------------------------------------------------------------
 

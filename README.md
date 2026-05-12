@@ -335,7 +335,7 @@ phase2s skills --json # machine-readable for scripts
 - [Agent modes](docs/agents.md) — ask, plan, build, custom agents, override-restrict policy
 - [Workflow guide](docs/workflow.md) — choosing the right command: REPL vs task vs conductor
 - [Dark factory](docs/dark-factory.md) — write a spec, run `phase2s goal`, get a feature
-- [Web dashboard](docs/web-dashboard.md) — `phase2s serve`: run browser, detail view, REST API, security model
+- [Web dashboard](docs/web-dashboard.md) — `phase2s serve`: runs list, run detail, live view (SSE), REST API, security model
 - [Claude Code integration](docs/claude-code.md) — MCP setup, adversarial review, CLAUDE.md routing rules
 - [Skills reference](docs/skills.md) — all 29 skills with examples
 - [Workflows](docs/workflows.md) — real development sessions end to end
@@ -506,7 +506,7 @@ phase2s serve --open
 phase2s serve --cwd /path/to/other/project
 ```
 
-`phase2s serve` starts a local Express + React dashboard that reads your conduct-log history and presents it as a web UI. The **Runs list** shows every past conductor run with goal text, pass/fail badge, duration, subtask count, and relative timestamp. Click any row to open the **Run detail** page: full goal text, the generated spec (expandable), per-subtask results table, and a copy-pasteable `phase2s conduct "<goal>"` re-run command. Served entirely from localhost — nothing leaves your machine.
+`phase2s serve` starts a local Express + React dashboard. The **Runs list** shows every past conductor run — active runs show a pulsing **LIVE ●** badge while they're in progress. Click any row to open the **Run detail** page: full goal text, the generated spec (expandable), per-subtask results table, and a copy-pasteable re-run command. While a run is active, the detail page streams subtask results in real time (no refresh needed), an elapsed timer counts up, and a desktop notification fires on completion. Served entirely from localhost — nothing leaves your machine.
 
 **Verify spec generation quality with `conduct-status`:**
 
@@ -897,7 +897,7 @@ browser: true  # requires playwright installed
 
 ## Roadmap
 
-Phase2S ships fast — most sprints close in a day. The full history of shipped features, from the initial Codex CLI provider through the current v1.68.0 Web Dashboard, lives in one place:
+Phase2S ships fast — most sprints close in a day. The full history of shipped features, from the initial Codex CLI provider through the current v1.69.0 Web Dashboard Live View, lives in one place:
 
 [View the full roadmap →](ROADMAP.md)
 

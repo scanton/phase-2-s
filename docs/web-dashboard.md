@@ -86,9 +86,49 @@ Click the code block to select all (via `user-select: all`), then copy-paste dir
 
 ---
 
+## Live view
+
+When `phase2s conduct` is running, the dashboard detects it automatically and shows the run in real time.
+
+### How it works
+
+`RunLogger` writes each event to disk the moment it happens (`appendFileSync`). The HTTP server tails the JSONL file via SSE (Server-Sent Events) — no WebSockets, no changes to the conductor process, no shared state. The filesystem is the message bus.
+
+### What you see
+
+**Runs list page** — active runs show a pulsing **LIVE ●** badge in indigo instead of a pass/fail badge. The row has a subtle indigo tint. Click it to open the live detail view.
+
+**Sidebar** — the "Live" nav item lights up when at least one run is active. Click it to jump directly to the active run's detail page.
+
+**Run detail page** — while a run is in progress:
+- The header badge shows **LIVE ●** instead of pass/fail
+- The status stripe is indigo
+- An **elapsed timer** (Geist Mono, updates every second) replaces the duration stat
+- Subtask rows appear as each worker completes — you watch the table fill in
+- In-progress workers show with a "running" badge until they complete
+- A "watching…" indicator appears while waiting for the first event
+
+When the run finishes, the LIVE badge transitions to the final pass/fail badge, the timer stops, and the stats update to reflect the completed run.
+
+### Browser notifications
+
+The first time you open a live run detail page, a toast prompt appears asking if you want desktop notifications. If you allow it:
+- A notification fires when the run completes: `Phase2S: ✓ your goal text` (or `✗` on failure)
+- Your preference is remembered for the session
+
+### Tab title
+
+While watching a live run, the browser tab title updates to show progress:
+```
+↺ 3/5 — Phase2S
+```
+This means 3 of 5 subtasks have completed. You can close the tab or switch away and still know when to check back.
+
+---
+
 ## REST API
 
-The dashboard is backed by three endpoints. You can call them directly if you want to script against your run history.
+The dashboard is backed by five endpoints. You can call them directly if you want to script against your run history.
 
 **`GET /api/runs`**
 
@@ -113,9 +153,27 @@ curl http://localhost:3010/api/runs | jq '.[0]'
 }
 ```
 
+**`GET /api/runs/active`**
+
+Returns runs that are currently in progress. A run is "active" if its JSONL log file was modified within the last 30 minutes and does not yet contain a terminal event.
+
+```bash
+curl http://localhost:3010/api/runs/active
+```
+
+```json
+{
+  "runs": [
+    { "specHash": "ab12cd34", "startedAt": "2026-05-11T14:22:10", "runLogPath": "/path/to/.phase2s/runs/..." }
+  ]
+}
+```
+
+Returns `{ "runs": [] }` when no active runs exist.
+
 **`GET /api/runs/:id`**
 
-Returns a single run by `specHash`. Includes the entry from `conduct-log.jsonl`, the full spec file content, and the run log events.
+Returns a single run by `specHash`. Includes the entry from `conduct-log.jsonl`, the full spec file content, the run log events, and an `isActive` flag. For runs that are still in progress (not yet in the conduct log), a synthetic entry is built from the run log.
 
 ```bash
 curl http://localhost:3010/api/runs/abc12345 | jq '.spec' | head -5
@@ -129,8 +187,24 @@ Response shape:
   "runLog": [
     { "event": "worker_completed", "name": "AuthMiddleware", "status": "success", "durationMs": 8200 },
     ...
-  ]
+  ],
+  "isActive": false
 }
+```
+
+**`GET /api/runs/:id/stream`**
+
+Server-Sent Events endpoint that tails a run's JSONL file. Replays all existing events on connect (catch-up), then streams new events as they are written. Sends `event: close` when a terminal event is detected.
+
+```bash
+curl -N http://localhost:3010/api/runs/abc12345/stream
+```
+
+```
+data: {"event":"goal_started","specHash":"abc12345",...}
+data: {"event":"worker_completed","index":0,"status":"passed","durationMs":8200}
+event: close
+data: {}
 ```
 
 **`GET /api/spec?path=<absolute-path>`**
@@ -177,10 +251,9 @@ The frontend uses React Router (HashRouter) and is styled with Tailwind CSS usin
 
 ## What's coming
 
-Sprint 94 ships the foundation: the runs browser and run detail view. Future sprints will add:
+Sprint 95 ships live view. Future sprints will add:
 
-- **Live view** — watch a `phase2s conduct` run in real time as subtasks complete
-- **Config** — view and edit your `.phase2s.yaml` in the browser
-- **Help** — in-browser skill reference
-- **Light mode** — theme toggle (CSS variable system is already in place)
-- **Mobile viewport** — responsive layout for phones/tablets
+- **Config** — view and edit your `.phase2s.yaml` in the browser (Sprint 97)
+- **Help** — in-browser skill reference (Sprint 98)
+- **Light mode** — theme toggle (CSS variable system is already in place, Sprint 96)
+- **Mobile viewport** — responsive layout for phones/tablets (Sprint 96)

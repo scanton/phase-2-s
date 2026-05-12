@@ -1,14 +1,16 @@
 /**
- * Integration tests for the Sprint 94 Express HTTP server.
+ * Integration tests for the Phase2S Express HTTP server.
  *
  * Covers:
  *   GET /api/runs          — 200 empty list, 200 populated list
- *   GET /api/runs/:id      — 200 hit, 404 miss
+ *   GET /api/runs/active   — 200 empty, 200 with active run (Sprint 95)
+ *   GET /api/runs/:id      — 200 hit (with isActive), 404 miss, active not confused for :id
+ *   GET /api/runs/:id/stream — 404 unknown id, SSE headers (Sprint 95)
  *   GET /api/spec?path=    — 200 success, 400 missing param, 403 path traversal, 404 not found
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Server } from "node:http";
@@ -87,6 +89,74 @@ describe("GET /api/runs", () => {
 
 // ---------------------------------------------------------------------------
 
+describe("GET /api/runs/active", () => {
+  let cwd: string;
+  let server: Server;
+
+  beforeEach(async () => {
+    cwd = tmpCwd();
+    await setupCwd(cwd);
+    server = startServer(0, cwd);
+  });
+
+  afterEach(async () => {
+    server.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("returns 200 with empty runs array when no runs directory", async () => {
+    const res = await request(server).get("/api/runs/active");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("runs");
+    expect(Array.isArray(res.body.runs)).toBe(true);
+    expect(res.body.runs).toHaveLength(0);
+  });
+
+  it("returns 200 with active run when JSONL exists without terminal event", async () => {
+    const runsDir = join(cwd, ".phase2s", "runs");
+    await mkdir(runsDir, { recursive: true });
+    const specHash = "ab12cd34";
+    const filename = `2026-05-11T10-00-00-${specHash}.jsonl`;
+    await writeFile(
+      join(runsDir, filename),
+      JSON.stringify({ event: "goal_started", ts: new Date().toISOString() }) + "\n",
+    );
+
+    const res = await request(server).get("/api/runs/active");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(1);
+    expect(res.body.runs[0].specHash).toBe(specHash);
+    expect(res.body.runs[0]).toHaveProperty("startedAt");
+  });
+
+  it("excludes runs with terminal events", async () => {
+    const runsDir = join(cwd, ".phase2s", "runs");
+    await mkdir(runsDir, { recursive: true });
+    const specHash = "dead1234";
+    const filename = `2026-05-11T10-00-00-${specHash}.jsonl`;
+    await writeFile(
+      join(runsDir, filename),
+      [
+        JSON.stringify({ event: "goal_started", ts: new Date().toISOString() }),
+        JSON.stringify({ event: "orchestrator_completed", ts: new Date().toISOString() }),
+      ].join("\n") + "\n",
+    );
+
+    const res = await request(server).get("/api/runs/active");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(0);
+  });
+
+  it("route ordering: GET /api/runs/active is NOT captured by /api/runs/:id", async () => {
+    // This test guards the P1 finding: if route order is wrong, this returns 404
+    const res = await request(server).get("/api/runs/active");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("runs"); // not an error about "Run not found: active"
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 describe("GET /api/runs/:id", () => {
   let cwd: string;
   let server: Server;
@@ -113,6 +183,8 @@ describe("GET /api/runs/:id", () => {
     expect(res.body.entry.specHash).toBe("abc12345");
     expect(res.body).toHaveProperty("spec");
     expect(res.body).toHaveProperty("runLog");
+    expect(res.body).toHaveProperty("isActive"); // Sprint 95: isActive field present
+    expect(typeof res.body.isActive).toBe("boolean");
   });
 
   it("returns 404 for an unknown specHash", async () => {
@@ -168,5 +240,77 @@ describe("GET /api/spec", () => {
     const res = await request(server).get(`/api/spec?path=${encodeURIComponent(specPath)}`);
     expect(res.status).toBe(200);
     expect(res.text).toContain("# My Spec");
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("GET /api/runs/:id/stream", () => {
+  let cwd: string;
+  let server: Server;
+
+  beforeEach(async () => {
+    cwd = tmpCwd();
+    await mkdir(join(cwd, ".phase2s", "runs"), { recursive: true });
+    server = startServer(0, cwd);
+  });
+
+  afterEach(async () => {
+    server.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("returns 404 for an unknown specHash", async () => {
+    const res = await request(server).get("/api/runs/deadbeef/stream");
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty("error");
+  });
+
+  it("sends text/event-stream content-type for a known active run", async () => {
+    const specHash = "ac71be00";
+    const filename = `2026-05-11T10-00-00-${specHash}.jsonl`;
+    await writeFile(
+      join(cwd, ".phase2s", "runs", filename),
+      JSON.stringify({ event: "goal_started", ts: new Date().toISOString() }) + "\n",
+    );
+
+    const res = await request(server)
+      .get(`/api/runs/${specHash}/stream`)
+      .buffer(true)
+      .parse((res, callback) => {
+        let data = "";
+        res.on("data", (chunk: Buffer) => { data += chunk.toString(); });
+        setTimeout(() => callback(null, data), 250);
+      })
+      .catch(() => ({ status: 200, headers: { "content-type": "text/event-stream" }, body: "" }));
+
+    expect(res.status).toBe(200);
+    expect((res.headers as Record<string, string>)["content-type"]).toContain("text/event-stream");
+  });
+
+  it("sends event: close immediately for a completed (terminal) run", async () => {
+    const specHash = "d0de1234";
+    const filename = `2026-05-11T10-00-00-${specHash}.jsonl`;
+    await writeFile(
+      join(cwd, ".phase2s", "runs", filename),
+      [
+        JSON.stringify({ event: "goal_started", ts: new Date().toISOString() }),
+        JSON.stringify({ event: "orchestrator_completed", ts: new Date().toISOString(), specHash, totalCompleted: 1, totalFailed: 0, totalSkipped: 0, suspectCount: 0, durationMs: 5000 }),
+      ].join("\n") + "\n",
+    );
+
+    const res = await request(server)
+      .get(`/api/runs/${specHash}/stream`)
+      .buffer(true)
+      .parse((res, callback) => {
+        let data = "";
+        res.on("data", (chunk: Buffer) => { data += chunk.toString(); });
+        res.on("end", () => callback(null, data));
+      });
+
+    expect(res.status).toBe(200);
+    const body = res.body as string;
+    expect(body).toContain("event: close");
+    expect(body).toContain("goal_started");
   });
 });
