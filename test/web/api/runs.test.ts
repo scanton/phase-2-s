@@ -12,7 +12,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { Server } from "node:http";
+import request from "supertest";
 import { readConductLog } from "../../../src/cli/conduct-log.js";
+import { startServer } from "../../../src/web/server.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -107,3 +110,107 @@ describe("readConductLog", () => {
 
 // assertInProject tests are in test/web/api/spec.test.ts
 // (realpath-based guard requires real filesystem fixtures)
+
+// ---------------------------------------------------------------------------
+// GET /api/runs/:id — Sprint 95: synthetic entry fallback (buildSyntheticEntry)
+// ---------------------------------------------------------------------------
+
+describe("GET /api/runs/:id — synthetic entry fallback", () => {
+  let cwd: string;
+  let server: Server;
+
+  beforeEach(async () => {
+    cwd = join(tmpdir(), `phase2s-runs95-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(join(cwd, ".phase2s", "runs"), { recursive: true });
+    server = startServer(0, cwd);
+  });
+
+  afterEach(async () => {
+    server.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("returns 200 with synthetic entry when run is in runs/ but not in conduct log", async () => {
+    const specHash = "ab12cd34";
+    const filename = `2026-05-11T10-00-00-${specHash}.jsonl`;
+    await writeFile(
+      join(cwd, ".phase2s", "runs", filename),
+      JSON.stringify({ event: "goal_started", ts: new Date().toISOString(), specHash, subTaskCount: 3 }) + "\n",
+    );
+
+    const res = await request(server).get(`/api/runs/${specHash}`);
+    expect(res.status).toBe(200);
+    expect(res.body.entry.specHash).toBe(specHash);
+    expect(res.body.entry.subtaskCount).toBe(3);
+    expect(res.body).toHaveProperty("isActive");
+    expect(res.body.isActive).toBe(true); // recent mtime + no terminal event
+    expect(res.body.runLog).toBeInstanceOf(Array);
+    expect(res.body.runLog.length).toBeGreaterThan(0);
+  });
+
+  it("extracts goal from spec file heading when specFile is set in goal_started", async () => {
+    const specHash = "bb22ee44";
+    const specsDir = join(cwd, ".phase2s", "specs");
+    await mkdir(specsDir, { recursive: true });
+    const specFile = join(specsDir, "my-spec.md");
+    await writeFile(specFile, "# Implement live view\n\nDetails here.\n");
+
+    const filename = `2026-05-11T10-00-00-${specHash}.jsonl`;
+    await writeFile(
+      join(cwd, ".phase2s", "runs", filename),
+      JSON.stringify({ event: "goal_started", ts: new Date().toISOString(), specHash, specFile, subTaskCount: 2 }) + "\n",
+    );
+
+    const res = await request(server).get(`/api/runs/${specHash}`);
+    expect(res.status).toBe(200);
+    expect(res.body.entry.goal).toBe("Implement live view");
+    expect(res.body.entry.subtaskCount).toBe(2);
+    expect(res.body.entry.specPath).toBe(specFile);
+  });
+
+  it("falls back to 'Active run' when specFile is absent in goal_started", async () => {
+    const specHash = "cc33ff55";
+    const filename = `2026-05-11T10-00-00-${specHash}.jsonl`;
+    await writeFile(
+      join(cwd, ".phase2s", "runs", filename),
+      JSON.stringify({ event: "goal_started", ts: new Date().toISOString(), specHash }) + "\n",
+    );
+
+    const res = await request(server).get(`/api/runs/${specHash}`);
+    expect(res.status).toBe(200);
+    expect(res.body.entry.goal).toBe("Active run");
+  });
+
+  it("returns isActive: false for a completed run when it is also in conduct log", async () => {
+    const specHash = "dd44ab56";
+    const filename = `2026-05-11T10-00-00-${specHash}.jsonl`;
+    const runLogPath = join(cwd, ".phase2s", "runs", filename);
+
+    await writeFile(
+      join(cwd, ".phase2s", "conduct-log.jsonl"),
+      JSON.stringify({
+        ts: "2026-05-11T10:00:00.000Z",
+        goal: "done run",
+        specPath: null,
+        specHash,
+        subtaskCount: 1,
+        roles: [],
+        success: true,
+        durationMs: 5000,
+        runLogPath,
+        rounds: 1,
+      }) + "\n",
+    );
+    await writeFile(
+      runLogPath,
+      [
+        JSON.stringify({ event: "goal_started", ts: new Date().toISOString() }),
+        JSON.stringify({ event: "orchestrator_completed", ts: new Date().toISOString(), specHash, totalCompleted: 1, totalFailed: 0, totalSkipped: 0, suspectCount: 0, durationMs: 5000 }),
+      ].join("\n") + "\n",
+    );
+
+    const res = await request(server).get(`/api/runs/${specHash}`);
+    expect(res.status).toBe(200);
+    expect(res.body.isActive).toBe(false);
+  });
+})
