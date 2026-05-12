@@ -21,6 +21,7 @@ import { TERMINAL_EVENTS } from "../../core/run-logger.js";
 // ---------------------------------------------------------------------------
 
 const ACTIVE_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const TAIL_READ_BYTES = 2048; // bytes to read from end of log to check for terminal event
 
 // ---------------------------------------------------------------------------
 // ActiveRun type
@@ -73,7 +74,7 @@ export async function isActiveRun(filePath: string): Promise<boolean> {
   const s = await stat(filePath);
   if (Date.now() - s.mtimeMs > ACTIVE_WINDOW_MS) return false;
   if (s.size === 0) return false;
-  const tail = await readFileTail(filePath, Math.min(2048, s.size));
+  const tail = await readFileTail(filePath, Math.min(TAIL_READ_BYTES, s.size));
   for (const line of tail.split("\n").reverse()) {
     const trimmed = line.trim();
     if (!trimmed) continue;
