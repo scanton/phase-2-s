@@ -27,11 +27,20 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Install web dependencies
+        run: cd web && npm install
+
+      - name: Build web dashboard
+        run: cd web && npx vite build
+
       - name: Build
         run: npm run build
 
       - name: Verify bin entry exists
         run: test -f dist/bin/phase2s.js
+
+      - name: Verify web dashboard built
+        run: test -f dist/web/index.html
 
       - name: Publish to npm
         run: npm publish --access public
