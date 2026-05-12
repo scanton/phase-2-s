@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchRuns } from "../api.ts";
-import type { ConductLogEntry } from "../types.ts";
+import { fetchRuns, fetchActiveRuns } from "../api.ts";
+import type { ConductLogEntry, ActiveRun } from "../types.ts";
 import StatusBadge from "../components/StatusBadge.tsx";
 
 // ---------------------------------------------------------------------------
@@ -126,12 +126,57 @@ function StatBar({ entries }: StatBarProps) {
 // Main component
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// LiveBadge — pulsing LIVE ● indicator for active run rows
+// ---------------------------------------------------------------------------
+
+function LiveBadge() {
+  return (
+    <span
+      aria-label="Live"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "5px",
+        padding: "2px 7px",
+        borderRadius: "9999px",
+        backgroundColor: "rgba(99,102,241,0.15)",
+        color: "#818cf8",
+        fontSize: "11px",
+        fontWeight: 600,
+        fontFamily: "Geist Mono, monospace",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span
+        style={{
+          display: "inline-block",
+          width: "6px",
+          height: "6px",
+          borderRadius: "50%",
+          backgroundColor: "#6366f1",
+          animation: "live-pulse 1.2s ease-in-out infinite",
+        }}
+        aria-hidden="true"
+      />
+      LIVE
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export default function RunsPage() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<ConductLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeSpecHashes, setActiveSpecHashes] = useState<Set<string>>(new Set());
+  const visibleRef = useRef(true);
 
+  // Load runs list
   useEffect(() => {
     fetchRuns()
       .then((data) => {
@@ -142,6 +187,27 @@ export default function RunsPage() {
         setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
       });
+  }, []);
+
+  // Poll for active runs every 5s (only when page is visible)
+  useEffect(() => {
+    const handleVisibility = () => {
+      visibleRef.current = document.visibilityState === "visible";
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    const pollActive = async () => {
+      if (!visibleRef.current) return;
+      const runs = await fetchActiveRuns();
+      setActiveSpecHashes(new Set(runs.map((r: ActiveRun) => r.specHash)));
+    };
+
+    void pollActive();
+    const id = setInterval(() => { void pollActive(); }, 5000);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   const thStyle: React.CSSProperties = {
@@ -248,7 +314,9 @@ export default function RunsPage() {
             <tbody>
               {loading
                 ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
-                : entries.map((entry) => (
+                : entries.map((entry) => {
+                    const isLive = activeSpecHashes.has(entry.specHash);
+                    return (
                     <tr
                       key={entry.specHash || entry.ts}
                       onClick={() => navigate(`/runs/${entry.specHash || entry.ts}`)}
@@ -256,13 +324,15 @@ export default function RunsPage() {
                         cursor: "pointer",
                         borderBottom: "1px solid #3f3f46",
                         transition: "background-color 0.1s",
+                        backgroundColor: isLive ? "rgba(99,102,241,0.04)" : undefined,
                       }}
                       onMouseEnter={(e) => {
                         (e.currentTarget as HTMLTableRowElement).style.backgroundColor =
-                          "rgba(255,255,255,0.03)";
+                          isLive ? "rgba(99,102,241,0.08)" : "rgba(255,255,255,0.03)";
                       }}
                       onMouseLeave={(e) => {
-                        (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "";
+                        (e.currentTarget as HTMLTableRowElement).style.backgroundColor =
+                          isLive ? "rgba(99,102,241,0.04)" : "";
                       }}
                     >
                       <td
@@ -280,7 +350,7 @@ export default function RunsPage() {
                         {entry.goal}
                       </td>
                       <td style={{ padding: "12px 16px" }}>
-                        <StatusBadge status={entry.success ? "success" : "failed"} />
+                        {isLive ? <LiveBadge /> : <StatusBadge status={entry.success ? "success" : "failed"} />}
                       </td>
                       <td
                         style={{
@@ -315,7 +385,7 @@ export default function RunsPage() {
                         {relativeTime(entry.ts)}
                       </td>
                     </tr>
-                  ))}
+                  );})}
             </tbody>
           </table>
         </div>
