@@ -335,6 +335,7 @@ phase2s skills --json # machine-readable for scripts
 - [Agent modes](docs/agents.md) — ask, plan, build, custom agents, override-restrict policy
 - [Workflow guide](docs/workflow.md) — choosing the right command: REPL vs task vs conductor
 - [Dark factory](docs/dark-factory.md) — write a spec, run `phase2s goal`, get a feature
+- [Web dashboard](docs/web-dashboard.md) — `phase2s serve`: run browser, detail view, REST API, security model
 - [Claude Code integration](docs/claude-code.md) — MCP setup, adversarial review, CLAUDE.md routing rules
 - [Skills reference](docs/skills.md) — all 29 skills with examples
 - [Workflows](docs/workflows.md) — real development sessions end to end

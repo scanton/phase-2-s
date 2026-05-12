@@ -35,7 +35,7 @@ Stack: React + Vite (Node/Express server, pre-built assets in npm package). Port
 - [x] **Wire Geist + Geist Mono** via `@fontsource/geist` + `@fontsource/geist-mono` in `web/package.json` **Completed: v1.68.0**
 - [x] **Runs list page** (`/`): summary stat bar + table (Goal truncated+tooltip, Status badge pill, Duration, Subtasks, Timestamp); skeleton loading state; error banner; welcome empty state with copyable command **Completed: v1.68.0**
 - [x] **Run detail page** (`/runs/:id`): `← Runs` back nav; 4px status stripe + large badge; collapsed spec accordion; subtask table; copyable re-run hint **Completed: v1.68.0**
-- [x] **Navigation sidebar**: Runs (active), Live/Config/Help at 40% opacity with "Coming in Sprint 95" tooltip **Completed: v1.68.0**
+- [x] **Navigation sidebar**: Runs (active), Live/Config/Help at 40% opacity with "Coming soon" tooltip **Completed: v1.68.0**
 - [x] SIGINT/SIGTERM handler — clean shutdown prints "Dashboard stopped." **Completed: v1.68.0**
 - [x] `react-markdown` in `web/package.json` for spec accordion **Completed: v1.68.0**
 - [x] 19 new tests: API handlers, CLI command parsing, HTTP integration (supertest), symlink path traversal guard **Completed: v1.68.0**
