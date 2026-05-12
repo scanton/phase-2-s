@@ -14,6 +14,39 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Sprint 94 — Web Dashboard Phase 1 (v1.68.0, planning 2026-05-11)
+
+**Design doc:** `~/.gstack/projects/scanton-phase-2-s/scanton-main-design-20260511-231812.md`
+**Multi-sprint plan:** `temp/v2-web-ui-plan.md` in repo root (reference at each web UI sprint)
+
+Sprint 94 ships the first phase of the v2.0 web dashboard — foundation + runs browser.
+Stack: React + Vite (Node/Express server, pre-built assets in npm package). Port 3010.
+**Design doc:** `~/.gstack/projects/scanton-phase-2-s/scanton-main-design-20260511-231812.md` (ENG + DESIGN reviewed ✅)
+**Design system:** `DESIGN.md` in repo root — Geist fonts, dark/zinc, indigo accent, full state specs.
+
+- [x] `phase2s serve [--port 3010] [--open] [--cwd <path>]` CLI command (`src/cli/serve.ts`) **Completed: v1.68.0**
+- [x] **Express HTTP server** at `src/web/server.ts` with static file serving on port 3010 (NOT Bun.serve) **Completed: v1.68.0**
+- [x] REST API: `GET /api/runs`, `GET /api/runs/:id` (id = specHash or ts-slug), `GET /api/spec?path=...` **Completed: v1.68.0**
+- [x] Path traversal guard on all file-read API endpoints (symlink-safe with `fs.realpath`) **Completed: v1.68.0**
+- [x] Vite + React project at `web/` in repo root (React Router with HashRouter, separate npm project) **Completed: v1.68.0**
+- [x] `dist/web/` pre-built in CI via `cd web && npm install && npx vite build` **Completed: v1.68.0**
+- [x] `build:web` script in `package.json`; web build steps added to `publish.yml` **Completed: v1.68.0**
+- [x] **Create `DESIGN.md`** at repo root with Sprint 94 visual spec (fonts, colors, component patterns) **Completed: v1.68.0**
+- [x] **Wire Geist + Geist Mono** via `@fontsource/geist` + `@fontsource/geist-mono` in `web/package.json` **Completed: v1.68.0**
+- [x] **Runs list page** (`/`): summary stat bar + table (Goal truncated+tooltip, Status badge pill, Duration, Subtasks, Timestamp); skeleton loading state; error banner; welcome empty state with copyable command **Completed: v1.68.0**
+- [x] **Run detail page** (`/runs/:id`): `← Runs` back nav; 4px status stripe + large badge; collapsed spec accordion; subtask table; copyable re-run hint **Completed: v1.68.0**
+- [x] **Navigation sidebar**: Runs (active), Live/Config/Help at 40% opacity with "Coming in Sprint 95" tooltip **Completed: v1.68.0**
+- [x] SIGINT/SIGTERM handler — clean shutdown prints "Dashboard stopped." **Completed: v1.68.0**
+- [x] `react-markdown` in `web/package.json` for spec accordion **Completed: v1.68.0**
+- [x] 19 new tests: API handlers, CLI command parsing, HTTP integration (supertest), symlink path traversal guard **Completed: v1.68.0**
+- [x] ~~Sprint 94 gate for Sprint 95: /plan-design-review~~ ✅ DONE (2026-05-11, score 3→9/10, 14 decisions) **Completed: v1.68.0**
+
+**Deferred to Sprint 95+:**
+- Light mode / theme toggle (CSS variable system ready, add toggle in Sprint 95)
+- Full screen reader audit
+- Phone/mobile viewport (<768px)
+- `prefers-reduced-motion` support
+
 ## Backlog — Post-Sprint 93 notes (v1.67.0, 2026-05-11)
 
 Sprint 93 ships the Clarity Pass — command renames, agent de-branding, satori retirement, and workflow docs. A: `phase2s task` → `phase2s go` (CLI + MCP); `phase2s__task` → `phase2s__go`; `:go <task>` REPL command added. B: `phase2s conduct-audit` → `phase2s conduct-status`; `phase2s conduct-log` → `phase2s runs`. C: Agent persona names removed — `id: apollo/athena/ares` → `id: ask/plan/build`; system prompts rewritten; session migration shim in `readReplState()` maps old IDs on load. D: `/satori` skill deprecated with notice pointing to `phase2s go`; internal satori loop untouched. E: `docs/workflow.md` new reference page; `docs/agents.md` updated. 16 new tests added in post-review pass (session migration shim, :go colon command, conduct_status handler). 2351 passing.
