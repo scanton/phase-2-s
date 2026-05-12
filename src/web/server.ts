@@ -1,10 +1,17 @@
 /**
- * phase2s web dashboard — Express HTTP server (Sprint 94)
+ * phase2s web dashboard — Express HTTP server (Sprint 94 + Sprint 95)
  *
  * Serves the React SPA from dist/web/ and exposes:
- *   GET /api/runs         — list all conduct-log entries (newest first)
- *   GET /api/runs/:id     — run detail by specHash
- *   GET /api/spec?path=   — read a spec file (path traversal guarded)
+ *   GET /api/runs           — list all conduct-log entries (newest first)
+ *   GET /api/runs/active    — active run detection (mtime + no terminal event)
+ *   GET /api/runs/:id       — run detail by specHash (+ isActive flag)
+ *   GET /api/runs/:id/stream — SSE live tail of a run JSONL
+ *   GET /api/spec?path=     — read a spec file (path traversal guarded)
+ *
+ * ⚠️  ROUTE ORDER MATTERS:
+ *   /api/runs/active must be registered BEFORE /api/runs/:id.
+ *   Express matches in registration order; "active" would be silently
+ *   treated as a specHash if :id is registered first.
  */
 
 import express from "express";
@@ -24,6 +31,17 @@ export function startServer(port: number, cwd: string): Server {
   app.get("/api/runs", async (req, res) => {
     const { handleGetRuns } = await import("./api/runs.js");
     await handleGetRuns(req, res, cwd);
+  });
+
+  // ⚠️  /api/runs/active MUST come before /api/runs/:id — see module comment above.
+  app.get("/api/runs/active", async (req, res) => {
+    const { handleGetActiveRuns } = await import("./api/active.js");
+    await handleGetActiveRuns(req, res, cwd);
+  });
+
+  app.get("/api/runs/:id/stream", async (req, res) => {
+    const { handleGetRunStream } = await import("./api/stream.js");
+    await handleGetRunStream(req, res, cwd);
   });
 
   app.get("/api/runs/:id", async (req, res) => {
