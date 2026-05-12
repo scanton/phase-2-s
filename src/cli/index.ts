@@ -986,6 +986,22 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       );
     });
 
+  // Web dashboard server — Sprint 94
+  program
+    .command("serve")
+    .description("Start the Phase2S web dashboard at http://localhost:3010")
+    .option("--port <n>", "Port to listen on", "3010")
+    .option("--open", "Open browser automatically after server starts")
+    .option("--cwd <path>", "Project directory to read data from (default: process.cwd())")
+    .action(async (cmdOpts: { port?: string; open?: boolean; cwd?: string }) => {
+      const { runServe } = await import("./serve.js");
+      await runServe({
+        port: cmdOpts.port ? parseInt(cmdOpts.port, 10) : 3010,
+        open: cmdOpts.open ?? false,
+        cwd: cmdOpts.cwd ?? process.cwd(),
+      });
+    });
+
   // Shell completion script generator
   program
     .command("completion <shell>")
@@ -1022,7 +1038,7 @@ _phase2s_complete() {
 
   # Complete subcommands at position 1
   if [[ \${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "chat run go skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct conduct-status runs conduct-insights" -- "\$cur"))
+    COMPREPLY=($(compgen -W "chat run go skills mcp goal judge report sync search search-audit init upgrade lint doctor completion setup template conduct conduct-status runs conduct-insights serve" -- "\$cur"))
     return
   fi
 
@@ -1094,6 +1110,7 @@ _phase2s() {
     'sync:Index the codebase for semantic search (requires Ollama)'
     'search:Search the indexed codebase semantically'
     'search-audit:Benchmark semantic search quality (hit@1, hit@3, MRR)'
+    'serve:Start the Phase2S web dashboard'
   )
 
   if (( CURRENT == 2 )); then
