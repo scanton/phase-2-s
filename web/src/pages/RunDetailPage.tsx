@@ -35,6 +35,14 @@ function statusStripeColor(success: boolean, isActive: boolean): string {
 }
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const NOTIF_PERM_KEY = "phase2s-notifications";
+const NOTIF_PROMPTED_KEY = "phase2s-notif-prompted";
+const DEFAULT_TAB_TITLE = "Phase2S Dashboard";
+
+// ---------------------------------------------------------------------------
 // Notification helpers
 // ---------------------------------------------------------------------------
 
@@ -43,7 +51,7 @@ async function requestNotificationPermission(): Promise<void> {
   if (Notification.permission === "default") {
     const perm = await Notification.requestPermission();
     try {
-      localStorage.setItem("phase2s-notifications", perm);
+      localStorage.setItem(NOTIF_PERM_KEY, perm);
     } catch {
       // localStorage not available
     }
@@ -153,11 +161,6 @@ function SubtasksTable({ runLog, liveEvents = [] }: SubtasksTableProps) {
   const workerEvents = [...historicWorker, ...newFromLive];
 
   // Also show started-but-not-completed subtasks from live stream
-  const startedIndices = new Set(
-    liveEvents
-      .filter((e) => e.event === "worker_started" || e.event === "subtask_started")
-      .map((e) => e.index)
-  );
   const completedIndices = new Set(workerEvents.map((e) => e.index));
   const inProgress = liveEvents
     .filter(
@@ -412,6 +415,10 @@ export default function RunDetailPage() {
   const [showNotifBanner, setShowNotifBanner] = useState(false);
   const notifPromptedRef = useRef(false);
   const cleanupStreamRef = useRef<(() => void) | null>(null);
+  const detailRef = useRef<RunDetail | null>(null);
+
+  // Keep detailRef in sync so handleStreamClose always has fresh data
+  useEffect(() => { detailRef.current = detail; }, [detail]);
 
   // Load run detail
   useEffect(() => {
@@ -434,17 +441,17 @@ export default function RunDetailPage() {
   const handleStreamClose = useCallback(() => {
     setIsLive(false);
     setLiveDone(true);
-    // Refresh detail to get final state from conduct log
+    // Refresh detail to get final state from conduct log, then notify with
+    // fresh data (avoids stale closure on detail + notification fires correctly)
     if (id) {
       fetchRunDetail(id)
-        .then((data) => setDetail(data))
+        .then((data) => {
+          setDetail(data);
+          notifyRunComplete(data.entry.goal, data.entry.success);
+        })
         .catch(() => {/* ignore */});
     }
-    // Fire completion notification
-    if (detail) {
-      notifyRunComplete(detail.entry.goal, detail.entry.success);
-    }
-  }, [id, detail]);
+  }, [id]); // detail intentionally omitted — use detailRef for sync reads if needed
 
   useEffect(() => {
     if (!isLive || !id) return;
@@ -457,7 +464,7 @@ export default function RunDetailPage() {
     ) {
       const alreadyPrompted = (() => {
         try {
-          return !!sessionStorage.getItem("phase2s-notif-prompted");
+          return !!sessionStorage.getItem(NOTIF_PROMPTED_KEY);
         } catch {
           return false;
         }
@@ -490,14 +497,14 @@ export default function RunDetailPage() {
     const totalCount = detail.entry.subtaskCount || "?";
     document.title = `↺ ${completedCount}/${totalCount} — Phase2S`;
     return () => {
-      document.title = "Phase2S Dashboard";
+      document.title = DEFAULT_TAB_TITLE;
     };
   }, [isLive, liveEvents, detail]);
 
   // Reset title on unmount
   useEffect(() => {
     return () => {
-      document.title = "Phase2S Dashboard";
+      document.title = DEFAULT_TAB_TITLE;
     };
   }, []);
 
@@ -508,7 +515,7 @@ export default function RunDetailPage() {
   const handleNotifAllow = async () => {
     setShowNotifBanner(false);
     try {
-      sessionStorage.setItem("phase2s-notif-prompted", "1");
+      sessionStorage.setItem(NOTIF_PROMPTED_KEY, "1");
     } catch {
       // ignore
     }
@@ -518,7 +525,7 @@ export default function RunDetailPage() {
   const handleNotifDismiss = () => {
     setShowNotifBanner(false);
     try {
-      sessionStorage.setItem("phase2s-notif-prompted", "1");
+      sessionStorage.setItem(NOTIF_PROMPTED_KEY, "1");
     } catch {
       // ignore
     }

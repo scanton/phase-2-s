@@ -52,9 +52,13 @@ export function createRunStream(
   });
 
   source.onerror = () => {
-    // EventSource auto-reconnects on error; close explicitly
-    source.close();
-    onClose();
+    // EventSource auto-reconnects on transient errors — only call onClose()
+    // once the connection is permanently closed (readyState === CLOSED).
+    // Calling onClose() on every error fires a false completion notification
+    // on WiFi blips and prevents the auto-reconnect from working.
+    if (source.readyState === EventSource.CLOSED) {
+      onClose();
+    }
   };
 
   return () => {
