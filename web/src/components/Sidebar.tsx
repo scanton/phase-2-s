@@ -38,7 +38,7 @@ export default function Sidebar() {
         item.comingSoon ? (
           <span
             key={item.label}
-            title="Coming in Sprint 95"
+            title="Coming soon"
             style={{
               display: "block",
               padding: "8px 16px",

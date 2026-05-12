@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
 import { fetchRunDetail } from "../api.ts";
 import type { RunDetail, RunLogLine } from "../types.ts";
 import StatusBadge from "../components/StatusBadge.tsx";
@@ -192,7 +193,7 @@ function SpecAccordion({ spec }: SpecAccordionProps) {
               fontFamily: "Geist Mono, monospace",
             }}
           >
-            <ReactMarkdown>{spec}</ReactMarkdown>
+            <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{spec}</ReactMarkdown>
           </div>
         </div>
       )}

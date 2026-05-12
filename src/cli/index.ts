@@ -995,8 +995,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--cwd <path>", "Project directory to read data from (default: process.cwd())")
     .action(async (cmdOpts: { port?: string; open?: boolean; cwd?: string }) => {
       const { runServe } = await import("./serve.js");
+      const rawPort = cmdOpts.port ? parseInt(cmdOpts.port, 10) : 3010;
+      if (!Number.isFinite(rawPort) || rawPort < 1 || rawPort > 65535) {
+        console.error(`Invalid port: ${cmdOpts.port}. Must be 1–65535.`);
+        process.exit(1);
+      }
       await runServe({
-        port: cmdOpts.port ? parseInt(cmdOpts.port, 10) : 3010,
+        port: rawPort,
         open: cmdOpts.open ?? false,
         cwd: cmdOpts.cwd ?? process.cwd(),
       });

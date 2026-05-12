@@ -9,6 +9,8 @@
  */
 
 import { exec } from "node:child_process";
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 
 export interface ServeOptions {
   port: number;
@@ -17,6 +19,20 @@ export interface ServeOptions {
 }
 
 export async function runServe(options: ServeOptions): Promise<void> {
+  // Validate cwd is a real phase2s project before accepting it as a trust root.
+  // Without this check, --cwd / would make assertInProject() pass for any path
+  // on the entire filesystem (since everything is inside /).
+  const phase2sDir = join(options.cwd, ".phase2s");
+  try {
+    await access(phase2sDir);
+  } catch {
+    console.error(
+      `Not a phase2s project: ${options.cwd}\n` +
+        `Expected a .phase2s/ directory. Run phase2s from your project root.`,
+    );
+    process.exit(1);
+  }
+
   const { startServer } = await import("../web/server.js");
   const server = startServer(options.port, options.cwd);
 
@@ -30,7 +46,9 @@ export async function runServe(options: ServeOptions): Promise<void> {
         : process.platform === "win32"
           ? "start"
           : "xdg-open";
-    exec(`${cmd} http://localhost:${options.port}`);
+    exec(`${cmd} http://localhost:${options.port}`, (err) => {
+      if (err) console.warn(`Could not open browser: ${err.message}`);
+    });
   }
 
   const shutdown = () => {

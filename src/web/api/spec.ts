@@ -29,7 +29,10 @@ export async function handleGetSpec(
     const message = err instanceof Error ? err.message : String(err);
     // assertInProject can throw "path traversal detected" or ENOENT
     const isTraversal = message.includes("path traversal");
-    res.status(isTraversal ? 403 : 404).json({ error: message });
+    // Return sanitized messages — raw ENOENT includes absolute filesystem paths
+    res
+      .status(isTraversal ? 403 : 404)
+      .json({ error: isTraversal ? "Access denied" : "Spec file not found" });
     return;
   }
 
@@ -37,8 +40,7 @@ export async function handleGetSpec(
     const content = await readFile(specPath, "utf8");
     res.setHeader("Content-Type", "text/markdown; charset=utf-8");
     res.send(content);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(404).json({ error: message });
+  } catch {
+    res.status(404).json({ error: "Spec file not found" });
   }
 }

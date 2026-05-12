@@ -16,7 +16,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function startServer(port: number, cwd: string): Server {
   const app = express();
-  const distWeb = join(__dirname, "../../dist/web");
+  // server.ts compiles to dist/src/web/server.js (rootDir:"." in tsconfig).
+  // From dist/src/web/, go up 2 dirs to reach dist/, then into web/ where
+  // Vite outputs the SPA (vite.config.ts outDir: "../dist/web").
+  const distWeb = join(__dirname, "../../web");
 
   app.get("/api/runs", async (req, res) => {
     const { handleGetRuns } = await import("./api/runs.js");
@@ -49,5 +52,7 @@ export function startServer(port: number, cwd: string): Server {
     });
   });
 
-  return app.listen(port);
+  // Bind to loopback only — conduct log data should not be accessible to
+  // other machines on the local network. Use --host flag (future) to opt out.
+  return app.listen(port, "127.0.0.1");
 }
