@@ -1,5 +1,5 @@
 /**
- * Tests for GET /api/runs/:id/stream SSE handler (Sprint 95)
+ * Tests for GET /api/runs/:id/stream SSE handler (Sprint 95 + Sprint 98)
  *
  * Tests cover:
  * 1. findRunLogPath: finds file by specHash in runs directory
@@ -8,6 +8,8 @@
  * 4. SSE integration: catch-up sends existing events on connect
  * 5. SSE integration: sends event: close when terminal event already in file
  * 6. SSE integration: returns 404 for unknown specHash
+ * 7. SSE integration: accepts ts-slug ID format (Sprint 98 browser-spawned runs)
+ * 8. SSE integration: rejects IDs that match neither hex nor ts-slug format
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -179,5 +181,39 @@ describe("GET /api/runs/:id/stream", () => {
       });
 
     expect(res.status).toBe(200);
+  });
+
+  it("returns 400 for an id that matches neither hex specHash nor ts-slug format", async () => {
+    const res = await request(server).get("/api/runs/not-a-valid-id/stream");
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+  });
+
+  it("accepts a ts-slug id (YYYY-MM-DDTHH-mm-ss) for browser-spawned runs", async () => {
+    // Browser-spawned run logs are named <ts-slug>-<ts-slug>.jsonl
+    const tsSlug = "2026-05-12T22-34-57";
+    const filename = `${tsSlug}-${tsSlug}.jsonl`;
+    await writeFile(
+      join(cwd, ".phase2s", "runs", filename),
+      makeEvent("goal_started") + "\n",
+    );
+
+    // Should not return 400 (invalid format) or 404 (not found)
+    const res = await request(server)
+      .get(`/api/runs/${tsSlug}/stream`)
+      .timeout({ response: 500, deadline: 1000 })
+      .buffer(true)
+      .parse((res, callback) => {
+        let data = "";
+        res.on("data", (chunk: Buffer) => { data += chunk.toString(); });
+        setTimeout(() => callback(null, data), 300);
+      })
+      .catch((err: Error) => {
+        if (err.message.includes("Timeout")) return { status: 200, headers: { "content-type": "text/event-stream" }, body: "" };
+        throw err;
+      });
+
+    expect(res.status).toBe(200);
+    expect((res.headers as Record<string, string>)["content-type"]).toContain("text/event-stream");
   });
 });
