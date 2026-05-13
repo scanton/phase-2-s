@@ -110,12 +110,12 @@ function LiveBadge() {
 // ElapsedTimer
 // ---------------------------------------------------------------------------
 
-interface ElapsedTimerProps {
+export interface ElapsedTimerProps {
   startTs: string;
   isComplete?: boolean;
 }
 
-function ElapsedTimer({ startTs, isComplete }: ElapsedTimerProps) {
+export function ElapsedTimer({ startTs, isComplete }: ElapsedTimerProps) {
   const [elapsed, setElapsed] = useState(Date.now() - new Date(startTs).getTime());
 
   useEffect(() => {
