@@ -5,6 +5,7 @@ import rehypeSanitize from "rehype-sanitize";
 import { fetchRunDetail, createRunStream } from "../api.ts";
 import type { RunDetail, RunLogLine, LiveEvent } from "../types.ts";
 import StatusBadge from "../components/StatusBadge.tsx";
+import CompletionBanner from "../components/CompletionBanner.tsx";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,8 +31,8 @@ function formatDate(ts: string): string {
 }
 
 function statusStripeColor(success: boolean, isActive: boolean): string {
-  if (isActive) return "#6366f1"; // indigo while live
-  return success ? "#10b981" : "#ef4444";
+  if (isActive) return "var(--accent)";
+  return success ? "var(--status-success-text)" : "var(--status-failed-text)";
 }
 
 // ---------------------------------------------------------------------------
@@ -80,8 +81,8 @@ function LiveBadge() {
         gap: "5px",
         padding: "3px 8px",
         borderRadius: "9999px",
-        backgroundColor: "rgba(99,102,241,0.15)",
-        color: "#818cf8",
+        backgroundColor: "var(--live-bg)",
+        color: "var(--live-color)",
         fontSize: "11px",
         fontWeight: 700,
         fontFamily: "Geist Mono, monospace",
@@ -95,7 +96,7 @@ function LiveBadge() {
           width: "6px",
           height: "6px",
           borderRadius: "50%",
-          backgroundColor: "#6366f1",
+          backgroundColor: "var(--accent)",
           animation: "live-pulse 1.2s ease-in-out infinite",
         }}
         aria-hidden="true"
@@ -109,29 +110,34 @@ function LiveBadge() {
 // ElapsedTimer
 // ---------------------------------------------------------------------------
 
-interface ElapsedTimerProps {
+export interface ElapsedTimerProps {
   startTs: string;
+  isComplete?: boolean;
 }
 
-function ElapsedTimer({ startTs }: ElapsedTimerProps) {
-  const [elapsed, setElapsed] = useState(Date.now() - new Date(startTs).getTime());
+export function ElapsedTimer({ startTs, isComplete }: ElapsedTimerProps) {
+  const parsedStart = new Date(startTs).getTime();
+  const safeStart = isFinite(parsedStart) ? parsedStart : Date.now();
+  const [elapsed, setElapsed] = useState(Date.now() - safeStart);
 
   useEffect(() => {
+    if (isComplete) return; // Don't tick after completion
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const id = setInterval(() => {
-      setElapsed(Date.now() - new Date(startTs).getTime());
+      const t = new Date(startTs).getTime();
+      setElapsed(Date.now() - (isFinite(t) ? t : Date.now()));
     }, 1000);
     return () => clearInterval(id);
-  }, [startTs]);
+  }, [startTs, isComplete]);
 
   return (
     <span
-      style={{
-        color: "#a1a1aa",
-        fontFamily: "Geist Mono, monospace",
-        fontSize: "13px",
-      }}
+      style={{ color: "var(--text-secondary)", fontFamily: "Geist Mono, monospace", fontSize: "13px" }}
       title="Elapsed time"
     >
+      <span style={{ color: "var(--text-muted)", fontSize: "11px", marginRight: "4px" }}>
+        {isComplete ? "DURATION" : "ELAPSED"}
+      </span>
       {formatDuration(elapsed)}
     </span>
   );
@@ -174,7 +180,7 @@ function SubtasksTable({ runLog, liveEvents = [] }: SubtasksTableProps) {
 
   if (allRows.length === 0) {
     return (
-      <p style={{ color: "#71717a", fontSize: "14px" }}>
+      <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>
         {liveEvents.length > 0
           ? "Waiting for subtasks…"
           : "No subtask events found in run log."}
@@ -189,37 +195,37 @@ function SubtasksTable({ runLog, liveEvents = [] }: SubtasksTableProps) {
     fontFamily: "Geist Mono, monospace",
     textTransform: "uppercase",
     letterSpacing: "0.06em",
-    color: "#71717a",
-    borderBottom: "1px solid #3f3f46",
+    color: "var(--text-muted)",
+    borderBottom: "1px solid var(--border)",
     whiteSpace: "nowrap",
   };
 
   return (
     <div
       style={{
-        backgroundColor: "#27272a",
+        backgroundColor: "var(--bg-surface)",
         borderRadius: "8px",
         overflow: "hidden",
-        border: "1px solid #3f3f46",
+        border: "1px solid var(--border)",
       }}
     >
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
-          <tr style={{ backgroundColor: "#1f1f23" }}>
-            <th style={thStyle}>#</th>
-            <th style={thStyle}>Name</th>
-            <th style={thStyle}>Status</th>
-            <th style={thStyle}>Duration</th>
+          <tr style={{ backgroundColor: "var(--bg-base)" }}>
+            <th scope="col" style={thStyle}>#</th>
+            <th scope="col" style={thStyle}>Name</th>
+            <th scope="col" style={thStyle}>Status</th>
+            <th scope="col" style={thStyle}>Duration</th>
           </tr>
         </thead>
         <tbody>
           {allRows.map((e, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid #3f3f46" }}>
+            <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
               <td
                 style={{
                   padding: "10px 12px",
                   fontSize: "12px",
-                  color: "#71717a",
+                  color: "var(--text-muted)",
                   fontFamily: "Geist Mono, monospace",
                 }}
               >
@@ -229,7 +235,7 @@ function SubtasksTable({ runLog, liveEvents = [] }: SubtasksTableProps) {
                 style={{
                   padding: "10px 12px",
                   fontSize: "13px",
-                  color: "#e4e4e7",
+                  color: "var(--text-primary)",
                   maxWidth: "400px",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -245,7 +251,7 @@ function SubtasksTable({ runLog, liveEvents = [] }: SubtasksTableProps) {
                 style={{
                   padding: "10px 12px",
                   fontSize: "12px",
-                  color: "#a1a1aa",
+                  color: "var(--text-secondary)",
                   fontFamily: "Geist Mono, monospace",
                   whiteSpace: "nowrap",
                 }}
@@ -274,9 +280,9 @@ function SpecAccordion({ spec }: SpecAccordionProps) {
   return (
     <div
       style={{
-        backgroundColor: "#27272a",
+        backgroundColor: "var(--bg-surface)",
         borderRadius: "8px",
-        border: "1px solid #3f3f46",
+        border: "1px solid var(--border)",
         overflow: "hidden",
       }}
     >
@@ -291,7 +297,7 @@ function SpecAccordion({ spec }: SpecAccordionProps) {
           background: "none",
           border: "none",
           cursor: "pointer",
-          color: "#a1a1aa",
+          color: "var(--text-secondary)",
           fontSize: "13px",
           fontFamily: "Geist Mono, monospace",
           textAlign: "left",
@@ -305,8 +311,8 @@ function SpecAccordion({ spec }: SpecAccordionProps) {
         <div
           style={{
             padding: "16px",
-            borderTop: "1px solid #3f3f46",
-            backgroundColor: "#18181b",
+            borderTop: "1px solid var(--border)",
+            backgroundColor: "var(--bg-base)",
             maxHeight: "500px",
             overflowY: "auto",
           }}
@@ -315,7 +321,7 @@ function SpecAccordion({ spec }: SpecAccordionProps) {
             style={{
               fontSize: "13px",
               lineHeight: "1.7",
-              color: "#d4d4d8",
+              color: "var(--text-primary)",
               fontFamily: "Geist Mono, monospace",
             }}
           >
@@ -345,8 +351,8 @@ function NotificationBanner({ onAllow, onDismiss }: NotificationBannerProps) {
         position: "fixed",
         bottom: "24px",
         right: "24px",
-        backgroundColor: "#27272a",
-        border: "1px solid #3f3f46",
+        backgroundColor: "var(--bg-surface)",
+        border: "1px solid var(--border)",
         borderRadius: "10px",
         padding: "14px 16px",
         display: "flex",
@@ -357,7 +363,7 @@ function NotificationBanner({ onAllow, onDismiss }: NotificationBannerProps) {
         maxWidth: "300px",
       }}
     >
-      <div style={{ fontSize: "13px", color: "#d4d4d8", lineHeight: 1.4 }}>
+      <div style={{ fontSize: "13px", color: "var(--text-primary)", lineHeight: 1.4 }}>
         Get notified when this run finishes?
       </div>
       <div style={{ display: "flex", gap: "8px" }}>
@@ -368,7 +374,7 @@ function NotificationBanner({ onAllow, onDismiss }: NotificationBannerProps) {
             padding: "6px 12px",
             borderRadius: "6px",
             border: "none",
-            backgroundColor: "#6366f1",
+            backgroundColor: "var(--accent)",
             color: "#fff",
             fontSize: "12px",
             cursor: "pointer",
@@ -383,9 +389,9 @@ function NotificationBanner({ onAllow, onDismiss }: NotificationBannerProps) {
             flex: 1,
             padding: "6px 12px",
             borderRadius: "6px",
-            border: "1px solid #3f3f46",
+            border: "1px solid var(--border)",
             backgroundColor: "transparent",
-            color: "#71717a",
+            color: "var(--text-muted)",
             fontSize: "12px",
             cursor: "pointer",
             fontFamily: "inherit",
@@ -412,7 +418,12 @@ export default function RunDetailPage() {
   const [isLive, setIsLive] = useState(false);
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
   const [liveDone, setLiveDone] = useState(false);
+  const [completionVisible, setCompletionVisible] = useState(false);
+  const handleCompletionDismiss = useCallback(() => setCompletionVisible(false), []);
   const [showNotifBanner, setShowNotifBanner] = useState(false);
+  const [notifGranted, setNotifGranted] = useState(() =>
+    typeof Notification !== "undefined" && Notification.permission === "granted"
+  );
   const notifPromptedRef = useRef(false);
   const cleanupStreamRef = useRef<(() => void) | null>(null);
   const detailRef = useRef<RunDetail | null>(null);
@@ -441,6 +452,7 @@ export default function RunDetailPage() {
   const handleStreamClose = useCallback(() => {
     setIsLive(false);
     setLiveDone(true);
+    setCompletionVisible(true);
     // Refresh detail to get final state from conduct log, then notify with
     // fresh data (avoids stale closure on detail + notification fires correctly)
     if (id) {
@@ -453,27 +465,33 @@ export default function RunDetailPage() {
     }
   }, [id]); // detail intentionally omitted — use detailRef for sync reads if needed
 
+  // 5-second delayed notification prompt for live runs
+  useEffect(() => {
+    if (!isLive || notifGranted) return;
+    const timer = setTimeout(() => {
+      if (
+        !notifPromptedRef.current &&
+        typeof Notification !== "undefined" &&
+        Notification.permission === "default"
+      ) {
+        const alreadyPrompted = (() => {
+          try {
+            return !!sessionStorage.getItem(NOTIF_PROMPTED_KEY);
+          } catch {
+            return false;
+          }
+        })();
+        if (!alreadyPrompted) {
+          setShowNotifBanner(true);
+          notifPromptedRef.current = true;
+        }
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [isLive, notifGranted]);
+
   useEffect(() => {
     if (!isLive || !id) return;
-
-    // Show notification opt-in banner once per session
-    if (
-      !notifPromptedRef.current &&
-      typeof Notification !== "undefined" &&
-      Notification.permission === "default"
-    ) {
-      const alreadyPrompted = (() => {
-        try {
-          return !!sessionStorage.getItem(NOTIF_PROMPTED_KEY);
-        } catch {
-          return false;
-        }
-      })();
-      if (!alreadyPrompted) {
-        setShowNotifBanner(true);
-        notifPromptedRef.current = true;
-      }
-    }
 
     const cleanup = createRunStream(
       id,
@@ -520,6 +538,9 @@ export default function RunDetailPage() {
       // ignore
     }
     await requestNotificationPermission();
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      setNotifGranted(true);
+    }
   };
 
   const handleNotifDismiss = () => {
@@ -542,14 +563,14 @@ export default function RunDetailPage() {
         display: "inline-flex",
         alignItems: "center",
         gap: "6px",
-        color: "#71717a",
+        color: "var(--text-muted)",
         fontSize: "13px",
         textDecoration: "none",
         marginBottom: "24px",
         transition: "color 0.15s",
       }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = "#a1a1aa"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = "#71717a"; }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)"; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = "var(--text-muted)"; }}
     >
       ← Runs
     </Link>
@@ -567,7 +588,7 @@ export default function RunDetailPage() {
                 width: w,
                 height: 20,
                 borderRadius: 4,
-                backgroundColor: "#3f3f46",
+                backgroundColor: "var(--bg-subtle)",
                 animation: "pulse 1.5s infinite",
               }}
             />
@@ -584,11 +605,11 @@ export default function RunDetailPage() {
         <div
           role="alert"
           style={{
-            backgroundColor: "rgba(239,68,68,0.1)",
-            border: "1px solid rgba(239,68,68,0.3)",
+            backgroundColor: "var(--status-failed-bg)",
+            border: "1px solid var(--status-failed-bg)",
             borderRadius: "8px",
             padding: "16px",
-            color: "#f87171",
+            color: "var(--status-failed-text)",
             fontSize: "14px",
           }}
         >
@@ -600,17 +621,26 @@ export default function RunDetailPage() {
 
   const { entry, spec, runLog } = detail;
   const stripeColor = statusStripeColor(entry.success, isLive);
+  const runStatus = entry.success ? "success" : "failed";
 
   return (
     <div>
       {backLink}
 
+      {/* Completion banner */}
+      {completionVisible && (
+        <CompletionBanner
+          success={runStatus === "success"}
+          onDismiss={handleCompletionDismiss}
+        />
+      )}
+
       {/* Header card with status stripe */}
       <div
         style={{
-          backgroundColor: "#27272a",
+          backgroundColor: "var(--bg-surface)",
           borderRadius: "8px",
-          border: "1px solid #3f3f46",
+          border: "1px solid var(--border)",
           borderLeft: `4px solid ${stripeColor}`,
           padding: "20px 24px",
           marginBottom: "24px",
@@ -627,7 +657,7 @@ export default function RunDetailPage() {
               margin: 0,
               fontSize: "16px",
               fontWeight: 600,
-              color: "#f4f4f5",
+              color: "var(--text-primary)",
               lineHeight: 1.4,
             }}
           >
@@ -643,12 +673,12 @@ export default function RunDetailPage() {
             flexWrap: "wrap",
             fontSize: "13px",
             fontFamily: "Geist Mono, monospace",
-            color: "#a1a1aa",
+            color: "var(--text-secondary)",
             alignItems: "center",
           }}
         >
-          {isLive ? (
-            <ElapsedTimer startTs={entry.ts} />
+          {isLive || liveDone ? (
+            <ElapsedTimer startTs={entry.ts} isComplete={liveDone && !isLive} />
           ) : (
             <span title="Wall-clock duration">{formatDuration(entry.durationMs)}</span>
           )}
@@ -658,10 +688,10 @@ export default function RunDetailPage() {
           )}
           <span title={entry.ts}>{formatDate(entry.ts)}</span>
           {entry.dryRun && (
-            <span style={{ color: "#fbbf24" }}>dry-run</span>
+            <span style={{ color: "var(--status-running-text)" }}>dry-run</span>
           )}
           {liveDone && !isLive && (
-            <span style={{ color: "#34d399", fontSize: "12px" }}>● completed</span>
+            <span style={{ color: "var(--status-success-text)", fontSize: "12px" }}>● completed</span>
           )}
         </div>
       </div>
@@ -681,7 +711,7 @@ export default function RunDetailPage() {
             fontFamily: "Geist Mono, monospace",
             textTransform: "uppercase",
             letterSpacing: "0.06em",
-            color: "#71717a",
+            color: "var(--text-muted)",
             marginTop: 0,
             marginBottom: "12px",
           }}
@@ -692,7 +722,7 @@ export default function RunDetailPage() {
               style={{
                 marginLeft: "10px",
                 fontSize: "11px",
-                color: "#6366f1",
+                color: "var(--accent)",
                 fontWeight: 400,
                 animation: "pulse 1.5s infinite",
               }}
@@ -704,32 +734,32 @@ export default function RunDetailPage() {
         {runLog !== null || liveEvents.length > 0 ? (
           <SubtasksTable runLog={runLog ?? []} liveEvents={liveEvents} />
         ) : (
-          <p style={{ color: "#71717a", fontSize: "14px" }}>No run log available.</p>
+          <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>No run log available.</p>
         )}
       </div>
 
       {/* Re-run hint */}
       <div
         style={{
-          backgroundColor: "#27272a",
+          backgroundColor: "var(--bg-surface)",
           borderRadius: "8px",
-          border: "1px solid #3f3f46",
+          border: "1px solid var(--border)",
           padding: "16px",
           marginTop: "32px",
         }}
       >
-        <div style={{ fontSize: "12px", color: "#71717a", marginBottom: "8px", fontFamily: "Geist Mono, monospace" }}>
+        <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontFamily: "Geist Mono, monospace" }}>
           Re-run this goal
         </div>
         <code
           style={{
             display: "block",
-            backgroundColor: "#18181b",
+            backgroundColor: "var(--bg-base)",
             borderRadius: "6px",
             padding: "10px 14px",
             fontSize: "12px",
             fontFamily: "Geist Mono, monospace",
-            color: "#a5b4fc",
+            color: "var(--accent)",
             userSelect: "all",
             wordBreak: "break-all",
           }}

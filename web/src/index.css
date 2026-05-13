@@ -5,7 +5,49 @@
 :root {
   --bg-base: theme('colors.zinc.900');
   --bg-surface: theme('colors.zinc.800');
+  --bg-subtle: theme('colors.zinc.700');
+  --border: theme('colors.zinc.700');
+  --text-primary: theme('colors.zinc.100');
+  --text-secondary: theme('colors.zinc.400');
+  --text-muted: theme('colors.zinc.500');
   --accent: theme('colors.indigo.500');
+  --accent-hover: theme('colors.indigo.400');
+  --accent-dim: rgba(99, 102, 241, 0.1);
+  --accent-dim-hover: rgba(99, 102, 241, 0.15);
+  --status-success-text: theme('colors.emerald.400');
+  --status-success-bg: rgba(16, 185, 129, 0.15);
+  --status-failed-text: theme('colors.red.400');
+  --status-failed-bg: rgba(239, 68, 68, 0.15);
+  --status-running-text: theme('colors.amber.400');
+  --status-running-bg: rgba(251, 191, 36, 0.15);
+  --live-color: theme('colors.indigo.400');
+  --live-bg: rgba(99, 102, 241, 0.1);
+  --live-row-bg: rgba(99, 102, 241, 0.04);
+  --live-row-bg-hover: rgba(99, 102, 241, 0.08);
+}
+
+[data-theme="light"] {
+  --bg-base: theme('colors.zinc.50');
+  --bg-surface: theme('colors.zinc.100');
+  --bg-subtle: theme('colors.zinc.200');
+  --border: theme('colors.zinc.200');
+  --text-primary: theme('colors.zinc.900');
+  --text-secondary: theme('colors.zinc.600');
+  --text-muted: theme('colors.zinc.500');
+  --accent: theme('colors.indigo.600');
+  --accent-hover: theme('colors.indigo.500');
+  --accent-dim: rgba(79, 70, 229, 0.1);
+  --accent-dim-hover: rgba(79, 70, 229, 0.15);
+  --status-success-text: theme('colors.emerald.700');
+  --status-success-bg: rgba(5, 150, 105, 0.12);
+  --status-failed-text: theme('colors.red.700');
+  --status-failed-bg: rgba(220, 38, 38, 0.12);
+  --status-running-text: theme('colors.amber.700');
+  --status-running-bg: rgba(217, 119, 6, 0.12);
+  --live-color: theme('colors.indigo.600');
+  --live-bg: rgba(79, 70, 229, 0.1);
+  --live-row-bg: rgba(79, 70, 229, 0.04);
+  --live-row-bg-hover: rgba(79, 70, 229, 0.08);
 }
 
 * {
@@ -13,27 +55,142 @@
 }
 
 body {
-  background-color: #18181b; /* zinc-900 */
-  color: #f4f4f5; /* zinc-100 */
+  background-color: var(--bg-base);
+  color: var(--text-primary);
   margin: 0;
   font-family: "Geist", system-ui, sans-serif;
   min-height: 100vh;
 }
 
-/* Skip to content link */
+/* Skip to content */
 .skip-link {
   position: absolute;
   top: -40px;
   left: 0;
-  background: #6366f1;
+  background: var(--accent);
   color: white;
   padding: 8px;
-  z-index: 100;
+  z-index: 200;
+  text-decoration: none;
 }
 .skip-link:focus {
   top: 0;
 }
 
+/* Focus rings */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* App layout */
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 220px;
+  min-width: 220px;
+  background-color: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+
+/* Default (desktop ≥1024px): show labels, hide standalone icons */
+.sidebar-icon { display: none; }
+.sidebar-label { display: inline; }
+.sidebar-brand { display: block; }
+
+/* Hamburger button — hidden on desktop */
+.hamburger-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+.hamburger-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-subtle);
+}
+
+/* Sidebar overlay (mobile) */
+.sidebar-overlay {
+  display: none;
+}
+
+/* Tablet (768–1023px): icon-only 48px sidebar */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .sidebar {
+    width: 48px;
+    min-width: 48px;
+  }
+  .sidebar-label {
+    display: none;
+  }
+  .sidebar-brand {
+    display: none;
+  }
+  .sidebar-icon {
+    display: flex;
+  }
+}
+
+/* Mobile (<768px): hidden sidebar + overlay */
+@media (max-width: 767px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -220px;
+    height: 100vh;
+    z-index: 50;
+    transition: left 0.2s ease;
+    width: 220px;
+    min-width: 220px;
+    overflow-y: auto;
+  }
+  .sidebar.sidebar-open {
+    left: 0;
+  }
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+  }
+  .sidebar-overlay.sidebar-open {
+    display: block;
+  }
+  .hamburger-btn {
+    display: flex;
+  }
+  .sidebar-icon {
+    display: none !important;
+  }
+  .sidebar-label {
+    display: inline !important;
+  }
+  .sidebar-brand {
+    display: block !important;
+  }
+}
+
+/* Keyframes */
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -42,4 +199,19 @@ body {
 @keyframes live-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.6; transform: scale(0.85); }
+}
+
+/* Completion banner animation */
+@keyframes banner-slide-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -245,15 +245,73 @@ The frontend uses React Router (HashRouter) and is styled with Tailwind CSS usin
 - Server: Express on Node.js
 - Frontend: React 18 + Vite + React Router + Tailwind CSS
 - Fonts: `@fontsource/geist` + `@fontsource/geist-mono` (no CDN)
+- Icons: `@heroicons/react` (theme toggle, sidebar nav)
 - Markdown: `react-markdown` + `rehype-sanitize`
+- Tests: Vitest + jsdom + `@testing-library/react` + `vitest-axe`
+
+---
+
+## Theme toggle
+
+The sidebar bottom control cycles through three theme states: **light**, **system** (follows OS preference), and **dark**. First visit defaults to system. Your choice is saved in `localStorage` under the key `phase2s-theme`. In system mode, the dashboard listens for `prefers-color-scheme` changes so it updates when you switch your OS between light and dark.
+
+Icons use `@heroicons/react`: SunIcon (light), ComputerDesktopIcon (system), MoonIcon (dark).
+
+---
+
+## Responsive layout
+
+The sidebar adapts to viewport width automatically — no configuration needed.
+
+| Viewport | Sidebar behavior |
+|----------|-----------------|
+| **Desktop** (≥1024px) | Full 220px sidebar with labels and brand |
+| **Tablet** (768–1023px) | Collapsed to 48px, icon-only, labels hidden |
+| **Mobile** (<768px) | Hidden off-screen; hamburger button appears in the main content area, slides sidebar open as an overlay with a semi-transparent backdrop |
+
+The hamburger button has `aria-expanded` set correctly so screen readers announce the open/close state.
+
+---
+
+## Accessibility
+
+The dashboard targets WCAG 2.1 AA. Sprint 96 additions:
+
+- **Keyboard navigation** — table rows have `tabIndex={0}` and respond to Enter/Space for navigation (same as click)
+- **`aria-busy`** — the `<table>` element has `aria-busy={loading}` during load so assistive tech knows content is loading
+- **`scope="col"` on headers** — all `<th>` elements in RunsPage and the subtasks table carry `scope="col"`
+- **Focus rings** — `:focus-visible` shows a 2px indigo outline globally
+- **`prefers-reduced-motion`** — all keyframe animations (`pulse`, `live-pulse`, `banner-slide-in`) and timer ticks are disabled when the OS motion preference is `reduce`
+- **Skip link** — the existing skip link has `z-index: 200` to clear the sidebar overlay on mobile
+- **`CompletionBanner`** — uses `role="status" aria-live="polite"` so screen readers announce run completion; keyboard-focusable and dismissible with Enter or Space
+
+An `axe-core` smoke test runs as part of `npm run test:web` to gate accessibility regressions in CI.
+
+---
+
+## Completion banner
+
+When a live run finishes, a **CompletionBanner** slides in from the top of the run detail page. It auto-dismisses after 3 seconds. You can dismiss it early by clicking or pressing Enter/Space. Uses `banner-slide-in` CSS animation (disabled when `prefers-reduced-motion: reduce`).
+
+---
+
+## Testing the web UI
+
+```bash
+# Run web component tests (jsdom + vitest-axe)
+npm run test:web
+
+# Run all tests (node + web)
+npm run test:all
+```
+
+`npm run test:web` is an alias for `cd web && npm run test:web`, which runs Vitest with the `web/vitest.config.ts` config (jsdom environment, React plugin, axe matchers). These are separate from the root Node.js unit tests.
 
 ---
 
 ## What's coming
 
-Sprint 95 ships live view. Future sprints will add:
+Sprint 96 ships theme toggle, responsive layout, and accessibility. Future sprints will add:
 
 - **Config** — view and edit your `.phase2s.yaml` in the browser (Sprint 97)
 - **Help** — in-browser skill reference (Sprint 98)
-- **Light mode** — theme toggle (CSS variable system is already in place, Sprint 96)
-- **Mobile viewport** — responsive layout for phones/tablets (Sprint 96)

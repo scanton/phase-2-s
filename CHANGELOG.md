@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.70.0 — 2026-05-12
+
+Sprint 96 — Dashboard Polish Pass + Accessibility: full CSS variable migration (no hardcoded hex anywhere), three-state theme toggle (light/system/dark), responsive layout with hamburger overlay on mobile and icon-only sidebar on tablet, prefers-reduced-motion support in CSS and JS, live view UX polish (completion animation, 5s notification delay, count badge), keyboard navigation on table rows, and a vitest-axe CI gate. 2373 node tests + 29 web component tests (2402 total).
+
+### Added
+- **Three-state theme toggle** — Sidebar bottom control cycles light / system / dark. First visit defaults to system (follows OS). `localStorage` key `phase2s-theme`. In system mode, listens for `prefers-color-scheme` changes. Icons from `@heroicons/react`: SunIcon, ComputerDesktopIcon, MoonIcon.
+- **Light mode palette** — Full zinc-50/100/200 backgrounds, zinc-900 text, indigo-600 accent. All status colors adjusted for light contrast (emerald-700, red-700, amber-700).
+- **CSS variable migration** — All components (`StatusBadge`, `RunsPage`, `RunDetailPage`, `Sidebar`, `CompletionBanner`) use CSS variables exclusively. Zero hardcoded hex colors.
+- **Mobile sidebar (<768px)** — Sidebar hidden off-screen, hamburger button in main content top-left, slides open as overlay with semi-transparent backdrop. `aria-expanded` on hamburger button.
+- **Tablet sidebar (768–1023px)** — 48px icon-only. Labels hidden, brand hidden. Icons from `@heroicons/react/24/outline`: `TableCellsIcon`, `SignalIcon`, `Cog6ToothIcon`, `QuestionMarkCircleIcon`.
+- **`prefers-reduced-motion` CSS** — All keyframe animations (`pulse`, `live-pulse`, `banner-slide-in`) and transitions killed at 0.01ms when motion preference is reduce.
+- **`prefers-reduced-motion` JS** — `ElapsedTimer` skips `setInterval` when motion preference is reduce or run is already complete.
+- **`CompletionBanner` component** — Slides in on SSE stream close, auto-dismisses after 3s, clickable or keyboard-dismissible (Enter/Space) to dismiss early. `role="status" aria-live="polite"`. Uses CSS `banner-slide-in` animation.
+- **Completion animation in RunDetailPage** — `completionVisible` state triggers `CompletionBanner` when the SSE `close` event fires.
+- **ElapsedTimer `isComplete` prop** — Timer stops ticking after completion, label changes from "ELAPSED" to "DURATION".
+- **Notification prompt 5s delay** — Banner no longer appears instantly; waits 5 seconds after a live run opens. Hidden permanently after `Notification.permission === "granted"`.
+- **Live count badge in sidebar** — Multiple active runs show `Live (N)` in the sidebar button.
+- **Keyboard navigation on table rows** — `tabIndex={0}` + `onKeyDown` (Enter/Space) on all run rows in RunsPage.
+- **`aria-busy` on table** — `<table>` element has `aria-busy={loading}` during load state.
+- **`scope="col"` on table headers** — `<th scope="col">` on all column headers in RunsPage and RunDetailPage subtasks table.
+- **Focus rings** — `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }` applied globally.
+- **Skip-link z-index bump** — `z-index: 200` to clear sidebar overlay.
+- **vitest-axe CI gate** — `web/src/pages/RunsPage.test.tsx` and `web/src/components/Sidebar.test.tsx` run axe smoke tests. `npm run test:web` in `web/`, separate from root node tests.
+- **`web/vitest.config.ts`** — Separate vitest config for React component tests (jsdom environment, `@vitejs/plugin-react`).
+- **`web/src/test-setup.ts`** — Configures vitest-axe matchers, mocks `matchMedia`, `Notification`, `localStorage`, `sessionStorage`.
+- **`test:all` root script** — `npm run test:all` runs both root node tests and web component tests.
+- **DESIGN.md update** — Full CSS variable spec, light palette, responsive breakdown, a11y checklist, component inventory.
+
+### Changed
+- **`Sidebar` props** — Now accepts `isOpen: boolean` and `onClose: () => void` for mobile overlay management.
+- **`App.tsx`** — Uses `app-layout` CSS class, manages `sidebarOpen` state, renders hamburger button and overlay div.
+- **`useTheme` hook** — New `web/src/hooks/useTheme.ts`. Called once in `App` (DOM application) and once in `Sidebar` (theme cycling UI). Both calls sync via localStorage and direct DOM writes.
+
 ## v1.69.0 — 2026-05-11
 
 Sprint 95 — Web Dashboard Live View: the dashboard now detects in-progress conductor runs and shows them in real time. Open `phase2s serve` while `phase2s conduct` is running — active runs show a pulsing **LIVE** badge in the runs list, the run detail page streams subtask results as workers complete, an elapsed timer counts up while the run is active, and a desktop notification fires when the run finishes. No WebSockets, no changes to the conductor process — the filesystem is the message bus. 2402 tests.

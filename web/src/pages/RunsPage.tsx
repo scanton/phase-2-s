@@ -47,7 +47,7 @@ function SkeletonRow() {
               width: w,
               height: 14,
               borderRadius: 4,
-              backgroundColor: "#3f3f46",
+              backgroundColor: "var(--bg-subtle)",
               animation: "pulse 1.5s infinite",
             }}
           />
@@ -78,14 +78,14 @@ function StatBar({ entries }: StatBarProps) {
     flexDirection: "column",
     gap: "2px",
     padding: "12px 20px",
-    backgroundColor: "#27272a",
+    backgroundColor: "var(--bg-surface)",
     borderRadius: "8px",
     minWidth: "120px",
   };
 
   const labelStyle: React.CSSProperties = {
     fontSize: "11px",
-    color: "#71717a",
+    color: "var(--text-muted)",
     fontFamily: "Geist Mono, monospace",
     textTransform: "uppercase",
     letterSpacing: "0.05em",
@@ -94,7 +94,7 @@ function StatBar({ entries }: StatBarProps) {
   const valueStyle: React.CSSProperties = {
     fontSize: "22px",
     fontWeight: 600,
-    color: "#f4f4f5",
+    color: "var(--text-primary)",
     fontFamily: "Geist Mono, monospace",
   };
 
@@ -106,7 +106,7 @@ function StatBar({ entries }: StatBarProps) {
       </div>
       <div style={statStyle}>
         <span style={labelStyle}>Success Rate</span>
-        <span style={{ ...valueStyle, color: rate >= 70 ? "#34d399" : rate >= 40 ? "#fbbf24" : "#f87171" }}>
+        <span style={{ ...valueStyle, color: rate >= 70 ? "var(--status-success-text)" : rate >= 40 ? "var(--status-running-text)" : "var(--status-failed-text)" }}>
           {rate}%
         </span>
       </div>
@@ -123,10 +123,6 @@ function StatBar({ entries }: StatBarProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // LiveBadge — pulsing LIVE ● indicator for active run rows
 // ---------------------------------------------------------------------------
 
@@ -140,8 +136,8 @@ function LiveBadge() {
         gap: "5px",
         padding: "2px 7px",
         borderRadius: "9999px",
-        backgroundColor: "rgba(99,102,241,0.15)",
-        color: "#818cf8",
+        backgroundColor: "var(--live-bg)",
+        color: "var(--live-color)",
         fontSize: "11px",
         fontWeight: 600,
         fontFamily: "Geist Mono, monospace",
@@ -154,7 +150,7 @@ function LiveBadge() {
           width: "6px",
           height: "6px",
           borderRadius: "50%",
-          backgroundColor: "#6366f1",
+          backgroundColor: "var(--accent)",
           animation: "live-pulse 1.2s ease-in-out infinite",
         }}
         aria-hidden="true"
@@ -198,8 +194,12 @@ export default function RunsPage() {
 
     const pollActive = async () => {
       if (!visibleRef.current) return;
-      const runs = await fetchActiveRuns();
-      setActiveSpecHashes(new Set(runs.map((r: ActiveRun) => r.specHash)));
+      try {
+        const runs = await fetchActiveRuns();
+        setActiveSpecHashes(new Set(runs.map((r: ActiveRun) => r.specHash)));
+      } catch {
+        // Ignore network errors during active-run polling
+      }
     };
 
     void pollActive();
@@ -217,8 +217,8 @@ export default function RunsPage() {
     fontFamily: "Geist Mono, monospace",
     textTransform: "uppercase",
     letterSpacing: "0.06em",
-    color: "#71717a",
-    borderBottom: "1px solid #3f3f46",
+    color: "var(--text-muted)",
+    borderBottom: "1px solid var(--border)",
     whiteSpace: "nowrap",
   };
 
@@ -228,7 +228,7 @@ export default function RunsPage() {
         style={{
           fontSize: "18px",
           fontWeight: 600,
-          color: "#f4f4f5",
+          color: "var(--text-primary)",
           marginTop: 0,
           marginBottom: "20px",
         }}
@@ -245,7 +245,7 @@ export default function RunsPage() {
             borderRadius: "8px",
             padding: "12px 16px",
             marginBottom: "20px",
-            color: "#fbbf24",
+            color: "var(--status-running-text)",
             fontSize: "14px",
           }}
         >
@@ -256,15 +256,15 @@ export default function RunsPage() {
       {!loading && !error && entries.length === 0 && (
         <div
           style={{
-            backgroundColor: "#27272a",
+            backgroundColor: "var(--bg-surface)",
             borderRadius: "12px",
             padding: "48px 32px",
             textAlign: "center",
-            color: "#71717a",
+            color: "var(--text-muted)",
           }}
         >
           <div style={{ fontSize: "32px", marginBottom: "12px" }}>~</div>
-          <div style={{ fontSize: "16px", fontWeight: 500, color: "#a1a1aa", marginBottom: "8px" }}>
+          <div style={{ fontSize: "16px", fontWeight: 500, color: "var(--text-secondary)", marginBottom: "8px" }}>
             No runs yet
           </div>
           <div style={{ fontSize: "14px", marginBottom: "20px" }}>
@@ -273,13 +273,13 @@ export default function RunsPage() {
           <code
             style={{
               display: "inline-block",
-              backgroundColor: "#18181b",
-              border: "1px solid #3f3f46",
+              backgroundColor: "var(--bg-base)",
+              border: "1px solid var(--border)",
               borderRadius: "6px",
               padding: "8px 14px",
               fontSize: "13px",
               fontFamily: "Geist Mono, monospace",
-              color: "#a5b4fc",
+              color: "var(--accent)",
               userSelect: "all",
             }}
           >
@@ -295,20 +295,20 @@ export default function RunsPage() {
       {(loading || entries.length > 0) && (
         <div
           style={{
-            backgroundColor: "#27272a",
+            backgroundColor: "var(--bg-surface)",
             borderRadius: "8px",
             overflow: "hidden",
-            border: "1px solid #3f3f46",
+            border: "1px solid var(--border)",
           }}
         >
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table aria-busy={loading} aria-label="Conduct runs table" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ backgroundColor: "#1f1f23" }}>
-                <th style={thStyle}>Goal</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Duration</th>
-                <th style={thStyle}>Subtasks</th>
-                <th style={thStyle}>When</th>
+              <tr style={{ backgroundColor: "var(--bg-base)" }}>
+                <th scope="col" style={thStyle}>Goal</th>
+                <th scope="col" style={thStyle}>Status</th>
+                <th scope="col" style={thStyle}>Duration</th>
+                <th scope="col" style={thStyle}>Subtasks</th>
+                <th scope="col" style={thStyle}>When</th>
               </tr>
             </thead>
             <tbody>
@@ -319,27 +319,36 @@ export default function RunsPage() {
                     return (
                     <tr
                       key={entry.specHash || entry.ts}
+                      tabIndex={0}
                       onClick={() => navigate(`/runs/${entry.specHash || entry.ts}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          navigate(`/runs/${entry.specHash || entry.ts}`);
+                        }
+                      }}
                       style={{
                         cursor: "pointer",
-                        borderBottom: "1px solid #3f3f46",
+                        borderBottom: "1px solid var(--border)",
                         transition: "background-color 0.1s",
-                        backgroundColor: isLive ? "rgba(99,102,241,0.04)" : undefined,
+                        backgroundColor: isLive ? "var(--live-row-bg)" : undefined,
                       }}
                       onMouseEnter={(e) => {
                         (e.currentTarget as HTMLTableRowElement).style.backgroundColor =
-                          isLive ? "rgba(99,102,241,0.08)" : "rgba(255,255,255,0.03)";
+                          isLive ? "var(--live-row-bg-hover)" : "var(--bg-subtle)";
+                        (e.currentTarget as HTMLTableRowElement).style.opacity = isLive ? "1" : "0.85";
                       }}
                       onMouseLeave={(e) => {
                         (e.currentTarget as HTMLTableRowElement).style.backgroundColor =
-                          isLive ? "rgba(99,102,241,0.04)" : "";
+                          isLive ? "var(--live-row-bg)" : "";
+                        (e.currentTarget as HTMLTableRowElement).style.opacity = "1";
                       }}
                     >
                       <td
                         style={{
                           padding: "12px 16px",
                           fontSize: "14px",
-                          color: "#e4e4e7",
+                          color: "var(--text-primary)",
                           maxWidth: "320px",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -356,7 +365,7 @@ export default function RunsPage() {
                         style={{
                           padding: "12px 16px",
                           fontSize: "13px",
-                          color: "#a1a1aa",
+                          color: "var(--text-secondary)",
                           fontFamily: "Geist Mono, monospace",
                           whiteSpace: "nowrap",
                         }}
@@ -367,7 +376,7 @@ export default function RunsPage() {
                         style={{
                           padding: "12px 16px",
                           fontSize: "13px",
-                          color: "#a1a1aa",
+                          color: "var(--text-secondary)",
                           fontFamily: "Geist Mono, monospace",
                         }}
                       >
@@ -377,7 +386,7 @@ export default function RunsPage() {
                         style={{
                           padding: "12px 16px",
                           fontSize: "13px",
-                          color: "#71717a",
+                          color: "var(--text-muted)",
                           whiteSpace: "nowrap",
                         }}
                         title={entry.ts}

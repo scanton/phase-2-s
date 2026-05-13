@@ -14,6 +14,34 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Sprint 96 — Dashboard Polish Pass + Accessibility (v1.70.0, 2026-05-13)
+
+**Design doc:** `~/.gstack/projects/scanton-phase-2-s/scanton-sprint-95-design-20260512-182017.md`
+
+All Sprint 96 scope shipped. All deferred items from Sprints 94–95 closed.
+
+### Known Issues (P0)
+- [ ] **supertest not installed** — `test/web/integration/server.test.ts` (3 test files) fail with "Cannot find package 'supertest'". Pre-existing since Sprint 94. Run `npm install supertest` (or add to `devDependencies`) to fix. **Priority: P0**
+
+### Completed
+- [x] Full CSS variable migration — `StatusBadge`, `RunsPage`, `RunDetailPage`, `Sidebar`, `CompletionBanner` **Completed: v1.70.0**
+- [x] Three-state theme toggle (light/system/dark) — `useTheme` hook, localStorage, OS matchMedia listener **Completed: v1.70.0**
+- [x] Light mode palette (zinc-50/100/200, indigo-600 accent) — `[data-theme="light"]` in index.css **Completed: v1.70.0**
+- [x] Mobile sidebar (<768px) — hamburger overlay with aria-expanded **Completed: v1.70.0**
+- [x] Tablet sidebar (768–1023px) — 48px icon-only with @heroicons/react **Completed: v1.70.0**
+- [x] `prefers-reduced-motion` CSS — blanket 0.01ms animation override **Completed: v1.70.0**
+- [x] `prefers-reduced-motion` JS — ElapsedTimer skips setInterval **Completed: v1.70.0**
+- [x] CompletionBanner — LIVE→completed animation, 3s auto-dismiss **Completed: v1.70.0**
+- [x] Notification prompt 5s delay, permanent hide after permission granted **Completed: v1.70.0**
+- [x] Live count badge in sidebar (`Live (N)`) **Completed: v1.70.0**
+- [x] ElapsedTimer `isComplete` prop — ELAPSED→DURATION label **Completed: v1.70.0**
+- [x] Keyboard nav on table rows (tabIndex + onKeyDown) **Completed: v1.70.0**
+- [x] aria-busy on table, scope="col" on headers, global :focus-visible rings **Completed: v1.70.0**
+- [x] vitest-axe CI gate — RunsPage + Sidebar axe smoke tests **Completed: v1.70.0**
+- [x] Unit tests for useTheme, CompletionBanner, ElapsedTimer (29 web tests total) **Completed: v1.70.0**
+
+---
+
 ## Sprint 95 — Web Dashboard Live View (v1.69.0, 2026-05-11)
 
 **Design doc:** `~/.gstack/projects/scanton-phase-2-s/scanton-main-design-20260512-011834.md`
@@ -68,10 +96,10 @@ on list + elapsed timer + browser notifications + tab title).
 - [x] `temp/v2-web-ui-plan.md` — ✅ created by Sprint 95 planning **Completed: v1.69.0 (2026-05-11)**
 
 ### Deferred to Sprint 96+ (from Sprint 94 + Sprint 95)
-- Light mode / theme toggle (CSS variable system ready)
-- Full screen reader audit
-- Phone/mobile viewport (<768px)
-- `prefers-reduced-motion` (disable pulse + timer when motion reduced)
+- [x] Light mode / theme toggle (CSS variable system ready) **Completed: v1.70.0 (2026-05-13)**
+- [x] Full screen reader audit (vitest-axe CI gate, ARIA landmarks, keyboard nav) **Completed: v1.70.0 (2026-05-13)**
+- [x] Phone/mobile viewport (<768px) — hamburger overlay **Completed: v1.70.0 (2026-05-13)**
+- [x] `prefers-reduced-motion` (CSS + ElapsedTimer JS check) **Completed: v1.70.0 (2026-05-13)**
 
 ---
 
@@ -103,10 +131,10 @@ Stack: React + Vite (Node/Express server, pre-built assets in npm package). Port
 - [x] ~~Sprint 94 gate for Sprint 95: /plan-design-review~~ ✅ DONE (2026-05-11, score 3→9/10, 14 decisions) **Completed: v1.68.0**
 
 **Deferred to Sprint 96+ (Sprint 95 is Live View, Sprint 96 is the Polish Pass):**
-- Light mode / theme toggle (CSS variable system ready)
-- Full screen reader audit
-- Phone/mobile viewport (<768px)
-- `prefers-reduced-motion` support
+- [x] Light mode / theme toggle **Completed: v1.70.0**
+- [x] Full screen reader audit **Completed: v1.70.0**
+- [x] Phone/mobile viewport (<768px) **Completed: v1.70.0**
+- [x] `prefers-reduced-motion` support **Completed: v1.70.0**
 
 ## Backlog — Post-Sprint 93 notes (v1.67.0, 2026-05-11)
 
