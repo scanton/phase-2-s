@@ -194,8 +194,12 @@ export default function RunsPage() {
 
     const pollActive = async () => {
       if (!visibleRef.current) return;
-      const runs = await fetchActiveRuns();
-      setActiveSpecHashes(new Set(runs.map((r: ActiveRun) => r.specHash)));
+      try {
+        const runs = await fetchActiveRuns();
+        setActiveSpecHashes(new Set(runs.map((r: ActiveRun) => r.specHash)));
+      } catch {
+        // Ignore network errors during active-run polling
+      }
     };
 
     void pollActive();

@@ -116,13 +116,16 @@ export interface ElapsedTimerProps {
 }
 
 export function ElapsedTimer({ startTs, isComplete }: ElapsedTimerProps) {
-  const [elapsed, setElapsed] = useState(Date.now() - new Date(startTs).getTime());
+  const parsedStart = new Date(startTs).getTime();
+  const safeStart = isFinite(parsedStart) ? parsedStart : Date.now();
+  const [elapsed, setElapsed] = useState(Date.now() - safeStart);
 
   useEffect(() => {
     if (isComplete) return; // Don't tick after completion
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const id = setInterval(() => {
-      setElapsed(Date.now() - new Date(startTs).getTime());
+      const t = new Date(startTs).getTime();
+      setElapsed(Date.now() - (isFinite(t) ? t : Date.now()));
     }, 1000);
     return () => clearInterval(id);
   }, [startTs, isComplete]);
