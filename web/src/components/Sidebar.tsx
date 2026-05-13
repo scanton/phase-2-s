@@ -9,6 +9,7 @@ import {
   MoonIcon,
   ComputerDesktopIcon,
   XMarkIcon,
+  PlusIcon,
 } from "@heroicons/react/24/outline";
 import { fetchActiveRuns } from "../api.ts";
 import type { ActiveRun } from "../types.ts";
@@ -122,6 +123,22 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       >
         Phase2S
       </div>
+
+      {/* New Run — primary action */}
+      <NavLink
+        to="/runs/new"
+        onClick={onClose}
+        style={({ isActive }) => ({
+          ...navItemBase,
+          color: isActive ? "var(--accent-hover)" : "var(--accent)",
+          backgroundColor: isActive ? "var(--accent-dim)" : "transparent",
+          borderLeft: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+          fontWeight: 600,
+        })}
+      >
+        <PlusIcon width={16} height={16} aria-hidden="true" className="sidebar-icon" style={{ flexShrink: 0 }} />
+        <span className="sidebar-label">New Run</span>
+      </NavLink>
 
       {/* Runs */}
       <NavLink

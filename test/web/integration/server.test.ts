@@ -9,6 +9,8 @@
  *   GET /api/spec?path=    — 200 success, 400 missing param, 403 path traversal, 404 not found
  *   GET /api/config        — 200 masked keys, 404 no file (Sprint 97)
  *   POST /api/config       — 200 valid save, 400 invalid payload (Sprint 97)
+ *   POST /api/lint         — 200 valid, 400 missing goal (Sprint 98)
+ *   POST /api/runs         — 400 missing goal, 400 unknown template (Sprint 98)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -396,6 +398,106 @@ describe("POST /api/config", () => {
       .set("Content-Type", "application/json")
       .send(JSON.stringify([1, 2, 3]));
 
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 98: POST /api/lint
+// ---------------------------------------------------------------------------
+
+describe("POST /api/lint", () => {
+  let cwd: string;
+  let server: Server;
+
+  beforeEach(async () => {
+    cwd = tmpCwd();
+    await setupCwd(cwd);
+    server = startServer(0, cwd);
+  });
+
+  afterEach(async () => {
+    server.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("returns 400 when goal is missing", async () => {
+    const res = await request(server)
+      .post("/api/lint")
+      .set("Content-Type", "application/json")
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+  });
+
+  it("returns 400 when goal is empty string", async () => {
+    const res = await request(server)
+      .post("/api/lint")
+      .set("Content-Type", "application/json")
+      .send({ goal: "   " });
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+  });
+
+  it("returns 200 with { valid, errors } shape for a valid goal", async () => {
+    const res = await request(server)
+      .post("/api/lint")
+      .set("Content-Type", "application/json")
+      .send({ goal: "Add a login page with email and password fields" });
+    // phase2s lint may pass or fail — we just check the response shape
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("valid");
+    expect(typeof res.body.valid).toBe("boolean");
+    expect(res.body).toHaveProperty("errors");
+    expect(Array.isArray(res.body.errors)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 98: POST /api/runs
+// ---------------------------------------------------------------------------
+
+describe("POST /api/runs", () => {
+  let cwd: string;
+  let server: Server;
+
+  beforeEach(async () => {
+    cwd = tmpCwd();
+    await setupCwd(cwd);
+    server = startServer(0, cwd);
+  });
+
+  afterEach(async () => {
+    server.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("returns 400 when goal is missing", async () => {
+    const res = await request(server)
+      .post("/api/runs")
+      .set("Content-Type", "application/json")
+      .send({ modelTier: "smart", parallel: false });
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect(typeof res.body.error).toBe("string");
+  });
+
+  it("returns 400 when template is not in the allowed list", async () => {
+    const res = await request(server)
+      .post("/api/runs")
+      .set("Content-Type", "application/json")
+      .send({ goal: "Build something", template: "malicious; rm -rf /", modelTier: "smart", parallel: false });
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect((res.body.error as string).includes("Unknown template")).toBe(true);
+  });
+
+  it("returns 400 for an unrecognized template name", async () => {
+    const res = await request(server)
+      .post("/api/runs")
+      .set("Content-Type", "application/json")
+      .send({ goal: "Build something", template: "wizard", modelTier: "smart", parallel: false });
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty("error");
   });

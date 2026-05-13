@@ -263,7 +263,7 @@ export async function handlePostConfig(
 
   // Read existing config (or start empty)
   let existingRaw = "";
-  let filename = CONFIG_FILENAMES[0]; // default: .phase2s.yaml
+  let filename: string = CONFIG_FILENAMES[0]; // default: .phase2s.yaml
 
   try {
     const fileResult = await readConfigFile(cwd);

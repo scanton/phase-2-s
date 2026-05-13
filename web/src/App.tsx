@@ -4,6 +4,7 @@ import Sidebar from "./components/Sidebar.tsx";
 import RunsPage from "./pages/RunsPage.tsx";
 import RunDetailPage from "./pages/RunDetailPage.tsx";
 import ConfigPage from "./pages/ConfigPage.tsx";
+import NewRunPage from "./pages/NewRunPage.tsx";
 import { useTheme } from "./hooks/useTheme.ts";
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
         </button>
         <Routes>
           <Route path="/" element={<RunsPage />} />
+          <Route path="/runs/new" element={<NewRunPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
           <Route path="/config" element={<ConfigPage />} />
         </Routes>

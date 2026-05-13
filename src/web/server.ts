@@ -1,12 +1,16 @@
 /**
- * phase2s web dashboard — Express HTTP server (Sprint 94 + Sprint 95)
+ * phase2s web dashboard — Express HTTP server (Sprint 94–98)
  *
  * Serves the React SPA from dist/web/ and exposes:
- *   GET /api/runs           — list all conduct-log entries (newest first)
- *   GET /api/runs/active    — active run detection (mtime + no terminal event)
- *   GET /api/runs/:id       — run detail by specHash (+ isActive flag)
- *   GET /api/runs/:id/stream — SSE live tail of a run JSONL
- *   GET /api/spec?path=     — read a spec file (path traversal guarded)
+ *   GET  /api/runs              — list all conduct-log entries (newest first)
+ *   GET  /api/runs/active       — active run detection (mtime + no terminal event)
+ *   GET  /api/runs/:id          — run detail by specHash or ts-slug (+ isActive flag)
+ *   GET  /api/runs/:id/stream   — SSE live tail of a run JSONL
+ *   POST /api/runs              — spawn a new conduct run (Sprint 98)
+ *   GET  /api/spec?path=        — read a spec file (path traversal guarded)
+ *   GET  /api/config            — read .phase2s.yaml (masked API keys)
+ *   POST /api/config            — write .phase2s.yaml
+ *   POST /api/lint              — lint a spec before submitting (Sprint 98)
  *
  * ⚠️  ROUTE ORDER MATTERS:
  *   /api/runs/active must be registered BEFORE /api/runs/:id.
@@ -28,8 +32,9 @@ export function startServer(port: number, cwd: string): Server {
   // Vite outputs the SPA (vite.config.ts outDir: "../dist/web").
   const distWeb = join(__dirname, "../../web");
 
-  // Parse JSON request bodies for POST endpoints (Sprint 97: /api/config)
-  app.use(express.json());
+  // Parse JSON request bodies for POST endpoints. 16 KB cap prevents log-file
+  // inflation from oversized payloads; goals are capped at 2000 chars anyway.
+  app.use(express.json({ limit: "16kb" }));
 
   app.get("/api/config", async (req, res) => {
     const { handleGetConfig } = await import("./api/config.js");
@@ -44,6 +49,12 @@ export function startServer(port: number, cwd: string): Server {
   app.get("/api/runs", async (req, res) => {
     const { handleGetRuns } = await import("./api/runs.js");
     await handleGetRuns(req, res, cwd);
+  });
+
+  // Sprint 98: spawn a new conduct run from the browser
+  app.post("/api/runs", async (req, res) => {
+    const { handlePostRuns } = await import("./api/spawn.js");
+    await handlePostRuns(req, res, cwd);
   });
 
   // ⚠️  /api/runs/active MUST come before /api/runs/:id — see module comment above.
@@ -65,6 +76,12 @@ export function startServer(port: number, cwd: string): Server {
   app.get("/api/spec", async (req, res) => {
     const { handleGetSpec } = await import("./api/spec.js");
     await handleGetSpec(req, res, cwd);
+  });
+
+  // Sprint 98: advisory lint before run submission
+  app.post("/api/lint", async (req, res) => {
+    const { handlePostLint } = await import("./api/lint.js");
+    await handlePostLint(req, res);
   });
 
   app.use(express.static(distWeb));

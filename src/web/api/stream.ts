@@ -74,8 +74,9 @@ export async function handleGetRunStream(
     res.status(400).json({ error: "Missing run id" });
     return;
   }
-  // Validate specHash format — prevents unexpected filesystem glob patterns
-  if (!/^[a-f0-9]{8}$/.test(id)) {
+  // Validate id format — accepts 8-char hex specHash (legacy runs) or
+  // YYYY-MM-DDTHH-mm-ss-SSS ts-slug (browser-spawned runs, Sprint 98+)
+  if (!/^[a-f0-9]{8}$/.test(id) && !/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}$/.test(id)) {
     res.status(400).json({ error: "Invalid run id format" });
     return;
   }

@@ -51,7 +51,9 @@ export async function runServe(options: ServeOptions): Promise<void> {
     });
   }
 
-  const shutdown = () => {
+  const shutdown = async () => {
+    const { killAllChildren } = await import("../web/api/spawn.js");
+    killAllChildren();
     server.close(() => {
       console.log("\nDashboard stopped.");
       process.exit(0);
