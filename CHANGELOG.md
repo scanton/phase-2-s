@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.72.0 — 2026-05-12
+
+Sprint 98 — Run from Browser: browser-based run launcher at `/new` backed by `POST /api/runs` (spawns `phase2s conduct` as a child process) and `POST /api/lint` (advisory pre-flight lint). Goal textarea, 6-template picker, model tier toggle (Fast/Smart), parallel checkbox, lint feedback inline, and live redirect to `/runs/:id` on success. Server-side: ts-slug IDs with millisecond precision to prevent collision, `ALLOWED_TEMPLATES` allowlist, 10-run concurrency cap, SIGTERM handler deduplication, spec file cleanup on lint rejection. 27 new tests (10 server unit + 17 React). 2416 node tests + 59 web component tests (2475 total).
+
+### Added
+- **`POST /api/runs`** — Validates goal, runs authoritative lint gate (`phase2s lint`), spawns `phase2s conduct <spec>` as a child process. Accepts `{ goal, template?, modelTier, parallel }`. Returns `{ id }` (ts-slug) immediately; browser redirects to live view. Pipes stdout/stderr to `.phase2s/runs/<id>-<id>.jsonl` so the existing SSE stream picks it up with zero changes.
+- **`POST /api/lint`** — Advisory lint endpoint. Writes a temp spec, runs `phase2s lint`, returns `{ valid, errors[] }`. Used by the browser "Check Goal" button before submission. Cleans up temp files in `finally`.
+- **`NewRunPage`** (`web/src/pages/NewRunPage.tsx`) — Goal textarea with live Run/Lint button enable/disable. Template dropdown (None + auth/api/bug/refactor/test/cli). SegmentedControl model tier (Fast/Smart, defaults Smart). Parallel checkbox. Lint result inline (`LintErrors` component or "Looks good" badge). Submit error alert banner. Redirects to `/runs/:id` on success.
+- **`/new` route** — Sidebar nav item "New Run" added; routes to `NewRunPage`.
+- **ts-slug format** — `YYYY-MM-DDTHH-mm-ss-SSS` (23 chars, millisecond precision). Prevents ID collision when two requests arrive in the same second. Stream ID validator updated.
+- **Concurrency cap** — `POST /api/runs` returns 429 when 10+ child processes are already tracked in `activeChildren`.
+- **SIGTERM deduplication** — `process.listenerCount("SIGTERM")` guard prevents duplicate handlers when the module is hot-loaded (e.g., in Vitest with `vi.resetModules()`).
+- **Spec cleanup on rejection** — When server-side lint rejects a run, the spec file is deleted immediately. No user goal text persisted on disk for rejected runs.
+- **`test/web/api/spawn.test.ts`** — 10 unit tests: `tsSlug()` format/length/safety, `buildSpecContent()` sections and heading truncation, `runLint()` exit-0/exit-nonzero/empty-output/error-event paths (mocked child process).
+- **`NewRunPage.test.tsx`** — 17 tests covering all render, enable/disable, lint, submit, navigation, aria-pressed, checkbox, and modelTier behaviours. Includes axe a11y smoke tests.
+
+### Changed
+- **`tsSlug()`** — Extended from 19-char (`HH-mm-ss`) to 23-char (`HH-mm-ss-SSS`) to include milliseconds.
+- **Stream ID validator regex** — Updated to accept `YYYY-MM-DDTHH-mm-ss-SSS` alongside legacy 8-char hex specHash.
+
 ## v1.71.0 — 2026-05-13
 
 Sprint 97 — Config Page: browser-based config editor at `/config` backed by `GET /api/config` + `POST /api/config`. Reads `.phase2s.yaml` and masks API keys as `***SET***`; Zod validation + atomic write on save. 5-section form (Provider & Model, API Keys, Ollama, Notifications, Behavior). Sentinel pattern preserves untouched keys; per-field show/hide toggles; `allowDestructive` confirm dialog; dirty tracking + success toast. 28 new tests (10 server unit + 13 React + 5 integration). 2416 node tests + 42 web component tests (2458 total).

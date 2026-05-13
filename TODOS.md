@@ -14,6 +14,24 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Sprint 98 — Run from Browser (v1.72.0, 2026-05-12)
+
+All Sprint 98 scope shipped.
+
+### Completed
+- [x] `POST /api/runs` — spawns `phase2s conduct <spec>` as child process, returns ts-slug id **Completed: v1.72.0**
+- [x] `POST /api/lint` — advisory lint endpoint used by browser "Check Goal" button **Completed: v1.72.0**
+- [x] `NewRunPage` — goal textarea, template picker, model tier toggle, parallel checkbox, lint feedback, submit error banner **Completed: v1.72.0**
+- [x] `/new` route added to sidebar nav **Completed: v1.72.0**
+- [x] ts-slug with millisecond precision (YYYY-MM-DDTHH-mm-ss-SSS) — prevents ID collision **Completed: v1.72.0**
+- [x] ALLOWED_TEMPLATES allowlist security gate **Completed: v1.72.0**
+- [x] Concurrency cap (10 active children max, 429 response) **Completed: v1.72.0**
+- [x] SIGTERM handler deduplication guard **Completed: v1.72.0**
+- [x] Spec file cleanup on lint rejection **Completed: v1.72.0**
+- [x] 27 new tests: 10 backend unit + 17 React component **Completed: v1.72.0**
+
+---
+
 ## Sprint 97 — Web Dashboard Config Page (v1.71.0, 2026-05-13)
 
 **Design doc:** `~/.gstack/projects/scanton-phase-2-s/scanton-sprint-95-design-20260512-205136.md`
