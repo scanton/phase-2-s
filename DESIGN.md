@@ -2,7 +2,7 @@
 
 Created: 2026-05-11 (Sprint 94, /plan-design-review)
 Reviewed by: /plan-design-review skill
-Updated: 2026-05-12 (Sprint 96 — Polish Pass + Accessibility)
+Updated: 2026-05-12 (Sprint 97 — Config Page)
 Status: CURRENT
 
 ---
@@ -146,7 +146,8 @@ Icons from `@heroicons/react/24/outline`:
 Sidebar state:
 - **Active item:** `background: var(--accent-dim); color: var(--accent-hover); border-left: 2px solid var(--accent)`
 - **Inactive item:** `color: var(--text-secondary); hover: var(--bg-subtle)`
-- **Coming soon items:** `opacity: 0.4; cursor: default`
+- **Active nav item:** uses same active-state styling as the Runs link (accent border + background)
+- **Help (coming soon):** `opacity: 0.4; cursor: default`
 
 ---
 
