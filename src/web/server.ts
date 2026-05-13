@@ -1,12 +1,16 @@
 /**
- * phase2s web dashboard — Express HTTP server (Sprint 94 + Sprint 95)
+ * phase2s web dashboard — Express HTTP server (Sprint 94–98)
  *
  * Serves the React SPA from dist/web/ and exposes:
- *   GET /api/runs           — list all conduct-log entries (newest first)
- *   GET /api/runs/active    — active run detection (mtime + no terminal event)
- *   GET /api/runs/:id       — run detail by specHash (+ isActive flag)
- *   GET /api/runs/:id/stream — SSE live tail of a run JSONL
- *   GET /api/spec?path=     — read a spec file (path traversal guarded)
+ *   GET  /api/runs              — list all conduct-log entries (newest first)
+ *   GET  /api/runs/active       — active run detection (mtime + no terminal event)
+ *   GET  /api/runs/:id          — run detail by specHash or ts-slug (+ isActive flag)
+ *   GET  /api/runs/:id/stream   — SSE live tail of a run JSONL
+ *   POST /api/runs              — spawn a new conduct run (Sprint 98)
+ *   GET  /api/spec?path=        — read a spec file (path traversal guarded)
+ *   GET  /api/config            — read .phase2s.yaml (masked API keys)
+ *   POST /api/config            — write .phase2s.yaml
+ *   POST /api/lint              — lint a spec before submitting (Sprint 98)
  *
  * ⚠️  ROUTE ORDER MATTERS:
  *   /api/runs/active must be registered BEFORE /api/runs/:id.
@@ -46,6 +50,12 @@ export function startServer(port: number, cwd: string): Server {
     await handleGetRuns(req, res, cwd);
   });
 
+  // Sprint 98: spawn a new conduct run from the browser
+  app.post("/api/runs", async (req, res) => {
+    const { handlePostRuns } = await import("./api/spawn.js");
+    await handlePostRuns(req, res, cwd);
+  });
+
   // ⚠️  /api/runs/active MUST come before /api/runs/:id — see module comment above.
   app.get("/api/runs/active", async (req, res) => {
     const { handleGetActiveRuns } = await import("./api/active.js");
@@ -65,6 +75,12 @@ export function startServer(port: number, cwd: string): Server {
   app.get("/api/spec", async (req, res) => {
     const { handleGetSpec } = await import("./api/spec.js");
     await handleGetSpec(req, res, cwd);
+  });
+
+  // Sprint 98: advisory lint before run submission
+  app.post("/api/lint", async (req, res) => {
+    const { handlePostLint } = await import("./api/lint.js");
+    await handlePostLint(req, res);
   });
 
   app.use(express.static(distWeb));
