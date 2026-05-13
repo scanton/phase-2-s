@@ -32,8 +32,9 @@ export function startServer(port: number, cwd: string): Server {
   // Vite outputs the SPA (vite.config.ts outDir: "../dist/web").
   const distWeb = join(__dirname, "../../web");
 
-  // Parse JSON request bodies for POST endpoints (Sprint 97: /api/config)
-  app.use(express.json());
+  // Parse JSON request bodies for POST endpoints. 16 KB cap prevents log-file
+  // inflation from oversized payloads; goals are capped at 2000 chars anyway.
+  app.use(express.json({ limit: "16kb" }));
 
   app.get("/api/config", async (req, res) => {
     const { handleGetConfig } = await import("./api/config.js");

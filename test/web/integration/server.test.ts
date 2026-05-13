@@ -479,8 +479,8 @@ describe("POST /api/runs", () => {
       .set("Content-Type", "application/json")
       .send({ modelTier: "smart", parallel: false });
     expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty("errors");
-    expect(Array.isArray(res.body.errors)).toBe(true);
+    expect(res.body).toHaveProperty("error");
+    expect(typeof res.body.error).toBe("string");
   });
 
   it("returns 400 when template is not in the allowed list", async () => {
@@ -489,8 +489,8 @@ describe("POST /api/runs", () => {
       .set("Content-Type", "application/json")
       .send({ goal: "Build something", template: "malicious; rm -rf /", modelTier: "smart", parallel: false });
     expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty("errors");
-    expect((res.body.errors as string[]).some((e: string) => e.includes("Unknown template"))).toBe(true);
+    expect(res.body).toHaveProperty("error");
+    expect((res.body.error as string).includes("Unknown template")).toBe(true);
   });
 
   it("returns 400 for an unrecognized template name", async () => {
@@ -499,6 +499,6 @@ describe("POST /api/runs", () => {
       .set("Content-Type", "application/json")
       .send({ goal: "Build something", template: "wizard", modelTier: "smart", parallel: false });
     expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty("errors");
+    expect(res.body).toHaveProperty("error");
   });
 });

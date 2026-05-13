@@ -85,10 +85,9 @@ export async function postRun(payload: NewRunPayload): Promise<{ id: string }> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const data = await res.json() as { id?: string; errors?: string[] };
+  const data = await res.json() as { id?: string; error?: string };
   if (!res.ok) {
-    const errors = data.errors ?? ["Run failed"];
-    throw new Error(errors.join(". "));
+    throw new Error(data.error ?? "Run failed");
   }
   if (!data.id) throw new Error("Server returned success but no run id");
   return { id: data.id };

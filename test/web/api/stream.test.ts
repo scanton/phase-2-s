@@ -189,9 +189,9 @@ describe("GET /api/runs/:id/stream", () => {
     expect(res.body).toHaveProperty("error");
   });
 
-  it("accepts a ts-slug id (YYYY-MM-DDTHH-mm-ss) for browser-spawned runs", async () => {
+  it("accepts a ts-slug id (YYYY-MM-DDTHH-mm-ss-SSS) for browser-spawned runs", async () => {
     // Browser-spawned run logs are named <ts-slug>-<ts-slug>.jsonl
-    const tsSlug = "2026-05-12T22-34-57";
+    const tsSlug = "2026-05-12T22-34-57-000";
     const filename = `${tsSlug}-${tsSlug}.jsonl`;
     await writeFile(
       join(cwd, ".phase2s", "runs", filename),

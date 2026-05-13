@@ -10,7 +10,7 @@
  * Response: { valid: boolean, errors: string[] }
  */
 
-import { writeFile, unlink, mkdir } from "node:fs/promises";
+import { writeFile, unlink, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
@@ -32,6 +32,11 @@ export async function handlePostLint(
     return;
   }
 
+  if (goal.length > 2000) {
+    res.status(400).json({ error: "goal must be 2000 characters or fewer" });
+    return;
+  }
+
   // Write a temp spec file for linting — cleaned up after lint exits
   const tmpDir = join(tmpdir(), `phase2s-lint-${Date.now()}`);
   const specPath = join(tmpDir, "lint-spec.md");
@@ -46,11 +51,8 @@ export async function handlePostLint(
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
   } finally {
-    // Best-effort cleanup
-    unlink(specPath).catch(() => undefined);
-    import("node:fs/promises")
-      .then(({ rmdir }) => rmdir(tmpDir))
-      .catch(() => undefined);
+    // Best-effort cleanup — rm recursive removes file + dir atomically
+    rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -64,10 +66,18 @@ export async function runLint(
   return new Promise((resolve) => {
     let stderr = "";
     let stdout = "";
+    let settled = false;
 
     const child = spawn("phase2s", ["lint", specPath], {
       stdio: ["ignore", "pipe", "pipe"],
     });
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { child.kill("SIGTERM"); } catch { /* ignore */ }
+      resolve({ valid: false, errors: ["Lint timed out after 15 s"] });
+    }, 15_000);
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
@@ -77,10 +87,16 @@ export async function runLint(
     });
 
     child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       resolve({ valid: false, errors: [`phase2s not found: ${err.message}`] });
     });
 
     child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       if (code === 0) {
         resolve({ valid: true, errors: [] });
       } else {
