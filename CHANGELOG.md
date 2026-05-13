@@ -2,7 +2,7 @@
 
 ## v1.70.0 — 2026-05-12
 
-Sprint 96 — Dashboard Polish Pass + Accessibility: full CSS variable migration (no hardcoded hex anywhere), three-state theme toggle (light/system/dark), responsive layout with hamburger overlay on mobile and icon-only sidebar on tablet, prefers-reduced-motion support in CSS and JS, live view UX polish (completion animation, 5s notification delay, count badge), keyboard navigation on table rows, and a vitest-axe CI gate. 2373 tests.
+Sprint 96 — Dashboard Polish Pass + Accessibility: full CSS variable migration (no hardcoded hex anywhere), three-state theme toggle (light/system/dark), responsive layout with hamburger overlay on mobile and icon-only sidebar on tablet, prefers-reduced-motion support in CSS and JS, live view UX polish (completion animation, 5s notification delay, count badge), keyboard navigation on table rows, and a vitest-axe CI gate. 2373 node tests + 26 web component tests (2399 total).
 
 ### Added
 - **Three-state theme toggle** — Sidebar bottom control cycles light / system / dark. First visit defaults to system (follows OS). `localStorage` key `phase2s-theme`. In system mode, listens for `prefers-color-scheme` changes. Icons from `@heroicons/react`: SunIcon, ComputerDesktopIcon, MoonIcon.
