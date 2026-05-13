@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.71.0 — 2026-05-13
+
+Sprint 97 — Config Page: browser-based config editor at `/config` backed by `GET /api/config` + `POST /api/config`. Reads `.phase2s.yaml` and masks API keys as `***SET***`; Zod validation + atomic write on save. 5-section form (Provider & Model, API Keys, Ollama, Notifications, Behavior). Sentinel pattern preserves untouched keys; per-field show/hide toggles; `allowDestructive` confirm dialog; dirty tracking + success toast. 28 new tests (10 server unit + 13 React + 5 integration). 2416 node tests + 42 web component tests (2458 total).
+
+### Added
+- **`GET /api/config`** — Reads `.phase2s.yaml` / `.phase2s.yml`, validates with Zod, masks sensitive fields (`apiKey`, `anthropicApiKey`, `openrouterApiKey`, `geminiApiKey`, `minimaxApiKey`, `notify.slack`, `notify.discord`, `notify.teams`, `notify.telegram.token`) as `"***SET***"`. Returns 404 when no config file exists.
+- **`POST /api/config`** — Accepts partial config, section-level merge, Zod validation, atomic write (`.tmp` + rename, EXDEV fallback). Sentinel rules: `"***SET***"` preserves, `""` deletes, other value overwrites.
+- **`ConfigPage`** (`web/src/pages/ConfigPage.tsx`) — 5-section form component. `SensitiveField` state tracks `hasExisting` so untouched password fields send sentinel on save. Dirty tracking; sticky Save button; auto-dismiss success toast.
+- **Config nav item unlocked** — Sidebar "Config" item was "Coming soon"; now routes to `/config`.
+- **`configSchema` export** — `src/core/config.ts` exports `configSchema` for use by API handlers.
+
 ## v1.70.0 — 2026-05-12
 
 Sprint 96 — Dashboard Polish Pass + Accessibility: full CSS variable migration (no hardcoded hex anywhere), three-state theme toggle (light/system/dark), responsive layout with hamburger overlay on mobile and icon-only sidebar on tablet, prefers-reduced-motion support in CSS and JS, live view UX polish (completion animation, 5s notification delay, count badge), keyboard navigation on table rows, and a vitest-axe CI gate. 2373 node tests + 29 web component tests (2402 total).

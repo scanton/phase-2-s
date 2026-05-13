@@ -8,6 +8,8 @@ phase2s init
 
 This runs an interactive wizard: pick your provider, enter your API key (if needed), optionally configure fast/smart model tiers and a Slack webhook. Takes under 60 seconds. Re-run anytime to update settings — existing values are pre-filled.
 
+You can also edit your config visually in the web dashboard — `phase2s serve` then click the ⚙ **Config** icon in the sidebar. API keys are masked in the browser (never sent in plaintext); changes write directly to `.phase2s.yaml` on save.
+
 If you prefer to write the file by hand, copy the example:
 
 ```bash

@@ -14,6 +14,28 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Sprint 97 — Web Dashboard Config Page (v1.71.0, 2026-05-13)
+
+**Design doc:** `~/.gstack/projects/scanton-phase-2-s/scanton-sprint-95-design-20260512-205136.md`
+
+All Sprint 97 scope shipped. Post-review fixes also shipped on `fix/config-review-97` (PR #82).
+
+### Completed
+- [x] Export `configSchema` from `src/core/config.ts` **Completed: v1.71.0**
+- [x] Add `express.json()` + config routes to `src/web/server.ts` **Completed: v1.71.0**
+- [x] `GET /api/config` — reads `.phase2s.yaml`, validates with Zod, masks sensitive fields as `"***SET***"` **Completed: v1.71.0**
+- [x] `POST /api/config` — section-level merge, Zod validation, atomic write (`.tmp` + rename, EXDEV fallback) **Completed: v1.71.0**
+- [x] `ConfigPage` (`web/src/pages/ConfigPage.tsx`) — 5-section form (Provider & Model, API Keys, Ollama, Notifications, Behavior) **Completed: v1.71.0**
+- [x] Sentinel pattern — `SensitiveField` state tracks `hasExisting`; untouched fields send `"***SET***"` on save **Completed: v1.71.0**
+- [x] Config nav item unlocked in sidebar (was "Coming soon" at 40% opacity) **Completed: v1.71.0**
+- [x] Dirty tracking, sticky Save button, auto-dismiss success toast (3s) **Completed: v1.71.0**
+- [x] `allowDestructive` confirm dialog **Completed: v1.71.0**
+- [x] 28 new tests: 10 server unit + 13 React component + 5 integration **Completed: v1.71.0**
+- [x] Post-review fixes: `notify.mac:false` persistence bug, dead code in `mergeConfig`, redundant truthiness checks **Completed: v1.71.0 (PR #82)**
+- [x] `supertest` added to `devDependencies` — closes P0 pre-existing integration test failure **Completed: v1.71.0**
+
+---
+
 ## Sprint 96 — Dashboard Polish Pass + Accessibility (v1.70.0, 2026-05-13)
 
 **Design doc:** `~/.gstack/projects/scanton-phase-2-s/scanton-sprint-95-design-20260512-182017.md`
@@ -21,7 +43,7 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 All Sprint 96 scope shipped. All deferred items from Sprints 94–95 closed.
 
 ### Known Issues (P0)
-- [ ] **supertest not installed** — `test/web/integration/server.test.ts` (3 test files) fail with "Cannot find package 'supertest'". Pre-existing since Sprint 94. Run `npm install supertest` (or add to `devDependencies`) to fix. **Priority: P0**
+- [x] **supertest not installed** — `test/web/integration/server.test.ts` (3 test files) fail with "Cannot find package 'supertest'". Pre-existing since Sprint 94. Run `npm install supertest` (or add to `devDependencies`) to fix. **Completed: v1.71.0 (2026-05-13)** — `supertest@7.2.2` + `@types/supertest@7.2.0` added to `devDependencies` in Sprint 97.
 
 ### Completed
 - [x] Full CSS variable migration — `StatusBadge`, `RunsPage`, `RunDetailPage`, `Sidebar`, `CompletionBanner` **Completed: v1.70.0**
