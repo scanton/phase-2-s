@@ -2,7 +2,7 @@
 
 ## v1.71.0 — 2026-05-13
 
-Sprint 97 — Config Page: browser-based config editor at `/config` backed by `GET /api/config` + `POST /api/config`. Reads `.phase2s.yaml` and masks API keys as `***SET***`; Zod validation + atomic write on save. 5-section form (Provider & Model, API Keys, Ollama, Notifications, Behavior). Sentinel pattern preserves untouched keys; per-field show/hide toggles; `allowDestructive` confirm dialog; dirty tracking + success toast. 28 new tests (10 server unit + 13 React + 5 integration). 2416 backend + 42 web tests total.
+Sprint 97 — Config Page: browser-based config editor at `/config` backed by `GET /api/config` + `POST /api/config`. Reads `.phase2s.yaml` and masks API keys as `***SET***`; Zod validation + atomic write on save. 5-section form (Provider & Model, API Keys, Ollama, Notifications, Behavior). Sentinel pattern preserves untouched keys; per-field show/hide toggles; `allowDestructive` confirm dialog; dirty tracking + success toast. 28 new tests (10 server unit + 13 React + 5 integration). 2416 node tests + 42 web component tests (2458 total).
 
 ### Added
 - **`GET /api/config`** — Reads `.phase2s.yaml` / `.phase2s.yml`, validates with Zod, masks sensitive fields (`apiKey`, `anthropicApiKey`, `openrouterApiKey`, `geminiApiKey`, `minimaxApiKey`, `notify.slack`, `notify.discord`, `notify.teams`, `notify.telegram.token`) as `"***SET***"`. Returns 404 when no config file exists.
