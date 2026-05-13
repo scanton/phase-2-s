@@ -26,7 +26,7 @@ All Sprint 98 scope shipped.
 - [x] ts-slug with millisecond precision (YYYY-MM-DDTHH-mm-ss-SSS) — prevents ID collision **Completed: v1.72.0**
 - [x] ALLOWED_TEMPLATES allowlist security gate **Completed: v1.72.0**
 - [x] Concurrency cap (10 active children max, 429 response) **Completed: v1.72.0**
-- [x] SIGTERM handler deduplication guard **Completed: v1.72.0**
+- [x] SIGTERM cleanup — `killAllChildren()` called from serve.ts shutdown **Completed: v1.72.0**
 - [x] Spec file cleanup on lint rejection **Completed: v1.72.0**
 - [x] 27 new tests: 10 backend unit + 17 React component **Completed: v1.72.0**
 

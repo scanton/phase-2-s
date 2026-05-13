@@ -2,7 +2,7 @@
 
 ## v1.72.0 — 2026-05-12
 
-Sprint 98 — Run from Browser: browser-based run launcher at `/new` backed by `POST /api/runs` (spawns `phase2s conduct` as a child process) and `POST /api/lint` (advisory pre-flight lint). Goal textarea, 6-template picker, model tier toggle (Fast/Smart), parallel checkbox, lint feedback inline, and live redirect to `/runs/:id` on success. Server-side: ts-slug IDs with millisecond precision to prevent collision, `ALLOWED_TEMPLATES` allowlist, 10-run concurrency cap, SIGTERM handler deduplication, spec file cleanup on lint rejection. 27 new tests (10 server unit + 17 React). 2416 node tests + 59 web component tests (2475 total).
+Sprint 98 — Run from Browser: browser-based run launcher at `/new` backed by `POST /api/runs` (spawns `phase2s conduct` as a child process) and `POST /api/lint` (advisory pre-flight lint). Goal textarea, 6-template picker, model tier toggle (Fast/Smart), parallel checkbox, lint feedback inline, and live redirect to `/runs/:id` on success. Server-side: ts-slug IDs with millisecond precision to prevent collision, `ALLOWED_TEMPLATES` allowlist, 10-run concurrency cap, SIGTERM cleanup, spec file cleanup on lint rejection. 27 new tests (10 server unit + 17 React). 2434 node tests + 59 web component tests (2493 total).
 
 ### Added
 - **`POST /api/runs`** — Validates goal, runs authoritative lint gate (`phase2s lint`), spawns `phase2s conduct <spec>` as a child process. Accepts `{ goal, template?, modelTier, parallel }`. Returns `{ id }` (ts-slug) immediately; browser redirects to live view. Pipes stdout/stderr to `.phase2s/runs/<id>-<id>.jsonl` so the existing SSE stream picks it up with zero changes.
@@ -11,7 +11,7 @@ Sprint 98 — Run from Browser: browser-based run launcher at `/new` backed by `
 - **`/new` route** — Sidebar nav item "New Run" added; routes to `NewRunPage`.
 - **ts-slug format** — `YYYY-MM-DDTHH-mm-ss-SSS` (23 chars, millisecond precision). Prevents ID collision when two requests arrive in the same second. Stream ID validator updated.
 - **Concurrency cap** — `POST /api/runs` returns 429 when 10+ child processes are already tracked in `activeChildren`.
-- **SIGTERM deduplication** — `process.listenerCount("SIGTERM")` guard prevents duplicate handlers when the module is hot-loaded (e.g., in Vitest with `vi.resetModules()`).
+- **SIGTERM cleanup** — `killAllChildren()` exported from `spawn.ts` and called in `serve.ts` shutdown so in-flight conduct processes are reaped cleanly when the server stops (Ctrl+C or SIGTERM).
 - **Spec cleanup on rejection** — When server-side lint rejects a run, the spec file is deleted immediately. No user goal text persisted on disk for rejected runs.
 - **`test/web/api/spawn.test.ts`** — 10 unit tests: `tsSlug()` format/length/safety, `buildSpecContent()` sections and heading truncation, `runLint()` exit-0/exit-nonzero/empty-output/error-event paths (mocked child process).
 - **`NewRunPage.test.tsx`** — 17 tests covering all render, enable/disable, lint, submit, navigation, aria-pressed, checkbox, and modelTier behaviours. Includes axe a11y smoke tests.

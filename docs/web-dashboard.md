@@ -128,7 +128,7 @@ This means 3 of 5 subtasks have completed. You can close the tab or switch away 
 
 ## REST API
 
-The dashboard is backed by five endpoints. You can call them directly if you want to script against your run history.
+The dashboard is backed by nine endpoints. You can call them directly if you want to script against your run history.
 
 **`GET /api/runs`**
 
@@ -206,6 +206,59 @@ data: {"event":"worker_completed","index":0,"status":"passed","durationMs":8200}
 event: close
 data: {}
 ```
+
+**`POST /api/runs`**
+
+Spawns a new `phase2s conduct` run from the browser. Validates the goal, runs the authoritative lint gate, spawns the conduct process, and returns a ts-slug `id` immediately. The browser redirects to `/runs/:id` to watch the live stream.
+
+```bash
+curl -X POST http://localhost:3010/api/runs \
+  -H "Content-Type: application/json" \
+  -d '{"goal":"add rate limiting to the API","modelTier":"smart","parallel":false}'
+```
+
+Request body:
+```json
+{
+  "goal": "add rate limiting to the API",
+  "template": "api",
+  "modelTier": "fast" | "smart",
+  "parallel": false
+}
+```
+
+`template` is optional. When provided, must be one of `auth`, `api`, `bug`, `refactor`, `test`, `cli`. `modelTier` defaults to `"smart"`. `parallel` defaults to `false`.
+
+Response (`200`):
+```json
+{ "id": "2026-05-12T22-34-57-000" }
+```
+
+Error responses: `400` (missing/invalid `goal`, invalid `template`), `429` (10+ runs already in progress), `500`.
+
+---
+
+**`POST /api/lint`**
+
+Advisory lint: writes a temporary spec from the goal text and runs `phase2s lint` on it. Used by the browser "Check Goal" button before run submission. Does not modify any project files.
+
+```bash
+curl -X POST http://localhost:3010/api/lint \
+  -H "Content-Type: application/json" \
+  -d '{"goal":"add rate limiting to the API"}'
+```
+
+Response:
+```json
+{ "valid": true, "errors": [] }
+```
+
+On lint failure:
+```json
+{ "valid": false, "errors": ["Goal section is too short", "Missing success criteria"] }
+```
+
+---
 
 **`GET /api/spec?path=<absolute-path>`**
 
@@ -342,6 +395,33 @@ API key fields loaded from the server carry a `hasExisting` flag. When you save 
 
 ---
 
+## New Run page (Sprint 98)
+
+Click **New Run** in the sidebar (or go to `/new`) to launch a conduct run directly from the browser — no terminal required.
+
+### Form fields
+
+| Field | What it does |
+|-------|-------------|
+| **Goal** | Describe what you want built. Supports up to 2000 characters. |
+| **Template** | Optional starting point. Choose from `auth`, `api`, `bug`, `refactor`, `test`, or `cli`. Leaves the spec more detailed than a freeform goal. |
+| **Model tier** | **Fast** uses the fast model (lower latency, lower cost). **Smart** uses the full model (default). |
+| **Parallel** | When checked, passes `--parallel` to conduct so independent subtasks run concurrently in git worktrees. |
+
+### Lint check
+
+Click **Check Goal** before submitting to run `phase2s lint` on your goal text. Any issues appear inline — a "Looks good" badge means the lint gate will pass. The Run button stays enabled regardless so you can still submit and see the full server-side error.
+
+### What happens on submit
+
+1. The browser sends `POST /api/runs` with your goal, template, model tier, and parallel flag.
+2. The server writes a spec file, runs the authoritative lint gate, and spawns `phase2s conduct` as a child process.
+3. You're redirected to `/runs/:id` immediately — the live view starts streaming as conduct runs.
+
+If the server returns an error (lint failure, concurrency limit), it appears as an error banner above the form.
+
+---
+
 ## Completion banner
 
 When a live run finishes, a **CompletionBanner** slides in from the top of the run detail page. It auto-dismisses after 3 seconds. You can dismiss it early by clicking or pressing Enter/Space. Uses `banner-slide-in` CSS animation (disabled when `prefers-reduced-motion: reduce`).
@@ -364,6 +444,6 @@ npm run test:all
 
 ## What's coming
 
-Sprint 97 ships the Config page. Future sprints will add:
+Sprint 98 ships the New Run page. Future sprints will add:
 
-- **Help** — in-browser skill reference (Sprint 98)
+- **Help** — in-browser skill reference
