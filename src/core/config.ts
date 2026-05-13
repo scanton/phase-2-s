@@ -5,7 +5,7 @@ import { parse as parseYaml } from "yaml";
 import { parse as parseToml } from "@iarna/toml";
 import { PROVIDERS } from "../cli/provider-registry.js";
 
-const configSchema = z.object({
+export const configSchema = z.object({
   provider: z.enum(PROVIDERS as unknown as [string, ...string[]]).default("codex-cli"),
   /**
    * Model to use. For codex-cli provider, defaults to whatever is in

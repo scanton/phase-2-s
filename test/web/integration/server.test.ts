@@ -7,10 +7,12 @@
  *   GET /api/runs/:id      — 200 hit (with isActive), 404 miss, active not confused for :id
  *   GET /api/runs/:id/stream — 404 unknown id, SSE headers (Sprint 95)
  *   GET /api/spec?path=    — 200 success, 400 missing param, 403 path traversal, 404 not found
+ *   GET /api/config        — 200 masked keys, 404 no file (Sprint 97)
+ *   POST /api/config       — 200 valid save, 400 invalid payload (Sprint 97)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdir, writeFile, rm, utimes } from "node:fs/promises";
+import { mkdir, writeFile, rm, utimes, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Server } from "node:http";
@@ -312,5 +314,89 @@ describe("GET /api/runs/:id/stream", () => {
     const body = res.body as string;
     expect(body).toContain("event: close");
     expect(body).toContain("goal_started");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 97: /api/config integration tests
+// ---------------------------------------------------------------------------
+
+describe("GET /api/config", () => {
+  let cwd: string;
+  let server: Server;
+
+  beforeEach(async () => {
+    cwd = tmpCwd();
+    await setupCwd(cwd);
+    server = startServer(0, cwd);
+  });
+
+  afterEach(async () => {
+    server.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("returns 200 with masked keys when config file exists", async () => {
+    const yaml = `provider: anthropic\napiKey: sk-real-key\nanthropicApiKey: sk-ant-key\nmodel: claude-3-5-sonnet-20241022\n`;
+    await writeFile(join(cwd, ".phase2s.yaml"), yaml, "utf-8");
+
+    const res = await request(server).get("/api/config");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("config");
+    const config = res.body.config as Record<string, unknown>;
+    expect(config.provider).toBe("anthropic");
+    expect(config.apiKey).toBe("***SET***");
+    expect(config.anthropicApiKey).toBe("***SET***");
+    expect(config.model).toBe("claude-3-5-sonnet-20241022");
+  });
+
+  it("returns 404 when no config file exists", async () => {
+    const res = await request(server).get("/api/config");
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty("error");
+  });
+});
+
+describe("POST /api/config", () => {
+  let cwd: string;
+  let server: Server;
+
+  beforeEach(async () => {
+    cwd = tmpCwd();
+    await setupCwd(cwd);
+    server = startServer(0, cwd);
+  });
+
+  afterEach(async () => {
+    server.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("returns 200 after valid save and persists changes to disk", async () => {
+    const yaml = `provider: codex-cli\nallowDestructive: false\n`;
+    await writeFile(join(cwd, ".phase2s.yaml"), yaml, "utf-8");
+
+    const res = await request(server)
+      .post("/api/config")
+      .set("Content-Type", "application/json")
+      .send({ provider: "openai-api", model: "gpt-4o" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+
+    const written = await readFile(join(cwd, ".phase2s.yaml"), "utf-8");
+    expect(written).toContain("openai-api");
+    expect(written).toContain("gpt-4o");
+  });
+
+  it("returns 400 on invalid payload (array body instead of object)", async () => {
+    // Send a JSON array — valid JSON but not an object, our handler rejects it
+    const res = await request(server)
+      .post("/api/config")
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify([1, 2, 3]));
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
   });
 });

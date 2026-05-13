@@ -217,6 +217,31 @@ curl "http://localhost:3010/api/spec?path=$(pwd)/.phase2s/specs/2026-05-11-rate-
 
 Error responses: `400` (missing `path`), `403` (path traversal blocked), `404` (file not found).
 
+**`GET /api/config`**
+
+Reads `.phase2s.yaml` (or `.phase2s.yml`) from the project directory. Sensitive fields (API keys, webhook URLs) are masked as `"***SET***"` — the actual values are never sent to the browser. Returns `404` when no config file exists, `500` when the YAML is malformed.
+
+```bash
+curl http://localhost:3010/api/config | jq '.config.provider'
+```
+
+**`POST /api/config`**
+
+Writes changes back to `.phase2s.yaml`. Merges the request body over the existing file at the section level.
+
+Sentinel rules:
+- Field value `"***SET***"` → preserve existing value (do not overwrite)
+- Field value `""` (empty string) → delete the key from YAML
+- Any other value → overwrite with new value
+
+```bash
+curl -X POST http://localhost:3010/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"anthropic","model":"claude-opus-4"}'
+```
+
+Error responses: `400` (invalid payload or Zod validation failure), `500` (YAML syntax error or write failure).
+
 ---
 
 ## Security
@@ -289,6 +314,34 @@ An `axe-core` smoke test runs as part of `npm run test:web` to gate accessibilit
 
 ---
 
+## Config page (Sprint 97)
+
+The **Config** nav item in the sidebar opens `/config`, a form for viewing and editing your `.phase2s.yaml`.
+
+### How it works
+
+The page fetches `GET /api/config` on load. Sensitive fields (API keys, webhook URLs) are shown as masked — their placeholder text reads "(currently set)" and you can toggle visibility with the eye icon.
+
+**5 sections:**
+1. **Provider & Model** — select your AI provider and set model overrides
+2. **API Keys** — OpenAI, Anthropic, OpenRouter, Gemini, MiniMax (all password fields)
+3. **Ollama** — base URL and embed model (de-emphasized when provider is not `ollama`)
+4. **Notifications** — macOS system notifications, Slack, Discord, Teams, Telegram
+5. **Behavior** — allowDestructive, requireSpecification, verifyCommand, browser tool
+
+### Sentinel pattern (key safety)
+
+API key fields loaded from the server carry a `hasExisting` flag. When you save without touching a password field, the client sends `"***SET***"` — the server sees this and preserves the existing value instead of overwriting or deleting it. Clearing a password field and saving deletes the key.
+
+### Save flow
+
+- The **Save changes** button is disabled until you make an edit (dirty tracking)
+- `allowDestructive: false → true` shows a confirmation dialog before changing
+- On success, a "Config saved" toast appears and auto-dismisses after 3 seconds
+- On error, an inline error message appears below the toast area
+
+---
+
 ## Completion banner
 
 When a live run finishes, a **CompletionBanner** slides in from the top of the run detail page. It auto-dismisses after 3 seconds. You can dismiss it early by clicking or pressing Enter/Space. Uses `banner-slide-in` CSS animation (disabled when `prefers-reduced-motion: reduce`).
@@ -311,7 +364,6 @@ npm run test:all
 
 ## What's coming
 
-Sprint 96 ships theme toggle, responsive layout, and accessibility. Future sprints will add:
+Sprint 97 ships the Config page. Future sprints will add:
 
-- **Config** — view and edit your `.phase2s.yaml` in the browser (Sprint 97)
 - **Help** — in-browser skill reference (Sprint 98)

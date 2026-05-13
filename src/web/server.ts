@@ -28,6 +28,19 @@ export function startServer(port: number, cwd: string): Server {
   // Vite outputs the SPA (vite.config.ts outDir: "../dist/web").
   const distWeb = join(__dirname, "../../web");
 
+  // Parse JSON request bodies for POST endpoints (Sprint 97: /api/config)
+  app.use(express.json());
+
+  app.get("/api/config", async (req, res) => {
+    const { handleGetConfig } = await import("./api/config.js");
+    await handleGetConfig(req, res, cwd);
+  });
+
+  app.post("/api/config", async (req, res) => {
+    const { handlePostConfig } = await import("./api/config.js");
+    await handlePostConfig(req, res, cwd);
+  });
+
   app.get("/api/runs", async (req, res) => {
     const { handleGetRuns } = await import("./api/runs.js");
     await handleGetRuns(req, res, cwd);
