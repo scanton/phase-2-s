@@ -38,7 +38,7 @@ All Sprint 96 scope shipped. All deferred items from Sprints 94–95 closed.
 - [x] Keyboard nav on table rows (tabIndex + onKeyDown) **Completed: v1.70.0**
 - [x] aria-busy on table, scope="col" on headers, global :focus-visible rings **Completed: v1.70.0**
 - [x] vitest-axe CI gate — RunsPage + Sidebar axe smoke tests **Completed: v1.70.0**
-- [x] Unit tests for useTheme, CompletionBanner, ElapsedTimer (26 web tests total) **Completed: v1.70.0**
+- [x] Unit tests for useTheme, CompletionBanner, ElapsedTimer (29 web tests total) **Completed: v1.70.0**
 
 ---
 

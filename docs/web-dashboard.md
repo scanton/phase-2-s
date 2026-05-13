@@ -278,12 +278,12 @@ The hamburger button has `aria-expanded` set correctly so screen readers announc
 The dashboard targets WCAG 2.1 AA. Sprint 96 additions:
 
 - **Keyboard navigation** — table rows have `tabIndex={0}` and respond to Enter/Space for navigation (same as click)
-- **`aria-busy`** — the runs table wrapper sets `aria-busy={true}` during load so assistive tech knows content is loading
+- **`aria-busy`** — the `<table>` element has `aria-busy={loading}` during load so assistive tech knows content is loading
 - **`scope="col"` on headers** — all `<th>` elements in RunsPage and the subtasks table carry `scope="col"`
 - **Focus rings** — `:focus-visible` shows a 2px indigo outline globally
 - **`prefers-reduced-motion`** — all keyframe animations (`pulse`, `live-pulse`, `banner-slide-in`) and timer ticks are disabled when the OS motion preference is `reduce`
 - **Skip link** — the existing skip link has `z-index: 200` to clear the sidebar overlay on mobile
-- **`CompletionBanner`** — uses `role="status" aria-live="polite"` so screen readers announce run completion
+- **`CompletionBanner`** — uses `role="status" aria-live="polite"` so screen readers announce run completion; keyboard-focusable and dismissible with Enter or Space
 
 An `axe-core` smoke test runs as part of `npm run test:web` to gate accessibility regressions in CI.
 
@@ -291,7 +291,7 @@ An `axe-core` smoke test runs as part of `npm run test:web` to gate accessibilit
 
 ## Completion banner
 
-When a live run finishes, a **CompletionBanner** slides in from the top of the run detail page. It auto-dismisses after 3 seconds or you can click it to dismiss early. Uses `banner-slide-in` CSS animation (disabled when `prefers-reduced-motion: reduce`).
+When a live run finishes, a **CompletionBanner** slides in from the top of the run detail page. It auto-dismisses after 3 seconds. You can dismiss it early by clicking or pressing Enter/Space. Uses `banner-slide-in` CSS animation (disabled when `prefers-reduced-motion: reduce`).
 
 ---
 

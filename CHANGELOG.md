@@ -2,7 +2,7 @@
 
 ## v1.70.0 — 2026-05-12
 
-Sprint 96 — Dashboard Polish Pass + Accessibility: full CSS variable migration (no hardcoded hex anywhere), three-state theme toggle (light/system/dark), responsive layout with hamburger overlay on mobile and icon-only sidebar on tablet, prefers-reduced-motion support in CSS and JS, live view UX polish (completion animation, 5s notification delay, count badge), keyboard navigation on table rows, and a vitest-axe CI gate. 2373 node tests + 26 web component tests (2399 total).
+Sprint 96 — Dashboard Polish Pass + Accessibility: full CSS variable migration (no hardcoded hex anywhere), three-state theme toggle (light/system/dark), responsive layout with hamburger overlay on mobile and icon-only sidebar on tablet, prefers-reduced-motion support in CSS and JS, live view UX polish (completion animation, 5s notification delay, count badge), keyboard navigation on table rows, and a vitest-axe CI gate. 2373 node tests + 29 web component tests (2402 total).
 
 ### Added
 - **Three-state theme toggle** — Sidebar bottom control cycles light / system / dark. First visit defaults to system (follows OS). `localStorage` key `phase2s-theme`. In system mode, listens for `prefers-color-scheme` changes. Icons from `@heroicons/react`: SunIcon, ComputerDesktopIcon, MoonIcon.
@@ -12,13 +12,13 @@ Sprint 96 — Dashboard Polish Pass + Accessibility: full CSS variable migration
 - **Tablet sidebar (768–1023px)** — 48px icon-only. Labels hidden, brand hidden. Icons from `@heroicons/react/24/outline`: `TableCellsIcon`, `SignalIcon`, `Cog6ToothIcon`, `QuestionMarkCircleIcon`.
 - **`prefers-reduced-motion` CSS** — All keyframe animations (`pulse`, `live-pulse`, `banner-slide-in`) and transitions killed at 0.01ms when motion preference is reduce.
 - **`prefers-reduced-motion` JS** — `ElapsedTimer` skips `setInterval` when motion preference is reduce or run is already complete.
-- **`CompletionBanner` component** — Slides in on SSE stream close, auto-dismisses after 3s, clickable to dismiss early. `role="status" aria-live="polite"`. Uses CSS `banner-slide-in` animation.
+- **`CompletionBanner` component** — Slides in on SSE stream close, auto-dismisses after 3s, clickable or keyboard-dismissible (Enter/Space) to dismiss early. `role="status" aria-live="polite"`. Uses CSS `banner-slide-in` animation.
 - **Completion animation in RunDetailPage** — `completionVisible` state triggers `CompletionBanner` when the SSE `close` event fires.
 - **ElapsedTimer `isComplete` prop** — Timer stops ticking after completion, label changes from "ELAPSED" to "DURATION".
 - **Notification prompt 5s delay** — Banner no longer appears instantly; waits 5 seconds after a live run opens. Hidden permanently after `Notification.permission === "granted"`.
 - **Live count badge in sidebar** — Multiple active runs show `Live (N)` in the sidebar button.
 - **Keyboard navigation on table rows** — `tabIndex={0}` + `onKeyDown` (Enter/Space) on all run rows in RunsPage.
-- **`aria-busy` on table** — Table wrapper `div` gets `aria-busy={loading}` during load state.
+- **`aria-busy` on table** — `<table>` element has `aria-busy={loading}` during load state.
 - **`scope="col"` on table headers** — `<th scope="col">` on all column headers in RunsPage and RunDetailPage subtasks table.
 - **Focus rings** — `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }` applied globally.
 - **Skip-link z-index bump** — `z-index: 200` to clear sidebar overlay.

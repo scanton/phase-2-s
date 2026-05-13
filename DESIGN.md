@@ -171,7 +171,7 @@ At <768px the sidebar is hidden off-screen (`left: -220px`). A hamburger button 
 - **Table skeleton (loading):** 5 rows of `animate-pulse` bars in `var(--bg-subtle)`
 - **Error banner:** amber rgba with amber text
 - **Keyboard nav:** `tabIndex={0}` + `onKeyDown` (Enter/Space to navigate) on all `<tr>` rows
-- **aria-busy:** table wrapper div has `aria-busy={loading}` during load
+- **aria-busy:** `<table>` element has `aria-busy={loading}` during load
 
 ---
 
@@ -215,7 +215,7 @@ At <768px the sidebar is hidden off-screen (`left: -220px`). A hamburger button 
 - Icon-only buttons: `aria-label` required on all
 - Focus ring: `outline: 2px solid var(--accent); outline-offset: 2px` via `:focus-visible`
 - Color is never the ONLY status indicator (icon + text + color in status badges)
-- `aria-busy` on table wrapper during loading state
+- `aria-busy` on `<table>` element during loading state
 - `aria-expanded` on hamburger button and spec accordion button
 - `aria-label` on sidebar `<nav>` element
 - vitest-axe CI gate: axe smoke tests for RunsPage and Sidebar
