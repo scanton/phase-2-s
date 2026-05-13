@@ -186,11 +186,6 @@ function mergeConfig(
       continue;
     }
 
-    // Validate: non-sensitive fields must not contain the literal sentinel
-    if (value === MASKED && !isSensitiveField(fieldPath)) {
-      throw new SentinelError(key);
-    }
-
     out[key] = value;
   }
 
