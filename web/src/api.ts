@@ -1,4 +1,4 @@
-import type { ConductLogEntry, RunDetail, ActiveRun, LiveEvent } from "./types.ts";
+import type { ConductLogEntry, RunDetail, ActiveRun, LiveEvent, LintResult, NewRunPayload } from "./types.ts";
 
 export async function fetchRuns(): Promise<ConductLogEntry[]> {
   const res = await fetch("/api/runs");
@@ -64,4 +64,32 @@ export function createRunStream(
   return () => {
     source.close();
   };
+}
+
+export async function postLint(payload: { goal: string; template?: string }): Promise<LintResult> {
+  const res = await fetch("/api/lint", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json() as { error?: string };
+    throw new Error(data.error ?? `Lint error: ${res.status}`);
+  }
+  return res.json() as Promise<LintResult>;
+}
+
+export async function postRun(payload: NewRunPayload): Promise<{ id: string }> {
+  const res = await fetch("/api/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json() as { id?: string; errors?: string[] };
+  if (!res.ok) {
+    const errors = data.errors ?? ["Run failed"];
+    throw new Error(errors.join(". "));
+  }
+  if (!data.id) throw new Error("Server returned success but no run id");
+  return { id: data.id };
 }

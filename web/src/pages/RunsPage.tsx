@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { fetchRuns, fetchActiveRuns } from "../api.ts";
 import type { ConductLogEntry, ActiveRun } from "../types.ts";
 import StatusBadge from "../components/StatusBadge.tsx";
@@ -224,17 +224,35 @@ export default function RunsPage() {
 
   return (
     <div>
-      <h1
-        style={{
-          fontSize: "18px",
-          fontWeight: 600,
-          color: "var(--text-primary)",
-          marginTop: 0,
-          marginBottom: "20px",
-        }}
-      >
-        Conduct Runs
-      </h1>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: "20px" }}>
+        <h1
+          style={{
+            fontSize: "18px",
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            margin: 0,
+            flex: 1,
+          }}
+        >
+          Conduct Runs
+        </h1>
+        <Link
+          to="/runs/new"
+          style={{
+            padding: "7px 16px",
+            fontSize: "13px",
+            fontWeight: 600,
+            fontFamily: "Geist Mono, monospace",
+            backgroundColor: "var(--accent)",
+            color: "#fff",
+            borderRadius: "8px",
+            textDecoration: "none",
+            flexShrink: 0,
+          }}
+        >
+          + New Run
+        </Link>
+      </div>
 
       {error && (
         <div

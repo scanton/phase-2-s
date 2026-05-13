@@ -38,6 +38,20 @@ export interface ActiveRun {
   runLogPath: string;
 }
 
+/** Result of POST /api/lint */
+export interface LintResult {
+  valid: boolean;
+  errors: string[];
+}
+
+/** Payload for POST /api/runs */
+export interface NewRunPayload {
+  goal: string;
+  template?: string;
+  modelTier: "fast" | "smart";
+  parallel: boolean;
+}
+
 /** A raw event received via SSE from GET /api/runs/:id/stream */
 export interface LiveEvent {
   event: string;
