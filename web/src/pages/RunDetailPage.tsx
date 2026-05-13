@@ -419,6 +419,7 @@ export default function RunDetailPage() {
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
   const [liveDone, setLiveDone] = useState(false);
   const [completionVisible, setCompletionVisible] = useState(false);
+  const handleCompletionDismiss = useCallback(() => setCompletionVisible(false), []);
   const [showNotifBanner, setShowNotifBanner] = useState(false);
   const [notifGranted, setNotifGranted] = useState(() =>
     typeof Notification !== "undefined" && Notification.permission === "granted"
@@ -630,7 +631,7 @@ export default function RunDetailPage() {
       {completionVisible && (
         <CompletionBanner
           success={runStatus === "success"}
-          onDismiss={() => setCompletionVisible(false)}
+          onDismiss={handleCompletionDismiss}
         />
       )}
 
@@ -758,7 +759,7 @@ export default function RunDetailPage() {
             padding: "10px 14px",
             fontSize: "12px",
             fontFamily: "Geist Mono, monospace",
-            color: "#a5b4fc",
+            color: "var(--accent)",
             userSelect: "all",
             wordBreak: "break-all",
           }}

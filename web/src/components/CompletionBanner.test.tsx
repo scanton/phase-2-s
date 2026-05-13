@@ -74,3 +74,34 @@ describe("CompletionBanner — click to dismiss", () => {
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 });
+
+describe("CompletionBanner — keyboard dismiss", () => {
+  test("Enter key calls onDismiss", () => {
+    const onDismiss = vi.fn();
+    render(<CompletionBanner success={true} onDismiss={onDismiss} />);
+    const banner = screen.getByRole("status");
+    fireEvent.keyDown(banner, { key: "Enter" });
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
+  test("Space key calls onDismiss", () => {
+    const onDismiss = vi.fn();
+    render(<CompletionBanner success={true} onDismiss={onDismiss} />);
+    const banner = screen.getByRole("status");
+    fireEvent.keyDown(banner, { key: " " });
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
+  test("timer does NOT reset when stable onDismiss identity is re-passed", () => {
+    // Regression guard for the useCallback fix: a stable function reference
+    // must not restart the 3s countdown on re-render
+    const onDismiss = vi.fn();
+    const { rerender } = render(<CompletionBanner success={true} onDismiss={onDismiss} />);
+    vi.advanceTimersByTime(2500);
+    // Re-render with same stable reference (simulating useCallback in parent)
+    rerender(<CompletionBanner success={true} onDismiss={onDismiss} />);
+    vi.advanceTimersByTime(500);
+    // Total elapsed: 3000ms — should have fired exactly once
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+});

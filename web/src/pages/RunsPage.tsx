@@ -106,7 +106,7 @@ function StatBar({ entries }: StatBarProps) {
       </div>
       <div style={statStyle}>
         <span style={labelStyle}>Success Rate</span>
-        <span style={{ ...valueStyle, color: rate >= 70 ? "#34d399" : rate >= 40 ? "#fbbf24" : "#f87171" }}>
+        <span style={{ ...valueStyle, color: rate >= 70 ? "var(--status-success-text)" : rate >= 40 ? "var(--status-running-text)" : "var(--status-failed-text)" }}>
           {rate}%
         </span>
       </div>
@@ -245,7 +245,7 @@ export default function RunsPage() {
             borderRadius: "8px",
             padding: "12px 16px",
             marginBottom: "20px",
-            color: "#fbbf24",
+            color: "var(--status-running-text)",
             fontSize: "14px",
           }}
         >
@@ -279,7 +279,7 @@ export default function RunsPage() {
               padding: "8px 14px",
               fontSize: "13px",
               fontFamily: "Geist Mono, monospace",
-              color: "#a5b4fc",
+              color: "var(--accent)",
               userSelect: "all",
             }}
           >
@@ -294,8 +294,6 @@ export default function RunsPage() {
 
       {(loading || entries.length > 0) && (
         <div
-          aria-busy={loading}
-          aria-label="Conduct runs table"
           style={{
             backgroundColor: "var(--bg-surface)",
             borderRadius: "8px",
@@ -303,7 +301,7 @@ export default function RunsPage() {
             border: "1px solid var(--border)",
           }}
         >
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table aria-busy={loading} aria-label="Conduct runs table" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ backgroundColor: "var(--bg-base)" }}>
                 <th scope="col" style={thStyle}>Goal</th>
@@ -322,7 +320,6 @@ export default function RunsPage() {
                     <tr
                       key={entry.specHash || entry.ts}
                       tabIndex={0}
-                      role="row"
                       onClick={() => navigate(`/runs/${entry.specHash || entry.ts}`)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {

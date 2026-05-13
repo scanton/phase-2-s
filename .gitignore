@@ -12,3 +12,4 @@ dist/action/package.json
 .phase2s/search-index.jsonl
 .phase2s/search-index.jsonl.*.tmp
 .phase2s/conduct-log.jsonl
+temp/

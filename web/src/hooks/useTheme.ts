@@ -3,6 +3,11 @@ import { useEffect, useState } from "react";
 export type Theme = "light" | "dark" | "system";
 
 const STORAGE_KEY = "phase2s-theme";
+const VALID_THEMES: readonly Theme[] = ["light", "dark", "system"];
+
+function isValidTheme(v: string | null): v is Theme {
+  return v !== null && (VALID_THEMES as readonly string[]).includes(v);
+}
 
 function getSystemTheme(): "light" | "dark" {
   if (typeof window === "undefined") return "dark";
@@ -20,7 +25,8 @@ function applyTheme(resolved: "light" | "dark") {
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === "undefined") return "system";
-    return (localStorage.getItem(STORAGE_KEY) as Theme | null) ?? "system";
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return isValidTheme(stored) ? stored : "system";
   });
 
   useEffect(() => {

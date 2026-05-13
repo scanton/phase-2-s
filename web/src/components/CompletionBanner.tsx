@@ -15,7 +15,14 @@ export default function CompletionBanner({ success, onDismiss }: CompletionBanne
     <div
       role="status"
       aria-live="polite"
+      tabIndex={0}
       onClick={onDismiss}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onDismiss();
+        }
+      }}
       style={{
         display: "flex",
         alignItems: "center",
