@@ -168,11 +168,11 @@ function buildPostBody(form: FormState): Record<string, any> {
   const hasTelegramChatId = form.telegramChatId.trim() !== "";
 
   const notify: Record<string, unknown> = {};
-  if (form.notifyMac) notify.mac = true;
-  if (slack && slack !== "") notify.slack = slack;
-  if (discord && discord !== "") notify.discord = discord;
-  if (teams && teams !== "") notify.teams = teams;
-  if (telegramToken && telegramToken !== "" && hasTelegramChatId) {
+  notify.mac = form.notifyMac;
+  if (slack !== "") notify.slack = slack;
+  if (discord !== "") notify.discord = discord;
+  if (teams !== "") notify.teams = teams;
+  if (telegramToken !== "" && hasTelegramChatId) {
     notify.telegram = { token: telegramToken, chatId: form.telegramChatId.trim() };
   }
   if (Object.keys(notify).length > 0) body.notify = notify;
