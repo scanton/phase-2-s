@@ -1,12 +1,11 @@
 # Skills Reference
 
-Phase2S ships with 29 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). Model tier routing (`fast_model` / `smart_model`) works with any direct API provider — Options B, C, D, E, or F.
+Phase2S ships with 28 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). Model tier routing (`fast_model` / `smart_model`) works with any direct API provider — Options B, C, D, E, or F.
 
 Invoke any skill from the REPL:
 
 ```
 you > /review src/core/agent.ts
-you > /satori add rate limiting to the API
 you > /diff
 ```
 
@@ -64,56 +63,7 @@ The `:` command maps to `phase2s run`. The `p2` alias is equivalent. See [gettin
 
 ---
 
-## Persistent execution
-
-### `/satori`
-
-Persistent execution until verified complete. This is the most powerful skill in Phase2S.
-
-Runs your task, then immediately runs `npm test` (or your configured `verifyCommand`). If tests fail, it injects the exact failure output back into the conversation and tries again. Up to 3 attempts. It stops when the tests are green, not when the model thinks it's done.
-
-```
-you > /satori add rate limiting to the API middleware
-
-Running /satori on: add rate limiting to the API middleware...
-[Context snapshot written to .phase2s/context/]
-
--- Attempt 1 --
-[agent implements rate limiting]
-Verification: npm test
-  FAIL api.test.ts
-    ✗ rate limiter: allows burst then throttles (expected 429, got 200)
-
--- Attempt 2 --
-[agent reads failure, identifies the bug, fixes the window logic]
-Verification: npm test
-  PASS (12 tests)
-
-assistant > Rate limiting implemented. 2 attempts. First attempt missed the
-           sliding window reset logic — the bucket wasn't cleared between
-           requests in the same window. Fixed in attempt 2.
-```
-
-Writes to disk: `.phase2s/context/<ts>-<slug>.md` (context snapshot before the run), `.phase2s/satori/<slug>.json` (attempt log with pass/fail and failure lines).
-
-Uses `smart_model` tier if configured. See [advanced.md](advanced.md) for model routing.
-
-**Arguments:**
-```
-/satori add pagination to the search endpoint
-/satori fix the flaky auth tests
-/satori src/api/middleware.ts — focus on a specific file
-```
-
-**Configure the verify command:**
-```yaml
-# .phase2s.yaml
-verifyCommand: "npm test -- --run"
-# verifyCommand: "pytest tests/"
-# verifyCommand: "go test ./..."
-```
-
----
+## Planning
 
 ### `/consensus-plan`
 

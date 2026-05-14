@@ -264,8 +264,6 @@ you > :agent scout
 
 Active mode is saved on `--resume` — pick up where you left off with the same mode active.
 
-> **Upgrading from v1.66.0 or earlier?** The modes were previously named Apollo (ask), Athena (plan), and Ares (build). The old names still work as REPL commands (`:apollo`, `:athena`, `:ares`) — existing sessions and config files migrate automatically.
-
 ---
 
 ## @file and @url attachment
@@ -302,12 +300,11 @@ you > @src/core/agent.ts @https://platform.openai.com/docs/api-reference does ou
 
 ---
 
-## All 29 skills
+## All 28 skills
 
 ```
 you > /review src/auth.ts        — code review: CRIT / WARN / NIT
 you > /diff                      — review all uncommitted changes
-you > /satori add pagination     — implement + test + retry until green (deprecated → use `phase2s go`)
 you > /deep-specify add OAuth    — spec interview → 5-pillar spec file
 you > /consensus-plan add OAuth  — planner + architect + critic passes
 you > /debug logout fails        — reproduce, isolate, fix, verify
@@ -689,7 +686,7 @@ EOF
 phase2s
 ```
 
-With this config, `/satori`, `/consensus-plan`, and `phase2s goal` all get the learnings most relevant to the current task — not just the ones you saved most recently.
+With this config, `/consensus-plan` and `phase2s goal` get the learnings most relevant to the current task — not just the ones you saved most recently.
 
 To use a separate, lighter model just for embeddings:
 
