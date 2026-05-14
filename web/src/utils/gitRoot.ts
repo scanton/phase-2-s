@@ -20,7 +20,7 @@ export function findGitRoot(specPath: string): string {
   const p = specPath.replace(/\\/g, "/");
 
   // Fast path: .phase2s/specs/ is the canonical location
-  const phase2sIdx = p.lastIndexOf("/.phase2s/");
+  const phase2sIdx = p.indexOf("/.phase2s/");
   if (phase2sIdx !== -1) {
     return p.slice(0, phase2sIdx) || "/";
   }

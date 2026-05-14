@@ -63,6 +63,12 @@ export async function handleGetRuns(
   const after = typeof q.after === "string" ? q.after : undefined;
   const before = typeof q.before === "string" ? q.before : undefined;
 
+  // Validate ?search length
+  if (search !== undefined && search.length > 512) {
+    res.status(400).json({ error: "search too long (max 512 characters)" });
+    return;
+  }
+
   // Validate ?status
   if (status !== undefined && !VALID_STATUSES.has(status)) {
     res.status(400).json({ error: "status must be one of: success, failure" });

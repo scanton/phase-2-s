@@ -3,7 +3,10 @@ import type { ConductLogEntry, RunDetail, ActiveRun, LiveEvent, LintResult, NewR
 export async function fetchRuns(params?: URLSearchParams, signal?: AbortSignal): Promise<ConductLogEntry[]> {
   const url = params && params.toString() ? `/api/runs?${params.toString()}` : "/api/runs";
   const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`Failed to fetch runs: ${res.status}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(data.error ?? `Failed to fetch runs: ${res.status}`);
+  }
   return res.json() as Promise<ConductLogEntry[]>;
 }
 

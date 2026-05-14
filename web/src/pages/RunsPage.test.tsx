@@ -22,13 +22,10 @@ test("RunsPage has no axe violations in empty state", async () => {
       <RunsPage />
     </MemoryRouter>
   );
-  // Wait for loading to settle
+  // Wait for loading to settle (empty state shows "No runs yet", no table rendered)
   await waitFor(() => {
-    expect(container.querySelector('[aria-busy="false"]')).toBeTruthy();
-  }, { timeout: 1000 }).catch(() => {
-    // If no aria-busy table visible, just wait a tick
-  });
-  await new Promise(r => setTimeout(r, 100));
+    expect(screen.queryByText(/no runs yet/i)).toBeTruthy();
+  }, { timeout: 1000 });
   const results = await axe(container);
   expect(results).toHaveNoViolations();
 });
@@ -54,7 +51,9 @@ test("RunsPage has no axe violations with mock data", async () => {
       <RunsPage />
     </MemoryRouter>
   );
-  await new Promise(r => setTimeout(r, 100));
+  await waitFor(() => {
+    expect(screen.queryByText("Test goal for axe check")).toBeTruthy();
+  }, { timeout: 1000 });
   const results = await axe(container);
   expect(results).toHaveNoViolations();
 });
@@ -82,7 +81,6 @@ test("RunsPage shows 'No runs match your filters' empty state when filters activ
       <RunsPage />
     </MemoryRouter>
   );
-  await new Promise(r => setTimeout(r, 150));
   // The empty state differs based on whether filters are active
   // With search param in URL, component initialises with search="nomatch"
   await waitFor(() => {

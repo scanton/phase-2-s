@@ -473,9 +473,10 @@ export default function RunsPage() {
     if (b) params.set("before", `${b}T23:59:59.999Z`);
 
     // Update URL (replace so back button skips filter states)
+    // Only write server-accepted params to URL; active/unknown are client-side only
     const urlParams = new URLSearchParams();
     if (s) urlParams.set("search", s);
-    if (st) urlParams.set("status", st);
+    if (st === "success" || st === "failure") urlParams.set("status", st);
     if (a) urlParams.set("after", a);
     if (b) urlParams.set("before", b);
     setSearchParams(urlParams, { replace: true });
@@ -586,15 +587,17 @@ export default function RunsPage() {
   const hasFilters = !!(search || status || after || before);
 
   // Client-side filter for active/unknown status (server doesn't handle these)
-  const visibleEntries = entries.filter((e) => {
+  const visibleEntries = useMemo(() => entries.filter((e) => {
     if (status === "active") return activeSpecHashes.has(e.specHash);
     if (status === "unknown") return !!e.dryRun;
     return true;
-  });
+  }), [entries, status, activeSpecHashes]);
 
-  // Project grouping — only when 2+ distinct git roots are present
+  // Project grouping — only when 2+ distinct git roots are present.
+  // showGroups is derived from ALL entries (pre-filter) so layout is stable
+  // regardless of which filter is active.
   const groups = useMemo(() => groupByGitRoot(visibleEntries), [visibleEntries]);
-  const showGroups = groups.size >= 2;
+  const showGroups = useMemo(() => groupByGitRoot(entries).size >= 2, [entries]);
 
   return (
     <div>
