@@ -303,7 +303,7 @@ you > @src/core/agent.ts @https://platform.openai.com/docs/api-reference does ou
 
 ---
 
-## All 28 skills
+## All 29 skills
 
 ```
 you > /review src/auth.ts        — code review: CRIT / WARN / NIT

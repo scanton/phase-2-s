@@ -1,6 +1,6 @@
 # Skills Reference
 
-Phase2S ships with 28 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). Model tier routing (`fast_model` / `smart_model`) works with any direct API provider — Options B, C, D, E, or F.
+Phase2S ships with 29 built-in skills. Every skill works with Option A (ChatGPT subscription via Codex CLI). Model tier routing (`fast_model` / `smart_model`) works with any direct API provider — Options B, C, D, E, or F.
 
 Invoke any skill from the REPL:
 
@@ -60,6 +60,60 @@ p2 suggest "find large log files"
 ```
 
 The `:` command maps to `phase2s run`. The `p2` alias is equivalent. See [getting-started.md](getting-started.md#shell-integration-zsh--optional-but-recommended) for setup instructions.
+
+---
+
+## Persistent execution
+
+### `/satori` → `phase2s go` / `:go`
+
+Persistent execution until verified complete. `/satori` is deprecated — use `phase2s go` from the CLI or `:go` in the REPL instead. The underlying behavior is identical: runs your task, immediately runs the verify command (default: `npm test`), and if tests fail, injects the exact failure output back into the conversation and tries again. Up to 3 attempts. It stops when the tests pass, not when the model thinks it's done.
+
+Use this from the CLI or the REPL colon-command shorthand:
+
+```bash
+phase2s go "add rate limiting to the API middleware"
+```
+
+```
+you > :go add rate limiting to the API middleware
+```
+
+```
+Running task: add rate limiting to the API middleware...
+
+-- Attempt 1 --
+[implements rate limiting]
+Verification: npm test
+  FAIL api.test.ts
+    ✗ rate limiter: allows burst then throttles (expected 429, got 200)
+
+-- Attempt 2 --
+[reads failure, identifies the sliding window bug, fixes it]
+Verification: npm test
+  PASS (12 tests)
+
+Done. 2 attempts. Fixed sliding window reset logic in attempt 2.
+```
+
+**Configure the verify command:**
+```yaml
+# .phase2s.yaml
+verifyCommand: "npm test -- --run"
+# verifyCommand: "pytest tests/"
+# verifyCommand: "go test ./..."
+```
+
+Override per-run: `phase2s go --verify "bun test" "your task here"`
+
+**Task flags:**
+```bash
+phase2s go --quiet "fix the type errors"           # suppress streaming
+phase2s go --timeout 120 "refactor auth.ts"        # abort after 120s
+phase2s go --doom-loop-threshold 2 "fix the bug"   # tighter retry limit
+```
+
+Uses `smart_model` tier if configured. See [advanced.md](advanced.md) for model routing.
 
 ---
 
