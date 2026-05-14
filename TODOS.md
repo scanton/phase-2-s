@@ -14,6 +14,25 @@ Sprint 76 shipped four targeted follow-ons (Observability & Eval Hardening). All
 
 ---
 
+## Sprint 99 — Help Page, Filter Toolbar, Project Grouping (v2.0.0, 2026-05-13)
+
+All Sprint 99 scope shipped. The v2.0 milestone: every feature promised in the original web dashboard plan (Sprint 94, v1.68.0) is now delivered. **No breaking CLI changes** — all v1.x commands are unchanged. The major version marks the web dashboard as the flagship feature.
+
+### Completed
+- [x] `GET /api/runs` query params — `?search=` (goal substring, 512-char cap), `?status=success|failure`, `?after=<ISO 8601>`, `?before=<ISO 8601>`; HTTP 400 for bad input **Completed: v2.0.0**
+- [x] 12 new backend filter tests in `test/web/api/runs.test.ts` **Completed: v2.0.0**
+- [x] Filter toolbar on Runs page — search input (300ms debounce, `AbortController`), status dropdown (Success/Failure/Active/Unknown), From/To date pickers **Completed: v2.0.0**
+- [x] URL state sync via `useSearchParams` with `replace: true` — filter state survives page reload and is shareable **Completed: v2.0.0**
+- [x] Distinct empty states: "No runs yet" (no data) vs. "No runs match your filters" (filtered) **Completed: v2.0.0**
+- [x] Project grouping — Runs page groups by git root when 2+ distinct roots detected; single-project users see flat list **Completed: v2.0.0**
+- [x] Help page (`/help`) — Getting Started, Commands table, Dashboard sections, Keyboard Shortcuts; data in `web/src/data/help.ts` **Completed: v2.0.0**
+- [x] Help nav item unlocked in sidebar (was "Coming soon" at 40% opacity) **Completed: v2.0.0**
+- [x] 5 new React tests for filter toolbar behavior + Help page rendering **Completed: v2.0.0**
+- [x] Pre-landing `/review` fixes: `fetchRuns` error body read, `visibleEntries` useMemo, `showGroups` from all entries, `urlParams` contract asymmetry, `findGitRoot` indexOf, `?search` 512-char cap, flaky test cleanup **Completed: v2.0.0 (PR #85)**
+- [x] `docs/migration-v2.md` — v1→v2 migration guide (no breaking changes) **Completed: v2.0.0**
+
+---
+
 ## Sprint 98 — Run from Browser (v1.72.0, 2026-05-12)
 
 All Sprint 98 scope shipped.
