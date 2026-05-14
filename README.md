@@ -8,6 +8,9 @@ Three things Phase2S does that most AI coding tools don't:
 
 3. **Executes specs autonomously** — Write a spec describing what you want built and how you'll know it's done. Run `phase2s goal your-spec.md`. Phase2S breaks it into sub-tasks, implements each one, runs your tests, checks whether the results match your criteria, and retries with failure analysis if anything falls short. You come back when it's done.
 
+![Phase2S web dashboard showing the Runs page with filter toolbar, stats, and run history](docs/screenshots/dashboard-runs.png)
+*The Runs page — filter by goal, status, or date range. Click any run for live execution view or the full event log. Run `phase2s serve` to open it.*
+
 ---
 
 ## Quick install
