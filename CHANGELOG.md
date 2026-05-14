@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.0.0 — 2026-05-13
+
+Sprint 99 — Help Page, Project Organization, Search/Filter. The v2.0 milestone: every feature promised in the original web dashboard plan (Sprint 94, v1.68.0) is now shipped. **No breaking CLI changes** — all v1.x commands are unchanged. The major version marks the web dashboard as the flagship feature.
+
+### Added
+- **Search/filter toolbar on Runs page** — Filter by goal text (case-insensitive substring, 300ms debounce), status (Success/Failure/Active/Unknown), and date range (From/To). Server-side filtering via new `GET /api/runs` query params (`?search=`, `?status=success|failure`, `?after=`, `?before=`); Active/Unknown filtered client-side using the existing active-run polling set. Filter state syncs to URL via `useSearchParams` with `replace: true` so the back button doesn't cycle through filter states. In-flight requests cancelled via `AbortController` on rapid changes. Clear-filters button appears when any filter is active. Distinct empty states for "no runs yet" vs. "no runs match your filters."
+- **`GET /api/runs` query params** — `?search=` (goal substring), `?status=success|failure` (boolean field), `?after=<ISO 8601>`, `?before=<ISO 8601>`. Returns HTTP 400 with a descriptive error for invalid ISO dates, `before` ≤ `after`, or unknown status values.
+- **Project organization** — Runs page groups entries by git project root when 2+ distinct roots are detected. Root is derived from `specPath` (walk to the `.phase2s` parent). Single-project users see the flat list as before.
+- **Help page** (`/help`) — Four sections: Getting Started (3-step onboarding), Commands (table of `phase2s` CLI commands with descriptions and examples), Dashboard (what each page does), Keyboard Shortcuts. Data lives in `web/src/data/help.ts` — typed array, separate from the component.
+- **Help nav item** — Previously greyed-out "Coming soon" item in the sidebar is now a live `NavLink` to `/help`.
+
+### Changed
+- `GET /api/runs` is additive: all existing callers continue to work with no params (behavior unchanged).
+- `fetchRuns()` in `web/src/api.ts` now accepts optional `URLSearchParams` and `AbortSignal`.
+
+### v2.0 Web Dashboard Summary (Sprints 94–99, v1.68.0–v2.0.0)
+- Sprint 94 (v1.68.0): `phase2s serve`, runs browser, Express + Vite SPA
+- Sprint 95 (v1.69.0): Run detail page, live view via SSE
+- Sprint 96 (v1.70.0): Dashboard polish, accessibility pass
+- Sprint 97 (v1.71.0): Config page (read/write `.phase2s.yaml`)
+- Sprint 98 (v1.72.0): Run from browser (New Run form, `POST /api/runs`)
+- Sprint 99 (v2.0.0): Help page, project organization, search/filter
+
 ## v1.72.0 — 2026-05-12
 
 Sprint 98 — Run from Browser: browser-based run launcher at `/new` backed by `POST /api/runs` (spawns `phase2s conduct` as a child process) and `POST /api/lint` (advisory pre-flight lint). Goal textarea, 6-template picker, model tier toggle (Fast/Smart), parallel checkbox, lint feedback inline, and live redirect to `/runs/:id` on success. Server-side: ts-slug IDs with millisecond precision to prevent collision, `ALLOWED_TEMPLATES` allowlist, 10-run concurrency cap, SIGTERM cleanup, spec file cleanup on lint rejection. 27 new tests (10 server unit + 17 React). 2434 node tests + 59 web component tests (2493 total).
