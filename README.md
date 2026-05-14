@@ -8,6 +8,9 @@ Three things Phase2S does that most AI coding tools don't:
 
 3. **Executes specs autonomously** — Write a spec describing what you want built and how you'll know it's done. Run `phase2s goal your-spec.md`. Phase2S breaks it into sub-tasks, implements each one, runs your tests, checks whether the results match your criteria, and retries with failure analysis if anything falls short. You come back when it's done.
 
+![Phase2S web dashboard showing the Runs page with filter toolbar, stats, and run history](docs/screenshots/dashboard-runs.png)
+*The Runs page — filter by goal, status, or date range. Click any run for live execution view or the full event log. Run `phase2s serve` to open it.*
+
 ---
 
 ## Quick install
@@ -264,8 +267,6 @@ you > :agent scout
 
 Active mode is saved on `--resume` — pick up where you left off with the same mode active.
 
-> **Upgrading from v1.66.0 or earlier?** The modes were previously named Apollo (ask), Athena (plan), and Ares (build). The old names still work as REPL commands (`:apollo`, `:athena`, `:ares`) — existing sessions and config files migrate automatically.
-
 ---
 
 ## @file and @url attachment
@@ -307,7 +308,6 @@ you > @src/core/agent.ts @https://platform.openai.com/docs/api-reference does ou
 ```
 you > /review src/auth.ts        — code review: CRIT / WARN / NIT
 you > /diff                      — review all uncommitted changes
-you > /satori add pagination     — implement + test + retry until green (deprecated → use `phase2s go`)
 you > /deep-specify add OAuth    — spec interview → 5-pillar spec file
 you > /consensus-plan add OAuth  — planner + architect + critic passes
 you > /debug logout fails        — reproduce, isolate, fix, verify
@@ -689,7 +689,7 @@ EOF
 phase2s
 ```
 
-With this config, `/satori`, `/consensus-plan`, and `phase2s goal` all get the learnings most relevant to the current task — not just the ones you saved most recently.
+With this config, `/consensus-plan` and `phase2s goal` get the learnings most relevant to the current task — not just the ones you saved most recently.
 
 To use a separate, lighter model just for embeddings:
 

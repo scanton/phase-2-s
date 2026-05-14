@@ -6,7 +6,6 @@ Invoke any skill from the REPL:
 
 ```
 you > /review src/core/agent.ts
-you > /satori add rate limiting to the API
 you > /diff
 ```
 
@@ -66,43 +65,35 @@ The `:` command maps to `phase2s run`. The `p2` alias is equivalent. See [gettin
 
 ## Persistent execution
 
-### `/satori`
+### `/satori` → `phase2s go` / `:go`
 
-Persistent execution until verified complete. This is the most powerful skill in Phase2S.
+Persistent execution until verified complete. `/satori` is deprecated — use `phase2s go` from the CLI or `:go` in the REPL instead. The underlying behavior is identical: runs your task, immediately runs the verify command (default: `npm test`), and if tests fail, injects the exact failure output back into the conversation and tries again. Up to 3 attempts. It stops when the tests pass, not when the model thinks it's done.
 
-Runs your task, then immediately runs `npm test` (or your configured `verifyCommand`). If tests fail, it injects the exact failure output back into the conversation and tries again. Up to 3 attempts. It stops when the tests are green, not when the model thinks it's done.
+Use this from the CLI or the REPL colon-command shorthand:
+
+```bash
+phase2s go "add rate limiting to the API middleware"
+```
 
 ```
-you > /satori add rate limiting to the API middleware
+you > :go add rate limiting to the API middleware
+```
 
-Running /satori on: add rate limiting to the API middleware...
-[Context snapshot written to .phase2s/context/]
+```
+Running task: add rate limiting to the API middleware...
 
 -- Attempt 1 --
-[agent implements rate limiting]
+[implements rate limiting]
 Verification: npm test
   FAIL api.test.ts
     ✗ rate limiter: allows burst then throttles (expected 429, got 200)
 
 -- Attempt 2 --
-[agent reads failure, identifies the bug, fixes the window logic]
+[reads failure, identifies the sliding window bug, fixes it]
 Verification: npm test
   PASS (12 tests)
 
-assistant > Rate limiting implemented. 2 attempts. First attempt missed the
-           sliding window reset logic — the bucket wasn't cleared between
-           requests in the same window. Fixed in attempt 2.
-```
-
-Writes to disk: `.phase2s/context/<ts>-<slug>.md` (context snapshot before the run), `.phase2s/satori/<slug>.json` (attempt log with pass/fail and failure lines).
-
-Uses `smart_model` tier if configured. See [advanced.md](advanced.md) for model routing.
-
-**Arguments:**
-```
-/satori add pagination to the search endpoint
-/satori fix the flaky auth tests
-/satori src/api/middleware.ts — focus on a specific file
+Done. 2 attempts. Fixed sliding window reset logic in attempt 2.
 ```
 
 **Configure the verify command:**
@@ -113,7 +104,20 @@ verifyCommand: "npm test -- --run"
 # verifyCommand: "go test ./..."
 ```
 
+Override per-run: `phase2s go --verify "bun test" "your task here"`
+
+**Task flags:**
+```bash
+phase2s go --quiet "fix the type errors"           # suppress streaming
+phase2s go --timeout 120 "refactor auth.ts"        # abort after 120s
+phase2s go --doom-loop-threshold 2 "fix the bug"   # tighter retry limit
+```
+
+Uses `smart_model` tier if configured. See [advanced.md](advanced.md) for model routing.
+
 ---
+
+## Planning
 
 ### `/consensus-plan`
 
