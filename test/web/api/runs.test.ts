@@ -1,11 +1,13 @@
 /**
- * Tests for /api/runs handlers (Sprint 94)
+ * Tests for /api/runs handlers (Sprint 94, 99)
  *
  * Tests cover:
  * 1. Returns [] when no log file exists
  * 2. Returns parsed entries sorted newest-first
  * 3. Skips malformed JSON lines
  * 4. Matches run detail by specHash
+ * 5. GET /api/runs query param filtering (Sprint 99):
+ *    ?search, ?status, ?after, ?before, combinations, error cases
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -110,6 +112,132 @@ describe("readConductLog", () => {
 
 // assertInProject tests are in test/web/api/spec.test.ts
 // (realpath-based guard requires real filesystem fixtures)
+
+// ---------------------------------------------------------------------------
+// GET /api/runs — Sprint 99 query param filtering
+// ---------------------------------------------------------------------------
+
+describe("GET /api/runs — query param filtering", () => {
+  let cwd: string;
+  let server: Server;
+
+  const makeEntry = (overrides: Partial<typeof BASE_ENTRY> & { ts: string }) => ({
+    ...BASE_ENTRY,
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    cwd = join(tmpdir(), `phase2s-runs99-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(join(cwd, ".phase2s"), { recursive: true });
+
+    const entries = [
+      makeEntry({ ts: "2026-05-01T10:00:00.000Z", goal: "Fix auth token refresh", specHash: "aaa00001", success: true }),
+      makeEntry({ ts: "2026-05-02T10:00:00.000Z", goal: "Refactor UserService", specHash: "aaa00002", success: false }),
+      makeEntry({ ts: "2026-05-03T10:00:00.000Z", goal: "Add fix for payments bug", specHash: "aaa00003", success: true }),
+      makeEntry({ ts: "2026-05-04T10:00:00.000Z", goal: "Dry run test", specHash: "aaa00004", success: false, dryRun: true }),
+    ];
+    await writeFile(
+      join(cwd, ".phase2s", "conduct-log.jsonl"),
+      entries.map((e) => JSON.stringify(e)).join("\n") + "\n",
+    );
+
+    server = startServer(0, cwd);
+  });
+
+  afterEach(async () => {
+    server.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("returns all entries when no params are given", async () => {
+    const res = await request(server).get("/api/runs");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(4);
+  });
+
+  it("?search filters by case-insensitive goal substring", async () => {
+    const res = await request(server).get("/api/runs?search=fix");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body.every((e: { goal: string }) => e.goal.toLowerCase().includes("fix"))).toBe(true);
+  });
+
+  it("?search with no matches returns empty array", async () => {
+    const res = await request(server).get("/api/runs?search=zzznomatch");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(0);
+  });
+
+  it("?status=success returns only successful entries", async () => {
+    const res = await request(server).get("/api/runs?status=success");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body.every((e: { success: boolean }) => e.success === true)).toBe(true);
+  });
+
+  it("?status=failure returns only failed entries (includes dryRun)", async () => {
+    const res = await request(server).get("/api/runs?status=failure");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body.every((e: { success: boolean }) => e.success === false)).toBe(true);
+  });
+
+  it("?after filters to entries after the given timestamp", async () => {
+    const res = await request(server).get("/api/runs?after=2026-05-02T12:00:00.000Z");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2); // May 3 and May 4
+    expect(res.body.every((e: { ts: string }) => new Date(e.ts) > new Date("2026-05-02T12:00:00.000Z"))).toBe(true);
+  });
+
+  it("?before filters to entries before the given timestamp", async () => {
+    const res = await request(server).get("/api/runs?before=2026-05-02T12:00:00.000Z");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2); // May 1 and May 2
+  });
+
+  it("?after + ?before combined returns entries in range", async () => {
+    const res = await request(server).get(
+      "/api/runs?after=2026-05-01T12:00:00.000Z&before=2026-05-03T12:00:00.000Z"
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2); // May 2 and May 3
+  });
+
+  it("?search + ?status combined applies both filters", async () => {
+    const res = await request(server).get("/api/runs?search=fix&status=success");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body.every((e: { goal: string; success: boolean }) =>
+      e.goal.toLowerCase().includes("fix") && e.success === true
+    )).toBe(true);
+  });
+
+  it("?before earlier than ?after returns 400", async () => {
+    const res = await request(server).get(
+      "/api/runs?after=2026-05-10T00:00:00.000Z&before=2026-05-01T00:00:00.000Z"
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/before.*later.*after/i);
+  });
+
+  it("?after with invalid ISO returns 400", async () => {
+    const res = await request(server).get("/api/runs?after=not-a-date");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid date.*after/i);
+  });
+
+  it("?before with invalid ISO returns 400", async () => {
+    const res = await request(server).get("/api/runs?before=2026-99-99");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid date.*before/i);
+  });
+
+  it("?status with unknown value returns 400", async () => {
+    const res = await request(server).get("/api/runs?status=active");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/status must be one of/i);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // GET /api/runs/:id — Sprint 95: synthetic entry fallback (buildSyntheticEntry)

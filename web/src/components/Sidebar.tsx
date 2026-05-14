@@ -219,20 +219,19 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       </NavLink>
 
       {/* Help */}
-      <span
-        title="Coming soon"
-        style={{
+      <NavLink
+        to="/help"
+        onClick={onClose}
+        style={({ isActive }) => ({
           ...navItemBase,
-          display: "flex",
-          color: "var(--text-secondary)",
-          opacity: 0.4,
-          cursor: "default",
-          userSelect: "none",
-        }}
+          color: isActive ? "var(--accent-hover)" : "var(--text-secondary)",
+          backgroundColor: isActive ? "var(--accent-dim)" : "transparent",
+          borderLeft: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+        })}
       >
         <QuestionMarkCircleIcon width={16} height={16} aria-hidden="true" className="sidebar-icon" style={{ flexShrink: 0 }} />
         <span className="sidebar-label">Help</span>
-      </span>
+      </NavLink>
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />

@@ -442,8 +442,55 @@ npm run test:all
 
 ---
 
+## Filter toolbar (Sprint 99)
+
+The Runs list page has a filter toolbar directly above the table.
+
+### Controls
+
+| Control | What it does |
+|---------|-------------|
+| **Search** | Case-insensitive substring match against the run goal. 300ms debounce; in-flight requests cancelled via `AbortController`. |
+| **Status** | All / Success / Failure / Active / Unknown. Success and Failure filter server-side via `?status=`; Active and Unknown are applied client-side against the live active-run poll set. |
+| **From / To** | Date-range filter. Sends `?after=` / `?before=` ISO 8601 timestamps to the server. |
+| **Clear filters** | Appears when any filter is active. Resets all controls and clears URL params. |
+
+### URL state
+
+Filter state syncs to the URL via `useSearchParams` with `replace: true`, so the back button never cycles through intermediate filter states. A bookmarked URL with `?search=auth&status=success` opens the Runs page with those filters pre-applied.
+
+### Empty states
+
+- **"No runs yet"** — the conduct log is empty (no filters active).
+- **"No runs match your filters"** — filters are active but nothing matches. Includes a "Clear filters" link.
+
+---
+
+## Project grouping (Sprint 99)
+
+When runs from two or more different git projects appear in the conduct log (e.g. you've used `phase2s serve --cwd` or have runs from different machines merged into one log), the Runs page groups entries by project root.
+
+The project root is derived from the `specPath` field in each log entry — walking up to the directory that contains `.phase2s/`. Single-project users see the flat list as before; no toggle needed.
+
+---
+
+## Help page (Sprint 99)
+
+Click **Help** in the sidebar (or navigate to `/help`) to open the in-browser reference.
+
+Four sections:
+
+| Section | What it shows |
+|---------|--------------|
+| **Getting Started** | Three-step onboarding: install, configure, run |
+| **Commands** | Table of `phase2s` CLI commands with descriptions and example flags |
+| **Dashboard** | What each page of the dashboard does |
+| **Keyboard Shortcuts** | All supported keyboard shortcuts (table rows, sidebar toggle, etc.) |
+
+The data lives in `web/src/data/help.ts` — a typed array of section objects. Add new entries there without touching the component.
+
+---
+
 ## What's coming
 
-Sprint 98 ships the New Run page. Future sprints will add:
-
-- **Help** — in-browser skill reference
+The v2.0 milestone is complete — all features promised in the original web dashboard plan (Sprint 94) have shipped. Future work is tracked in `TODOS.md`.

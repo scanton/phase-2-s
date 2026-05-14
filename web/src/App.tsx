@@ -5,6 +5,7 @@ import RunsPage from "./pages/RunsPage.tsx";
 import RunDetailPage from "./pages/RunDetailPage.tsx";
 import ConfigPage from "./pages/ConfigPage.tsx";
 import NewRunPage from "./pages/NewRunPage.tsx";
+import HelpPage from "./pages/HelpPage.tsx";
 import { useTheme } from "./hooks/useTheme.ts";
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/runs/new" element={<NewRunPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
           <Route path="/config" element={<ConfigPage />} />
+          <Route path="/help" element={<HelpPage />} />
         </Routes>
       </main>
     </div>

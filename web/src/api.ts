@@ -1,8 +1,12 @@
 import type { ConductLogEntry, RunDetail, ActiveRun, LiveEvent, LintResult, NewRunPayload } from "./types.ts";
 
-export async function fetchRuns(): Promise<ConductLogEntry[]> {
-  const res = await fetch("/api/runs");
-  if (!res.ok) throw new Error(`Failed to fetch runs: ${res.status}`);
+export async function fetchRuns(params?: URLSearchParams, signal?: AbortSignal): Promise<ConductLogEntry[]> {
+  const url = params && params.toString() ? `/api/runs?${params.toString()}` : "/api/runs";
+  const res = await fetch(url, { signal });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(data.error ?? `Failed to fetch runs: ${res.status}`);
+  }
   return res.json() as Promise<ConductLogEntry[]>;
 }
 
