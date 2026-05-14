@@ -1,8 +1,12 @@
 /**
- * phase2s web dashboard — /api/runs handlers (Sprint 94)
+ * phase2s web dashboard — /api/runs handlers (Sprint 94–99)
  *
- * GET /api/runs       — return all ConductLogEntry[] (newest first)
- * GET /api/runs/:id   — return { entry, spec, runLog } for a given specHash
+ * GET /api/runs              — return ConductLogEntry[] (newest first)
+ *   ?search=<text>           — case-insensitive substring match on goal
+ *   ?status=success|failure  — filter by terminal status
+ *   ?after=<iso>             — runs started after this timestamp (ISO 8601)
+ *   ?before=<iso>            — runs started before this timestamp (ISO 8601)
+ * GET /api/runs/:id          — return { entry, spec, runLog } for a given specHash
  *
  * Path traversal guard: realpath-resolved path must start with cwd.
  * Uses fs.realpath (not path.resolve) to dereference symlinks — prevents
@@ -46,13 +50,74 @@ export async function assertInProject(
 // GET /api/runs
 // ---------------------------------------------------------------------------
 
+const VALID_STATUSES = new Set(["success", "failure"]);
+
 export async function handleGetRuns(
-  _req: Request,
+  req: Request,
   res: Response,
   cwd: string,
 ): Promise<void> {
+  const q = req.query as Record<string, unknown>;
+  const search = typeof q.search === "string" ? q.search : undefined;
+  const status = typeof q.status === "string" ? q.status : undefined;
+  const after = typeof q.after === "string" ? q.after : undefined;
+  const before = typeof q.before === "string" ? q.before : undefined;
+
+  // Validate ?status
+  if (status !== undefined && !VALID_STATUSES.has(status)) {
+    res.status(400).json({ error: "status must be one of: success, failure" });
+    return;
+  }
+
+  // Validate ?after and ?before as ISO 8601
+  let afterMs: number | undefined;
+  let beforeMs: number | undefined;
+  if (after !== undefined) {
+    const d = new Date(after);
+    if (isNaN(d.getTime())) {
+      res.status(400).json({ error: "Invalid date format for 'after'" });
+      return;
+    }
+    afterMs = d.getTime();
+  }
+  if (before !== undefined) {
+    const d = new Date(before);
+    if (isNaN(d.getTime())) {
+      res.status(400).json({ error: "Invalid date format for 'before'" });
+      return;
+    }
+    beforeMs = d.getTime();
+  }
+
+  // Validate before > after
+  if (afterMs !== undefined && beforeMs !== undefined && beforeMs <= afterMs) {
+    res.status(400).json({ error: "'before' must be later than 'after'" });
+    return;
+  }
+
   try {
-    const entries = await readConductLog(cwd);
+    let entries = await readConductLog(cwd);
+
+    if (search) {
+      const needle = search.toLowerCase();
+      entries = entries.filter((e) => e.goal.toLowerCase().includes(needle));
+    }
+
+    if (status === "success") {
+      entries = entries.filter((e) => e.success === true);
+    } else if (status === "failure") {
+      entries = entries.filter((e) => e.success === false);
+    }
+
+    if (afterMs !== undefined) {
+      const threshold = afterMs;
+      entries = entries.filter((e) => new Date(e.ts).getTime() > threshold);
+    }
+    if (beforeMs !== undefined) {
+      const ceiling = beforeMs;
+      entries = entries.filter((e) => new Date(e.ts).getTime() < ceiling);
+    }
+
     res.json(entries);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
