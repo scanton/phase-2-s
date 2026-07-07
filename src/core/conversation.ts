@@ -130,17 +130,20 @@ export class Conversation {
     return this.messages.length;
   }
 
+  /** Token estimate for a single message (4 chars ≈ 1 token). */
+  private static messageTokens(m: Message): number {
+    const contentLen = (m.content ?? "").length;
+    const toolCallsLen = m.toolCalls
+      ? m.toolCalls.reduce((s, tc) => s + tc.name.length + tc.arguments.length, 0)
+      : 0;
+    return Math.ceil((contentLen + toolCallsLen) / 4);
+  }
+
   /** Rough token estimate for context management (4 chars ≈ 1 token).
    * Includes toolCalls arguments in the estimate — they can be substantial
    * and excluding them causes consistent undercounting that leads to 400 errors. */
   estimateTokens(): number {
-    return this.messages.reduce((sum, m) => {
-      const contentLen = (m.content ?? "").length;
-      const toolCallsLen = m.toolCalls
-        ? m.toolCalls.reduce((s, tc) => s + tc.name.length + tc.arguments.length, 0)
-        : 0;
-      return sum + Math.ceil((contentLen + toolCallsLen) / 4);
-    }, 0);
+    return this.messages.reduce((sum, m) => sum + Conversation.messageTokens(m), 0);
   }
 
   /**
@@ -242,7 +245,11 @@ export class Conversation {
    * Preserves: system prompt, user messages, assistant text-only responses.
    */
   trimToTokenBudget(maxTokens: number = DEFAULT_TOKEN_BUDGET): void {
-    while (this.estimateTokens() > maxTokens) {
+    // Running total, decremented by the tokens of each dropped message.
+    // Recounting the whole array per iteration made this loop O(n²) on
+    // large sessions — the recount was the dominant cost of auto-trim.
+    let total = this.estimateTokens();
+    while (total > maxTokens) {
       // Find the oldest tool result message
       const firstToolIdx = this.messages.findIndex((m) => m.role === "tool");
       if (firstToolIdx === -1) break; // nothing left to trim
@@ -252,17 +259,19 @@ export class Conversation {
       const prevIdx = firstToolIdx - 1;
       const prevMsg = prevIdx >= 0 ? this.messages[prevIdx] : null;
 
+      let removed: Message[];
       if (prevMsg?.role === "assistant" && prevMsg.toolCalls?.length) {
         // Drop the entire turn: assistant message + all its consecutive tool results
         let endIdx = firstToolIdx;
         while (endIdx < this.messages.length && this.messages[endIdx].role === "tool") {
           endIdx++;
         }
-        this.messages.splice(prevIdx, endIdx - prevIdx);
+        removed = this.messages.splice(prevIdx, endIdx - prevIdx);
       } else {
         // Orphaned tool result (no paired assistant message) — drop just the result
-        this.messages.splice(firstToolIdx, 1);
+        removed = this.messages.splice(firstToolIdx, 1);
       }
+      for (const m of removed) total -= Conversation.messageTokens(m);
     }
   }
 }

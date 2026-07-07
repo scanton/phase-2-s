@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { _clearEmbedCache } from "../../src/core/embeddings.js";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { loadLearnings, loadRelevantLearnings, formatLearningsForPrompt, heuristicSort, type Learning } from "../../src/core/memory.js";
@@ -255,6 +256,13 @@ describe("heuristicSort() — Sprint 73 (Item D)", () => {
 
 describe("loadRelevantLearnings()", () => {
   let tmpDir: string;
+
+  beforeEach(() => {
+    // The embedding LRU (Sprint 101) is process-global and keyed on
+    // (baseUrl, model, text) — these tests reuse the same learning texts
+    // with different stubbed fetch responses, so clear between cases.
+    _clearEmbedCache();
+  });
 
   beforeAll(async () => {
     tmpDir = await mkdtemp(join(process.cwd(), ".test-relevant-"));
