@@ -18,7 +18,7 @@
  *     try/catch so a log write failure never masks the real exit code.
  */
 
-import { appendFile, readFile, mkdir } from "node:fs/promises";
+import { appendFile, readFile, mkdir, open } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
 
@@ -96,6 +96,17 @@ export async function readConductLog(
   limit?: number,
 ): Promise<ConductLogEntry[]> {
   const logPath = join(cwd, ".phase2s", "conduct-log.jsonl");
+
+  // With a limit, read backward from EOF and stop once we have enough
+  // entries — `phase2s runs --limit 10` no longer parses a 10K-line log.
+  if (limit !== undefined) {
+    try {
+      return await readConductLogTail(logPath, limit);
+    } catch {
+      return [];
+    }
+  }
+
   let raw: string;
   try {
     raw = await readFile(logPath, "utf8");
@@ -114,9 +125,83 @@ export async function readConductLog(
     }
   }
 
-  // Reverse to newest-first, then apply limit.
+  // Reverse to newest-first.
   entries.reverse();
-  return limit !== undefined ? entries.slice(0, limit) : entries;
+  return entries;
+}
+
+// Chunk size for backward tail reads. 64KB comfortably holds ~100 entries
+// (typical entry is 300-600 bytes), so a default --limit 10 is one read.
+const TAIL_CHUNK_SIZE = 64 * 1024;
+
+/**
+ * Read the last `limit` valid entries of a JSONL file, newest first, without
+ * parsing the whole file. Reads fixed-size chunks backward from EOF.
+ *
+ * Byte-boundary safety: chunks are joined as Buffers and only complete-line
+ * regions (delimited by \n) are UTF-8 decoded. Decoding partial chunks
+ * directly would corrupt multi-byte characters split across a boundary and
+ * silently drop valid entries as "malformed".
+ */
+async function readConductLogTail(
+  logPath: string,
+  limit: number,
+): Promise<ConductLogEntry[]> {
+  if (limit <= 0) return [];
+  const fh = await open(logPath, "r");
+  try {
+    const { size } = await fh.stat();
+    if (size === 0) return [];
+
+    const entries: ConductLogEntry[] = [];
+    // Raw bytes before the first newline of the region we've already
+    // processed — the (possibly partial) line continuing into earlier chunks.
+    let carry = Buffer.alloc(0);
+    let pos = size;
+
+    while (pos > 0 && entries.length < limit) {
+      const readSize = Math.min(TAIL_CHUNK_SIZE, pos);
+      pos -= readSize;
+      const chunk = Buffer.alloc(readSize);
+      const { bytesRead } = await fh.read(chunk, 0, readSize, pos);
+      if (bytesRead < readSize) {
+        // Short read — the file shrank between stat and read (concurrent
+        // truncation/rotation). The zero-filled remainder of the buffer is
+        // NOT file content; parsing it would corrupt the carry line. Bail
+        // with what we have rather than return silently wrong entries.
+        break;
+      }
+      const combined = carry.length > 0 ? Buffer.concat([chunk, carry]) : chunk;
+
+      let decodeFrom = 0;
+      if (pos > 0) {
+        const firstNl = combined.indexOf(0x0a);
+        if (firstNl === -1) {
+          // No newline in this chunk — the line extends further back.
+          carry = combined;
+          continue;
+        }
+        carry = combined.subarray(0, firstNl);
+        decodeFrom = firstNl + 1;
+      } else {
+        carry = Buffer.alloc(0);
+      }
+
+      const lines = combined.subarray(decodeFrom).toString("utf8").split("\n");
+      for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
+        const trimmed = lines[i].trim();
+        if (!trimmed) continue;
+        try {
+          entries.push(JSON.parse(trimmed) as ConductLogEntry);
+        } catch {
+          // Skip malformed lines, same as the full-read path.
+        }
+      }
+    }
+    return entries;
+  } finally {
+    await fh.close();
+  }
 }
 
 // ---------------------------------------------------------------------------

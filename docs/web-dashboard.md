@@ -138,6 +138,12 @@ Returns all conduct-log entries, newest first.
 curl http://localhost:3010/api/runs | jq '.[0]'
 ```
 
+Pagination (v2.1.0): pass `?limit=<1-500>&offset=<n>` and the response becomes an envelope — `{ "runs": [...], "total": 123, "hasMore": true }`. Without pagination params the bare array above is returned unchanged. Invalid values return HTTP 400. Composes with the filter params (`?search=`, `?status=`, `?after=`, `?before=`); `total` reflects the filtered set.
+
+```bash
+curl 'http://localhost:3010/api/runs?limit=50&offset=0' | jq '.total, .hasMore'
+```
+
 ```json
 {
   "ts": "2026-05-11T12:34:56.000Z",

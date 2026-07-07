@@ -8,6 +8,19 @@
  * Returns an empty array on any error so callers can fall back gracefully.
  */
 
+// Small LRU for query embeddings. Repeated identical queries (retrying a
+// task, re-running a skill with the same argument) skip the 200-500ms
+// Ollama round-trip. Embeddings are deterministic for a given (model, text),
+// so entries never go stale. Failed embeds ([]) are never cached — the next
+// call retries, so a temporarily-down Ollama doesn't poison the cache.
+const EMBED_CACHE_MAX = 64;
+const embedCache = new Map<string, number[]>();
+
+/** Test-only: reset the embedding LRU between test cases. */
+export function _clearEmbedCache(): void {
+  embedCache.clear();
+}
+
 export async function generateEmbedding(
   text: string,
   model: string,
@@ -15,6 +28,16 @@ export async function generateEmbedding(
 ): Promise<number[]> {
   // Reject non-HTTP(S) schemes (file://, data:, empty string) before making any network call.
   if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) return [];
+
+  const cacheKey = `${baseUrl}\u0000${model}\u0000${text}`;
+  const cached = embedCache.get(cacheKey);
+  if (cached) {
+    // Refresh recency (Map iterates in insertion order — delete+set moves to back)
+    embedCache.delete(cacheKey);
+    embedCache.set(cacheKey, cached);
+    return cached;
+  }
+
   try {
     // Strip /v1 suffix — ollamaBaseUrl is stored with /v1 for OpenAI-compat API,
     // but the native embed endpoint lives at /api/embed (no /v1).
@@ -33,6 +56,13 @@ export async function generateEmbedding(
     const data = (await res.json()) as { embeddings?: number[][] };
     const vec = data.embeddings?.[0];
     if (!Array.isArray(vec) || vec.length === 0) return [];
+
+    embedCache.set(cacheKey, vec);
+    if (embedCache.size > EMBED_CACHE_MAX) {
+      // Evict least-recently-used (front of insertion order)
+      const oldest = embedCache.keys().next().value;
+      if (oldest !== undefined) embedCache.delete(oldest);
+    }
     return vec;
   } catch {
     return [];

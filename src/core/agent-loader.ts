@@ -13,7 +13,7 @@
  * up ":ask" or "ask" and get the same AgentDef.
  */
 
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "../utils/frontmatter.js";
@@ -116,6 +116,16 @@ async function parseAgentFile(filePath: string, isBuiltIn: boolean): Promise<Age
   return { id, title, model, tools, aliases, systemPrompt: body, isBuiltIn };
 }
 
+// Per-directory cache keyed on a fingerprint of every agent file's
+// (path, mtime, size) — NOT the directory mtime, which does not change when
+// an existing .md file is edited in place.
+const agentsDirCache = new Map<string, { fingerprint: string; agents: AgentDef[] }>();
+
+/** Test-only: reset the per-directory agents cache. */
+export function _clearAgentsCache(): void {
+  agentsDirCache.clear();
+}
+
 /**
  * Load all agent .md files from a directory.
  * Per-file errors are caught and logged — they don't abort the load.
@@ -125,20 +135,41 @@ async function loadAgentsFromDir(dir: string, isBuiltIn: boolean): Promise<Agent
   try {
     entries = await readdir(dir);
   } catch {
+    agentsDirCache.delete(`${isBuiltIn ? "builtin" : "custom"}:${dir}`);
     return [];
   }
 
-  const agents: AgentDef[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".md") || entry === "README.md") continue;
+  const mdFiles = entries.filter((e) => e.endsWith(".md") && e !== "README.md");
+  const statted: Array<{ path: string; mtimeMs: number; size: number }> = [];
+  for (const entry of mdFiles) {
     const agentPath = join(dir, entry);
+    const s = await stat(agentPath).catch(() => null);
+    if (s?.isFile()) statted.push({ path: agentPath, mtimeMs: s.mtimeMs, size: s.size });
+  }
+
+  const fingerprint = statted
+    .map((f) => `${f.path}:${f.mtimeMs}:${f.size}`)
+    .sort()
+    .join("|");
+
+  // isBuiltIn is baked into every cached AgentDef, so the same directory
+  // loaded with the other flag must not share a cache slot.
+  const cacheKey = `${isBuiltIn ? "builtin" : "custom"}:${dir}`;
+  const cached = agentsDirCache.get(cacheKey);
+  if (cached && cached.fingerprint === fingerprint) {
+    return cached.agents;
+  }
+
+  const agents: AgentDef[] = [];
+  for (const f of statted) {
     try {
-      const def = await parseAgentFile(agentPath, isBuiltIn);
+      const def = await parseAgentFile(f.path, isBuiltIn);
       if (def) agents.push(def);
     } catch (err) {
-      console.warn(`Warning: failed to load agent from ${agentPath}: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn(`Warning: failed to load agent from ${f.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  agentsDirCache.set(cacheKey, { fingerprint, agents });
   return agents;
 }
 

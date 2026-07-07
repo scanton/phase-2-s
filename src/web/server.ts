@@ -19,6 +19,7 @@
  */
 
 import express from "express";
+import compression from "compression";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
@@ -35,6 +36,19 @@ export function startServer(port: number, cwd: string): Server {
   // Parse JSON request bodies for POST endpoints. 16 KB cap prevents log-file
   // inflation from oversized payloads; goals are capped at 2000 chars anyway.
   app.use(express.json({ limit: "16kb" }));
+
+  // Gzip responses. MUST be registered before the API routes — Express runs
+  // middleware in registration order, so anything registered later never
+  // wraps the earlier routes' responses. SSE is exempted: compression
+  // buffers output, which would stall EventSource delivery on the live view.
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if (req.path.endsWith("/stream")) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
 
   app.get("/api/config", async (req, res) => {
     const { handleGetConfig } = await import("./api/config.js");
@@ -84,10 +98,21 @@ export function startServer(port: number, cwd: string): Server {
     await handlePostLint(req, res);
   });
 
-  app.use(express.static(distWeb));
+  // Vite content-hashes everything under /assets/, so those files are safe to
+  // cache forever. index.html is NOT hashed and must never be cached long-term:
+  // a stale shell would reference deleted hashed bundles after a redeploy.
+  app.use(
+    "/assets",
+    express.static(join(distWeb, "assets"), {
+      immutable: true,
+      maxAge: "1y",
+    }),
+  );
+  app.use(express.static(distWeb, { maxAge: 0 }));
 
   // SPA fallback — serve index.html for all non-API routes
   app.get("*", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(join(distWeb, "index.html"), (err) => {
       if (err) {
         res

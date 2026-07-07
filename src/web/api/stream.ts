@@ -29,7 +29,9 @@ import { assertInProject } from "./runs.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-const POLL_INTERVAL_MS = 100;
+// 300ms keeps live-view latency imperceptible while cutting file-stat wakeups
+// 3x vs the original 100ms (typical runs emit 1-2 events/sec).
+const POLL_INTERVAL_MS = 300;
 
 // ---------------------------------------------------------------------------
 // findRunLogPath — locate run JSONL without requiring conduct log entry

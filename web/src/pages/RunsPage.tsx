@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
-import { fetchRuns, fetchActiveRuns } from "../api.ts";
+import { fetchRunsPage, fetchActiveRuns } from "../api.ts";
 import type { ConductLogEntry, ActiveRun } from "../types.ts";
 import StatusBadge from "../components/StatusBadge.tsx";
 import { findGitRoot } from "../utils/gitRoot.ts";
@@ -434,6 +434,7 @@ function RunsTable({ entries, loading, activeSpecHashes }: RunsTableProps) {
 // ---------------------------------------------------------------------------
 
 const DEBOUNCE_MS = 300;
+const PAGE_SIZE = 50;
 
 export default function RunsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -445,8 +446,19 @@ export default function RunsPage() {
 
   // Data state
   const [entries, setEntries] = useState<ConductLogEntry[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Server-side filter params of the current page-0 fetch — Load More
+  // must continue the same filtered result set.
+  const lastParamsRef = useRef<URLSearchParams>(new URLSearchParams());
+  // Fetch generation: bumped on every page-0 fetch. An in-flight loadMore
+  // captures the generation at start and discards its result if a filter
+  // change (new page-0 fetch) happened meanwhile — otherwise old-filter rows
+  // would be appended onto the new filter's list.
+  const fetchGenRef = useRef(0);
   const [activeSpecHashes, setActiveSpecHashes] = useState<Set<string>>(new Set());
   const visibleRef = useRef(true);
 
@@ -483,10 +495,14 @@ export default function RunsPage() {
 
     setLoading(true);
     setError(null);
+    lastParamsRef.current = params;
+    fetchGenRef.current += 1;
 
-    fetchRuns(params.toString() ? params : undefined, controller.signal)
-      .then((data) => {
-        setEntries(data);
+    fetchRunsPage(PAGE_SIZE, 0, params, controller.signal)
+      .then((page) => {
+        setEntries(page.runs);
+        setTotal(page.total);
+        setHasMore(page.hasMore);
         setLoading(false);
       })
       .catch((err: unknown) => {
@@ -495,6 +511,38 @@ export default function RunsPage() {
         setLoading(false);
       });
   }, [setSearchParams]);
+
+  // Load More — append the next page of the same filtered result set.
+  const loadMore = useCallback(() => {
+    if (loadingMore) return;
+    const gen = fetchGenRef.current;
+    setLoadingMore(true);
+    fetchRunsPage(PAGE_SIZE, entries.length, lastParamsRef.current)
+      .then((page) => {
+        // Stale response: a filter change re-fetched page 0 while this was
+        // in flight — discard rather than mixing result sets.
+        if (gen !== fetchGenRef.current) {
+          setLoadingMore(false);
+          return;
+        }
+        setEntries((prev) => {
+          // Dedupe by row key: a run completing between page fetches shifts
+          // every offset, so the next page can repeat the previous page's
+          // last row (duplicate React keys otherwise).
+          const seen = new Set(prev.map((e) => e.specHash || e.ts));
+          return [...prev, ...page.runs.filter((e) => !seen.has(e.specHash || e.ts))];
+        });
+        setTotal(page.total);
+        setHasMore(page.hasMore);
+        setLoadingMore(false);
+      })
+      .catch((err: unknown) => {
+        if (gen === fetchGenRef.current) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+        setLoadingMore(false);
+      });
+  }, [entries.length, loadingMore]);
 
   // Debounce timer ref
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -756,6 +804,30 @@ export default function RunsPage() {
               loading={loading}
               activeSpecHashes={activeSpecHashes}
             />
+      )}
+
+      {!loading && hasMore && (
+        <div style={{ textAlign: "center", marginTop: "16px" }}>
+          <button
+            type="button"
+            onClick={loadMore}
+            disabled={loadingMore}
+            style={{
+              padding: "8px 20px",
+              fontSize: "13px",
+              fontFamily: "Geist Mono, monospace",
+              backgroundColor: "var(--bg-surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "8px",
+              color: "var(--text-secondary)",
+              cursor: loadingMore ? "wait" : "pointer",
+            }}
+          >
+            {loadingMore
+              ? "Loading…"
+              : `Load more (${entries.length} of ${total})`}
+          </button>
+        </div>
       )}
     </div>
   );

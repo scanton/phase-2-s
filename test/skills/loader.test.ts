@@ -412,4 +412,65 @@ describe("loadSkillsFromDir — Sprint 15 typed inputs", () => {
     warnSpy.mockRestore();
     await rm(tmpDir, { recursive: true });
   });
+
+  // -------------------------------------------------------------------------
+  // Per-file fingerprint cache (Sprint 101)
+  // -------------------------------------------------------------------------
+
+  it("returns cached skills for an unchanged directory (same array instance)", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-cache-"));
+    const skillDir = join(tmpDir, "cached");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), [
+      "---", "name: cached", "description: v1", "---", "Body one.",
+    ].join("\n"), "utf-8");
+
+    const first = await loadSkillsFromDir(tmpDir);
+    const second = await loadSkillsFromDir(tmpDir);
+    expect(second).toBe(first);
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("detects an in-place edit to an existing SKILL.md (no rename, no new file)", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-edit-"));
+    const skillDir = join(tmpDir, "editable");
+    await mkdir(skillDir, { recursive: true });
+    const skillPath = join(skillDir, "SKILL.md");
+    await writeFile(skillPath, [
+      "---", "name: editable", "description: before edit", "---", "Body.",
+    ].join("\n"), "utf-8");
+
+    const first = await loadSkillsFromDir(tmpDir);
+    expect(first[0].description).toBe("before edit");
+
+    // Edit the file in place — parent directory mtime does NOT change for
+    // content edits, which is exactly why the cache keys on file stats.
+    await writeFile(skillPath, [
+      "---", "name: editable", "description: after edit — longer", "---", "Body.",
+    ].join("\n"), "utf-8");
+
+    const second = await loadSkillsFromDir(tmpDir);
+    expect(second[0].description).toBe("after edit — longer");
+    await rm(tmpDir, { recursive: true });
+  });
+
+  it("detects added and removed skill files", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "phase2s-loader-addrm-"));
+    const mk = async (name: string) => {
+      const d = join(tmpDir, name);
+      await mkdir(d, { recursive: true });
+      await writeFile(join(d, "SKILL.md"), [
+        "---", `name: ${name}`, "description: x", "---", "Body.",
+      ].join("\n"), "utf-8");
+    };
+    await mk("one");
+    expect(await loadSkillsFromDir(tmpDir)).toHaveLength(1);
+
+    await mk("two");
+    expect(await loadSkillsFromDir(tmpDir)).toHaveLength(2);
+
+    await rm(join(tmpDir, "one"), { recursive: true });
+    expect(await loadSkillsFromDir(tmpDir)).toHaveLength(1);
+    await rm(tmpDir, { recursive: true });
+  });
 });

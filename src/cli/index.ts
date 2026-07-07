@@ -892,6 +892,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
   // Conductor status/audit — structural quality gate for spec generation (Sprint 88)
   program
     .command("conduct-status")
+    // Alias matches the MCP tool name (phase2s__conduct_audit) and the
+    // pre-push hook. Without it, "phase2s conduct-audit" fell through to
+    // the interactive-chat default and died on the unknown --ci-only flag.
+    .alias("conduct-audit")
     .description("Run built-in conductor audit cases to verify spec generation quality")
     .option("--ci", "Exit 1 if any case fails (suitable for GitHub Actions)")
     .option("--ci-only", "Run only ciGate:true cases (local pre-push gate, no API key needed)")

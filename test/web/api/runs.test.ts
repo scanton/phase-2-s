@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import type { Server } from "node:http";
 import request from "supertest";
 import { readConductLog } from "../../../src/cli/conduct-log.js";
+import { _clearRunsCache } from "../../../src/web/api/runs.js";
 import { startServer } from "../../../src/web/server.js";
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,81 @@ describe("readConductLog", () => {
     expect(found).toBeDefined();
     expect(found!.specHash).toBe("deadbeef");
   });
+
+  // -------------------------------------------------------------------------
+  // Tail reader (Sprint 101) — limit path reads backward from EOF
+  // -------------------------------------------------------------------------
+
+  it("with limit, returns the newest N entries without parsing the whole file", async () => {
+    const phase2sDir = join(cwd, ".phase2s");
+    await mkdir(phase2sDir, { recursive: true });
+    const lines = Array.from({ length: 500 }, (_, i) =>
+      JSON.stringify({ ...BASE_ENTRY, ts: `2024-01-01T00:00:${String(i % 60).padStart(2, "0")}.000Z`, goal: `goal ${i}` }),
+    );
+    await writeFile(join(phase2sDir, "conduct-log.jsonl"), lines.join("\n") + "\n");
+
+    const entries = await readConductLog(cwd, 10);
+    expect(entries).toHaveLength(10);
+    expect(entries[0].goal).toBe("goal 499"); // newest first
+    expect(entries[9].goal).toBe("goal 490");
+  });
+
+  it("tail read spans chunk boundaries (entries larger than one 64KB chunk window)", async () => {
+    const phase2sDir = join(cwd, ".phase2s");
+    await mkdir(phase2sDir, { recursive: true });
+    // ~2KB goal per entry x 200 entries ≈ 400KB — forces several backward chunks
+    const bigGoal = "x".repeat(2000);
+    const lines = Array.from({ length: 200 }, (_, i) =>
+      JSON.stringify({ ...BASE_ENTRY, ts: "2024-01-01T00:00:00.000Z", goal: `${bigGoal}-${i}` }),
+    );
+    await writeFile(join(phase2sDir, "conduct-log.jsonl"), lines.join("\n") + "\n");
+
+    const entries = await readConductLog(cwd, 150);
+    expect(entries).toHaveLength(150);
+    expect(entries[0].goal.endsWith("-199")).toBe(true);
+    expect(entries[149].goal.endsWith("-50")).toBe(true);
+  });
+
+  it("tail read preserves multi-byte UTF-8 characters across chunk boundaries", async () => {
+    const phase2sDir = join(cwd, ".phase2s");
+    await mkdir(phase2sDir, { recursive: true });
+    // Fill goals with multi-byte chars so some are guaranteed to straddle
+    // the 64KB boundary. Corrupted decode would fail JSON.parse and drop entries.
+    const cjkGoal = "実装する機能の説明テキスト🚀".repeat(80); // ~3.5KB of multi-byte
+    const lines = Array.from({ length: 60 }, (_, i) =>
+      JSON.stringify({ ...BASE_ENTRY, ts: "2024-01-01T00:00:00.000Z", goal: `${cjkGoal}#${i}` }),
+    );
+    await writeFile(join(phase2sDir, "conduct-log.jsonl"), lines.join("\n") + "\n");
+
+    const entries = await readConductLog(cwd, 60);
+    expect(entries).toHaveLength(60); // nothing dropped as "malformed"
+    expect(entries[0].goal.endsWith("#59")).toBe(true);
+    expect(entries[59].goal.endsWith("#0")).toBe(true);
+  });
+
+  it("tail read skips malformed lines and still fills the limit", async () => {
+    const phase2sDir = join(cwd, ".phase2s");
+    await mkdir(phase2sDir, { recursive: true });
+    const good = (i: number) => JSON.stringify({ ...BASE_ENTRY, ts: "2024-01-01T00:00:00.000Z", goal: `g${i}` });
+    await writeFile(
+      join(phase2sDir, "conduct-log.jsonl"),
+      [good(1), good(2), "{truncated-partial-write", good(3)].join("\n") + "\n",
+    );
+
+    const entries = await readConductLog(cwd, 3);
+    expect(entries.map((e) => e.goal)).toEqual(["g3", "g2", "g1"]);
+  });
+
+  it("limit larger than the file returns all entries", async () => {
+    const phase2sDir = join(cwd, ".phase2s");
+    await mkdir(phase2sDir, { recursive: true });
+    await writeFile(
+      join(phase2sDir, "conduct-log.jsonl"),
+      JSON.stringify({ ...BASE_ENTRY, ts: "2024-01-01T00:00:00.000Z", goal: "only" }) + "\n",
+    );
+    const entries = await readConductLog(cwd, 10);
+    expect(entries).toHaveLength(1);
+  });
 });
 
 // assertInProject tests are in test/web/api/spec.test.ts
@@ -127,6 +203,9 @@ describe("GET /api/runs — query param filtering", () => {
   });
 
   beforeEach(async () => {
+    // Explicit cache isolation — fresh tmpdirs also isolate (different
+    // logPath), but rely on the hook, not the accident.
+    _clearRunsCache();
     cwd = join(tmpdir(), `phase2s-runs99-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await mkdir(join(cwd, ".phase2s"), { recursive: true });
 
@@ -236,6 +315,87 @@ describe("GET /api/runs — query param filtering", () => {
     const res = await request(server).get("/api/runs?status=active");
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/status must be one of/i);
+  });
+
+  // -------------------------------------------------------------------------
+  // Pagination (Sprint 101)
+  // -------------------------------------------------------------------------
+
+  it("?limit returns paginated envelope { runs, total, hasMore }", async () => {
+    const res = await request(server).get("/api/runs?limit=2");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(2);
+    expect(res.body.total).toBe(4);
+    expect(res.body.hasMore).toBe(true);
+    // Newest first
+    expect(res.body.runs[0].specHash).toBe("aaa00004");
+  });
+
+  it("?limit&offset returns the second page and hasMore=false at the end", async () => {
+    const res = await request(server).get("/api/runs?limit=2&offset=2");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(2);
+    expect(res.body.total).toBe(4);
+    expect(res.body.hasMore).toBe(false);
+    expect(res.body.runs[0].specHash).toBe("aaa00002");
+  });
+
+  it("?offset alone defaults page size and returns envelope", async () => {
+    const res = await request(server).get("/api/runs?offset=3");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(1);
+    expect(res.body.hasMore).toBe(false);
+  });
+
+  it("pagination composes with filters — total reflects the filtered set", async () => {
+    const res = await request(server).get("/api/runs?search=fix&limit=1");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(1);
+    expect(res.body.total).toBe(2);
+    expect(res.body.hasMore).toBe(true);
+  });
+
+  it("?offset beyond the end returns empty page, hasMore=false", async () => {
+    const res = await request(server).get("/api/runs?limit=10&offset=100");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(0);
+    expect(res.body.hasMore).toBe(false);
+  });
+
+  it("?limit=0 returns 400", async () => {
+    const res = await request(server).get("/api/runs?limit=0");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/limit must be/i);
+  });
+
+  it("?limit above the cap returns 400", async () => {
+    const res = await request(server).get("/api/runs?limit=501");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/limit must be/i);
+  });
+
+  it("non-numeric ?limit or ?offset returns 400", async () => {
+    expect((await request(server).get("/api/runs?limit=abc")).status).toBe(400);
+    expect((await request(server).get("/api/runs?offset=-1")).status).toBe(400);
+  });
+
+  it("bare-array shape is unchanged when no pagination params are sent", async () => {
+    const res = await request(server).get("/api/runs?search=fix");
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  it("serves updated entries after the log file changes (cache invalidation)", async () => {
+    const first = await request(server).get("/api/runs");
+    expect(first.body).toHaveLength(4);
+
+    const extra = makeEntry({ ts: "2026-05-05T10:00:00.000Z", goal: "Fifth run", specHash: "aaa00005" });
+    const { appendFile: af } = await import("node:fs/promises");
+    await af(join(cwd, ".phase2s", "conduct-log.jsonl"), JSON.stringify(extra) + "\n");
+
+    const second = await request(server).get("/api/runs");
+    expect(second.body).toHaveLength(5);
+    expect(second.body[0].specHash).toBe("aaa00005");
   });
 });
 

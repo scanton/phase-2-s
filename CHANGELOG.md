@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.1.0 — 2026-05-13
+
+Sprint 101 — Performance. The dashboard loads faster, large run histories page instead of downloading whole, and the REPL stops re-reading unchanged files on every turn. No breaking changes: all v2.0 API responses are unchanged unless you opt into the new pagination params.
+
+### Added
+- **`GET /api/runs` pagination** — `?limit=<1-500>&offset=<n>` returns `{ runs, total, hasMore }`. Without pagination params the legacy bare-array response is unchanged, so existing clients keep working. HTTP 400 with a descriptive error for invalid values.
+- **Load More on the Runs page** — the dashboard fetches 50 runs at a time and appends the next page on demand, instead of downloading the full history on every visit and every filter keystroke. Stale-response guard: a filter change discards any in-flight Load More result; appended pages dedupe by run id so a run completing mid-scroll can't duplicate a row.
+- **`phase2s conduct-audit` alias** — `conduct-status` gained an alias matching the MCP tool name (`phase2s__conduct_audit`), so both spellings work.
+
+### Changed
+- **Dashboard responses are now gzipped** — JSON API payloads and static assets compress ~4x; hashed `/assets/*` bundles are cached immutable for a year while `index.html` is always revalidated, so a redeploy can never strand a browser on a stale shell referencing deleted bundles. SSE live streams are exempted from compression (buffering would stall the live view).
+- **Runs list backend is cached** — the server parses the conduct log once per change (keyed on file mtime+size) instead of on every request; `phase2s runs --limit N` reads backward from the end of the log instead of parsing the whole file (multi-byte-safe across chunk boundaries, tolerant of concurrent truncation).
+- **REPL turn latency no longer grows with project history** — `learnings.jsonl` is cached per process and re-parsed only when it changes; skills and agents are re-parsed only when a definition file is actually edited, added, or removed (fingerprinted per file — an in-place edit is detected even though the directory mtime doesn't change); repeated identical semantic-search queries hit a 64-entry embedding LRU instead of a 200-500ms Ollama round-trip (failures are never cached).
+- **Auto-trim on long sessions is no longer O(n²)** — the context-budget trim loop keeps a running token total instead of recounting every message per iteration.
+- **Session migration check skips on startup** — a versioned `migration-done` marker (written only after the manifest proves every entry migrated) replaces the every-startup scan; crashed or partially-skipped migrations still recover via the manifest.
+- **Browser-spawned run logs are buffered** — child stdout/stderr pipe through one write stream (~95% fewer syscalls) and the stream closes only after stdio fully flushes, so the final terminal event can't be truncated; a log-write error (disk full) discards remaining output instead of stalling the child process.
+- **SSE live view polls its log file at 300ms** instead of 100ms (typical runs emit 1-2 events/sec).
+
+### Fixed
+- **Pre-push hook invoked a nonexistent command** — `.githooks/pre-push` called `phase2s conduct-audit`, which fell through to interactive chat and died on `--ci-only`; every push needed `SKIP_CONDUCT_AUDIT=1`. The hook now calls `conduct-status` (and the new alias covers the old spelling). Note: the alias requires this release's binary — older global installs should upgrade.
+
 ## v2.0.0 — 2026-05-13
 
 Sprint 99 — Help Page, Project Organization, Search/Filter. The v2.0 milestone: every feature promised in the original web dashboard plan (Sprint 94, v1.68.0) is now shipped. **No breaking CLI changes** — all v1.x commands are unchanged. The major version marks the web dashboard as the flagship feature.

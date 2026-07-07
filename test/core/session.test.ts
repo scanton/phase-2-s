@@ -158,6 +158,47 @@ describe("migrateAll()", () => {
     expect(uuidFiles.length).toBe(1);
   });
 
+  it("writes a versioned migration-done marker after a completed migration", async () => {
+    writeLegacySession(tmpDir, "2026-04-01.json", []);
+    await migrateAll(tmpDir);
+    const markerPath = join(sessionsDir(tmpDir), "migration-done");
+    expect(existsSync(markerPath)).toBe(true);
+    const marker = JSON.parse(readFileSync(markerPath, "utf-8")) as { version: number };
+    expect(marker.version).toBe(1);
+  });
+
+  it("skips all work when a current-version marker exists", async () => {
+    const dir = sessionsDir(tmpDir);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "migration-done"), JSON.stringify({ version: 1 }), "utf-8");
+    // A legacy file behind the marker is ignored — marker short-circuits
+    writeLegacySession(tmpDir, "2026-04-01.json", []);
+    await migrateAll(tmpDir);
+    expect(existsSync(join(dir, "migration.json"))).toBe(false);
+  });
+
+  it("ignores a stale marker with a different version", async () => {
+    const dir = sessionsDir(tmpDir);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "migration-done"), JSON.stringify({ version: 0 }), "utf-8");
+    writeLegacySession(tmpDir, "2026-04-01.json", []);
+    await migrateAll(tmpDir);
+    // Wrong-version marker did not block migration
+    expect(existsSync(join(dir, "migration.json"))).toBe(true);
+  });
+
+  it("does not write the marker when migration is skipped due to a held lock", async () => {
+    const dir = sessionsDir(tmpDir);
+    mkdirSync(dir, { recursive: true });
+    writeLegacySession(tmpDir, "2026-04-01.json", []);
+    // Simulate another live process holding the lock (our own PID is alive)
+    writeFileSync(join(dir, "migration.json.lock"), String(process.pid), "utf-8");
+    await migrateAll(tmpDir);
+    expect(existsSync(join(dir, "migration-done"))).toBe(false);
+    // Cleanup so afterEach rm doesn't race
+    rmSync(join(dir, "migration.json.lock"), { force: true });
+  });
+
   it("resumes an interrupted migration using the manifest", async () => {
     writeLegacySession(tmpDir, "2026-04-01.json", []);
     writeLegacySession(tmpDir, "2026-04-02.json", []);
