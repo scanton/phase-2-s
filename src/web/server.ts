@@ -19,6 +19,7 @@
  */
 
 import express from "express";
+import compression from "compression";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
@@ -84,10 +85,26 @@ export function startServer(port: number, cwd: string): Server {
     await handlePostLint(req, res);
   });
 
-  app.use(express.static(distWeb));
+  // Gzip responses (JSON API payloads + static assets). Registered after the
+  // API routes above take effect at request time regardless — compression
+  // wraps res for every route on this app.
+  app.use(compression());
+
+  // Vite content-hashes everything under /assets/, so those files are safe to
+  // cache forever. index.html is NOT hashed and must never be cached long-term:
+  // a stale shell would reference deleted hashed bundles after a redeploy.
+  app.use(
+    "/assets",
+    express.static(join(distWeb, "assets"), {
+      immutable: true,
+      maxAge: "1y",
+    }),
+  );
+  app.use(express.static(distWeb, { maxAge: 0 }));
 
   // SPA fallback — serve index.html for all non-API routes
   app.get("*", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(join(distWeb, "index.html"), (err) => {
       if (err) {
         res

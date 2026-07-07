@@ -87,6 +87,41 @@ describe("loadLearnings()", () => {
     expect(results).toHaveLength(1);
     expect(results[0].key).toBe("good-key");
   });
+
+  it("caches by mtime+size and re-reads when the file changes", async () => {
+    const dir4 = join(tmpDir, "cache-check");
+    await mkdir(join(dir4, ".phase2s", "memory"), { recursive: true });
+    const file = join(dir4, ".phase2s", "memory", "learnings.jsonl");
+    await writeFile(file, '{"key":"first","insight":"one"}\n', "utf-8");
+
+    const first = await loadLearnings(dir4);
+    expect(first).toHaveLength(1);
+
+    // Unchanged file → same array instance back (cache hit)
+    const second = await loadLearnings(dir4);
+    expect(second).toBe(first);
+
+    // Append a learning (mtime+size change) → cache invalidates
+    await writeFile(
+      file,
+      '{"key":"first","insight":"one"}\n{"key":"second","insight":"two"}\n',
+      "utf-8",
+    );
+    const third = await loadLearnings(dir4);
+    expect(third).toHaveLength(2);
+    expect(third).not.toBe(first);
+  });
+
+  it("drops the cache entry when the file is deleted", async () => {
+    const dir5 = join(tmpDir, "cache-delete");
+    await mkdir(join(dir5, ".phase2s", "memory"), { recursive: true });
+    const file = join(dir5, ".phase2s", "memory", "learnings.jsonl");
+    await writeFile(file, '{"key":"k","insight":"i"}\n', "utf-8");
+
+    expect(await loadLearnings(dir5)).toHaveLength(1);
+    await rm(file);
+    expect(await loadLearnings(dir5)).toEqual([]);
+  });
 });
 
 describe("formatLearningsForPrompt()", () => {

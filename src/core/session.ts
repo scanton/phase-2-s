@@ -113,6 +113,12 @@ function migrationManifestPath(cwd: string): string {
   return join(sessionsDir(cwd), "migration.json");
 }
 
+/**
+ * Bump this when a new migration generation is added — old markers stop
+ * matching and migrateAll() falls through to the full manifest check.
+ */
+const MIGRATION_MARKER_VERSION = 1;
+
 function sessionIndexPath(cwd: string): string {
   return join(sessionsDir(cwd), "index.json");
 }
@@ -586,6 +592,20 @@ export async function migrateAll(cwd: string): Promise<void> {
   const dir = sessionsDir(cwd);
   const manifestPath = migrationManifestPath(cwd);
 
+  // Fast path: a versioned marker written after a verified-complete migration
+  // lets subsequent startups skip the readdir + lock dance entirely. The marker
+  // is only ever written by the process that held the lock and saw
+  // migrateAllLocked() return cleanly — "skipped, another process is
+  // migrating" paths below return WITHOUT writing it, so a crashed migration
+  // can never be masked (the manifest recovery path still runs next start).
+  const markerPath = join(dir, "migration-done");
+  try {
+    const marker = JSON.parse(readFileSync(markerPath, "utf-8")) as { version?: number };
+    if (marker.version === MIGRATION_MARKER_VERSION) return;
+  } catch {
+    // No marker / unreadable / wrong shape — fall through to full check
+  }
+
   // Bail early: if sessions directory doesn't exist and no manifest, nothing to migrate.
   // We check this before acquiring the lock so we don't need the dir to exist for
   // writeFileSync(lockPath) to succeed (avoids ENOENT on lock creation).
@@ -654,6 +674,19 @@ export async function migrateAll(cwd: string): Promise<void> {
 
   try {
     await migrateAllLocked(cwd, dir, manifestPath, allEntries);
+    // Migration verified complete (migrateAllLocked returns only when every
+    // manifest entry is done, or there was nothing to migrate). Write the
+    // versioned marker so future startups skip this function. Best-effort:
+    // a failed marker write just means we re-check next start.
+    try {
+      writeFileSync(
+        join(dir, "migration-done"),
+        JSON.stringify({ version: MIGRATION_MARKER_VERSION, ts: new Date().toISOString() }),
+        "utf-8",
+      );
+    } catch {
+      // Sessions dir may not exist when there was nothing to migrate — fine.
+    }
   } finally {
     releasePosixLock(lockPath);
   }

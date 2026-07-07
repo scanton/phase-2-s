@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { Config } from "./config.js";
 import { generateEmbedding } from "./embeddings.js";
@@ -22,8 +22,33 @@ const MAX_LEARNINGS_CHARS = 2000;
  * Invalid JSON lines are skipped silently — a corrupted line shouldn't block
  * the rest of memory from loading.
  */
+// Process-level cache: loadLearnings() runs on every REPL turn, but the file
+// only changes on /remember. Key on mtime+size so an unchanged file skips the
+// full read+parse. Copy-on-return not needed — callers never mutate entries.
+const learningsCache = new Map<
+  string,
+  { mtimeMs: number; size: number; learnings: Learning[] }
+>();
+
 export async function loadLearnings(cwd: string): Promise<Learning[]> {
   const filePath = join(cwd, LEARNINGS_FILE);
+
+  let mtimeMs: number;
+  let size: number;
+  try {
+    const s = await stat(filePath);
+    mtimeMs = s.mtimeMs;
+    size = s.size;
+  } catch {
+    learningsCache.delete(filePath);
+    return [];
+  }
+
+  const cached = learningsCache.get(filePath);
+  if (cached && cached.mtimeMs === mtimeMs && cached.size === size) {
+    return cached.learnings;
+  }
+
   let raw: string;
   try {
     raw = await readFile(filePath, "utf-8");
@@ -46,7 +71,13 @@ export async function loadLearnings(cwd: string): Promise<Learning[]> {
       // Skip invalid lines silently — don't block session startup on parse errors
     }
   }
+  learningsCache.set(filePath, { mtimeMs, size, learnings: results });
   return results;
+}
+
+/** Test-only: reset the loadLearnings cache between test cases. */
+export function _clearLearningsCache(): void {
+  learningsCache.clear();
 }
 
 /**
