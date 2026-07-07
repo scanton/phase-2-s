@@ -18,7 +18,8 @@
  * Response: { id: string }  // ts-slug — browser redirects to /runs/<id>
  */
 
-import { writeFile, mkdir, appendFile, unlink } from "node:fs/promises";
+import { writeFile, mkdir, unlink } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
 import { join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { Request, Response } from "express";
@@ -222,20 +223,24 @@ export async function handlePostRuns(
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    // Pipe stdout + stderr to run log (line-buffered JSONL)
-    const pipeToLog = (chunk: Buffer): void => {
-      appendFile(runLogPath, chunk.toString(), "utf8").catch(() => undefined);
-    };
-    child.stdout?.on("data", pipeToLog);
-    child.stderr?.on("data", pipeToLog);
+    // Pipe stdout + stderr into one buffered append stream. The old
+    // per-chunk appendFile() version cost one syscall per data event;
+    // a WriteStream coalesces writes internally. end:false because two
+    // sources share the stream — the first to finish must not close it.
+    const logStream = createWriteStream(runLogPath, { flags: "a" });
+    logStream.on("error", () => undefined); // disk-full etc. — never crash the server
+    child.stdout?.pipe(logStream, { end: false });
+    child.stderr?.pipe(logStream, { end: false });
 
     // Track child; remove on exit
     activeChildren.set(id, child);
     child.on("exit", () => {
       activeChildren.delete(id);
+      logStream.end();
     });
     child.on("error", () => {
       activeChildren.delete(id);
+      logStream.end();
     });
 
     // Step 4: return id immediately — browser redirects to live view

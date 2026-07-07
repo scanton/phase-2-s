@@ -77,39 +77,72 @@ export function bundledBashPluginPath(): string {
  *   - Codex CLI (~/.codex/skills/)
  *   - gstack/Claude Code (~/.claude/skills/)
  */
+// Per-directory cache keyed on a fingerprint of every skill file's
+// (path, mtime, size) — NOT the directory mtime, which does not change when
+// an existing child file is edited in place. A cache hit skips the
+// readFile+frontmatter parse of every skill; the stat calls still run,
+// which is what makes edits/additions/removals detectable.
+const skillsDirCache = new Map<string, { fingerprint: string; skills: Skill[] }>();
+
+/** Test-only: reset the per-directory skills cache. */
+export function _clearSkillsCache(): void {
+  skillsDirCache.clear();
+}
+
 export async function loadSkillsFromDir(dir: string): Promise<Skill[]> {
-  const skills: Skill[] = [];
   const absDir = resolve(dir);
 
   let entries: string[];
   try {
     entries = await readdir(absDir);
   } catch {
-    return skills;
+    skillsDirCache.delete(absDir);
+    return [];
   }
 
+  // Pass 1: resolve each entry to its skill file (if any) and stat it.
+  const skillFiles: Array<{ path: string; nameFallback: string; mtimeMs: number; size: number }> = [];
   for (const entry of entries) {
     const entryPath = join(absDir, entry);
     const entryStat = await stat(entryPath).catch(() => null);
 
     if (entryStat?.isDirectory()) {
-      // Look for SKILL.md inside the directory
       const skillPath = join(entryPath, "SKILL.md");
-      const skill = await parseSkillFile(skillPath);
-      if (skill) {
-        skill.name = skill.name || entry;
-        skills.push(skill);
+      const s = await stat(skillPath).catch(() => null);
+      if (s?.isFile()) {
+        skillFiles.push({ path: skillPath, nameFallback: entry, mtimeMs: s.mtimeMs, size: s.size });
       }
-    } else if (entry.endsWith(".md") && entry !== "README.md") {
-      // Also support flat .md files as skills
-      const skill = await parseSkillFile(entryPath);
-      if (skill) {
-        skill.name = skill.name || entry.replace(".md", "");
-        skills.push(skill);
-      }
+    } else if (entryStat?.isFile() && entry.endsWith(".md") && entry !== "README.md") {
+      skillFiles.push({
+        path: entryPath,
+        nameFallback: entry.replace(".md", ""),
+        mtimeMs: entryStat.mtimeMs,
+        size: entryStat.size,
+      });
     }
   }
 
+  const fingerprint = skillFiles
+    .map((f) => `${f.path}:${f.mtimeMs}:${f.size}`)
+    .sort()
+    .join("|");
+
+  const cached = skillsDirCache.get(absDir);
+  if (cached && cached.fingerprint === fingerprint) {
+    return cached.skills;
+  }
+
+  // Pass 2: cache miss — read and parse every skill file.
+  const skills: Skill[] = [];
+  for (const f of skillFiles) {
+    const skill = await parseSkillFile(f.path);
+    if (skill) {
+      skill.name = skill.name || f.nameFallback;
+      skills.push(skill);
+    }
+  }
+
+  skillsDirCache.set(absDir, { fingerprint, skills });
   return skills;
 }
 
