@@ -6,6 +6,9 @@
  *   ?status=success|failure  — filter by terminal status
  *   ?after=<iso>             — runs started after this timestamp (ISO 8601)
  *   ?before=<iso>            — runs started before this timestamp (ISO 8601)
+ *   ?limit=<n>&offset=<m>    — paginate (Sprint 101). With either param the
+ *                              response is { runs, total, hasMore }; without
+ *                              both, the legacy bare array is returned.
  * GET /api/runs/:id          — return { entry, spec, runLog } for a given specHash
  *
  * Path traversal guard: realpath-resolved path must start with cwd.
@@ -13,7 +16,7 @@
  * a symlink in .phase2s/ from bypassing the guard.
  */
 
-import { readFile, realpath, readdir } from "node:fs/promises";
+import { readFile, realpath, readdir, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
 import type { Request, Response } from "express";
 import { readConductLog } from "../../cli/conduct-log.js";
@@ -52,6 +55,64 @@ export async function assertInProject(
 
 const VALID_STATUSES = new Set(["success", "failure"]);
 
+// ---------------------------------------------------------------------------
+// Conduct-log cache — the server is long-lived and the runs list is the
+// hottest endpoint. Cache the parsed log keyed on file mtime+size; every
+// request pays one stat() instead of a full read+parse of a file that only
+// changes when a run completes.
+// ---------------------------------------------------------------------------
+
+let runsCache: {
+  logPath: string;
+  mtimeMs: number;
+  size: number;
+  entries: ConductLogEntry[];
+} | null = null;
+
+async function readConductLogCached(cwd: string): Promise<ConductLogEntry[]> {
+  const logPath = join(cwd, ".phase2s", "conduct-log.jsonl");
+  let mtimeMs: number;
+  let size: number;
+  try {
+    const s = await stat(logPath);
+    mtimeMs = s.mtimeMs;
+    size = s.size;
+  } catch {
+    runsCache = null;
+    return [];
+  }
+
+  if (
+    runsCache &&
+    runsCache.logPath === logPath &&
+    runsCache.mtimeMs === mtimeMs &&
+    runsCache.size === size
+  ) {
+    return runsCache.entries;
+  }
+
+  const entries = await readConductLog(cwd);
+  runsCache = { logPath, mtimeMs, size, entries };
+  return entries;
+}
+
+/** Test-only: reset the runs cache between test cases. */
+export function _clearRunsCache(): void {
+  runsCache = null;
+}
+
+// Hard ceiling on ?limit so a bad client can't request the moon and defeat
+// the point of pagination.
+const MAX_PAGE_LIMIT = 500;
+
+/** Parse a non-negative integer query param; null = invalid, undefined = absent. */
+function parseNonNegativeInt(v: unknown): number | null | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v !== "string" || !/^\d+$/.test(v)) return null;
+  const n = Number(v);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
 export async function handleGetRuns(
   req: Request,
   res: Response,
@@ -62,6 +123,20 @@ export async function handleGetRuns(
   const status = typeof q.status === "string" ? q.status : undefined;
   const after = typeof q.after === "string" ? q.after : undefined;
   const before = typeof q.before === "string" ? q.before : undefined;
+
+  // Pagination (Sprint 101). When either param is present the response shape
+  // becomes { runs, total, hasMore }; with neither, the legacy bare array is
+  // returned so existing clients keep working.
+  const limit = parseNonNegativeInt(q.limit);
+  const offset = parseNonNegativeInt(q.offset);
+  if (limit === null || (limit !== undefined && (limit === 0 || limit > MAX_PAGE_LIMIT))) {
+    res.status(400).json({ error: `limit must be an integer between 1 and ${MAX_PAGE_LIMIT}` });
+    return;
+  }
+  if (offset === null) {
+    res.status(400).json({ error: "offset must be a non-negative integer" });
+    return;
+  }
 
   // Validate ?search length
   if (search !== undefined && search.length > 512) {
@@ -102,7 +177,7 @@ export async function handleGetRuns(
   }
 
   try {
-    let entries = await readConductLog(cwd);
+    let entries = await readConductLogCached(cwd);
 
     if (search) {
       const needle = search.toLowerCase();
@@ -122,6 +197,18 @@ export async function handleGetRuns(
     if (beforeMs !== undefined) {
       const ceiling = beforeMs;
       entries = entries.filter((e) => new Date(e.ts).getTime() < ceiling);
+    }
+
+    if (limit !== undefined || offset !== undefined) {
+      const start = offset ?? 0;
+      const pageSize = limit ?? 50;
+      const page = entries.slice(start, start + pageSize);
+      res.json({
+        runs: page,
+        total: entries.length,
+        hasMore: start + page.length < entries.length,
+      });
+      return;
     }
 
     res.json(entries);
@@ -236,7 +323,7 @@ export async function handleGetRunDetail(
   }
 
   try {
-    const entries = await readConductLog(cwd);
+    const entries = await readConductLogCached(cwd);
 
     // Match by specHash (8-char hex from Sprint 90+) or by ts-slug (legacy)
     let entry: ConductLogEntry | undefined =

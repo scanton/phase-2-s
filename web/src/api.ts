@@ -1,5 +1,11 @@
 import type { ConductLogEntry, RunDetail, ActiveRun, LiveEvent, LintResult, NewRunPayload } from "./types.ts";
 
+export interface RunsPage {
+  runs: ConductLogEntry[];
+  total: number;
+  hasMore: boolean;
+}
+
 export async function fetchRuns(params?: URLSearchParams, signal?: AbortSignal): Promise<ConductLogEntry[]> {
   const url = params && params.toString() ? `/api/runs?${params.toString()}` : "/api/runs";
   const res = await fetch(url, { signal });
@@ -8,6 +14,27 @@ export async function fetchRuns(params?: URLSearchParams, signal?: AbortSignal):
     throw new Error(data.error ?? `Failed to fetch runs: ${res.status}`);
   }
   return res.json() as Promise<ConductLogEntry[]>;
+}
+
+/**
+ * Paginated variant (Sprint 101): sends ?limit=&offset= and receives
+ * { runs, total, hasMore } from the server.
+ */
+export async function fetchRunsPage(
+  limit: number,
+  offset: number,
+  filters?: URLSearchParams,
+  signal?: AbortSignal,
+): Promise<RunsPage> {
+  const params = new URLSearchParams(filters);
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  const res = await fetch(`/api/runs?${params.toString()}`, { signal });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(data.error ?? `Failed to fetch runs: ${res.status}`);
+  }
+  return res.json() as Promise<RunsPage>;
 }
 
 export async function fetchRunDetail(id: string): Promise<RunDetail> {
