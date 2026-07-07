@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { loadAgents, formatAgentsList, buildRegistryForAgent, applyOverrideRestrict, type AgentDef } from "../../src/core/agent-loader.js";
+import { loadAgents, formatAgentsList, buildRegistryForAgent, applyOverrideRestrict, _clearAgentsCache, type AgentDef } from "../../src/core/agent-loader.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -53,6 +53,7 @@ describe("loadAgents()", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
+    _clearAgentsCache();
     tmpDir = await makeTmpDir();
     // Create .phase2s/agents project override directory (empty by default)
     await mkdir(join(tmpDir, ".phase2s", "agents"), { recursive: true });
@@ -86,6 +87,52 @@ describe("loadAgents()", () => {
     } finally {
       await rm(emptyDir, { recursive: true, force: true });
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Per-file fingerprint cache (Sprint 101)
+  // ---------------------------------------------------------------------------
+
+  it("detects an in-place edit to an existing agent .md (cache invalidation)", async () => {
+    const agentPath = join(tmpDir, ".phase2s", "agents", "editable.md");
+    await writeFile(agentPath, makeAgentMd({ id: "editable", title: "Before Edit", model: "fast" }));
+
+    const first = await loadAgents(tmpDir);
+    expect(first.get("editable")!.title).toBe("Before Edit");
+
+    // Edit in place — parent dir mtime does NOT change; the per-file
+    // fingerprint must catch it.
+    await writeFile(agentPath, makeAgentMd({ id: "editable", title: "After Edit — longer title", model: "fast" }));
+
+    const second = await loadAgents(tmpDir);
+    expect(second.get("editable")!.title).toBe("After Edit — longer title");
+  });
+
+  it("detects added and removed agent files", async () => {
+    const dirPath = join(tmpDir, ".phase2s", "agents");
+    await writeFile(join(dirPath, "one.md"), makeAgentMd({ id: "one", title: "One", model: "fast" }));
+    expect((await loadAgents(tmpDir)).has("one")).toBe(true);
+
+    await writeFile(join(dirPath, "two.md"), makeAgentMd({ id: "two", title: "Two", model: "fast" }));
+    const withTwo = await loadAgents(tmpDir);
+    expect(withTwo.has("one")).toBe(true);
+    expect(withTwo.has("two")).toBe(true);
+
+    await rm(join(dirPath, "one.md"));
+    const afterRm = await loadAgents(tmpDir);
+    expect(afterRm.has("one")).toBe(false);
+    expect(afterRm.has("two")).toBe(true);
+  });
+
+  it("serves an unchanged directory from cache (repeated load is consistent)", async () => {
+    await writeFile(
+      join(tmpDir, ".phase2s", "agents", "stable.md"),
+      makeAgentMd({ id: "stable", title: "Stable", model: "fast" }),
+    );
+    const first = await loadAgents(tmpDir);
+    const second = await loadAgents(tmpDir);
+    expect(second.get("stable")).toEqual(first.get("stable"));
+    expect(second.get("stable")!.isBuiltIn).toBe(false);
   });
 
   it("skips files without an id field (with warning)", async () => {

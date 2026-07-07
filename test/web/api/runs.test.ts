@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import type { Server } from "node:http";
 import request from "supertest";
 import { readConductLog } from "../../../src/cli/conduct-log.js";
+import { _clearRunsCache } from "../../../src/web/api/runs.js";
 import { startServer } from "../../../src/web/server.js";
 
 // ---------------------------------------------------------------------------
@@ -202,6 +203,9 @@ describe("GET /api/runs — query param filtering", () => {
   });
 
   beforeEach(async () => {
+    // Explicit cache isolation — fresh tmpdirs also isolate (different
+    // logPath), but rely on the hook, not the accident.
+    _clearRunsCache();
     cwd = join(tmpdir(), `phase2s-runs99-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await mkdir(join(cwd, ".phase2s"), { recursive: true });
 

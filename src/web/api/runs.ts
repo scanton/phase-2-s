@@ -60,6 +60,10 @@ const VALID_STATUSES = new Set(["success", "failure"]);
 // hottest endpoint. Cache the parsed log keyed on file mtime+size; every
 // request pays one stat() instead of a full read+parse of a file that only
 // changes when a run completes.
+//
+// mtime+size is safe here because the conduct log is append-only: size is
+// strictly monotonic, so a rewrite-with-equal-length within the mtime
+// resolution window (the classic mtime-cache blind spot) cannot occur.
 // ---------------------------------------------------------------------------
 
 let runsCache: {

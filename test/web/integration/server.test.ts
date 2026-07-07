@@ -502,3 +502,73 @@ describe("POST /api/runs", () => {
     expect(res.body).toHaveProperty("error");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sprint 101: compression + cache-header middleware
+// ---------------------------------------------------------------------------
+
+describe("compression and cache headers", () => {
+  let cwd: string;
+  let server: Server;
+
+  beforeEach(async () => {
+    cwd = tmpCwd();
+    await setupCwd(cwd);
+    server = startServer(0, cwd);
+  });
+
+  afterEach(async () => {
+    server.close();
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("gzips /api/runs JSON when the client accepts it (middleware ordering guard)", async () => {
+    // compression() has a ~1KB threshold — write enough entries to cross it.
+    const entries = Array.from({ length: 20 }, (_, i) =>
+      logEntry({ ts: `2026-05-11T00:00:${String(i).padStart(2, "0")}.000Z`, specHash: `aa${String(i).padStart(6, "0")}`, goal: `a sufficiently long goal description to pad the payload past the compression threshold ${i}` }),
+    );
+    await writeFile(
+      join(cwd, ".phase2s", "conduct-log.jsonl"),
+      entries.map((e) => JSON.stringify(e)).join("\n") + "\n",
+    );
+
+    const res = await request(server)
+      .get("/api/runs")
+      .set("Accept-Encoding", "gzip");
+    expect(res.status).toBe(200);
+    // If compression is registered AFTER the API routes, this header is absent.
+    expect(res.headers["content-encoding"]).toBe("gzip");
+    expect(res.body).toHaveLength(20); // supertest transparently decompresses
+  });
+
+  it("SSE stream responses are never compressed (would stall EventSource)", async () => {
+    const specHash = "beefc0de";
+    await mkdir(join(cwd, ".phase2s", "runs"), { recursive: true });
+    await writeFile(
+      join(cwd, ".phase2s", "runs", `2026-05-11T10-00-00-${specHash}.jsonl`),
+      [
+        JSON.stringify({ event: "goal_started", ts: new Date().toISOString() }),
+        JSON.stringify({ event: "orchestrator_completed", ts: new Date().toISOString(), specHash, totalCompleted: 1, totalFailed: 0, totalSkipped: 0, suspectCount: 0, durationMs: 1 }),
+      ].join("\n") + "\n",
+    );
+
+    const res = await request(server)
+      .get(`/api/runs/${specHash}/stream`)
+      .set("Accept-Encoding", "gzip")
+      .buffer(true)
+      .parse((r, callback) => {
+        let data = "";
+        r.on("data", (chunk: Buffer) => { data += chunk.toString(); });
+        r.on("end", () => callback(null, data));
+      });
+    expect(res.status).toBe(200);
+    expect(res.headers["content-encoding"]).toBeUndefined();
+  });
+
+  it("SPA fallback responds with Cache-Control: no-cache (stale-shell guard)", async () => {
+    const res = await request(server).get("/some/spa/route");
+    // Header is set before sendFile, so it holds for both the 200 and the
+    // 503 not-built fallback.
+    expect(res.headers["cache-control"]).toBe("no-cache");
+  });
+});

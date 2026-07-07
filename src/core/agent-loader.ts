@@ -135,7 +135,7 @@ async function loadAgentsFromDir(dir: string, isBuiltIn: boolean): Promise<Agent
   try {
     entries = await readdir(dir);
   } catch {
-    agentsDirCache.delete(dir);
+    agentsDirCache.delete(`${isBuiltIn ? "builtin" : "custom"}:${dir}`);
     return [];
   }
 
@@ -152,7 +152,10 @@ async function loadAgentsFromDir(dir: string, isBuiltIn: boolean): Promise<Agent
     .sort()
     .join("|");
 
-  const cached = agentsDirCache.get(dir);
+  // isBuiltIn is baked into every cached AgentDef, so the same directory
+  // loaded with the other flag must not share a cache slot.
+  const cacheKey = `${isBuiltIn ? "builtin" : "custom"}:${dir}`;
+  const cached = agentsDirCache.get(cacheKey);
   if (cached && cached.fingerprint === fingerprint) {
     return cached.agents;
   }
@@ -166,7 +169,7 @@ async function loadAgentsFromDir(dir: string, isBuiltIn: boolean): Promise<Agent
       console.warn(`Warning: failed to load agent from ${f.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  agentsDirCache.set(dir, { fingerprint, agents });
+  agentsDirCache.set(cacheKey, { fingerprint, agents });
   return agents;
 }
 

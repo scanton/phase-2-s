@@ -37,6 +37,19 @@ export function startServer(port: number, cwd: string): Server {
   // inflation from oversized payloads; goals are capped at 2000 chars anyway.
   app.use(express.json({ limit: "16kb" }));
 
+  // Gzip responses. MUST be registered before the API routes — Express runs
+  // middleware in registration order, so anything registered later never
+  // wraps the earlier routes' responses. SSE is exempted: compression
+  // buffers output, which would stall EventSource delivery on the live view.
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if (req.path.endsWith("/stream")) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
+
   app.get("/api/config", async (req, res) => {
     const { handleGetConfig } = await import("./api/config.js");
     await handleGetConfig(req, res, cwd);
@@ -84,11 +97,6 @@ export function startServer(port: number, cwd: string): Server {
     const { handlePostLint } = await import("./api/lint.js");
     await handlePostLint(req, res);
   });
-
-  // Gzip responses (JSON API payloads + static assets). Registered after the
-  // API routes above take effect at request time regardless — compression
-  // wraps res for every route on this app.
-  app.use(compression());
 
   // Vite content-hashes everything under /assets/, so those files are safe to
   // cache forever. index.html is NOT hashed and must never be cached long-term:

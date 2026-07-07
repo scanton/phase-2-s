@@ -118,6 +118,7 @@ function migrationManifestPath(cwd: string): string {
  * matching and migrateAll() falls through to the full manifest check.
  */
 const MIGRATION_MARKER_VERSION = 1;
+const MIGRATION_MARKER_FILE = "migration-done";
 
 function sessionIndexPath(cwd: string): string {
   return join(sessionsDir(cwd), "index.json");
@@ -598,7 +599,7 @@ export async function migrateAll(cwd: string): Promise<void> {
   // migrateAllLocked() return cleanly — "skipped, another process is
   // migrating" paths below return WITHOUT writing it, so a crashed migration
   // can never be masked (the manifest recovery path still runs next start).
-  const markerPath = join(dir, "migration-done");
+  const markerPath = join(dir, MIGRATION_MARKER_FILE);
   try {
     const marker = JSON.parse(readFileSync(markerPath, "utf-8")) as { version?: number };
     if (marker.version === MIGRATION_MARKER_VERSION) return;
@@ -674,18 +675,31 @@ export async function migrateAll(cwd: string): Promise<void> {
 
   try {
     await migrateAllLocked(cwd, dir, manifestPath, allEntries);
-    // Migration verified complete (migrateAllLocked returns only when every
-    // manifest entry is done, or there was nothing to migrate). Write the
-    // versioned marker so future startups skip this function. Best-effort:
-    // a failed marker write just means we re-check next start.
-    try {
-      writeFileSync(
-        join(dir, "migration-done"),
-        JSON.stringify({ version: MIGRATION_MARKER_VERSION, ts: new Date().toISOString() }),
-        "utf-8",
-      );
-    } catch {
-      // Sessions dir may not exist when there was nothing to migrate — fine.
+    // Write the marker ONLY when the manifest proves every entry is done
+    // (or no manifest exists — nothing needed migrating). migrateAllLocked
+    // returning cleanly is NOT sufficient: its loop `continue`s past
+    // suspicious paths, symlink escapes, and transient realpath races,
+    // leaving those entries done:false. Writing the marker in that state
+    // would permanently mask them from the manifest recovery path.
+    let migrationComplete = true;
+    if (existsSync(manifestPath)) {
+      try {
+        const m = JSON.parse(readFileSync(manifestPath, "utf-8")) as MigrationManifest;
+        migrationComplete = m.entries.every((e) => e.done);
+      } catch {
+        migrationComplete = false;
+      }
+    }
+    if (migrationComplete) {
+      try {
+        writeFileSync(
+          join(dir, MIGRATION_MARKER_FILE),
+          JSON.stringify({ version: MIGRATION_MARKER_VERSION, ts: new Date().toISOString() }),
+          "utf-8",
+        );
+      } catch {
+        // Sessions dir may not exist when there was nothing to migrate — fine.
+      }
     }
   } finally {
     releasePosixLock(lockPath);

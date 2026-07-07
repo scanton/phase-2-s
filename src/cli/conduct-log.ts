@@ -163,7 +163,14 @@ async function readConductLogTail(
       const readSize = Math.min(TAIL_CHUNK_SIZE, pos);
       pos -= readSize;
       const chunk = Buffer.alloc(readSize);
-      await fh.read(chunk, 0, readSize, pos);
+      const { bytesRead } = await fh.read(chunk, 0, readSize, pos);
+      if (bytesRead < readSize) {
+        // Short read — the file shrank between stat and read (concurrent
+        // truncation/rotation). The zero-filled remainder of the buffer is
+        // NOT file content; parsing it would corrupt the carry line. Bail
+        // with what we have rather than return silently wrong entries.
+        break;
+      }
       const combined = carry.length > 0 ? Buffer.concat([chunk, carry]) : chunk;
 
       let decodeFrom = 0;

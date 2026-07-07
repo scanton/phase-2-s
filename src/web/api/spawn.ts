@@ -228,17 +228,30 @@ export async function handlePostRuns(
     // a WriteStream coalesces writes internally. end:false because two
     // sources share the stream — the first to finish must not close it.
     const logStream = createWriteStream(runLogPath, { flags: "a" });
-    logStream.on("error", () => undefined); // disk-full etc. — never crash the server
+    logStream.on("error", () => {
+      // Disk-full / permissions: pipe() unpipes on destination error, which
+      // pauses the sources — nothing would drain stdout, the OS pipe buffer
+      // fills, and the child blocks on write() forever. Resume both sources
+      // so the child keeps running; its remaining output is discarded.
+      child.stdout?.resume();
+      child.stderr?.resume();
+    });
     child.stdout?.pipe(logStream, { end: false });
     child.stderr?.pipe(logStream, { end: false });
 
-    // Track child; remove on exit
+    // Track child; remove on exit. The stream is ended on "close" — NOT
+    // "exit" — because exit fires while stdio may still hold buffered data;
+    // ending early turns the final chunks (usually the terminal event the
+    // dashboard needs) into silently swallowed write-after-end errors.
     activeChildren.set(id, child);
     child.on("exit", () => {
       activeChildren.delete(id);
+    });
+    child.on("close", () => {
       logStream.end();
     });
     child.on("error", () => {
+      // Spawn failure — "close" may never fire.
       activeChildren.delete(id);
       logStream.end();
     });

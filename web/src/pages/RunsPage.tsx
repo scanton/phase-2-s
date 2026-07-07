@@ -451,9 +451,14 @@ export default function RunsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Server-side filter params of the last successful page-0 fetch — Load More
+  // Server-side filter params of the current page-0 fetch — Load More
   // must continue the same filtered result set.
   const lastParamsRef = useRef<URLSearchParams>(new URLSearchParams());
+  // Fetch generation: bumped on every page-0 fetch. An in-flight loadMore
+  // captures the generation at start and discards its result if a filter
+  // change (new page-0 fetch) happened meanwhile — otherwise old-filter rows
+  // would be appended onto the new filter's list.
+  const fetchGenRef = useRef(0);
   const [activeSpecHashes, setActiveSpecHashes] = useState<Set<string>>(new Set());
   const visibleRef = useRef(true);
 
@@ -491,6 +496,7 @@ export default function RunsPage() {
     setLoading(true);
     setError(null);
     lastParamsRef.current = params;
+    fetchGenRef.current += 1;
 
     fetchRunsPage(PAGE_SIZE, 0, params, controller.signal)
       .then((page) => {
@@ -509,16 +515,31 @@ export default function RunsPage() {
   // Load More — append the next page of the same filtered result set.
   const loadMore = useCallback(() => {
     if (loadingMore) return;
+    const gen = fetchGenRef.current;
     setLoadingMore(true);
     fetchRunsPage(PAGE_SIZE, entries.length, lastParamsRef.current)
       .then((page) => {
-        setEntries((prev) => [...prev, ...page.runs]);
+        // Stale response: a filter change re-fetched page 0 while this was
+        // in flight — discard rather than mixing result sets.
+        if (gen !== fetchGenRef.current) {
+          setLoadingMore(false);
+          return;
+        }
+        setEntries((prev) => {
+          // Dedupe by row key: a run completing between page fetches shifts
+          // every offset, so the next page can repeat the previous page's
+          // last row (duplicate React keys otherwise).
+          const seen = new Set(prev.map((e) => e.specHash || e.ts));
+          return [...prev, ...page.runs.filter((e) => !seen.has(e.specHash || e.ts))];
+        });
         setTotal(page.total);
         setHasMore(page.hasMore);
         setLoadingMore(false);
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err));
+        if (gen === fetchGenRef.current) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
         setLoadingMore(false);
       });
   }, [entries.length, loadingMore]);
